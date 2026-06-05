@@ -1,0 +1,260 @@
+const express = require('express');
+const path = require('path');
+const db = require('./lib/db');
+const github = require('./lib/github');
+const jira = require('./lib/jira');
+const poller = require('./lib/poller');
+const forwarder = require('./lib/webhook-forwarder');
+
+const PORT = parseInt(process.env.PORT || '3000', 10);
+
+const app = express();
+app.use(express.json());
+// Never cache static assets — this is a localhost tool; a refresh should always
+// show the latest UI (avoids "I edited the file but don't see changes").
+app.use(express.static(path.join(__dirname, 'public'), {
+  etag: false,
+  lastModified: false,
+  setHeaders: res => res.setHeader('Cache-Control', 'no-store'),
+}));
+
+const wrap = fn => (req, res) => {
+  try { fn(req, res); }
+  catch (err) { res.status(500).json({ error: err.message }); }
+};
+
+// Build the validated patch for a project from a request body.
+// Returns { patch } or { error }.
+function projectPatch(body) {
+  const patch = {};
+  if (body.name  !== undefined) {
+    if (!String(body.name).trim()) return { error: 'name required' };
+    patch.name = String(body.name).trim();
+  }
+  if (body.color !== undefined) patch.color = body.color;
+  if (body.jql   !== undefined) patch.jql   = String(body.jql).trim();
+  if (body.mergeTransition !== undefined) patch.mergeTransition = String(body.mergeTransition).trim();
+  if (body.repo  !== undefined) {
+    const raw = String(body.repo).trim();
+    if (raw === '') { patch.repo = ''; }
+    else {
+      const parsed = github.parseRepo(raw);
+      if (!parsed) return { error: 'Invalid repo — use owner/repo or a GitHub URL' };
+      patch.repo = parsed;
+    }
+  }
+  return { patch };
+}
+
+// ── Config ────────────────────────────────────────────────────────────────────
+app.get('/api/config', (req, res) => res.json(db.getConfig()));
+app.post('/api/config', (req, res) => {
+  for (const [k, v] of Object.entries(req.body)) db.set(k, v);
+  res.json({ ok: true });
+});
+
+// ── Projects ──────────────────────────────────────────────────────────────────
+app.get('/api/projects', (req, res) => res.json(db.getProjects()));
+
+app.get('/api/projects/:id', (req, res) => {
+  const project = db.getProject(req.params.id);
+  if (!project) return res.status(404).json({ error: 'Not found' });
+  res.json(project);
+});
+
+app.post('/api/projects', (req, res) => {
+  const { patch, error } = projectPatch(req.body);
+  if (error) return res.status(400).json({ error });
+  if (!patch.name) return res.status(400).json({ error: 'name required' });
+  const project = db.addProject(patch);
+  forwarder.sync(PORT);
+  res.json(project);
+});
+
+app.put('/api/projects/:id', (req, res) => {
+  const { patch, error } = projectPatch(req.body);
+  if (error) return res.status(400).json({ error });
+  const project = db.updateProject(req.params.id, patch);
+  if (!project) return res.status(404).json({ error: 'Not found' });
+  forwarder.sync(PORT);
+  res.json(project);
+});
+
+app.delete('/api/projects/:id', (req, res) => {
+  db.deleteProject(req.params.id);
+  forwarder.sync(PORT);
+  res.json({ ok: true });
+});
+
+// ── Pull requests (stale-while-revalidate) ──────────────────────────────────────
+// The UI always reads the snapshot the sync loop writes — never `gh` directly.
+// On read we kick a background sync if the snapshot is stale; when it lands the
+// new data is pushed to open pages over SSE.
+const STALE_MS = 30_000;
+
+function isStale(snap) {
+  return !snap || !snap.lastSynced || (Date.now() - Date.parse(snap.lastSynced) > STALE_MS);
+}
+
+// Return the cached snapshot for a project, revalidating in the background if stale.
+function snapshotFor(project) {
+  const snap = db.getSnapshot(project.id);
+  if (project.repo && isStale(snap)) poller.syncProject(project).catch(() => {});
+  return snap;
+}
+
+// Project-scoped PR list. `open` is served from the snapshot; merged/all is a live
+// fetch (rare, on-demand from the state filter).
+app.get('/api/projects/:id/prs', async (req, res) => {
+  const project = db.getProject(req.params.id);
+  if (!project) return res.status(404).json({ error: 'Not found' });
+  if (!project.repo) return res.json([]);
+
+  const state = req.query.state || 'open';
+  if (state === 'open') return res.json(snapshotFor(project)?.prs || []);
+
+  try {
+    const prs = await github.getPRs(project.repo, state, 30, { ci: true });
+    res.json(prs.map(p => ({ ...p, repo: project.repo })));
+  } catch (err) {
+    res.json([{ repo: project.repo, error: err.message }]);
+  }
+});
+
+// Compact list with CI for the tray — read straight from snapshots.
+app.get('/api/prs/tray', (req, res) => {
+  const items = [];
+  for (const project of db.getProjects()) {
+    const snap = snapshotFor(project);
+    for (const pr of snap?.prs || []) {
+      items.push({ ...pr, projectId: project.id, projectName: project.name });
+    }
+  }
+  res.json(items);
+});
+
+// Dashboard: every project with its snapshotted open PRs + freshness info.
+app.get('/api/dashboard', (req, res) => {
+  res.json(db.getProjects().map(project => {
+    const snap = snapshotFor(project);
+    return { ...project, prs: snap?.prs || [], lastSynced: snap?.lastSynced || null, syncError: snap?.error || null };
+  }));
+});
+
+// ── Jira ──────────────────────────────────────────────────────────────────────
+app.get('/api/jira/search', wrap((req, res) => {
+  const jql = req.query.jql || 'assignee = currentUser() ORDER BY updated DESC';
+  res.json(jira.searchWorkItems(jql, 30));
+}));
+
+app.get('/api/jira/:key', wrap((req, res) => res.json(jira.getWorkItem(req.params.key))));
+
+app.post('/api/jira/:key/transition', wrap((req, res) => {
+  jira.transitionWorkItem(req.params.key, req.body.transition);
+  db.addEvent('jira_transitioned', { key: req.params.key, transition: req.body.transition, trigger: 'manual' });
+  res.json({ ok: true });
+}));
+
+// ── Links ───────────────────────────────────────────────────────────────────────
+app.get('/api/links', (req, res) => res.json(db.getLinks(req.query.project)));
+app.post('/api/links', (req, res) => {
+  const { prNumber, prRepo, jiraKey, projectId } = req.body;
+  if (!prNumber || !prRepo || !jiraKey) return res.status(400).json({ error: 'prNumber, prRepo, jiraKey required' });
+  db.addLink(prNumber, prRepo, jiraKey, projectId);
+  res.json({ ok: true });
+});
+app.delete('/api/links/:id', (req, res) => { db.removeLink(req.params.id); res.json({ ok: true }); });
+
+// ── Events ────────────────────────────────────────────────────────────────────
+app.get('/api/events', (req, res) => res.json(db.getEvents(100)));
+
+// ── DB inspector (Settings) ─────────────────────────────────────────────────────
+app.get('/api/db', (req, res) => {
+  const snaps = db.getAllSnapshots();
+  res.json({
+    config: db.getConfig(),
+    projects: db.getProjects(),
+    counts: { projects: db.getProjects().length, links: db.getLinks().length, events: db.getEvents(1000).length },
+    snapshots: Object.fromEntries(Object.entries(snaps).map(([id, s]) =>
+      [id, { open: s.prs?.length || 0, lastSynced: s.lastSynced, error: s.error || null }])),
+  });
+});
+
+// ── Live updates (SSE) ──────────────────────────────────────────────────────────
+// Pages subscribe here; when the sync loop refreshes a project's snapshot we push
+// an event so the open UI re-reads the snapshot (no client-side polling needed).
+const sseClients = new Set();
+
+app.get('/api/stream', (req, res) => {
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive',
+  });
+  res.write('retry: 1000\n\n');
+  sseClients.add(res);
+  req.on('close', () => sseClients.delete(res));
+});
+
+function broadcast(payload) {
+  const msg = `data: ${JSON.stringify(payload)}\n\n`;
+  for (const res of sseClients) { try { res.write(msg); } catch {} }
+}
+const publishSync = projectId => broadcast({ type: 'sync', projectId });
+
+// ── Dev live reload ─────────────────────────────────────────────────────────────
+// Watch public/ and tell open pages to reload on change. Disabled in the packaged
+// app (files live inside app.asar, which isn't watchable/editable).
+const isPackaged = __dirname.includes('app.asar');
+if (!isPackaged) {
+  try {
+    let t = null;
+    require('fs').watch(path.join(__dirname, 'public'), { recursive: true }, () => {
+      clearTimeout(t);
+      t = setTimeout(() => broadcast({ type: 'reload' }), 100);
+    });
+    console.log('[dev] live reload watching public/');
+  } catch (err) { console.warn('[dev] live reload unavailable:', err.message); }
+}
+
+// ── GitHub webhook ──────────────────────────────────────────────────────────────
+app.post('/webhook/github', (req, res) => {
+  res.sendStatus(200);
+  if (req.headers['x-github-event'] !== 'pull_request') return;
+  const { action, pull_request: pr, repository } = req.body;
+  if (action !== 'closed' || !pr?.merged) return;
+  const repo = repository?.full_name;
+  if (!repo) return;
+  console.log(`[webhook] PR #${pr.number} merged in ${repo}`);
+  poller.handleMerge(repo, { number: pr.number, title: pr.title, url: pr.html_url, body: pr.body });
+});
+
+// ── Forwarders ────────────────────────────────────────────────────────────────
+app.get('/api/forwarders', (req, res) => res.json(forwarder.list()));
+app.post('/api/forwarders/sync', (req, res) => { forwarder.sync(PORT); res.json(forwarder.list()); });
+
+// ── Poll trigger ────────────────────────────────────────────────────────────────
+app.post('/api/poll', async (req, res) => {
+  try { await poller.poll(); res.json({ ok: true }); }
+  catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ── Start ─────────────────────────────────────────────────────────────────────
+const server = app.listen(PORT, () => {
+  console.log(`TaskHub running at http://localhost:${PORT}`);
+  poller.start(publishSync); // sync loop publishes snapshot updates over SSE
+  forwarder.sync(PORT);
+});
+
+server.on('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    console.error(`[server] Port ${PORT} is already in use — another TaskHub is running.`);
+    process.exit(1);
+  }
+  throw err;
+});
+
+process.on('SIGTERM', () => { forwarder.stopAll(); process.exit(0); });
+process.on('SIGINT',  () => { forwarder.stopAll(); process.exit(0); });
+
+module.exports = app;

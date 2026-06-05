@@ -1,0 +1,69 @@
+# AGENTS.md - working guide for TaskHub
+
+Read `README.md` for the full picture. This file is the fast path for making changes.
+
+## What this is
+
+Localhost web dashboard + macOS menu-bar app that tracks GitHub PRs and Jira tickets
+per project, shows CI status, and auto-transitions Jira tickets when a PR merges.
+Pure Node + Express + a single-file SPA + Electron tray. Data via the `gh` and `acli`
+CLIs (no API tokens). No build step for the web; Electron only for the tray.
+
+## The one mental model that matters
+
+**Stale-while-revalidate over a DB snapshot.**
+
+- `lib/poller.js` is the **only** thing that calls `gh`. Every `poll_interval` (default 60s)
+  it fetches each project's PRs once and writes a **lean snapshot** to
+  `taskhub-snapshot.json` (via `lib/db.js`).
+- Every API endpoint **reads the snapshot** (instant). On read, a stale snapshot (>30s)
+  triggers a background sync (SWR). Never add a `gh` call to a request handler.
+- `/api/stream` (SSE) pushes `{type:'sync'}` when a snapshot changes, so open pages re-read
+  seamlessly. It also pushes `{type:'reload'}` for dev live-reload.
+
+If you need fresher data in the UI, fix the sync loop. Do not make endpoints call `gh`.
+
+## Run / iterate
+
+```bash
+npm install
+PORT=3000 bun --watch server.js
+npm run build:run
+electron .
+```
+
+- Web changes: just save; the page auto-reloads. Open http://localhost:3000.
+- Tray, `tray.js`, or `server.js` startup changes: rebuild with `npm run build:run`.
+- `build:run` kills any running instance and frees port 3000 first.
+
+## Files
+
+- `server.js` - routes, SSE, webhook, static serving.
+- `lib/db.js` - JSON store (`taskhub.json`) + snapshot sidecar (`taskhub-snapshot.json`).
+- `lib/github.js` - `gh` wrapper: `getPRs`, `parseRepo`, `summarizeCI`, `getCurrentUser`.
+- `lib/jira.js` - `acli` wrapper.
+- `lib/poller.js` - sync engine + merge automation + lifecycle events.
+- `lib/webhook-forwarder.js` - `gh webhook forward` child processes.
+- `public/index.html` - the whole SPA.
+- `tray.js` - Electron menu bar.
+- `scripts/gen-icon.js`, `scripts/gen-tray-icon.js`, `scripts/build.js` - app/tray icon generation and packaging.
+
+## Conventions / gotchas
+
+- **One repo per project.** Project shape: `{id,name,color,repo,jql,mergeTransition,created_at}`.
+- **Project IDs are UUIDs.** In inline HTML `onclick`, always quote IDs: `onclick="fn('${id}')"` .
+- **No DB migrations.** Fresh `taskhub.json` = `{config:{},projects:[],links:[],events:[]}`.
+- **CI is inline** via `gh pr list --json ...,statusCheckRollup`, collapsed by `summarizeCI`.
+- **PR `category`** (`mine`/`review`/`other`) is computed from `gh api user`.
+- **Data dir**: `TASKHUB_DATA_DIR` -> Electron `userData` -> repo root.
+- **better-sqlite3 is incompatible with Electron 42**, so the app uses a pure JSON store.
+- **`acli` flags**: `workitem transition --key K --status S --yes`; use `--json` for reads.
+- **`gh webhook` extension may be missing**. Polling still catches merges. Install with:
+  `gh extension install cli/gh-webhook`.
+- **Build is arm64-only, `dir` target**, unsigned (`identity:null`).
+- **Icons are committed**; regenerate with `scripts/gen-*.js`.
+- Tray status color: **black/white** idle, **blue** tasks, **bronze (#98712c)** review.
+
+## CLI tools available in this environment
+
+`gh` (GitHub), `acli` (Atlassian/Jira), `bun`, `node`, `electron`/`electron-builder`.

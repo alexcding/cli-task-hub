@@ -1,0 +1,16 @@
+node_modules/
+dist/
+
+# Runtime data — user state, regenerated at runtime (never source)
+taskhub.json
+taskhub-snapshot.json
+taskhub.db
+
+# Intermediate icon build dir (the icon PNGs/ICNS themselves are committed)
+build/icon.iconset/
+
+# Env / OS
+.env
+.env.local
+.DS_Store
+*.log

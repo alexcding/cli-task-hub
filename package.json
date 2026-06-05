@@ -1,0 +1,64 @@
+{
+  "name": "taskhub",
+  "productName": "TaskHub",
+  "version": "1.0.0",
+  "description": "Track Jira tickets and GitHub PRs from your Mac menu bar",
+  "main": "tray.js",
+  "author": "alexcding",
+  "license": "ISC",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "bun --watch server.js",
+    "dev:tray": "electron .",
+    "build": "node scripts/build.js",
+    "build:run": "node scripts/build.js --run",
+    "gen-icon": "node scripts/gen-icon.js",
+    "gen-tray-icon": "node scripts/gen-tray-icon.js"
+  },
+  "dependencies": {
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "node-fetch": "^2.7.0"
+  },
+  "devDependencies": {
+    "electron": "^42.3.3",
+    "electron-builder": "^26.8.1"
+  },
+  "build": {
+    "appId": "tv.accedo.taskhub",
+    "productName": "TaskHub",
+    "copyright": "Copyright © 2025 Accedo",
+    "mac": {
+      "category": "public.app-category.productivity",
+      "icon": "build/icon.icns",
+      "target": [
+        {
+          "target": "dir",
+          "arch": ["arm64"]
+        }
+      ],
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false,
+      "identity": null
+    },
+    "files": [
+      "tray.js",
+      "server.js",
+      "lib/**",
+      "public/**",
+      "node_modules/**",
+      "!node_modules/.cache/**",
+      "!**/*.md",
+      "!**/*.map"
+    ],
+    "extraResources": [
+      {
+        "from": "build",
+        "to": ".",
+        "filter": ["tray-icon-*.png"]
+      }
+    ],
+    "npmRebuild": false
+  }
+}

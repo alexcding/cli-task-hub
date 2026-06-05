@@ -1,0 +1,855 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TaskHub</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="icon" type="image/png" sizes="64x64" href="/favicon.png">
+  <link rel="apple-touch-icon" href="/favicon.png">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #f8fafc; --surface: #fff; --surface-hover: #f1f5f9;
+      --border: #e2e8f0; --border-focus: #94a3b8;
+      --text: #0f172a; --text-2: #475569; --text-3: #94a3b8;
+      --accent: #6366f1; --accent-bg: #eef2ff; --accent-hover: #4f46e5;
+      --success: #16a34a; --success-bg: #f0fdf4;
+      --warn: #d97706; --warn-bg: #fffbeb;
+      --danger: #dc2626; --danger-bg: #fef2f2;
+      --merged: #7c3aed; --merged-bg: #f5f3ff;
+      --shadow: 0 1px 3px rgb(0 0 0/.08),0 1px 2px -1px rgb(0 0 0/.06);
+      --shadow-md: 0 4px 6px -1px rgb(0 0 0/.07),0 2px 4px -2px rgb(0 0 0/.07);
+      --r: 8px; --rs: 6px; --rl: 12px;
+    }
+    body { background:var(--bg); color:var(--text); font-family:-apple-system,BlinkMacSystemFont,'Inter','Segoe UI',sans-serif; font-size:14px; line-height:1.5; -webkit-font-smoothing:antialiased; }
+
+    /* Layout */
+    .layout { display:flex; min-height:100vh; }
+    aside { width:220px; background:var(--surface); border-right:1px solid var(--border); display:flex; flex-direction:column; position:fixed; top:0;left:0;bottom:0; z-index:10; }
+    .sidebar-logo { padding:18px 16px 14px; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:8px; }
+    .logo-icon { width:28px;height:28px; background:linear-gradient(#6c6ff1,#4f46e5); border-radius:8px; display:flex;align-items:center;justify-content:center; flex-shrink:0; }
+    .logo-text { font-size:15px; font-weight:600; letter-spacing:-.3px; }
+    nav { padding:8px; flex:1; overflow-y:auto; }
+    .nav-label { font-size:11px; font-weight:600; color:var(--text-3); text-transform:uppercase; letter-spacing:.5px; padding:10px 8px 4px; }
+    .nav-btn { display:flex; align-items:center; gap:8px; width:100%; padding:7px 10px; background:none; border:none; border-radius:var(--rs); color:var(--text-2); font-size:13.5px; cursor:pointer; text-align:left; transition:background .12s,color .12s; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .nav-btn:hover { background:var(--surface-hover); color:var(--text); }
+    .nav-btn.active { background:var(--accent-bg); color:var(--accent); font-weight:500; }
+    .nav-btn .icon { font-size:14px; width:16px; text-align:center; flex-shrink:0; }
+    .nav-dot { width:8px;height:8px;border-radius:50%;flex-shrink:0; }
+    .nav-add { background:none;border:none;color:var(--text-3);font-size:14px;line-height:1;cursor:pointer;padding:0;transition:color .12s; }
+    .nav-add:hover { color:var(--text); }
+    .sidebar-footer { padding:12px; border-top:1px solid var(--border); }
+
+    main { flex:1; margin-left:220px; display:flex; flex-direction:column; min-height:100vh; }
+    .topbar { background:var(--surface); border-bottom:1px solid var(--border); padding:0 24px; height:52px; display:flex; align-items:center; gap:12px; position:sticky;top:0;z-index:5; }
+    .topbar-title { font-size:14px; font-weight:600; flex:1; }
+    .content { padding:24px; }
+    .page { display:none; }
+    .page.active { display:block; }
+
+    /* Buttons */
+    .btn { display:inline-flex;align-items:center;gap:6px; font-size:13px;font-weight:500;line-height:1; padding:7px 14px; border-radius:var(--rs); border:1px solid transparent; cursor:pointer; transition:background .12s,opacity .12s; white-space:nowrap; }
+    .btn-primary { background:var(--accent);color:#fff;border-color:var(--accent); }
+    .btn-primary:hover { background:var(--accent-hover); }
+    .btn-secondary { background:var(--surface);color:var(--text);border-color:var(--border);box-shadow:var(--shadow); }
+    .btn-secondary:hover { background:var(--surface-hover); }
+    .btn-ghost { background:none;color:var(--text-2);border-color:transparent; }
+    .btn-ghost:hover { background:var(--surface-hover);color:var(--text); }
+    .btn-danger { background:var(--danger-bg);color:var(--danger);border-color:#fecaca; }
+    .btn-danger:hover { background:#fee2e2; }
+    .btn-sm { padding:4px 10px;font-size:12px; }
+    .btn-xs { padding:2px 8px;font-size:11.5px;border-radius:4px; }
+
+    /* Cards */
+    .card { background:var(--surface);border:1px solid var(--border);border-radius:var(--rl);box-shadow:var(--shadow); }
+    .card-pad { padding:20px; }
+    .card-header { padding:14px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:8px; }
+    .card-header h3 { font-size:14px;font-weight:600; }
+
+    /* Stats */
+    .stat-grid { display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px;margin-bottom:24px; }
+    .stat-card { background:var(--surface);border:1px solid var(--border);border-radius:var(--rl);padding:16px 20px;box-shadow:var(--shadow); }
+    .stat-val { font-size:28px;font-weight:700;letter-spacing:-1px; }
+    .stat-label { font-size:12px;color:var(--text-3);margin-top:2px;font-weight:500; }
+
+    /* Project group on dashboard */
+    .project-group { margin-bottom:32px; }
+    .project-group-header { display:flex;align-items:center;gap:10px;margin-bottom:12px; }
+    .project-color { width:10px;height:10px;border-radius:50%;flex-shrink:0; }
+    .project-name { font-size:16px;font-weight:600; }
+    .project-meta { font-size:12px;color:var(--text-3); }
+    .pr-grid { display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:10px; }
+    .pr-card { background:var(--surface);border:1px solid var(--border);border-radius:var(--rl);padding:14px;box-shadow:var(--shadow);transition:box-shadow .15s,border-color .15s; }
+    .pr-card:hover { box-shadow:var(--shadow-md);border-color:var(--border-focus); }
+    .pr-card-top { display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:8px; }
+    .pr-title { font-size:13px;font-weight:500;line-height:1.4;flex:1; }
+    .pr-title a { color:var(--text);text-decoration:none; }
+    .pr-title a:hover { color:var(--accent); }
+    .pr-meta { font-size:12px;color:var(--text-3);display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px; }
+    .pr-tags { display:flex;flex-wrap:wrap;gap:4px; }
+
+    /* Badges */
+    .badge { display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:600;padding:2px 8px;border-radius:99px; }
+    .badge-open   { background:var(--success-bg);color:var(--success); }
+    .badge-merged { background:var(--merged-bg);color:var(--merged); }
+    .badge-closed { background:var(--danger-bg);color:var(--danger); }
+    .badge-jira   { background:var(--accent-bg);color:var(--accent); }
+    .badge-default { background:var(--surface-hover);color:var(--text-2); }
+
+    /* Table */
+    .table-wrap { overflow-x:auto; }
+    table { width:100%;border-collapse:collapse; }
+    th { font-size:11.5px;font-weight:600;color:var(--text-3);text-transform:uppercase;letter-spacing:.4px;padding:10px 16px;text-align:left;border-bottom:1px solid var(--border);white-space:nowrap; }
+    td { padding:11px 16px;border-bottom:1px solid var(--border);font-size:13.5px;vertical-align:middle; }
+    tr:last-child td { border-bottom:none; }
+    tbody tr { transition:background .1s; }
+    tbody tr:hover td { background:var(--surface-hover); }
+
+    /* Forms */
+    .form-group { margin-bottom:14px; }
+    .form-label { display:block;font-size:12px;font-weight:600;color:var(--text-2);margin-bottom:5px; }
+    input[type=text],input[type=number],select,textarea { width:100%;background:var(--surface);border:1px solid var(--border);color:var(--text);padding:7px 11px;border-radius:var(--rs);font-size:13.5px;transition:border-color .12s,box-shadow .12s;outline:none;font-family:inherit; }
+    input:focus,select:focus,textarea:focus { border-color:var(--accent);box-shadow:0 0 0 3px rgb(99 102 241/.12); }
+    input::placeholder { color:var(--text-3); }
+
+    /* Chips */
+    .chip-list { display:flex;flex-wrap:wrap;gap:6px; }
+    .chip { display:inline-flex;align-items:center;gap:4px;font-size:12.5px;font-weight:500;background:var(--surface-hover);border:1px solid var(--border);border-radius:99px;padding:3px 8px 3px 12px;color:var(--text); }
+    .chip-remove { background:none;border:none;cursor:pointer;color:var(--text-3);font-size:14px;line-height:1;padding:0 2px;border-radius:50%;display:flex;align-items:center;transition:color .1s,background .1s; }
+    .chip-remove:hover { color:var(--danger);background:var(--danger-bg); }
+
+    /* Tag */
+    .tag { font-size:11px;background:var(--surface-hover);color:var(--text-2);border:1px solid var(--border);border-radius:4px;padding:1px 6px;white-space:nowrap; }
+
+    /* Section header */
+    .section-header { display:flex;align-items:center;justify-content:space-between;margin-bottom:16px; }
+    .section-title { font-size:16px;font-weight:600; }
+
+    /* Link */
+    a.link { color:var(--accent);text-decoration:none; }
+    a.link:hover { text-decoration:underline; }
+
+    /* Events */
+    .event-row { display:flex;gap:12px;align-items:flex-start;padding:12px 20px;border-bottom:1px solid var(--border); }
+    .event-row:last-child { border-bottom:none; }
+    .event-dot { width:8px;height:8px;border-radius:50%;margin-top:5px;flex-shrink:0; }
+    .event-body { flex:1;font-size:13px; }
+    .event-type { font-size:11px;font-weight:600;color:var(--text-3);margin-bottom:1px;text-transform:uppercase;letter-spacing:.3px; }
+    .event-time { font-size:11px;color:var(--text-3);white-space:nowrap; }
+
+    /* Project settings card */
+    .project-settings-card { background:var(--surface);border:1px solid var(--border);border-radius:var(--rl);box-shadow:var(--shadow);margin-bottom:12px; }
+    .project-settings-header { padding:14px 16px;display:flex;align-items:center;gap:10px;cursor:pointer;user-select:none; }
+    .project-settings-header:hover { background:var(--surface-hover);border-radius:var(--rl); }
+    .project-color-swatch { width:12px;height:12px;border-radius:50%;flex-shrink:0; }
+    .project-settings-name { font-size:14px;font-weight:600;flex:1; }
+
+    /* Empty */
+    .empty { text-align:center;padding:40px 24px;color:var(--text-3); }
+    .empty-icon { font-size:28px;margin-bottom:8px; }
+
+    /* Loading */
+    .spinner { width:15px;height:15px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .7s linear infinite;display:inline-block; }
+    @keyframes spin { to { transform:rotate(360deg); } }
+    .loading-row { display:flex;align-items:center;gap:8px;color:var(--text-3);padding:24px;font-size:13px; }
+
+    /* Modal */
+    .modal-backdrop { position:fixed;inset:0;background:rgb(0 0 0/.4);z-index:50;display:flex;align-items:center;justify-content:center;padding:16px; }
+    .modal { background:var(--surface);border-radius:var(--rl);box-shadow:0 20px 60px rgb(0 0 0/.2);width:100%;max-width:440px;padding:24px; }
+    .modal h2 { font-size:16px;font-weight:600;margin-bottom:16px; }
+    .modal-actions { display:flex;justify-content:flex-end;gap:8px;margin-top:20px; }
+
+    /* Color picker row */
+    .color-options { display:flex;gap:6px;flex-wrap:wrap; }
+    .color-opt { width:24px;height:24px;border-radius:50%;cursor:pointer;border:2px solid transparent;transition:transform .1s; }
+    .color-opt:hover { transform:scale(1.15); }
+    .color-opt.selected { border-color:var(--text);box-shadow:0 0 0 2px var(--surface),0 0 0 4px var(--text); }
+
+    /* Toast */
+    #toast { position:fixed;bottom:20px;right:20px;z-index:200;background:var(--text);color:#fff;font-size:13px;font-weight:500;padding:10px 16px;border-radius:var(--r);box-shadow:var(--shadow-md);opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;transform:translateY(6px); }
+    #toast.show { opacity:1;transform:translateY(0); }
+    #toast.error { background:var(--danger); }
+
+    /* Inline form */
+    .inline-form { display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end; }
+    .inline-form .form-group { margin:0; }
+
+    /* fw status */
+    .fw-row { display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border); }
+    .fw-row:last-child { border-bottom:none; }
+
+    /* Tabs */
+    .tabs { display:flex; gap:0; border-bottom:1px solid var(--border); margin-bottom:20px; }
+    .tab-btn { background:none; border:none; border-bottom:2px solid transparent; padding:10px 16px; font-size:13.5px; font-weight:500; color:var(--text-3); cursor:pointer; margin-bottom:-1px; transition:color .12s,border-color .12s; }
+    .tab-btn:hover { color:var(--text); }
+    .tab-btn.active { color:var(--accent); border-bottom-color:var(--accent); }
+    .tab-panel { display:none; }
+    .tab-panel.active { display:block; }
+  </style>
+</head>
+<body>
+<div class="layout">
+
+  <!-- Sidebar -->
+  <aside>
+    <div class="sidebar-logo">
+      <div class="logo-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6.5,12.5 10.6,16.6 17.8,8.2"/></svg></div>
+      <span class="logo-text">TaskHub</span>
+    </div>
+    <nav>
+      <div class="nav-label">Overview</div>
+      <button class="nav-btn active" data-page="dashboard" onclick="showPage('dashboard')"><span class="icon">⬡</span> Dashboard</button>
+
+      <div class="nav-label" style="margin-top:4px;display:flex;align-items:center;justify-content:space-between;padding-right:6px">
+        <span>Projects</span>
+        <button class="nav-add" title="New project" onclick="openNewProjectModal()">+</button>
+      </div>
+      <div id="project-nav"></div>
+
+      <div class="nav-label" style="margin-top:4px">System</div>
+      <button class="nav-btn" data-page="events" onclick="showPage('events')"><span class="icon">◎</span> Activity</button>
+      <button class="nav-btn" data-page="settings" onclick="showPage('settings')"><span class="icon">⚙</span> Settings</button>
+    </nav>
+    <div class="sidebar-footer">
+      <button class="btn btn-secondary" style="width:100%;justify-content:center" onclick="syncNow()">↻ Sync</button>
+    </div>
+  </aside>
+
+  <!-- Main -->
+  <main>
+    <div class="topbar">
+      <span class="topbar-title" id="page-title">Dashboard</span>
+      <span id="synced-label" style="font-size:12px;color:var(--text-3)"></span>
+      <div id="topbar-actions"></div>
+    </div>
+    <div class="content">
+
+      <!-- DASHBOARD -->
+      <div id="page-dashboard" class="page active">
+        <div class="stat-grid" id="stats"></div>
+        <div id="dashboard-groups">
+          <div class="loading-row"><div class="spinner"></div> Loading…</div>
+        </div>
+      </div>
+
+      <!-- PROJECT PAGE (dynamic) -->
+      <div id="page-project" class="page">
+        <div id="project-page-content"></div>
+      </div>
+
+      <!-- EVENTS -->
+      <div id="page-events" class="page">
+        <div class="section-header"><span class="section-title">Activity Log</span></div>
+        <div class="card" id="events-list"></div>
+      </div>
+
+      <!-- SETTINGS -->
+      <div id="page-settings" class="page">
+        <div style="max-width:760px;display:flex;flex-direction:column;gap:16px">
+
+          <div class="card">
+            <div class="card-header"><h3>Polling</h3></div>
+            <div class="card-pad">
+              <div class="form-group">
+                <label class="form-label">Poll Interval (seconds)</label>
+                <input type="number" id="poll-interval" placeholder="60" min="15">
+              </div>
+              <button class="btn btn-primary" onclick="saveConfig()">Save</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <h3>Webhook Forwarders</h3>
+              <button class="btn btn-secondary btn-sm" onclick="syncForwarders()">Re-sync</button>
+            </div>
+            <div class="card-pad">
+              <div id="forwarder-list"></div>
+              <p style="font-size:12px;color:var(--text-3);margin-top:8px">Runs <code style="background:var(--surface-hover);padding:1px 4px;border-radius:3px">gh webhook forward</code> per repo.</p>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <h3>Database</h3>
+              <button class="btn btn-secondary btn-sm" onclick="loadSettings()">↻ Refresh</button>
+            </div>
+            <div class="card-pad">
+              <div id="db-inspector"></div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+    </div>
+  </main>
+</div>
+
+<!-- New / Edit Project Modal -->
+<div id="modal" class="modal-backdrop" style="display:none" onclick="if(event.target===this)closeModal()">
+  <div class="modal">
+    <h2 id="modal-title">New Project</h2>
+    <input type="hidden" id="modal-project-id">
+    <div class="form-group">
+      <label class="form-label">Project Name</label>
+      <input type="text" id="modal-name" placeholder="e.g. Record iOS">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Color</label>
+      <div class="color-options" id="color-options"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-danger" id="modal-delete" style="display:none;margin-right:auto" onclick="deleteProjectFromModal()">Delete</button>
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveProject()">Save</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ── Constants ─────────────────────────────────────────────────────────────────
+const COLORS = ['#6366f1','#0ea5e9','#10b981','#f59e0b','#ef4444','#ec4899','#8b5cf6','#14b8a6'];
+
+// ── API ───────────────────────────────────────────────────────────────────────
+async function api(path, opts) {
+  const res = await fetch(path, opts);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  return data;
+}
+
+// ── Toast ─────────────────────────────────────────────────────────────────────
+function toast(msg, type='') {
+  const el = document.getElementById('toast');
+  el.textContent = msg; el.className = 'show'+(type?' '+type:'');
+  clearTimeout(el._t); el._t = setTimeout(()=>el.classList.remove('show'), 3500);
+}
+const toastErr = msg => toast(msg, 'error');
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+const fmtDate = s => s ? new Date(s).toLocaleDateString('en-US',{month:'short',day:'numeric'}) : '';
+const timeAgo = s => {
+  const sec = Math.max(0, Math.round((Date.now() - Date.parse(s)) / 1000));
+  if (sec < 10) return 'just now';
+  if (sec < 60) return `${sec}s ago`;
+  const min = Math.round(sec/60);
+  if (min < 60) return `${min}m ago`;
+  return `${Math.round(min/60)}h ago`;
+};
+const stateClass = s => ({OPEN:'open',MERGED:'merged',CLOSED:'closed'}[s]||'default');
+const stateLabel = s => ({OPEN:'Open',MERGED:'Merged',CLOSED:'Closed'}[s]||s);
+
+// State
+let _projects = [];
+let _activeProjectId = null;
+
+// ── Navigation ────────────────────────────────────────────────────────────────
+const PAGE_TITLES = { dashboard:'Dashboard', project:'', events:'Activity', settings:'Settings' };
+
+function showPage(name, projectId) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('page-'+(name==='project'?'project':name)).classList.add('active');
+  document.querySelectorAll('.nav-btn[data-page]').forEach(b => { if(b.dataset.page===name) b.classList.add('active'); });
+  document.getElementById('topbar-actions').innerHTML = '';
+  if (name !== 'dashboard') document.getElementById('synced-label').textContent = '';
+
+  if (name === 'dashboard') {
+    document.getElementById('page-title').textContent = 'Dashboard';
+    loadDashboard();
+  } else if (name === 'project' && projectId) {
+    _activeProjectId = projectId;
+    const proj = _projects.find(p=>p.id===projectId);
+    document.getElementById('page-title').textContent = proj?.name || 'Project';
+    document.getElementById('topbar-actions').innerHTML = `<button class="btn btn-secondary btn-sm" onclick="openEditProjectModal('${projectId}')">⚙ Edit</button>`;
+    document.querySelectorAll('.nav-btn[data-project]').forEach(b => { if(b.dataset.project===projectId) b.classList.add('active'); });
+    loadProjectPage(projectId);
+  } else if (name === 'events') {
+    document.getElementById('page-title').textContent = 'Activity';
+    loadEvents();
+  } else if (name === 'settings') {
+    document.getElementById('page-title').textContent = 'Settings';
+    loadSettings();
+  }
+}
+
+// ── Projects sidebar nav ──────────────────────────────────────────────────────
+function renderProjectNav(projects) {
+  _projects = projects;
+  const list = projects.map(p => `
+    <button class="nav-btn" data-page="project" data-project="${p.id}" onclick="showPage('project','${p.id}')">
+      <span class="nav-dot" style="background:${p.color}"></span>
+      <span style="overflow:hidden;text-overflow:ellipsis">${esc(p.name)}</span>
+    </button>`).join('');
+  // No projects yet → show a prominent CTA; otherwise the "+" on the section title is enough.
+  const cta = projects.length ? '' :
+    `<button class="nav-btn" style="color:var(--accent)" onclick="openNewProjectModal()"><span class="icon">+</span> New project</button>`;
+  document.getElementById('project-nav').innerHTML = list + cta;
+}
+
+// ── Dashboard (taskboard) ─────────────────────────────────────────────────────
+// Personal view: "Tasks" = PRs you authored, "Review" = PRs awaiting your review.
+// Other people's PRs live under each project, not here.
+async function loadDashboard() {
+  // Reads the snapshot (instant) — no leading spinner so SSE refreshes are seamless.
+  const [groups, events] = await Promise.all([api('/api/dashboard'), api('/api/events')]);
+  _projects = groups;
+  renderProjectNav(groups);
+
+  // Flatten open PRs across all projects.
+  const openPRs = groups.flatMap(g => (g.prs||[]).filter(p => !p.error && p.state==='OPEN'));
+  const mine    = openPRs.filter(p => p.category === 'mine');
+  const review  = openPRs.filter(p => p.category === 'review');
+  const errors  = groups.flatMap(g => (g.prs||[]).filter(p => p.error));
+  const lastSynced = groups.map(g => g.lastSynced).filter(Boolean).sort().pop();
+
+  document.getElementById('stats').innerHTML = `
+    <div class="stat-card"><div class="stat-val">${groups.length}</div><div class="stat-label">Projects</div></div>
+    <div class="stat-card"><div class="stat-val" style="color:var(--accent)">${mine.length}</div><div class="stat-label">My PRs</div></div>
+    <div class="stat-card"><div class="stat-val" style="color:var(--warn)">${review.length}</div><div class="stat-label">To Review</div></div>
+    <div class="stat-card"><div class="stat-val" style="color:var(--success)">${events.filter(e=>e.type==='jira_transitioned').length}</div><div class="stat-label">Auto-transitions</div></div>
+  `;
+  document.getElementById('synced-label').textContent = lastSynced ? `Updated ${timeAgo(lastSynced)}` : '';
+
+  if (!groups.length) {
+    document.getElementById('dashboard-groups').innerHTML = `<div class="empty"><div class="empty-icon">⬡</div><p>No projects yet. Create one to get started.</p><br><button class="btn btn-primary" onclick="openNewProjectModal()">+ New project</button></div>`;
+    return;
+  }
+
+  const section = (title, prs, emptyMsg) => `
+    <div class="project-group">
+      <div class="project-group-header">
+        <span class="project-name">${title}</span>
+        <span class="project-meta">${prs.length}</span>
+      </div>
+      ${prs.length
+        ? `<div class="pr-grid">${prs.map(pr=>prCard(pr)).join('')}</div>`
+        : `<div style="font-size:13px;color:var(--text-3);padding:12px 0">${emptyMsg}</div>`}
+    </div>`;
+
+  document.getElementById('dashboard-groups').innerHTML =
+    errors.map(e=>`<p style="font-size:12px;color:var(--danger);margin-bottom:8px">⚠ ${esc(e.repo)}: ${esc(e.error)}</p>`).join('') +
+    section('Tasks · My Pull Requests', mine, 'No open PRs you authored.') +
+    section('Review Requested', review, 'Nothing awaiting your review.');
+}
+
+function ciLabel(ci) {
+  if (!ci) return '<span style="color:var(--text-3)">○ CI</span>';
+  if (ci.status === 'in_progress' || ci.status === 'queued')
+    return '<span style="color:var(--warn)">⏳ Running</span>';
+  if (ci.conclusion === 'success')
+    return '<span style="color:var(--success)">✅ Passing</span>';
+  if (ci.conclusion === 'failure')
+    return `<span style="color:var(--danger)">❌ Failing</span>`;
+  if (ci.conclusion === 'cancelled')
+    return '<span style="color:var(--text-3)">⊘ Cancelled</span>';
+  return '<span style="color:var(--text-3)">○ CI</span>';
+}
+
+function prCard(pr) {
+  const sc = stateClass(pr.state);
+  const jiraHtml = (pr.jiraKeys||[]).map(k=>`<a href="https://accedo.atlassian.net/browse/${k}" target="_blank" class="badge badge-jira">${esc(k)}</a>`).join('');
+  return `<div class="pr-card">
+    <div class="pr-card-top">
+      <div class="pr-title"><a href="${pr.url}" target="_blank">#${pr.number} ${esc(pr.title)}</a></div>
+      <span class="badge badge-${sc}">${stateLabel(pr.state)}</span>
+    </div>
+    <div class="pr-meta">
+      <span class="tag">${esc(pr.repo)}</span>
+      <span>${esc(pr.author?.login||'')}</span>
+      <span>${fmtDate(pr.createdAt)}</span>
+      <span>${ciLabel(pr.ci)}</span>
+    </div>
+    ${jiraHtml?`<div class="pr-tags">${jiraHtml}</div>`:''}
+  </div>`;
+}
+
+// ── Project page ──────────────────────────────────────────────────────────────
+async function loadProjectPage(id) {
+  const el = document.getElementById('project-page-content');
+
+  // Render the full shell immediately from cached project data — only the
+  // PR list (and Jira tab) show their own loading state.
+  const proj = _projects.find(p => p.id === id);
+  if (!proj) { el.innerHTML = '<div class="empty">Project not found.</div>'; return; }
+
+  el.innerHTML = `
+    <!-- Settings -->
+    <div class="card card-pad" style="margin-bottom:16px">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+        <div>
+          <label class="form-label">GitHub Repository</label>
+          <input type="text" id="proj-repo-${id}" placeholder="owner/repo or GitHub URL" value="${esc(proj.repo)}">
+        </div>
+        <div>
+          <label class="form-label">On merge → Jira transition</label>
+          <input type="text" id="proj-merge-${id}" placeholder="e.g. In Review" value="${esc(proj.mergeTransition)}">
+        </div>
+        <div style="grid-column:1/-1">
+          <label class="form-label">Jira JQL</label>
+          <input type="text" id="proj-jql-${id}" placeholder='project = "REC" ORDER BY updated DESC' value="${esc(proj.jql)}">
+        </div>
+      </div>
+      <div style="display:flex;justify-content:flex-end;margin-top:14px">
+        <button class="btn btn-primary btn-sm" onclick="saveProjectSettings('${id}')">Save settings</button>
+      </div>
+    </div>
+
+    <!-- Tabs -->
+    <div class="tabs">
+      <button class="tab-btn active" onclick="switchTab('${id}','prs',this)">Pull Requests</button>
+      <button class="tab-btn" onclick="switchTab('${id}','jira',this)">Jira</button>
+    </div>
+
+    <!-- PR tab -->
+    <div class="tab-panel active" id="tab-prs-${id}">
+      ${proj.repo ? `
+      <div style="display:flex;justify-content:flex-end;margin-bottom:14px">
+        <select onchange="reloadProjectPRs('${id}',this.value)" style="width:auto">
+          <option value="open">Open</option>
+          <option value="merged">Merged</option>
+          <option value="all">All</option>
+        </select>
+      </div>` : ''}
+      <div id="proj-prs-${id}">${proj.repo
+        ? '<div class="loading-row"><div class="spinner"></div> Loading pull requests…</div>'
+        : prListHtml([], '', 'open')}</div>
+    </div>
+
+    <!-- Jira tab -->
+    <div class="tab-panel" id="tab-jira-${id}">
+      <div style="display:flex;justify-content:flex-end;margin-bottom:14px">
+        <button class="btn btn-secondary btn-sm" onclick="loadProjectJira('${id}')">↻ Refresh</button>
+      </div>
+      <div class="card">
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Key</th><th>Summary</th><th>Status</th><th>Type</th><th></th></tr></thead>
+            <tbody id="proj-jira-${id}">
+              <tr><td colspan="5"><div class="empty" style="padding:20px">${proj.jql ? 'Click Refresh to run the saved JQL.' : 'Set a JQL query in settings above.'}</div></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  `;
+
+  // Load PRs into the tab without blocking the shell.
+  if (proj.repo) reloadProjectPRs(id, 'open');
+}
+
+function prListHtml(prs, repo, state) {
+  if (!repo) return `<div class="empty"><div class="empty-icon">⑂</div><p>Set a repository in settings to track pull requests.</p></div>`;
+  if (!prs.length) return `<div class="empty"><div class="empty-icon">⑂</div><p>No ${state} pull requests.</p></div>`;
+  return `<div class="pr-grid">${prs.map(pr => prCard(pr)).join('')}</div>`;
+}
+
+function switchTab(projectId, tab, btn) {
+  ['prs','jira'].forEach(t => {
+    document.getElementById(`tab-${t}-${projectId}`)?.classList.toggle('active', t === tab);
+  });
+  btn.closest('.tabs').querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+}
+
+async function saveProjectSettings(id) {
+  const repo            = document.getElementById(`proj-repo-${id}`).value.trim();
+  const jql             = document.getElementById(`proj-jql-${id}`).value.trim();
+  const mergeTransition = document.getElementById(`proj-merge-${id}`).value.trim();
+  try {
+    await api(`/api/projects/${id}`, { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ repo, jql, mergeTransition }) });
+    toast('Settings saved');
+    const projects = await api('/api/projects');
+    renderProjectNav(projects);
+    loadProjectPage(id); // re-render so PRs reflect the new repo
+  } catch(e) { toastErr(e.message); }
+}
+
+async function reloadProjectPRs(id, state, { silent = false } = {}) {
+  const el = document.getElementById(`proj-prs-${id}`);
+  if (!el) return;
+  if (!silent) el.innerHTML = '<div class="loading-row"><div class="spinner"></div> Loading…</div>';
+  const prs = await api(`/api/projects/${id}/prs?state=${state}`);
+  const proj = _projects.find(p => p.id === id);
+  const target = document.getElementById(`proj-prs-${id}`); // may have re-rendered; re-query
+  if (target) target.innerHTML = prListHtml(prs.filter(p=>!p.error), proj?.repo, state);
+}
+
+async function loadProjectJira(id) {
+  const tbody = document.getElementById(`proj-jira-${id}`);
+  const jql = document.getElementById(`proj-jql-${id}`)?.value.trim();
+  if (!jql) { tbody.innerHTML = '<tr><td colspan="5"><div class="empty" style="padding:16px">Set a JQL query in settings above.</div></td></tr>'; return; }
+  tbody.innerHTML = '<tr><td colspan="5"><div class="loading-row"><div class="spinner"></div> Loading…</div></td></tr>';
+  try {
+    const items = await api('/api/jira/search?jql=' + encodeURIComponent(jql));
+    if (!items.length) { tbody.innerHTML = '<tr><td colspan="5"><div class="empty" style="padding:16px">No Jira items found.</div></td></tr>'; return; }
+    tbody.innerHTML = items.map(item => `<tr>
+      <td><a class="link" href="https://accedo.atlassian.net/browse/${item.key}" target="_blank">${item.key}</a></td>
+      <td>${esc(item.summary || item.fields?.summary || '')}</td>
+      <td><span class="badge badge-default">${esc(item.status || item.fields?.status?.name || '')}</span></td>
+      <td>${esc(item.type || item.fields?.issuetype?.name || '')}</td>
+      <td><button class="btn btn-ghost btn-xs" onclick="transitionJira('${item.key}')">Transition</button></td>
+    </tr>`).join('');
+  } catch(e) { tbody.innerHTML = `<tr><td colspan="5" style="color:var(--danger);padding:16px">${esc(e.message)}</td></tr>`; }
+}
+
+// ── Jira transition ───────────────────────────────────────────────────────────
+async function transitionJira(key) {
+  const t = prompt(`Transition ${key} to:`);
+  if (!t) return;
+  try {
+    await api(`/api/jira/${key}/transition`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({transition:t}) });
+    toast(`${key} → ${t}`);
+  } catch(e) { toastErr(e.message); }
+}
+
+// ── Events ────────────────────────────────────────────────────────────────────
+async function loadEvents() {
+  const events = await api('/api/events');
+  const el = document.getElementById('events-list');
+  if (!events.length) { el.innerHTML = '<div class="empty"><div class="empty-icon">◎</div><p>No activity yet.</p></div>'; return; }
+  el.innerHTML = events.map(ev => {
+    const p = JSON.parse(ev.payload);
+    let desc='', color='var(--text-3)';
+    if (ev.type==='pr_opened')              { desc=`PR #${p.pr?.number} opened in ${p.repo}`;                 color='var(--accent)'; }
+    else if (ev.type==='pr_merged')         { desc=`PR #${p.pr?.number} in ${p.repo} merged`;                color='var(--merged)'; }
+    else if (ev.type==='pr_closed')         { desc=`PR #${p.pr?.number} in ${p.repo} closed`;                color='var(--text-3)'; }
+    else if (ev.type==='jira_transitioned') { desc=`${p.key} → ${p.transition} (${p.trigger})`;             color='var(--success)'; }
+    else if (ev.type==='jira_transition_failed') { desc=`Failed: ${p.key} — ${p.error}`;                    color='var(--danger)'; }
+    else if (ev.type==='sync_failed')       { desc=`Sync failed for ${p.repo}: ${p.error}`;                  color='var(--danger)'; }
+    else desc = JSON.stringify(p);
+    const title = p.pr?.url
+      ? `<a class="link" href="${p.pr.url}" target="_blank">${ev.type.replace(/_/g,' ')}</a>`
+      : ev.type.replace(/_/g,' ');
+    return `<div class="event-row">
+      <div class="event-dot" style="background:${color};margin-top:5px;width:8px;height:8px;border-radius:50%;flex-shrink:0"></div>
+      <div class="event-body"><div class="event-type">${title}</div><div>${esc(desc)}</div></div>
+      <div class="event-time">${timeAgo(ev.created_at)}</div>
+    </div>`;
+  }).join('');
+}
+
+// ── Settings ──────────────────────────────────────────────────────────────────
+async function loadSettings() {
+  const [cfg, fwds, dbinfo] = await Promise.all([api('/api/config'), api('/api/forwarders'), api('/api/db')]);
+
+  if (cfg.poll_interval) document.getElementById('poll-interval').value = cfg.poll_interval;
+
+  const allRepos = [...new Set(dbinfo.projects.map(p=>p.repo).filter(Boolean))];
+  document.getElementById('forwarder-list').innerHTML = allRepos.length
+    ? allRepos.map(r => `<div class="fw-row">
+        <span class="nav-dot" style="background:${fwds.includes(r)?'var(--success)':'var(--danger)'}"></span>
+        <span style="font-size:13px;flex:1">${esc(r)}</span>
+        <span style="font-size:12px;color:var(--text-3)">${fwds.includes(r)?'forwarding':'not running'}</span>
+      </div>`).join('')
+    : '<p style="font-size:13px;color:var(--text-3)">No repos configured.</p>';
+
+  renderDbInspector(dbinfo);
+}
+
+function renderDbInspector(d) {
+  const rows = d.projects.map(p => {
+    const snap = d.snapshots[p.id] || {};
+    return `<tr>
+      <td><span class="nav-dot" style="background:${p.color};display:inline-block;margin-right:6px"></span>${esc(p.name)}</td>
+      <td>${p.repo ? esc(p.repo) : '<span style="color:var(--text-3)">—</span>'}</td>
+      <td>${esc(p.mergeTransition || '—')}</td>
+      <td>${snap.open ?? 0}</td>
+      <td>${snap.error ? `<span style="color:var(--danger)">error</span>` : snap.lastSynced ? timeAgo(snap.lastSynced) : '<span style="color:var(--text-3)">never</span>'}</td>
+    </tr>`;
+  }).join('');
+
+  const cfgRows = Object.entries(d.config).map(([k,v]) =>
+    `<tr><td><code>${esc(k)}</code></td><td>${esc(String(v))}</td></tr>`).join('')
+    || '<tr><td colspan="2" style="color:var(--text-3)">empty</td></tr>';
+
+  document.getElementById('db-inspector').innerHTML = `
+    <div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:14px;font-size:13px;color:var(--text-2)">
+      <span><b>${d.counts.projects}</b> projects</span>
+      <span><b>${d.counts.links}</b> links</span>
+      <span><b>${d.counts.events}</b> events</span>
+    </div>
+    <div class="table-wrap" style="margin-bottom:18px">
+      <table>
+        <thead><tr><th>Project</th><th>Repo</th><th>On merge →</th><th>Open PRs</th><th>Synced</th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="5" style="color:var(--text-3)">No projects.</td></tr>'}</tbody>
+      </table>
+    </div>
+    <div class="form-label" style="margin-bottom:6px">Config</div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Key</th><th>Value</th></tr></thead>
+        <tbody>${cfgRows}</tbody>
+      </table>
+    </div>`;
+}
+
+async function deleteProject(id) {
+  const proj = _projects.find(p=>p.id===id);
+  if (!confirm(`Delete project "${proj?.name}"? This also removes its links.`)) return;
+  try {
+    await api(`/api/projects/${id}`, {method:'DELETE'});
+    toast('Project deleted');
+    const projects = await api('/api/projects');
+    _projects = projects;
+    renderProjectNav(projects);
+    showPage('dashboard');
+  } catch(e) { toastErr(e.message); }
+}
+
+async function syncForwarders() {
+  const [active, projects] = await Promise.all([api('/api/forwarders/sync',{method:'POST'}), api('/api/projects')]);
+  toast('Forwarders synced');
+  loadSettings();
+}
+
+async function saveConfig() {
+  try {
+    await api('/api/config', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({
+      poll_interval: document.getElementById('poll-interval').value || '60',
+    })});
+    toast('Settings saved');
+  } catch(e) { toastErr(e.message); }
+}
+
+// ── Project modal ─────────────────────────────────────────────────────────────
+let _selectedColor = COLORS[0];
+
+function buildColorPicker(selected) {
+  _selectedColor = selected || COLORS[0];
+  document.getElementById('color-options').innerHTML = COLORS.map(c =>
+    `<span class="color-opt${c===_selectedColor?' selected':''}" style="background:${c}" onclick="selectColor('${c}')"></span>`
+  ).join('');
+}
+
+function selectColor(c) {
+  _selectedColor = c;
+  document.querySelectorAll('.color-opt').forEach(el => {
+    el.classList.toggle('selected', el.style.background===c||el.style.backgroundColor===c);
+  });
+}
+
+function openNewProjectModal() {
+  document.getElementById('modal-title').textContent = 'New Project';
+  document.getElementById('modal-project-id').value = '';
+  document.getElementById('modal-name').value = '';
+  document.getElementById('modal-delete').style.display = 'none';
+  buildColorPicker(COLORS[0]);
+  document.getElementById('modal').style.display = 'flex';
+  document.getElementById('modal-name').focus();
+}
+
+function openEditProjectModal(id) {
+  const proj = _projects.find(p=>p.id===id);
+  if (!proj) return;
+  document.getElementById('modal-title').textContent = 'Edit Project';
+  document.getElementById('modal-project-id').value = id;
+  document.getElementById('modal-name').value = proj.name;
+  document.getElementById('modal-delete').style.display = ''; // existing project → can delete
+  buildColorPicker(proj.color);
+  document.getElementById('modal').style.display = 'flex';
+  document.getElementById('modal-name').focus();
+}
+
+function closeModal() {
+  document.getElementById('modal').style.display = 'none';
+  document.getElementById('modal-project-id').value = '';
+}
+
+function deleteProjectFromModal() {
+  const id = document.getElementById('modal-project-id').value;
+  if (!id) return;
+  closeModal();
+  deleteProject(id);
+}
+
+async function saveProject() {
+  const id   = document.getElementById('modal-project-id').value;
+  const name = document.getElementById('modal-name').value.trim();
+  if (!name) { toastErr('Name required'); return; }
+  try {
+    if (id) {
+      await api(`/api/projects/${id}`, {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({name, color:_selectedColor})});
+      toast('Project updated');
+    } else {
+      await api('/api/projects', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({name, color:_selectedColor})});
+      toast(`Project "${name}" created`);
+    }
+    closeModal();
+    const projects = await api('/api/projects');
+    _projects = projects;
+    renderProjectNav(projects);
+    if (document.getElementById('page-settings').classList.contains('active')) loadSettings();
+    else if (document.getElementById('page-dashboard').classList.contains('active')) loadDashboard();
+  } catch(e) { toastErr(e.message); }
+}
+
+// ── Sync ──────────────────────────────────────────────────────────────────────
+async function syncNow() {
+  try { await api('/api/poll',{method:'POST'}); toast('Sync complete'); loadDashboard(); }
+  catch(e) { toastErr(e.message); }
+}
+
+// ── Keyboard ──────────────────────────────────────────────────────────────────
+document.addEventListener('keydown', e => { if(e.key==='Escape') closeModal(); });
+
+// ── Live updates (SSE) ──────────────────────────────────────────────────────────
+// The server pushes a "sync" event whenever a project's snapshot changes; we
+// seamlessly re-read the snapshot (no spinner). Debounced to coalesce bursts.
+let _refreshTimer = null;
+function refreshActivePage() {
+  if (document.getElementById('modal').style.display === 'flex') return; // don't disrupt editing
+  const active = document.querySelector('.page.active')?.id;
+  if (active === 'page-dashboard') {
+    loadDashboard();
+  } else if (active === 'page-project' && _activeProjectId) {
+    const panel = document.getElementById(`tab-prs-${_activeProjectId}`);
+    if (panel?.classList.contains('active')) {
+      const sel = document.querySelector(`#tab-prs-${_activeProjectId} select`);
+      reloadProjectPRs(_activeProjectId, sel?.value || 'open', { silent: true });
+    }
+  }
+}
+function scheduleRefresh() {
+  clearTimeout(_refreshTimer);
+  _refreshTimer = setTimeout(refreshActivePage, 400);
+}
+
+function connectStream() {
+  let everConnected = false;
+  const es = new EventSource('/api/stream');
+  es.onopen = () => {
+    // Reconnect after a drop = the dev server restarted → reload to pick up changes.
+    if (everConnected) location.reload();
+    everConnected = true;
+  };
+  es.onmessage = (e) => {
+    let d = {}; try { d = JSON.parse(e.data); } catch {}
+    if (d.type === 'reload') { location.reload(); return; } // dev: a file changed
+    scheduleRefresh();
+  };
+  es.onerror = () => {}; // EventSource auto-reconnects
+}
+connectStream();
+
+// Keep the "Updated Xs ago" label ticking even between syncs.
+setInterval(() => {
+  const el = document.getElementById('synced-label');
+  if (el && _projects.length) {
+    const last = _projects.map(g => g.lastSynced).filter(Boolean).sort().pop();
+    if (last && document.getElementById('page-dashboard').classList.contains('active')) {
+      el.textContent = `Updated ${timeAgo(last)}`;
+    }
+  }
+}, 10_000);
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+loadDashboard(); // renderProjectNav is called inside loadDashboard
+</script>
+</body>
+</html>
