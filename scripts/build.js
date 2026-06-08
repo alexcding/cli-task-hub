@@ -45,14 +45,22 @@ step('Building TaskHub.app (arm64)');
 // dir target → unpacked .app only, no DMG/installer. Ad-hoc sign for local use.
 run('CSC_IDENTITY_AUTO_DISCOVERY=false npx electron-builder --mac --arm64');
 
-// ── 3. Done ───────────────────────────────────────────────────────────────────
+// ── 3. Ad-hoc sign ──────────────────────────────────────────────────────────
+// electron-builder skips signing (identity: null), leaving only the linker's
+// stub signature — invalid for arm64 (no sealed resources). Re-sign the whole
+// bundle ad-hoc so it's a valid, locally-runnable signature.
 const distDir = path.join(ROOT, 'dist');
 const appDir = path.join(distDir, 'mac-arm64', 'TaskHub.app');
 
+step('Ad-hoc signing TaskHub.app');
+run(`codesign --force --deep --sign - "${appDir}"`);
+run(`codesign --verify --deep --strict "${appDir}"`);
+
+// ── 4. Done ───────────────────────────────────────────────────────────────────
 console.log('\n\x1b[32m✓ Build complete\x1b[0m');
 console.log(`  ${path.relative(ROOT, appDir)}`);
 
-// ── 4. Run (optional) ─────────────────────────────────────────────────────────
+// ── 5. Run (optional) ─────────────────────────────────────────────────────────
 function killPrevious() {
   step('Stopping any running TaskHub');
   // Packaged app, dev server, and anything still holding the port.

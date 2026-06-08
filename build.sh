@@ -66,6 +66,14 @@ cyan "Building TaskHub.app (arm64)"
 cd "$ROOT"
 CSC_IDENTITY_AUTO_DISCOVERY=false npx electron-builder --mac --arm64
 
+# ── Ad-hoc sign ─────────────────────────────────────────────────────────────────
+# electron-builder skips signing (identity: null), leaving only the linker's stub
+# signature — invalid for arm64 (no sealed resources). Re-sign the whole bundle
+# ad-hoc so it's a valid, locally-runnable signature.
+cyan "Ad-hoc signing TaskHub.app"
+codesign --force --deep --sign - "$APP"
+codesign --verify --deep --strict "$APP"
+
 green "Build complete"
 echo "  ${APP#$ROOT/}"
 
