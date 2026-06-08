@@ -975,6 +975,14 @@ async function loadProjectPage(id) {
     <!-- Settings -->
     <div class="card card-pad" style="margin-bottom:16px">
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+        <div style="grid-column:1/-1">
+          <label class="form-label">Workspace folder</label>
+          <div style="display:flex;gap:8px">
+            <input type="text" id="proj-workspace-${id}" placeholder="/path/to/local/checkout" value="${esc(proj.workspace || '')}" style="flex:1" onchange="detectRepoFromWorkspace('${id}')">
+            <button type="button" class="btn btn-secondary btn-sm" onclick="chooseWorkspace('${id}')">Choose…</button>
+          </div>
+          <p style="font-size:12px;color:var(--text-3);margin-top:6px">Sets the terminal's working directory, and auto-detects the repo below from its <code style="background:var(--surface-hover);padding:1px 4px;border-radius:3px">git</code> origin.</p>
+        </div>
         <div>
           <label class="form-label">GitHub Repository</label>
           <input type="text" id="proj-repo-${id}" placeholder="owner/repo or GitHub URL" value="${esc(proj.repo)}">
@@ -1056,12 +1064,37 @@ async function saveProjectSettings(id) {
   const repo            = document.getElementById(`proj-repo-${id}`).value.trim();
   const jql             = document.getElementById(`proj-jql-${id}`).value.trim();
   const mergeTransition = document.getElementById(`proj-merge-${id}`).value.trim();
+  const workspace       = document.getElementById(`proj-workspace-${id}`).value.trim();
   try {
-    await api(`/api/projects/${id}`, { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ repo, jql, mergeTransition }) });
+    await api(`/api/projects/${id}`, { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ repo, jql, mergeTransition, workspace }) });
     toast('Settings saved');
     const projects = await api('/api/projects');
     renderProjectNav(projects);
     loadProjectPage(id); // re-render so PRs reflect the new repo
+  } catch(e) { toastErr(e.message); }
+}
+
+// Open the native folder picker (Electron) and fill the workspace field, then detect
+// the repo from its git remote.
+async function chooseWorkspace(id) {
+  if (!window.taskhub?.chooseFolder) { toastErr('Folder picker is only available in the app'); return; }
+  const dir = await window.taskhub.chooseFolder();
+  if (!dir) return;
+  const input = document.getElementById(`proj-workspace-${id}`);
+  if (input) input.value = dir;
+  detectRepoFromWorkspace(id);
+}
+
+// Read the chosen workspace's `git` origin and auto-fill the repo field. A repo the
+// user already typed is overwritten only when a GitHub remote is actually found.
+async function detectRepoFromWorkspace(id) {
+  const ws = document.getElementById(`proj-workspace-${id}`)?.value.trim();
+  if (!ws) return;
+  try {
+    const { repo } = await api(`/api/detect-repo?path=${encodeURIComponent(ws)}`);
+    const repoInput = document.getElementById(`proj-repo-${id}`);
+    if (repo && repoInput) { repoInput.value = repo; toast(`Detected ${repo}`); }
+    else if (!repo) toast('No GitHub remote found in that folder');
   } catch(e) { toastErr(e.message); }
 }
 
