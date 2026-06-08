@@ -1,3 +1,6 @@
+// Cache compiled V8 bytecode to disk for faster cold starts (no-op pre-Node 22.8).
+try { require('node:module').enableCompileCache?.(); } catch {}
+
 const express = require('express');
 const path = require('path');
 const db = require('./lib/db');
@@ -33,6 +36,7 @@ function projectPatch(body) {
   }
   if (body.color !== undefined) patch.color = body.color;
   if (body.jql   !== undefined) patch.jql   = String(body.jql).trim();
+  if (body.workspace !== undefined) patch.workspace = String(body.workspace).trim();
   if (body.mergeTransition !== undefined) patch.mergeTransition = String(body.mergeTransition).trim();
   if (body.repo  !== undefined) {
     const raw = String(body.repo).trim();
@@ -84,6 +88,14 @@ app.delete('/api/projects/:id', (req, res) => {
   db.deleteProject(req.params.id);
   forwarder.sync(PORT);
   res.json({ ok: true });
+});
+
+// Resolve the GitHub "owner/repo" for a local checkout, so the UI can auto-fill a
+// project's repo from its workspace folder. Returns { repo: '' } when none is found.
+app.get('/api/detect-repo', async (req, res) => {
+  const dir = req.query.path;
+  if (!dir) return res.status(400).json({ error: 'path required' });
+  res.json({ repo: (await github.gitRemoteRepo(String(dir))) || '' });
 });
 
 // ── Pull requests (stale-while-revalidate) ──────────────────────────────────────
@@ -292,7 +304,10 @@ app.post('/api/poll', async (req, res) => {
 });
 
 // ── Start ─────────────────────────────────────────────────────────────────────
-const server = app.listen(PORT, () => {
+// Bind to loopback only: TaskHub is an Electron-only app, not meant to be reached
+// over the LAN by IP (the embedded GitHub/Jira <webview>s and header-stripping are
+// Electron-only and don't work in a plain browser anyway).
+const server = app.listen(PORT, '127.0.0.1', () => {
   console.log(`TaskHub running at http://localhost:${PORT}`);
   poller.start(publishSync);         // PR sync loop publishes snapshot updates over SSE
   poller.startJira(publishJiraSync); // Jira sync loop (assigned-to-me + per-project)

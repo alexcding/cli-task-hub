@@ -46,6 +46,7 @@
     },
     "files": [
       "tray.js",
+      "preload.js",
       "server.js",
       "lib/**",
       "public/**",

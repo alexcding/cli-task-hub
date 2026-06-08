@@ -1,4 +1,7 @@
-const { app, Tray, Menu, shell, nativeImage, BrowserWindow, session } = require('electron');
+// Cache compiled V8 bytecode to disk for faster cold starts (no-op pre-Node 22.8).
+try { require('node:module').enableCompileCache?.(); } catch {}
+
+const { app, Tray, Menu, shell, nativeImage, BrowserWindow, session, ipcMain, dialog } = require('electron');
 const { fork, execSync } = require('child_process');
 const path = require('path');
 const http = require('http');
@@ -17,7 +20,10 @@ function openWindow() {
   if (win && !win.isDestroyed()) { win.show(); win.focus(); return; }
   win = new BrowserWindow({
     width: 1320, height: 880, minWidth: 720, title: 'TaskHub',
-    webPreferences: { webviewTag: true, contextIsolation: true, nodeIntegration: false },
+    webPreferences: {
+      webviewTag: true, contextIsolation: true, nodeIntegration: false,
+      preload: path.join(__dirname, 'preload.js'), // exposes window.taskhub.* (folder picker, …)
+    },
   });
   win.loadURL(BASE_URL);
   // "Open in browser" / window.open(http…) → system browser, not a child window.
@@ -29,6 +35,16 @@ function openWindow() {
   win.on('closed', () => { win = null; });
 }
 
+// Native folder picker for choosing a project's workspace folder (window.taskhub.chooseFolder).
+ipcMain.handle('choose-folder', async () => {
+  const parent = win && !win.isDestroyed() ? win : undefined;
+  const { canceled, filePaths } = await dialog.showOpenDialog(parent, {
+    title: 'Choose workspace folder',
+    properties: ['openDirectory'],
+  });
+  return canceled || !filePaths.length ? null : filePaths[0];
+});
+
 // Read the dashboard's open tabs (lives in the renderer) for the tray menu.
 async function getOpenTabs() {
   if (!win || win.isDestroyed()) return [];
@@ -36,12 +52,24 @@ async function getOpenTabs() {
   catch { return []; }
 }
 
+// Focus the window and run JS in the renderer. If the window was just created the
+// page isn't ready yet, so defer until it finishes loading.
+function runInApp(js) {
+  openWindow();
+  if (!win || win.isDestroyed()) return;
+  const exec = () => win.webContents.executeJavaScript(js).catch(() => {});
+  if (win.webContents.isLoading()) win.webContents.once('did-finish-load', exec);
+  else exec();
+}
+
 // Focus the window and switch it to the tab for `url`.
 function activateTabInApp(url) {
-  openWindow();
-  if (win && !win.isDestroyed()) {
-    win.webContents.executeJavaScript(`window.__activateTabByUrl && __activateTabByUrl(${JSON.stringify(url)})`).catch(() => {});
-  }
+  runInApp(`window.__activateTabByUrl && __activateTabByUrl(${JSON.stringify(url)})`);
+}
+
+// Open `url` inside the app's embedded viewer (new tab, or focus it if already open).
+function openLinkInApp(url, title, kind) {
+  runInApp(`window.__openTab && __openTab(${JSON.stringify(url)}, ${JSON.stringify(title || '')}, ${JSON.stringify(kind || 'github')})`);
 }
 
 // Strip frame-blocking headers so the <webview> can load GitHub/Jira pages, which
@@ -159,11 +187,12 @@ function prSection(label, prs) {
   if (!prs.length) return [];
   const items = [{ label, enabled: false }];
   for (const pr of prs) {
-    const title = pr.title.slice(0, 44) + (pr.title.length > 44 ? '…' : '');
+    // Same format as the renderer's prTabTitle(): "PR #1233 <title>".
+    const full = `PR #${pr.number} ${pr.title}`;
     items.push({
-      label: `#${pr.number} ${title}`,
+      label: full.length > 48 ? full.slice(0, 48) + '…' : full,
       icon: ciIcon(pr.ci),
-      click: () => shell.openExternal(pr.url),
+      click: () => openLinkInApp(pr.url, full, 'github'),
     });
   }
   return items;
@@ -175,7 +204,8 @@ function tabSection(label, tabs) {
   const items = [{ label, enabled: false }];
   for (const t of tabs) {
     const title = (t.title || t.url).slice(0, 44);
-    items.push({ label: (t.active ? '● ' : '   ') + title, icon: tabIcon(t.kind), click: () => activateTabInApp(t.url) });
+    // Colored dot = kind (GitHub/Jira); native checkmark = the active tab.
+    items.push({ label: title, icon: tabIcon(t.kind), type: 'checkbox', checked: !!t.active, click: () => activateTabInApp(t.url) });
   }
   return items;
 }
@@ -189,11 +219,10 @@ async function buildMenu() {
   let prItems = [...prSection('Tasks', mine), ...prSection('Review', review)];
   if (!prItems.length) prItems = [{ label: 'No tasks or reviews', enabled: false }];
 
-  // Open tabs from the dashboard, grouped GitHub / Jira.
-  const tabItems = [
-    ...tabSection('GitHub', tabs.filter(t => t.kind === 'github')),
-    ...tabSection('Jira',   tabs.filter(t => t.kind === 'jira')),
-  ];
+  // Open tabs from the dashboard. GitHub tabs are omitted — they just duplicate the
+  // Tasks/Review PR list above (clicking a PR there opens it in a GitHub tab). Only
+  // Jira tabs are shown, since those aren't listed anywhere else in the menu.
+  const tabItems = tabSection('Jira', tabs.filter(t => t.kind === 'jira'));
 
   // Icon color by state: red = review requested, blue = only your tasks, green = clear.
   const state = review.length ? 'review' : mine.length ? 'tasks' : 'idle';
@@ -201,7 +230,6 @@ async function buildMenu() {
 
   return Menu.buildFromTemplate([
     { label: 'Open TaskHub', click: () => openWindow() },
-    { label: 'Open in browser', click: () => shell.openExternal(BASE_URL) },
     { type: 'separator' },
     ...prItems,
     ...(tabItems.length ? [{ type: 'separator' }, ...tabItems] : []),
@@ -223,8 +251,12 @@ if (!app.requestSingleInstanceLock()) {
 }
 
 app.whenReady().then(async () => {
-  // Suppress Dock icon — menu bar only
-  if (app.dock) app.dock.hide();
+  // Show the app icon in the Dock. Packaged builds pick it up from the bundle's
+  // .icns automatically; in dev (`electron .`) set it explicitly so we show the
+  // brand icon instead of Electron's default.
+  if (app.dock && !app.isPackaged) {
+    app.dock.setIcon(path.join(__dirname, 'build', 'icon.png'));
+  }
 
   // In dev (`npm run dev:app`) a watched server is already running — connect to it
   // instead of forking, so we get hot reload and don't fight over the port.
@@ -264,6 +296,9 @@ app.whenReady().then(async () => {
 app.on('window-all-closed', () => {
   // Keep running without windows
 });
+
+// Clicking the Dock icon (with no window open) reopens the dashboard — standard macOS.
+app.on('activate', () => openWindow());
 
 app.on('before-quit', () => {
   if (serverProcess) serverProcess.kill();

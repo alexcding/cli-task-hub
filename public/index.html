@@ -53,51 +53,38 @@
        so scrolling one never moves the other. */
     .content { padding:24px; flex:1; min-height:0; overflow-y:auto; overscroll-behavior:contain; }
 
-    /* Split view — right-side panel that embeds the real GitHub/Jira page (Electron
-       <webview>; falls back to a new tab in a plain browser). */
-    /* Split panel is a flex sibling of <main>; Split.js sizes both + adds the gutter. */
-    .split { min-width:0; min-height:0; height:100vh; background:var(--surface); display:flex; flex-direction:column; }
+    /* Embedded viewer — full-width panel that shows the real GitHub/Jira page in an
+       Electron <webview> (the main process strips X-Frame-Options/CSP so framing is
+       allowed). Open links live as tabs in the left nav; activating one shows it here,
+       replacing <main>. */
+    .split { min-width:0; min-height:0; height:100vh; flex:1; background:var(--surface); display:flex; flex-direction:column; }
     .split[hidden] { display:none; }
     .split-bar { height:52px; flex-shrink:0; display:flex; align-items:center; gap:4px; padding:0 6px 0 8px; border-bottom:1px solid var(--border); }
-    .split-btn { background:none; border:none; color:var(--text-2); font-size:15px; line-height:1; cursor:pointer; padding:7px 9px; border-radius:6px; flex-shrink:0; }
+    .split-btn { background:none; border:none; color:var(--text-2); cursor:pointer; padding:6px; border-radius:6px; flex-shrink:0; display:inline-flex; align-items:center; justify-content:center; }
     .split-btn:hover { background:var(--surface-hover); color:var(--text); }
-    /* Panel header shows the tab strip (split mode) or just a title (sidebar mode). */
-    .split-title { flex:1; min-width:0; font-size:13px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; display:none; }
-    body.link-mode-sidebar #split-tabs { display:none; }
-    body.link-mode-sidebar .split-title { display:block; }
-    /* Sidebar mode: the viewer replaces the content (full width), no split. */
-    body.link-mode-sidebar #split { flex:1; }
+    .split-btn:disabled { opacity:.3; cursor:default; }
+    .split-btn:disabled:hover { background:none; color:var(--text-2); }
+    .split-btn svg { display:block; }
+    /* Panel header shows the active tab's title. */
+    .split-title { flex:1; min-width:0; font-size:13px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
     body.viewing-tab main { display:none; }
-    /* Tab strip — GitHub group and Jira group, divider between. */
-    .split-tabs { flex:1; min-width:0; display:flex; align-items:center; gap:4px; overflow-x:auto; scrollbar-width:none; }
-    .split-tabs::-webkit-scrollbar { display:none; }
     .tab-group { display:flex; align-items:center; gap:3px; }
     .tab-group-label { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.4px; color:var(--text-3); padding:0 3px; flex-shrink:0; }
-    .tab-divider { width:1px; align-self:stretch; background:var(--border); margin:8px 4px; flex-shrink:0; }
-    .tab { display:flex; align-items:center; gap:5px; max-width:170px; padding:5px 5px 5px 10px; border-radius:7px; background:var(--surface-hover); color:var(--text-2); cursor:pointer; font-size:12px; white-space:nowrap; }
-    .tab:hover { color:var(--text); }
-    .tab-active { background:var(--accent-bg); color:var(--accent); font-weight:600; }
-    .tab.sortable-ghost { opacity:.4; }
-    .tab.sortable-chosen { cursor:grabbing; }
     .tab-ic { display:inline-flex; flex-shrink:0; }
     .tab-ic svg { display:block; }
-    .tab-title { overflow:hidden; text-overflow:ellipsis; }
+    .tab-title { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; }
+    .opentab .ci-dot { width:8px; height:8px; }
     .tab-x { background:none; border:none; color:inherit; cursor:pointer; opacity:.55; font-size:13px; line-height:1; padding:1px 3px; border-radius:4px; flex-shrink:0; }
     .tab-x:hover { opacity:1; background:rgb(0 0 0/.08); }
     .split-body { flex:1; position:relative; background:var(--bg); }
-    .split-body webview, .split-body iframe { position:absolute; inset:0; width:100%; height:100%; border:0; }
+    .split-body webview { position:absolute; inset:0; width:100%; height:100%; border:0; }
     .split-loading { position:absolute; inset:0; z-index:2; display:flex; align-items:center; justify-content:center; background:var(--bg); color:var(--text-3); font-size:13px; gap:8px; }
     .split-loading[hidden] { display:none; }
-    /* Split.js gutter: wide invisible hit area, but only a 1px line shows (matching
-       the sidebar border). While dragging, disable webview pointer events so the
-       page doesn't swallow the mouse — Split.js then tracks reliably. */
-    .gutter { background:transparent; flex-shrink:0; position:relative; }
-    .gutter.gutter-horizontal { cursor:col-resize; }
-    .gutter.gutter-horizontal::before { content:''; position:absolute; top:0; bottom:0; left:50%; width:1px; transform:translateX(-50%); background:var(--border); }
-    .gutter.gutter-horizontal:hover::before { background:var(--accent); }
-    body.resizing .split-body webview, body.resizing .split-body iframe { pointer-events:none; }
+    /* While dragging the sidebar, disable webview pointer events so a full-width page
+       doesn't swallow the mouse and the resize tracks reliably. */
+    body.resizing .split-body webview { pointer-events:none; }
 
-    /* Sidebar mode: open tabs render as nav rows under GitHub / Jira group labels. */
+    /* Open tabs render as nav rows under GitHub / Jira group labels. */
     #opentabs-nav .tab-group { display:block; margin-top:6px; }
     #opentabs-nav .tab-group-label { display:block; padding:6px 8px 2px; }
     .opentab { display:flex; align-items:center; gap:8px; width:100%; padding:6px 10px; border-radius:var(--rs); color:var(--text-2); cursor:pointer; font-size:13px; }
@@ -106,19 +93,6 @@
     .opentab .tab-title { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .opentab .tab-x { opacity:.5; } .opentab .tab-x:hover { opacity:1; }
 
-    /* "Open links in" preview cards (Settings). */
-    .linkmode-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
-    .linkmode-card { border:1px solid var(--border); border-radius:10px; padding:12px; cursor:pointer; transition:border-color .12s,background .12s; }
-    .linkmode-card:hover { background:var(--surface-hover); }
-    .linkmode-card.selected { border-color:var(--accent); background:var(--accent-bg); }
-    .linkmode-label { font-size:13px; font-weight:600; margin-top:10px; }
-    .linkmode-desc { font-size:12px; color:var(--text-3); margin-top:2px; }
-    .lm { display:flex; height:72px; border:1px solid var(--border); border-radius:6px; overflow:hidden; background:var(--surface); }
-    .lm-aside { width:22px; background:var(--surface-hover); border-right:1px solid var(--border); padding:5px 3px; }
-    .lm-main { flex:1; padding:6px; }
-    .lm-bar { display:flex; gap:3px; align-items:center; height:11px; margin:-6px -6px 6px; padding:0 4px; background:var(--surface-hover); border-bottom:1px solid var(--border); }
-    .lm-chip { width:13px; height:6px; border-radius:2px; background:var(--accent); opacity:.55; }
-    .lm-row { height:6px; margin-bottom:4px; border-radius:2px; background:var(--border); }
     .page { display:none; }
     .page.active { display:block; }
 
@@ -135,15 +109,19 @@
     .btn-sm { padding:4px 10px;font-size:12px; }
     .btn-xs { padding:2px 8px;font-size:11.5px;border-radius:4px; }
 
-    /* Cards */
-    .card { background:var(--surface);border:1px solid var(--border);border-radius:var(--rl);box-shadow:var(--shadow); }
+    /* Cards — .card is the default flat container surface (bordered, no shadow).
+       Add .clickable for a flat hover (border/bg change, no elevation). Padding
+       comes from .card-pad / .card-header, or the composing layout class. */
+    .card { background:var(--surface);border:1px solid var(--border);border-radius:var(--rl); }
+    .card.clickable { cursor:pointer;transition:background .12s,border-color .12s; }
+    .card.clickable:hover { background:var(--surface-hover);border-color:var(--border-focus); }
     .card-pad { padding:20px; }
     .card-header { padding:14px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:8px; }
     .card-header h3 { font-size:14px;font-weight:600; }
 
     /* Stats */
     .stat-grid { display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px;margin-bottom:24px; }
-    .stat-card { background:var(--surface);border:1px solid var(--border);border-radius:var(--rl);padding:16px 20px;box-shadow:var(--shadow); }
+    .stat-card { background:var(--surface);border:1px solid var(--border);border-radius:var(--rl);padding:16px 20px; }
     .stat-val { font-size:28px;font-weight:700;letter-spacing:-1px; }
     .stat-label { font-size:12px;color:var(--text-3);margin-top:2px;font-weight:500; }
 
@@ -153,25 +131,27 @@
     .project-color { width:10px;height:10px;border-radius:50%;flex-shrink:0; }
     .project-name { font-size:16px;font-weight:600; }
     .project-meta { font-size:12px;color:var(--text-3); }
-    /* PR cards — flat, whole-card clickable. A slim left stripe encodes state. */
-    .pr-grid { display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:8px; }
-    .pr-card { position:relative;background:var(--surface);border:1px solid var(--border);border-radius:var(--rl);padding:13px 15px;cursor:pointer;transition:background .12s,border-color .12s; }
-    .pr-card:hover { background:var(--surface-hover);border-color:var(--border-focus); }
-    .pr-card::before { content:'';position:absolute;left:0;top:11px;bottom:11px;width:3px;border-radius:0 3px 3px 0;background:var(--st,transparent); }
-    .pr-card-top { display:flex;align-items:baseline;gap:7px;margin-bottom:7px; }
-    .pr-num { font-size:12px;font-weight:600;color:var(--text-3);font-variant-numeric:tabular-nums;flex-shrink:0; }
-    .pr-title { font-size:13.5px;font-weight:550;line-height:1.4;color:var(--text);flex:1;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden; }
-    .pr-draft { font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:.3px;color:var(--text-3);border:1px solid var(--border);border-radius:4px;padding:1px 5px;flex-shrink:0; }
-    .pr-meta { font-size:12px;color:var(--text-3);display:flex;align-items:center;gap:6px;flex-wrap:wrap; }
-    .pr-meta .sep { opacity:.45; }
-    .pr-repo { color:var(--text-2); }
-    .ci { display:inline-flex;align-items:center;gap:4px;margin-left:auto; }
-    .ci::before { content:'●';font-size:7px;line-height:1; }
-    .ci-success { color:var(--success); } .ci-failure { color:var(--danger); }
-    .ci-running { color:var(--warn); }    .ci-none { color:var(--text-3); }
-    .pr-tags { display:flex;flex-wrap:wrap;gap:5px;margin-top:9px; }
-    .pr-tags .badge-jira { text-decoration:none;transition:background .1s,color .1s; }
-    .pr-tags .badge-jira:hover { background:var(--accent);color:#fff; }
+    /* PR cards — header (num + repo on the left, date + CI dot on the right) on top,
+       title fills the middle, footer holds the avatar + optional Jira tag. */
+    .pr-grid { display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px; }
+    .pr-card { display:flex;flex-direction:column;padding:13px 16px; }
+    .pr-head { display:flex;align-items:center;gap:7px;font-size:12px;color:var(--text-3);margin-bottom:9px; }
+    .pr-num { font-weight:600;color:var(--text-3);font-variant-numeric:tabular-nums;flex-shrink:0; }
+    .pr-repo { color:var(--text-2);font-weight:500;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+    .pr-date { flex-shrink:0; }
+    .pr-draft { font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.3px;color:var(--text-3);border:1px solid var(--border);border-radius:4px;padding:1px 5px;flex-shrink:0; }
+    .pr-body { flex:1;display:flex;align-items:center;min-height:0; }
+    .pr-title { font-size:14px;font-weight:500;line-height:1.4;color:var(--text);display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden; }
+    .pr-foot { margin-top:11px;display:flex;align-items:center;flex-wrap:wrap;gap:6px; }
+    .pr-avatar { width:18px;height:18px;border-radius:50%;flex-shrink:0;object-fit:cover;background:var(--surface-hover); }
+    .pr-foot .badge-jira { text-decoration:none;transition:background .1s,color .1s; }
+    .pr-foot .badge-jira:hover { background:var(--accent);color:#fff; }
+    /* CI status dot — reusable across PR cards and the sidebar PR list. */
+    .ci-dot { width:9px;height:9px;border-radius:50%;flex-shrink:0; }
+    .ci-dot.ci-success { background:var(--success); }
+    .ci-dot.ci-failure { background:var(--danger); }
+    .ci-dot.ci-running { background:var(--warn);box-shadow:0 0 0 3px var(--warn-bg); }
+    .ci-dot.ci-none    { background:var(--border-focus); }
 
     /* Badges */
     .badge { display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:600;padding:2px 8px;border-radius:99px; }
@@ -238,7 +218,7 @@
     .event-time { font-size:11px;color:var(--text-3);white-space:nowrap; }
 
     /* Project settings card */
-    .project-settings-card { background:var(--surface);border:1px solid var(--border);border-radius:var(--rl);box-shadow:var(--shadow);margin-bottom:12px; }
+    .project-settings-card { background:var(--surface);border:1px solid var(--border);border-radius:var(--rl);margin-bottom:12px; }
     .project-settings-header { padding:14px 16px;display:flex;align-items:center;gap:10px;cursor:pointer;user-select:none; }
     .project-settings-header:hover { background:var(--surface-hover);border-radius:var(--rl); }
     .project-color-swatch { width:12px;height:12px;border-radius:50%;flex-shrink:0; }
@@ -316,7 +296,7 @@
     <div class="sidebar-resizer" id="sidebar-resizer" title="Drag to resize"></div>
   </aside>
 
-  <!-- Work area: main + split panel are flex siblings managed by Split.js -->
+  <!-- Work area: main + viewer are flex siblings; the viewer replaces main when a tab is open -->
   <div class="workarea" id="workarea">
   <!-- Main -->
   <main>
@@ -368,32 +348,6 @@
 
         <div class="tab-panel active" id="settings-tab-settings">
         <div style="max-width:760px;display:flex;flex-direction:column;gap:16px">
-
-          <div class="card">
-            <div class="card-header"><h3>Open links in</h3></div>
-            <div class="card-pad">
-              <div class="linkmode-grid">
-                <div class="linkmode-card" data-mode="split" onclick="setLinkMode('split')">
-                  <div class="lm">
-                    <div class="lm-aside"></div>
-                    <div class="lm-main"><div class="lm-row"></div><div class="lm-row" style="width:55%"></div></div>
-                    <div class="lm-main" style="border-left:1px solid var(--border)"><div class="lm-bar"><span class="lm-chip"></span><span class="lm-chip"></span></div></div>
-                  </div>
-                  <div class="linkmode-label">Split-view tabs</div>
-                  <div class="linkmode-desc">Tabs on top of the right viewer.</div>
-                </div>
-                <div class="linkmode-card" data-mode="sidebar" onclick="setLinkMode('sidebar')">
-                  <div class="lm">
-                    <div class="lm-aside" style="width:32px"><div class="lm-row" style="background:var(--accent);opacity:.6"></div><div class="lm-row"></div><div class="lm-row"></div></div>
-                    <div class="lm-main"><div class="lm-row"></div></div>
-                    <div class="lm-main" style="border-left:1px solid var(--border)"></div>
-                  </div>
-                  <div class="linkmode-label">Sidebar groups</div>
-                  <div class="linkmode-desc">Grouped in the left nav.</div>
-                </div>
-              </div>
-            </div>
-          </div>
 
           <div class="card">
             <div class="card-header"><h3>Polling</h3></div>
@@ -468,14 +422,25 @@
     </div>
   </main>
 
-  <!-- Split view: tabbed (GitHub + Jira groups), real pages in Electron webviews -->
+  <!-- Embedded viewer: shows the active left-nav tab's page in an Electron webview -->
   <div id="split" class="split" hidden>
     <div class="split-bar">
-      <div class="split-tabs" id="split-tabs"></div>
+      <button class="split-btn" id="split-back" title="Back" onclick="splitBack()">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+      </button>
+      <button class="split-btn" title="Home (default page)" onclick="splitHome()">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9.5 12 3l9 6.5"/><path d="M5 9v11h14V9"/><path d="M9.5 20v-6h5v6"/></svg>
+      </button>
       <span class="split-title" id="split-title"></span>
-      <button class="split-btn" title="Reload" onclick="splitReload()">↻</button>
-      <button class="split-btn" title="Open in browser" onclick="splitOpenExternal()">↗</button>
-      <button class="split-btn" title="Close panel (Esc)" onclick="closeSplit()">✕</button>
+      <button class="split-btn" title="Reload" onclick="splitReload()">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 4v5h-5"/></svg>
+      </button>
+      <button class="split-btn" title="Open in browser" onclick="splitOpenExternal()">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><path d="M15 3h6v6"/><path d="M10 14 21 3"/></svg>
+      </button>
+      <button class="split-btn" title="Close panel (Esc)" onclick="closeSplit()">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="M6 6l12 12"/></svg>
+      </button>
     </div>
     <div class="split-body" id="split-body">
       <div class="split-loading" id="split-loading" hidden><div class="spinner"></div> Loading…</div>
@@ -507,7 +472,6 @@
 
 <div id="toast"></div>
 
-<script src="/vendor/split.min.js"></script>
 <script src="/vendor/sortable.min.js"></script>
 <script>
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -536,31 +500,26 @@ const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>
 let _jiraBase = '';
 const jiraUrl = key => _jiraBase ? `${_jiraBase}/browse/${key}` : '#';
 
-// ── Split view ──────────────────────────────────────────────────────────────────
+// ── Embedded viewer ──────────────────────────────────────────────────────────────
 // The Electron app embeds the real GitHub/Jira page in a <webview> (the main process
 // strips X-Frame-Options/CSP so framing is allowed). This is an Electron-only app.
-let _splitInstance = null;  // Split.js instance (null when the panel is closed)
+// Opened links live as tabs in the left nav; activating one shows it full-width here.
 let _tabs = [];             // { id, kind:'github'|'jira', title, url, wv, loaded }
 let _activeTab = null;      // active tab id
 let _tabSeq = 0;
-let _linkMode = 'sidebar';  // 'sidebar' (default) = tabs in left nav; 'split' = tabs in panel
 const activeTab = () => _tabs.find(t => t.id === _activeTab) || null;
 
-// Open a URL as a tab. Ordering differs by mode:
-//  • split (horizontal): new tabs go to the LEFT; re-opening moves the tab to front.
-//  • sidebar (vertical): new tabs append at the BOTTOM; re-opening keeps its position.
+// Open a URL as a tab in the left nav. New tabs append at the bottom; re-opening an
+// already-open URL just focuses it (keeps its position).
 function openInSplit(url, title, kind) {
-  const sidebar = _linkMode === 'sidebar';
   const existing = _tabs.find(t => t.url === url);
   if (existing) {
-    if (!sidebar) _tabs = [existing, ..._tabs.filter(t => t !== existing)]; // split: move to front
     ensurePanelOpen();
     activateTab(existing.id);
     return;
   }
   const tab = createTab(url, title, kind);
-  if (sidebar) _tabs.push(tab);   // vertical: append at bottom
-  else _tabs.unshift(tab);        // horizontal: new on the left
+  _tabs.push(tab);
   ensurePanelOpen();
   activateTab(tab.id);
 }
@@ -570,12 +529,21 @@ function openInSplit(url, title, kind) {
 function createTab(url, title, kind) {
   const id = 'tab' + (++_tabSeq);
   const wv = document.createElement('webview');
-  wv.setAttribute('src', url);
+  // Perf: (1) lazy — `src` is set on first activation (see activateTab), so restored
+  // and background tabs don't all load at once; (2) throttle when hidden.
+  // NOTE: deliberately NO `partition` — webviews must use the default session so they
+  // share your existing GitHub/Jira login cookies AND get the X-Frame-Options stripping
+  // applied to session.defaultSession in tray.js (allowFraming).
+  wv.setAttribute('webpreferences', 'backgroundThrottling=yes');
   wv.setAttribute('allowpopups', '');
   wv.style.display = 'none';
   document.getElementById('split-body').appendChild(wv);
-  const tab = { id, kind: kind === 'jira' ? 'jira' : 'github', title: title || url, url, wv, loaded: false };
+  const tab = { id, kind: kind === 'jira' ? 'jira' : 'github', title: title || url, url, wv, loaded: false, started: false };
   wv.addEventListener('did-stop-loading', () => { tab.loaded = true; if (id === _activeTab) showSplitLoading(false); });
+  // Keep the Back button's enabled state in sync as the user navigates within the tab.
+  const onNav = () => { if (id === _activeTab) updateNavButtons(); };
+  wv.addEventListener('did-navigate', onNav);
+  wv.addEventListener('did-navigate-in-page', onNav);
   return tab;
 }
 
@@ -610,42 +578,28 @@ function restoreTabs() {
 // can list them and clicking one focuses the window + switches to that tab.
 window.__getTabs = () => _tabs.map(t => ({ id: t.id, kind: t.kind, title: t.title, url: t.url, active: t.id === _activeTab }));
 window.__activateTabByUrl = url => { const t = _tabs.find(x => x.url === url); if (t) { ensurePanelOpen(); activateTab(t.id); } };
+// Open a link from the tray inside the embedded viewer (new tab, or focus if open).
+window.__openTab = (url, title, kind) => openInSplit(url, title, kind);
 
-// Make the viewer visible. In split mode it's a resizable panel beside the content
-// (Split.js); in sidebar mode it REPLACES the content full-width (no split).
+// Make the viewer visible: it replaces the content full-width (open tabs live in the
+// left nav, so <main> is hidden while a tab is shown).
 function ensurePanelOpen() {
-  const split = document.getElementById('split');
-  if (_linkMode === 'sidebar') {
-    if (_splitInstance) { _splitInstance.destroy(); _splitInstance = null; }
-    split.hidden = false;
-    document.body.classList.add('viewing-tab'); // hides <main>, viewer fills the area
-    return;
-  }
-  document.body.classList.remove('viewing-tab');
-  if (!split.hidden) return;
-  split.hidden = false;
-  let sizes = [50, 50];
-  try { const s = JSON.parse(localStorage.getItem('taskhub.splitSizes')); if (Array.isArray(s) && s.length === 2) sizes = s; } catch {}
-  _splitInstance = Split([document.querySelector('main'), split], {
-    sizes, minSize: [380, 360], gutterSize: 11, snapOffset: 0,
-    onDragStart: () => document.body.classList.add('resizing'),
-    onDragEnd:   () => {
-      document.body.classList.remove('resizing');
-      try { localStorage.setItem('taskhub.splitSizes', JSON.stringify(_splitInstance.getSizes())); } catch {}
-    },
-  });
+  document.getElementById('split').hidden = false;
+  document.body.classList.add('viewing-tab'); // hides <main>, viewer fills the area
 }
 
 function activateTab(id) {
   _activeTab = id;
+  // Lazy load: only kick off the page load the first time a tab is shown.
+  const cur = _tabs.find(t => t.id === id);
+  if (cur && cur.wv && !cur.started) { cur.started = true; cur.wv.setAttribute('src', cur.url); }
   _tabs.forEach(t => { if (t.wv) t.wv.style.display = t.id === id ? '' : 'none'; });
-  if (_linkMode === 'sidebar') {
-    document.getElementById('split').hidden = false;
-    document.body.classList.add('viewing-tab');
-    document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active')); // a tab is the view now
-  }
+  document.getElementById('split').hidden = false;
+  document.body.classList.add('viewing-tab');
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active')); // a tab is the view now
   const t = activeTab();
   showSplitLoading(t ? !t.loaded : false);
+  updateNavButtons();
   renderTabs();
   saveTabs();
 }
@@ -666,18 +620,21 @@ function closeTab(id) {
 }
 
 function closeSplit() {
-  if (_splitInstance) { _splitInstance.destroy(); _splitInstance = null; } // clears gutter + inline sizes
   _tabs.forEach(t => t.wv?.remove());
   _tabs = []; _activeTab = null;
   document.getElementById('split').hidden = true;
-  document.body.classList.remove('resizing', 'viewing-tab'); // restore <main>
-  renderTabs(); // clear the tab strip / sidebar nav entries
+  document.body.classList.remove('viewing-tab'); // restore <main>
+  renderTabs(); // clear the sidebar nav entries
   saveTabs();
 }
 
+function splitBack()         { const t = activeTab(); try { if (t && t.wv.canGoBack()) t.wv.goBack(); } catch {} }
+function splitHome()         { const t = activeTab(); if (t && t.wv) { t.loaded = false; showSplitLoading(true); t.wv.loadURL(t.url); } } // back to the tab's default link
 function splitReload()       { const t = activeTab(); if (t) { t.loaded = false; showSplitLoading(true); t.wv.reload(); } }
 function splitOpenExternal() { const t = activeTab(); if (t) window.open(t.url, '_blank'); }
 function showSplitLoading(on){ document.getElementById('split-loading').hidden = !on; }
+// Grey out Back when the active tab has no history to go back to.
+function updateNavButtons() { const t = activeTab(); const b = document.getElementById('split-back'); if (b) { let can = false; try { can = !!(t && t.wv && t.started && t.wv.canGoBack()); } catch {} b.disabled = !can; } }
 
 // ── Resizable left sidebar (width persisted in localStorage, restored next launch) ─
 (function initSidebarResize() {
@@ -704,36 +661,27 @@ const TAB_ICON = {
   jira:   '<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path fill="#2684FF" d="M14.7 7.3 8.5 1.1 7.9.5 3.2 5.2l-2 2a1 1 0 0 0 0 1.4l4 4 .7.7 4.7-4.7 1.4-1.4a1 1 0 0 0 0-.9zM7.9 9.8 5.8 7.7l2.1-2.1L10 7.7 7.9 9.8z"/><path fill="#2684FF" opacity=".6" d="M7.9 5.6a3.5 3.5 0 0 1 0-4.9L3.2 5.2 5.8 7.7 7.9 5.6zM10 7.7 7.9 9.8a3.5 3.5 0 0 1 0 4.9l4.7-4.7L10 7.7z"/></svg>',
 };
 
-// Render the grouped tabs into the panel strip ('split' mode) or the sidebar nav
-// ('sidebar' mode). Tabs: left-click activates, middle-click closes, right-click menu.
+// Render the open tabs as grouped rows in the left nav, and show the active tab's
+// title in the viewer header.
 function renderTabs() {
-  const sidebar = _linkMode === 'sidebar';
-  document.body.classList.toggle('link-mode-sidebar', sidebar);
-  const panelEl = document.getElementById('split-tabs');
   const navEl   = document.getElementById('opentabs-nav');
   const titleEl = document.getElementById('split-title');
-  if (sidebar) {
-    if (panelEl) panelEl.innerHTML = '';
-    if (navEl)   navEl.innerHTML = tabsMarkup('opentab');
-    if (titleEl) titleEl.textContent = activeTab()?.title || '';
-  } else {
-    if (navEl)   navEl.innerHTML = '';
-    if (panelEl) panelEl.innerHTML = tabsMarkup('tab');
-    if (titleEl) titleEl.textContent = '';
-  }
+  if (navEl)   navEl.innerHTML = tabsMarkup();
+  if (titleEl) titleEl.textContent = activeTab()?.title || '';
   initTabSort();
 }
 
-// Grouped markup. variant 'tab' = panel chips (horizontal); 'opentab' = sidebar rows.
-function tabsMarkup(variant) {
-  const activeCls = variant === 'tab' ? 'tab-active' : 'active';
+// Grouped sidebar markup: a GitHub group then a Jira group, each a list of .opentab
+// rows. Left-click activates, middle-click closes, right-click opens a menu.
+function tabsMarkup() {
   const itemHtml = t =>
-    `<div class="${variant} ${t.id === _activeTab ? activeCls : ''}" data-id="${t.id}"
+    `<div class="opentab ${t.id === _activeTab ? 'active' : ''}" data-id="${t.id}"
           onclick="activateTab('${t.id}')"
           onauxclick="if(event.button===1){event.preventDefault();closeTab('${t.id}')}"
           oncontextmenu="return tabMenu(event,'${t.id}')" title="${esc(t.url)}">
        <span class="tab-ic">${TAB_ICON[t.kind] || ''}</span>
        <span class="tab-title">${esc(t.title)}</span>
+       ${t.kind === 'github' ? ciDot(prByUrl(t.url)?.ci) : ''}
        <button class="tab-x" onclick="event.stopPropagation();closeTab('${t.id}')" title="Close tab">×</button>
      </div>`;
   const group = (label, kind) => {
@@ -741,9 +689,7 @@ function tabsMarkup(variant) {
     if (!items.length) return '';
     return `<div class="tab-group" data-kind="${kind}"><span class="tab-group-label">${label}</span>${items.map(itemHtml).join('')}</div>`;
   };
-  const gh = group('GitHub', 'github'), jira = group('Jira', 'jira');
-  const divider = variant === 'tab' && gh && jira ? '<span class="tab-divider"></span>' : '';
-  return gh + divider + jira;
+  return group('GitHub', 'github') + group('Jira', 'jira');
 }
 
 // Drag-to-reorder within each group (works in both modes). Reorder stays within a
@@ -753,29 +699,14 @@ function initTabSort() {
   if (typeof Sortable === 'undefined') return;
   _sortables.forEach(s => s.destroy());
   _sortables = [];
-  document.querySelectorAll('#split-tabs .tab-group, #opentabs-nav .tab-group').forEach(group => {
+  document.querySelectorAll('#opentabs-nav .tab-group').forEach(group => {
     _sortables.push(new Sortable(group, { draggable: '[data-id]', animation: 150, filter: '.tab-x', onEnd: syncTabOrder }));
   });
 }
 function syncTabOrder() {
-  const order = [...document.querySelectorAll('#split-tabs [data-id], #opentabs-nav [data-id]')].map(el => el.dataset.id);
+  const order = [...document.querySelectorAll('#opentabs-nav [data-id]')].map(el => el.dataset.id);
   _tabs.sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
   saveTabs();
-}
-
-// Switch where opened links appear; persist the choice and re-lay-out open tabs.
-function setLinkMode(mode) {
-  _linkMode = mode === 'sidebar' ? 'sidebar' : 'split';
-  document.querySelectorAll('.linkmode-card').forEach(c => c.classList.toggle('selected', c.dataset.mode === _linkMode));
-  document.body.classList.toggle('link-mode-sidebar', _linkMode === 'sidebar');
-  // Reset layout, then reopen the active view so open tabs carry over to the new mode.
-  if (_splitInstance) { _splitInstance.destroy(); _splitInstance = null; }
-  document.body.classList.remove('viewing-tab');
-  document.getElementById('split').hidden = true;
-  const focus = _activeTab || (_tabs[0] && _tabs[0].id);
-  _activeTab = null;
-  if (focus) { ensurePanelOpen(); activateTab(focus); } else renderTabs();
-  api('/api/config', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ link_mode: _linkMode }) }).catch(() => {});
 }
 
 // Close every tab except `id`.
@@ -808,12 +739,41 @@ function tabMenu(e, id) {
   return false;
 }
 
+// Look up a loaded PR (with its CI status) by its URL, across all project groups.
+function prByUrl(url) {
+  for (const g of _projects) {
+    const pr = (g.prs || []).find(p => p.url === url);
+    if (pr) return pr;
+  }
+  return null;
+}
+// Look up a loaded Jira ticket by key, across the cached snapshots (mine, sprint, per-project).
+function jiraByKey(key) {
+  const pools = [_mineSnap && _mineSnap.items, _sprintSnap && _sprintSnap.items,
+                 ...Object.values(_projJiraSnap || {}).map(s => s && s.items)];
+  for (const items of pools) {
+    const it = (items || []).find(x => x.key === key);
+    if (it) return it;
+  }
+  return null;
+}
+
+// Shared tab/menu title formats. Keep in sync with tray.js (prSection / openLinkInApp)
+// so a PR/ticket reads identically whether opened from a card, a badge, or the menu:
+//   GitHub → "PR #1233 <title>"      Jira → "RECORD-2158 <summary>"
+function prTabTitle(pr)          { return `PR #${pr.number} ${pr.title}`; }
+function jiraTabTitle(key, sum)  { return sum ? `${key} ${sum}` : key; }
+
 // PR card / Jira badge click handlers.
-function openPrSplit(url, num) { openInSplit(url, `PR ${num}`, 'github'); }
+function openPrSplit(url, num) {
+  const pr = prByUrl(url);
+  openInSplit(url, pr ? prTabTitle(pr) : `PR ${num}`, 'github');
+}
 function jiraClick(e, url, key) {
   e.stopPropagation();   // don't trigger a parent PR card
   e.preventDefault();    // open in the embedded viewer, not the <a> href
-  openInSplit(url, key, 'jira');
+  const it = jiraByKey(key);
+  openInSplit(url, jiraTabTitle(key, it && it.summary), 'jira');
 }
 const fmtDate = s => s ? new Date(s).toLocaleDateString('en-US',{month:'short',day:'numeric'}) : '';
 const timeAgo = s => {
@@ -832,14 +792,12 @@ let _sprintSnap = { items: [] }; // dashboard "Current Sprint" snapshot
 
 // ── Navigation ────────────────────────────────────────────────────────────────
 function showPage(name, projectId) {
-  // In sidebar mode the viewer replaces the content, so navigating to a page must
-  // hide the viewer and bring <main> back.
-  if (_linkMode === 'sidebar') {
-    document.getElementById('split').hidden = true;
-    document.body.classList.remove('viewing-tab');
-    _activeTab = null;
-    renderTabs();
-  }
+  // The viewer replaces the content, so navigating to a page must hide it and bring
+  // <main> back (the open tabs stay listed in the left nav).
+  document.getElementById('split').hidden = true;
+  document.body.classList.remove('viewing-tab');
+  _activeTab = null;
+  renderTabs();
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
   document.getElementById('page-'+(name==='project'?'project':name)).classList.add('active');
@@ -943,6 +901,7 @@ async function loadDashboard() {
   // its own node so a status change can re-render just this section.
   document.getElementById('dashboard-groups').innerHTML = prHtml + `<div id="dashboard-sprint"></div>`;
   renderDashboardSprint();
+  renderTabs(); // refresh CI dots on open GitHub tabs now that PR data (with CI) is loaded
 }
 
 // Render the "Current Sprint" section from the cached snapshot (used on load and
@@ -966,39 +925,40 @@ function renderDashboardSprint() {
     </div>`;
 }
 
-function ciLabel(ci) {
-  if (!ci) return '';
-  if (ci.status === 'in_progress' || ci.status === 'queued') return '<span class="ci ci-running">Running</span>';
-  if (ci.conclusion === 'success')   return '<span class="ci ci-success">Passing</span>';
-  if (ci.conclusion === 'failure')   return '<span class="ci ci-failure">Failing</span>';
-  if (ci.conclusion === 'cancelled') return '<span class="ci ci-none">Cancelled</span>';
-  return '';
+// CI shown as a bare colored dot (with a tooltip for the actual status). Always
+// returns a dot — even with no CI — so the card footer is never empty.
+function ciDot(ci) {
+  let cls = 'ci-none', label = 'No checks';
+  if (ci) {
+    if (ci.status === 'in_progress' || ci.status === 'queued') { cls = 'ci-running'; label = 'Running'; }
+    else if (ci.conclusion === 'success')   { cls = 'ci-success'; label = 'Passing'; }
+    else if (ci.conclusion === 'failure')   { cls = 'ci-failure'; label = 'Failing'; }
+    else if (ci.conclusion === 'cancelled') { cls = 'ci-none';    label = 'Cancelled'; }
+  }
+  return `<span class="ci-dot ${cls}" title="${label}"></span>`;
 }
 
-const PR_STATE_COLOR = { OPEN:'var(--success)', MERGED:'var(--merged)', CLOSED:'var(--danger)' };
-
-// A flat, whole-card-clickable PR card. The card opens the PR; Jira badges keep
-// their own link to Jira (stopPropagation so they don't also trigger the card).
+// A flat, whole-card-clickable PR card. The card opens the PR; the Jira badge keeps
+// its own link to Jira (stopPropagation so it doesn't also trigger the card).
+// Layout: header (num · repo · date + CI dot) on top, title fills the middle,
+// footer holds the author's GitHub avatar (bottom-left) + optional Jira tag.
 function prCard(pr) {
-  const stripe = PR_STATE_COLOR[pr.state] || 'var(--border-focus)';
-  const ci = ciLabel(pr.ci);
   const jiraHtml = (pr.jiraKeys||[]).map(k =>
     `<a href="${jiraUrl(k)}" target="_blank" rel="noopener" class="badge badge-jira" onclick="jiraClick(event, this.href, '${esc(k)}')">${esc(k)}</a>`).join('');
-  return `<div class="pr-card" style="--st:${stripe}" onclick="openPrSplit('${pr.url}','#${pr.number}')" title="Open PR #${pr.number}">
-    <div class="pr-card-top">
+  const login = pr.author?.login || '';
+  // GitHub serves any user's avatar at github.com/<login>.png — no API call needed.
+  const avatar = login ? `<img class="pr-avatar" src="https://github.com/${encodeURIComponent(login)}.png?size=40" alt="" title="${esc(login)}" loading="lazy">` : '';
+  const foot = avatar + jiraHtml;
+  return `<div class="card clickable pr-card" onclick="openPrSplit('${pr.url}','#${pr.number}')" title="Open PR #${pr.number}">
+    <div class="pr-head">
       <span class="pr-num">#${pr.number}</span>
-      <div class="pr-title">${esc(pr.title)}</div>
-      ${pr.isDraft ? `<span class="pr-draft">Draft</span>` : ''}
-    </div>
-    <div class="pr-meta">
       <span class="pr-repo">${esc(pr.repo)}</span>
-      <span class="sep">·</span>
-      <span>${esc(pr.author?.login||'')}</span>
-      <span class="sep">·</span>
-      <span>${fmtDate(pr.createdAt)}</span>
-      ${ci}
+      ${pr.isDraft ? `<span class="pr-draft">Draft</span>` : ''}
+      <span class="pr-date">${fmtDate(pr.createdAt)}</span>
+      ${ciDot(pr.ci)}
     </div>
-    ${jiraHtml?`<div class="pr-tags">${jiraHtml}</div>`:''}
+    <div class="pr-body"><div class="pr-title">${esc(pr.title)}</div></div>
+    ${foot ? `<div class="pr-foot">${foot}</div>` : ''}
   </div>`;
 }
 
@@ -1385,8 +1345,6 @@ async function loadSettings() {
   api('/api/jira/site').then(s => { if (s.baseUrl) document.getElementById('jira-base-url').placeholder = `${s.baseUrl} (auto-detected)`; }).catch(()=>{});
   if (cfg.jira_poll_interval) document.getElementById('jira-poll-interval').value = cfg.jira_poll_interval;
   if (cfg.jira_limit)         document.getElementById('jira-limit').value = cfg.jira_limit;
-  _linkMode = cfg.link_mode === 'split' ? 'split' : 'sidebar'; // default sidebar
-  document.querySelectorAll('.linkmode-card').forEach(c => c.classList.toggle('selected', c.dataset.mode === _linkMode));
 
   const allRepos = [...new Set(dbinfo.projects.map(p=>p.repo).filter(Boolean))];
   document.getElementById('forwarder-list').innerHTML = allRepos.length
@@ -1610,10 +1568,8 @@ setInterval(() => {
 // ── Init ──────────────────────────────────────────────────────────────────────
 (async () => {
   try {
-    const [site, cfg] = await Promise.all([api('/api/jira/site'), api('/api/config')]);
+    const site = await api('/api/jira/site');
     _jiraBase = site.baseUrl || '';
-    _linkMode = cfg.link_mode === 'split' ? 'split' : 'sidebar'; // default sidebar
-    document.body.classList.toggle('link-mode-sidebar', _linkMode === 'sidebar');
   } catch {}
   loadDashboard(); // renderProjectNav is called inside loadDashboard
   restoreTabs();   // rehydrate GitHub/Jira tabs from the last session
