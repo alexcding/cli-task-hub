@@ -21,13 +21,17 @@
       --shadow: 0 1px 3px rgb(0 0 0/.08),0 1px 2px -1px rgb(0 0 0/.06);
       --shadow-md: 0 4px 6px -1px rgb(0 0 0/.07),0 2px 4px -2px rgb(0 0 0/.07);
       --r: 8px; --rs: 6px; --rl: 12px;
+      --sidebar-w: 220px;
     }
     body { background:var(--bg); color:var(--text); font-family:-apple-system,BlinkMacSystemFont,'Inter','Segoe UI',sans-serif; font-size:14px; line-height:1.5; -webkit-font-smoothing:antialiased; }
 
     /* Layout */
-    .layout { display:flex; min-height:100vh; }
-    aside { width:220px; background:var(--surface); border-right:1px solid var(--border); display:flex; flex-direction:column; position:fixed; top:0;left:0;bottom:0; z-index:10; }
-    .sidebar-logo { padding:18px 16px 14px; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:8px; }
+    .layout { display:flex; height:100vh; overflow:hidden; }
+    aside { width:var(--sidebar-w); background:var(--surface); border-right:1px solid var(--border); display:flex; flex-direction:column; position:fixed; top:0;left:0;bottom:0; z-index:10; }
+    .sidebar-resizer { position:absolute; top:0; right:-3px; bottom:0; width:7px; cursor:col-resize; z-index:11; }
+    .sidebar-resizer::before { content:''; position:absolute; left:50%; top:0; bottom:0; width:1px; transform:translateX(-50%); background:transparent; }
+    .sidebar-resizer:hover::before { background:var(--accent); }
+    .sidebar-logo { height:52px; padding:0 16px; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:8px; }
     .logo-icon { width:28px;height:28px; background:linear-gradient(#6c6ff1,#4f46e5); border-radius:8px; display:flex;align-items:center;justify-content:center; flex-shrink:0; }
     .logo-text { font-size:15px; font-weight:600; letter-spacing:-.3px; }
     nav { padding:8px; flex:1; overflow-y:auto; }
@@ -41,10 +45,80 @@
     .nav-add:hover { color:var(--text); }
     .sidebar-footer { padding:12px; border-top:1px solid var(--border); }
 
-    main { flex:1; margin-left:220px; display:flex; flex-direction:column; min-height:100vh; }
-    .topbar { background:var(--surface); border-bottom:1px solid var(--border); padding:0 24px; height:52px; display:flex; align-items:center; gap:12px; position:sticky;top:0;z-index:5; }
+    .workarea { margin-left:var(--sidebar-w); flex:1; min-width:0; height:100vh; display:flex; align-items:stretch; }
+    main { flex:1; min-width:0; min-height:0; display:flex; flex-direction:column; }
+    .topbar { background:var(--surface); border-bottom:1px solid var(--border); padding:0 24px; height:52px; flex-shrink:0; display:flex; align-items:center; gap:12px; z-index:5; }
     .topbar-title { font-size:14px; font-weight:600; flex:1; }
-    .content { padding:24px; }
+    /* Each pane scrolls on its own — left content here, the webview on the right —
+       so scrolling one never moves the other. */
+    .content { padding:24px; flex:1; min-height:0; overflow-y:auto; overscroll-behavior:contain; }
+
+    /* Split view — right-side panel that embeds the real GitHub/Jira page (Electron
+       <webview>; falls back to a new tab in a plain browser). */
+    /* Split panel is a flex sibling of <main>; Split.js sizes both + adds the gutter. */
+    .split { min-width:0; min-height:0; height:100vh; background:var(--surface); display:flex; flex-direction:column; }
+    .split[hidden] { display:none; }
+    .split-bar { height:52px; flex-shrink:0; display:flex; align-items:center; gap:4px; padding:0 6px 0 8px; border-bottom:1px solid var(--border); }
+    .split-btn { background:none; border:none; color:var(--text-2); font-size:15px; line-height:1; cursor:pointer; padding:7px 9px; border-radius:6px; flex-shrink:0; }
+    .split-btn:hover { background:var(--surface-hover); color:var(--text); }
+    /* Panel header shows the tab strip (split mode) or just a title (sidebar mode). */
+    .split-title { flex:1; min-width:0; font-size:13px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; display:none; }
+    body.link-mode-sidebar #split-tabs { display:none; }
+    body.link-mode-sidebar .split-title { display:block; }
+    /* Sidebar mode: the viewer replaces the content (full width), no split. */
+    body.link-mode-sidebar #split { flex:1; }
+    body.viewing-tab main { display:none; }
+    /* Tab strip — GitHub group and Jira group, divider between. */
+    .split-tabs { flex:1; min-width:0; display:flex; align-items:center; gap:4px; overflow-x:auto; scrollbar-width:none; }
+    .split-tabs::-webkit-scrollbar { display:none; }
+    .tab-group { display:flex; align-items:center; gap:3px; }
+    .tab-group-label { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.4px; color:var(--text-3); padding:0 3px; flex-shrink:0; }
+    .tab-divider { width:1px; align-self:stretch; background:var(--border); margin:8px 4px; flex-shrink:0; }
+    .tab { display:flex; align-items:center; gap:5px; max-width:170px; padding:5px 5px 5px 10px; border-radius:7px; background:var(--surface-hover); color:var(--text-2); cursor:pointer; font-size:12px; white-space:nowrap; }
+    .tab:hover { color:var(--text); }
+    .tab-active { background:var(--accent-bg); color:var(--accent); font-weight:600; }
+    .tab.sortable-ghost { opacity:.4; }
+    .tab.sortable-chosen { cursor:grabbing; }
+    .tab-ic { display:inline-flex; flex-shrink:0; }
+    .tab-ic svg { display:block; }
+    .tab-title { overflow:hidden; text-overflow:ellipsis; }
+    .tab-x { background:none; border:none; color:inherit; cursor:pointer; opacity:.55; font-size:13px; line-height:1; padding:1px 3px; border-radius:4px; flex-shrink:0; }
+    .tab-x:hover { opacity:1; background:rgb(0 0 0/.08); }
+    .split-body { flex:1; position:relative; background:var(--bg); }
+    .split-body webview, .split-body iframe { position:absolute; inset:0; width:100%; height:100%; border:0; }
+    .split-loading { position:absolute; inset:0; z-index:2; display:flex; align-items:center; justify-content:center; background:var(--bg); color:var(--text-3); font-size:13px; gap:8px; }
+    .split-loading[hidden] { display:none; }
+    /* Split.js gutter: wide invisible hit area, but only a 1px line shows (matching
+       the sidebar border). While dragging, disable webview pointer events so the
+       page doesn't swallow the mouse — Split.js then tracks reliably. */
+    .gutter { background:transparent; flex-shrink:0; position:relative; }
+    .gutter.gutter-horizontal { cursor:col-resize; }
+    .gutter.gutter-horizontal::before { content:''; position:absolute; top:0; bottom:0; left:50%; width:1px; transform:translateX(-50%); background:var(--border); }
+    .gutter.gutter-horizontal:hover::before { background:var(--accent); }
+    body.resizing .split-body webview, body.resizing .split-body iframe { pointer-events:none; }
+
+    /* Sidebar mode: open tabs render as nav rows under GitHub / Jira group labels. */
+    #opentabs-nav .tab-group { display:block; margin-top:6px; }
+    #opentabs-nav .tab-group-label { display:block; padding:6px 8px 2px; }
+    .opentab { display:flex; align-items:center; gap:8px; width:100%; padding:6px 10px; border-radius:var(--rs); color:var(--text-2); cursor:pointer; font-size:13px; }
+    .opentab:hover { background:var(--surface-hover); color:var(--text); }
+    .opentab.active { background:var(--accent-bg); color:var(--accent); font-weight:500; }
+    .opentab .tab-title { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .opentab .tab-x { opacity:.5; } .opentab .tab-x:hover { opacity:1; }
+
+    /* "Open links in" preview cards (Settings). */
+    .linkmode-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+    .linkmode-card { border:1px solid var(--border); border-radius:10px; padding:12px; cursor:pointer; transition:border-color .12s,background .12s; }
+    .linkmode-card:hover { background:var(--surface-hover); }
+    .linkmode-card.selected { border-color:var(--accent); background:var(--accent-bg); }
+    .linkmode-label { font-size:13px; font-weight:600; margin-top:10px; }
+    .linkmode-desc { font-size:12px; color:var(--text-3); margin-top:2px; }
+    .lm { display:flex; height:72px; border:1px solid var(--border); border-radius:6px; overflow:hidden; background:var(--surface); }
+    .lm-aside { width:22px; background:var(--surface-hover); border-right:1px solid var(--border); padding:5px 3px; }
+    .lm-main { flex:1; padding:6px; }
+    .lm-bar { display:flex; gap:3px; align-items:center; height:11px; margin:-6px -6px 6px; padding:0 4px; background:var(--surface-hover); border-bottom:1px solid var(--border); }
+    .lm-chip { width:13px; height:6px; border-radius:2px; background:var(--accent); opacity:.55; }
+    .lm-row { height:6px; margin-bottom:4px; border-radius:2px; background:var(--border); }
     .page { display:none; }
     .page.active { display:block; }
 
@@ -79,15 +153,25 @@
     .project-color { width:10px;height:10px;border-radius:50%;flex-shrink:0; }
     .project-name { font-size:16px;font-weight:600; }
     .project-meta { font-size:12px;color:var(--text-3); }
-    .pr-grid { display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:10px; }
-    .pr-card { background:var(--surface);border:1px solid var(--border);border-radius:var(--rl);padding:14px;box-shadow:var(--shadow);transition:box-shadow .15s,border-color .15s; }
-    .pr-card:hover { box-shadow:var(--shadow-md);border-color:var(--border-focus); }
-    .pr-card-top { display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:8px; }
-    .pr-title { font-size:13px;font-weight:500;line-height:1.4;flex:1; }
-    .pr-title a { color:var(--text);text-decoration:none; }
-    .pr-title a:hover { color:var(--accent); }
-    .pr-meta { font-size:12px;color:var(--text-3);display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px; }
-    .pr-tags { display:flex;flex-wrap:wrap;gap:4px; }
+    /* PR cards — flat, whole-card clickable. A slim left stripe encodes state. */
+    .pr-grid { display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:8px; }
+    .pr-card { position:relative;background:var(--surface);border:1px solid var(--border);border-radius:var(--rl);padding:13px 15px;cursor:pointer;transition:background .12s,border-color .12s; }
+    .pr-card:hover { background:var(--surface-hover);border-color:var(--border-focus); }
+    .pr-card::before { content:'';position:absolute;left:0;top:11px;bottom:11px;width:3px;border-radius:0 3px 3px 0;background:var(--st,transparent); }
+    .pr-card-top { display:flex;align-items:baseline;gap:7px;margin-bottom:7px; }
+    .pr-num { font-size:12px;font-weight:600;color:var(--text-3);font-variant-numeric:tabular-nums;flex-shrink:0; }
+    .pr-title { font-size:13.5px;font-weight:550;line-height:1.4;color:var(--text);flex:1;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden; }
+    .pr-draft { font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:.3px;color:var(--text-3);border:1px solid var(--border);border-radius:4px;padding:1px 5px;flex-shrink:0; }
+    .pr-meta { font-size:12px;color:var(--text-3);display:flex;align-items:center;gap:6px;flex-wrap:wrap; }
+    .pr-meta .sep { opacity:.45; }
+    .pr-repo { color:var(--text-2); }
+    .ci { display:inline-flex;align-items:center;gap:4px;margin-left:auto; }
+    .ci::before { content:'●';font-size:7px;line-height:1; }
+    .ci-success { color:var(--success); } .ci-failure { color:var(--danger); }
+    .ci-running { color:var(--warn); }    .ci-none { color:var(--text-3); }
+    .pr-tags { display:flex;flex-wrap:wrap;gap:5px;margin-top:9px; }
+    .pr-tags .badge-jira { text-decoration:none;transition:background .1s,color .1s; }
+    .pr-tags .badge-jira:hover { background:var(--accent);color:#fff; }
 
     /* Badges */
     .badge { display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:600;padding:2px 8px;border-radius:99px; }
@@ -96,6 +180,21 @@
     .badge-closed { background:var(--danger-bg);color:var(--danger); }
     .badge-jira   { background:var(--accent-bg);color:var(--accent); }
     .badge-default { background:var(--surface-hover);color:var(--text-2); }
+
+    /* Filters bar (JIRA Tickets page + project Jira tab) */
+    .ticket-filter { display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:12px; }
+    .filter-label { font-size:12px;color:var(--text-3); }
+    .filter-select { width:auto;max-width:170px;font-size:13px;padding:5px 10px;border-radius:7px;border:1px solid var(--border);background:var(--surface);color:var(--text);cursor:pointer; }
+    .filter-select:hover { border-color:var(--accent); }
+
+    /* Status badge button + transition menu */
+    .status-btn { font-family:inherit;border:1px solid transparent;cursor:pointer; }
+    .status-btn:hover { border-color:var(--accent); }
+    .status-caret { font-size:9px;opacity:.6; }
+    .status-menu { position:absolute;z-index:2000;background:var(--surface);border:1px solid var(--border);border-radius:8px;box-shadow:0 8px 28px rgba(0,0,0,.35);padding:4px;min-width:170px;max-height:320px;overflow-y:auto; }
+    .status-menu-head { font-size:10.5px;color:var(--text-3);text-transform:uppercase;letter-spacing:.4px;padding:6px 9px 4px; }
+    .status-menu-item { display:block;width:100%;text-align:left;background:none;border:none;color:var(--text);font-size:13px;padding:7px 9px;border-radius:6px;cursor:pointer; }
+    .status-menu-item:hover { background:var(--accent-bg);color:var(--accent); }
 
     /* Table */
     .table-wrap { overflow-x:auto; }
@@ -200,6 +299,7 @@
     <nav>
       <div class="nav-label">Overview</div>
       <button class="nav-btn active" data-page="dashboard" onclick="showPage('dashboard')"><span class="icon">⬡</span> Dashboard</button>
+      <button class="nav-btn" data-page="mytickets" onclick="showPage('mytickets')"><span class="icon">◆</span> JIRA Tickets</button>
 
       <div class="nav-label" style="margin-top:4px;display:flex;align-items:center;justify-content:space-between;padding-right:6px">
         <span>Projects</span>
@@ -207,15 +307,17 @@
       </div>
       <div id="project-nav"></div>
 
-      <div class="nav-label" style="margin-top:4px">System</div>
-      <button class="nav-btn" data-page="events" onclick="showPage('events')"><span class="icon">◎</span> Activity</button>
-      <button class="nav-btn" data-page="settings" onclick="showPage('settings')"><span class="icon">⚙</span> Settings</button>
+      <!-- Open links (sidebar mode): grouped GitHub / Jira tabs render here -->
+      <div id="opentabs-nav"></div>
     </nav>
     <div class="sidebar-footer">
-      <button class="btn btn-secondary" style="width:100%;justify-content:center" onclick="syncNow()">↻ Sync</button>
+      <button class="nav-btn" data-page="settings" onclick="showPage('settings')"><span class="icon">⚙</span> Settings</button>
     </div>
+    <div class="sidebar-resizer" id="sidebar-resizer" title="Drag to resize"></div>
   </aside>
 
+  <!-- Work area: main + split panel are flex siblings managed by Split.js -->
+  <div class="workarea" id="workarea">
   <!-- Main -->
   <main>
     <div class="topbar">
@@ -233,20 +335,65 @@
         </div>
       </div>
 
+      <!-- MY TICKETS -->
+      <div id="page-mytickets" class="page">
+        <div class="section-header">
+          <span class="section-title">Assigned to me</span>
+          <button class="btn btn-secondary btn-sm" onclick="loadMyTickets()">↻ Refresh</button>
+        </div>
+        <div id="mytickets-filter" class="ticket-filter"></div>
+        <div class="card">
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Key</th><th>Summary</th><th>Status</th><th>Type</th><th>Priority</th></tr></thead>
+              <tbody id="mytickets-body">
+                <tr><td colspan="5"><div class="loading-row"><div class="spinner"></div> Loading…</div></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
       <!-- PROJECT PAGE (dynamic) -->
       <div id="page-project" class="page">
         <div id="project-page-content"></div>
       </div>
 
-      <!-- EVENTS -->
-      <div id="page-events" class="page">
-        <div class="section-header"><span class="section-title">Activity Log</span></div>
-        <div class="card" id="events-list"></div>
-      </div>
-
-      <!-- SETTINGS -->
+      <!-- SETTINGS (with Settings | Activity sub-tabs) -->
       <div id="page-settings" class="page">
+        <div class="tabs" id="settings-tabbar">
+          <button class="tab-btn active" data-tab="settings" onclick="settingsTab('settings',this)">Settings</button>
+          <button class="tab-btn" data-tab="activity" onclick="settingsTab('activity',this)">Activity</button>
+        </div>
+
+        <div class="tab-panel active" id="settings-tab-settings">
         <div style="max-width:760px;display:flex;flex-direction:column;gap:16px">
+
+          <div class="card">
+            <div class="card-header"><h3>Open links in</h3></div>
+            <div class="card-pad">
+              <div class="linkmode-grid">
+                <div class="linkmode-card" data-mode="split" onclick="setLinkMode('split')">
+                  <div class="lm">
+                    <div class="lm-aside"></div>
+                    <div class="lm-main"><div class="lm-row"></div><div class="lm-row" style="width:55%"></div></div>
+                    <div class="lm-main" style="border-left:1px solid var(--border)"><div class="lm-bar"><span class="lm-chip"></span><span class="lm-chip"></span></div></div>
+                  </div>
+                  <div class="linkmode-label">Split-view tabs</div>
+                  <div class="linkmode-desc">Tabs on top of the right viewer.</div>
+                </div>
+                <div class="linkmode-card" data-mode="sidebar" onclick="setLinkMode('sidebar')">
+                  <div class="lm">
+                    <div class="lm-aside" style="width:32px"><div class="lm-row" style="background:var(--accent);opacity:.6"></div><div class="lm-row"></div><div class="lm-row"></div></div>
+                    <div class="lm-main"><div class="lm-row"></div></div>
+                    <div class="lm-main" style="border-left:1px solid var(--border)"></div>
+                  </div>
+                  <div class="linkmode-label">Sidebar groups</div>
+                  <div class="linkmode-desc">Grouped in the left nav.</div>
+                </div>
+              </div>
+            </div>
+          </div>
 
           <div class="card">
             <div class="card-header"><h3>Polling</h3></div>
@@ -254,6 +401,36 @@
               <div class="form-group">
                 <label class="form-label">Poll Interval (seconds)</label>
                 <input type="number" id="poll-interval" placeholder="60" min="15">
+              </div>
+              <button class="btn btn-primary" onclick="saveConfig()">Save</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header"><h3>JIRA Tickets</h3></div>
+            <div class="card-pad">
+              <div class="form-group">
+                <label class="form-label">Jira site URL</label>
+                <input type="text" id="jira-base-url" placeholder="auto-detected from acli">
+                <p style="font-size:12px;color:var(--text-3);margin-top:6px">Used for ticket links. Leave blank to auto-detect from <code style="background:var(--surface-hover);padding:1px 4px;border-radius:3px">acli jira auth</code>.</p>
+              </div>
+              <div class="form-group">
+                <label class="form-label">“Assigned to me” JQL</label>
+                <input type="text" id="my-jql" placeholder="assignee = currentUser() AND statusCategory != Done ORDER BY updated DESC">
+                <p style="font-size:12px;color:var(--text-3);margin-top:6px"><code style="background:var(--surface-hover);padding:1px 4px;border-radius:3px">currentUser()</code> resolves from your <code style="background:var(--surface-hover);padding:1px 4px;border-radius:3px">acli jira auth</code> login — no username or token needed.</p>
+              </div>
+              <div class="form-group">
+                <label class="form-label">“Current Sprint” JQL (dashboard)</label>
+                <input type="text" id="sprint-jql" placeholder="assignee = currentUser() AND sprint in openSprints() AND statusCategory != Done ORDER BY updated DESC">
+                <p style="font-size:12px;color:var(--text-3);margin-top:6px"><code style="background:var(--surface-hover);padding:1px 4px;border-radius:3px">openSprints()</code> matches any active sprint. Empty for Kanban projects with no sprint field.</p>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Jira Poll Interval (seconds)</label>
+                <input type="number" id="jira-poll-interval" placeholder="120" min="30">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Result Limit</label>
+                <input type="number" id="jira-limit" placeholder="100" min="1">
               </div>
               <button class="btn btn-primary" onclick="saveConfig()">Save</button>
             </div>
@@ -281,10 +458,30 @@
           </div>
 
         </div>
+        </div><!-- /settings-tab-settings -->
+
+        <div class="tab-panel" id="settings-tab-activity">
+          <div class="card" id="events-list"></div>
+        </div>
       </div>
 
     </div>
   </main>
+
+  <!-- Split view: tabbed (GitHub + Jira groups), real pages in Electron webviews -->
+  <div id="split" class="split" hidden>
+    <div class="split-bar">
+      <div class="split-tabs" id="split-tabs"></div>
+      <span class="split-title" id="split-title"></span>
+      <button class="split-btn" title="Reload" onclick="splitReload()">↻</button>
+      <button class="split-btn" title="Open in browser" onclick="splitOpenExternal()">↗</button>
+      <button class="split-btn" title="Close panel (Esc)" onclick="closeSplit()">✕</button>
+    </div>
+    <div class="split-body" id="split-body">
+      <div class="split-loading" id="split-loading" hidden><div class="spinner"></div> Loading…</div>
+    </div>
+  </div>
+  </div><!-- /workarea -->
 </div>
 
 <!-- New / Edit Project Modal -->
@@ -310,6 +507,8 @@
 
 <div id="toast"></div>
 
+<script src="/vendor/split.min.js"></script>
+<script src="/vendor/sortable.min.js"></script>
 <script>
 // ── Constants ─────────────────────────────────────────────────────────────────
 const COLORS = ['#6366f1','#0ea5e9','#10b981','#f59e0b','#ef4444','#ec4899','#8b5cf6','#14b8a6'];
@@ -332,6 +531,290 @@ const toastErr = msg => toast(msg, 'error');
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+// Jira ticket link. Base is auto-detected from acli (or a settings override),
+// loaded once at startup into _jiraBase — never hardcoded.
+let _jiraBase = '';
+const jiraUrl = key => _jiraBase ? `${_jiraBase}/browse/${key}` : '#';
+
+// ── Split view ──────────────────────────────────────────────────────────────────
+// The Electron app embeds the real GitHub/Jira page in a <webview> (the main process
+// strips X-Frame-Options/CSP so framing is allowed). This is an Electron-only app.
+let _splitInstance = null;  // Split.js instance (null when the panel is closed)
+let _tabs = [];             // { id, kind:'github'|'jira', title, url, wv, loaded }
+let _activeTab = null;      // active tab id
+let _tabSeq = 0;
+let _linkMode = 'sidebar';  // 'sidebar' (default) = tabs in left nav; 'split' = tabs in panel
+const activeTab = () => _tabs.find(t => t.id === _activeTab) || null;
+
+// Open a URL as a tab. Ordering differs by mode:
+//  • split (horizontal): new tabs go to the LEFT; re-opening moves the tab to front.
+//  • sidebar (vertical): new tabs append at the BOTTOM; re-opening keeps its position.
+function openInSplit(url, title, kind) {
+  const sidebar = _linkMode === 'sidebar';
+  const existing = _tabs.find(t => t.url === url);
+  if (existing) {
+    if (!sidebar) _tabs = [existing, ..._tabs.filter(t => t !== existing)]; // split: move to front
+    ensurePanelOpen();
+    activateTab(existing.id);
+    return;
+  }
+  const tab = createTab(url, title, kind);
+  if (sidebar) _tabs.push(tab);   // vertical: append at bottom
+  else _tabs.unshift(tab);        // horizontal: new on the left
+  ensurePanelOpen();
+  activateTab(tab.id);
+}
+
+// Build a <webview>-backed tab object (not yet added to `_tabs`). Shared by
+// openInSplit (new tab) and restoreTabs (rehydrate from localStorage).
+function createTab(url, title, kind) {
+  const id = 'tab' + (++_tabSeq);
+  const wv = document.createElement('webview');
+  wv.setAttribute('src', url);
+  wv.setAttribute('allowpopups', '');
+  wv.style.display = 'none';
+  document.getElementById('split-body').appendChild(wv);
+  const tab = { id, kind: kind === 'jira' ? 'jira' : 'github', title: title || url, url, wv, loaded: false };
+  wv.addEventListener('did-stop-loading', () => { tab.loaded = true; if (id === _activeTab) showSplitLoading(false); });
+  return tab;
+}
+
+// ── Tab persistence ─────────────────────────────────────────────────────────────
+// Open tabs live only in `_tabs` (renderer memory), so they're lost when the window
+// reloads or the app restarts. Persist the list (url/title/kind + active tab) to
+// localStorage on every change and rehydrate it on launch.
+const TABS_KEY = 'taskhub.openTabs';
+function saveTabs() {
+  try {
+    const active = activeTab();
+    localStorage.setItem(TABS_KEY, JSON.stringify({
+      tabs: _tabs.map(t => ({ kind: t.kind, title: t.title, url: t.url })),
+      active: active ? active.url : null,
+    }));
+  } catch {}
+}
+function restoreTabs() {
+  let data;
+  try { data = JSON.parse(localStorage.getItem(TABS_KEY)); } catch {}
+  if (!data || !Array.isArray(data.tabs) || !data.tabs.length) return;
+  for (const t of data.tabs) {
+    if (t && t.url) _tabs.push(createTab(t.url, t.title, t.kind));
+  }
+  if (!_tabs.length) return;
+  const active = _tabs.find(t => t.url === data.active) || _tabs[0];
+  ensurePanelOpen();
+  activateTab(active.id);
+}
+
+// Expose the open tabs + activation to the Electron main process, so the tray menu
+// can list them and clicking one focuses the window + switches to that tab.
+window.__getTabs = () => _tabs.map(t => ({ id: t.id, kind: t.kind, title: t.title, url: t.url, active: t.id === _activeTab }));
+window.__activateTabByUrl = url => { const t = _tabs.find(x => x.url === url); if (t) { ensurePanelOpen(); activateTab(t.id); } };
+
+// Make the viewer visible. In split mode it's a resizable panel beside the content
+// (Split.js); in sidebar mode it REPLACES the content full-width (no split).
+function ensurePanelOpen() {
+  const split = document.getElementById('split');
+  if (_linkMode === 'sidebar') {
+    if (_splitInstance) { _splitInstance.destroy(); _splitInstance = null; }
+    split.hidden = false;
+    document.body.classList.add('viewing-tab'); // hides <main>, viewer fills the area
+    return;
+  }
+  document.body.classList.remove('viewing-tab');
+  if (!split.hidden) return;
+  split.hidden = false;
+  let sizes = [50, 50];
+  try { const s = JSON.parse(localStorage.getItem('taskhub.splitSizes')); if (Array.isArray(s) && s.length === 2) sizes = s; } catch {}
+  _splitInstance = Split([document.querySelector('main'), split], {
+    sizes, minSize: [380, 360], gutterSize: 11, snapOffset: 0,
+    onDragStart: () => document.body.classList.add('resizing'),
+    onDragEnd:   () => {
+      document.body.classList.remove('resizing');
+      try { localStorage.setItem('taskhub.splitSizes', JSON.stringify(_splitInstance.getSizes())); } catch {}
+    },
+  });
+}
+
+function activateTab(id) {
+  _activeTab = id;
+  _tabs.forEach(t => { if (t.wv) t.wv.style.display = t.id === id ? '' : 'none'; });
+  if (_linkMode === 'sidebar') {
+    document.getElementById('split').hidden = false;
+    document.body.classList.add('viewing-tab');
+    document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active')); // a tab is the view now
+  }
+  const t = activeTab();
+  showSplitLoading(t ? !t.loaded : false);
+  renderTabs();
+  saveTabs();
+}
+
+function closeTab(id) {
+  const i = _tabs.findIndex(t => t.id === id);
+  if (i < 0) return;
+  _tabs[i].wv?.remove();
+  _tabs.splice(i, 1);
+  if (_activeTab === id) {
+    const next = _tabs[i] || _tabs[i - 1];
+    if (next) activateTab(next.id);
+    else closeSplit();           // last tab closed → close the panel
+  } else {
+    renderTabs();
+    saveTabs();
+  }
+}
+
+function closeSplit() {
+  if (_splitInstance) { _splitInstance.destroy(); _splitInstance = null; } // clears gutter + inline sizes
+  _tabs.forEach(t => t.wv?.remove());
+  _tabs = []; _activeTab = null;
+  document.getElementById('split').hidden = true;
+  document.body.classList.remove('resizing', 'viewing-tab'); // restore <main>
+  renderTabs(); // clear the tab strip / sidebar nav entries
+  saveTabs();
+}
+
+function splitReload()       { const t = activeTab(); if (t) { t.loaded = false; showSplitLoading(true); t.wv.reload(); } }
+function splitOpenExternal() { const t = activeTab(); if (t) window.open(t.url, '_blank'); }
+function showSplitLoading(on){ document.getElementById('split-loading').hidden = !on; }
+
+// ── Resizable left sidebar (width persisted in localStorage, restored next launch) ─
+(function initSidebarResize() {
+  const handle = document.getElementById('sidebar-resizer');
+  if (!handle) return;
+  const setW = w => document.documentElement.style.setProperty('--sidebar-w', Math.min(420, Math.max(170, w)) + 'px');
+  const saved = parseInt(localStorage.getItem('taskhub.sidebarWidth') || '', 10);
+  if (saved) setW(saved);
+  let dragging = false, x = 0, raf = 0;
+  const apply = () => { raf = 0; setW(x); };
+  handle.addEventListener('mousedown', e => { dragging = true; e.preventDefault(); document.body.classList.add('resizing'); });
+  window.addEventListener('mousemove', e => { if (!dragging) return; x = e.clientX; if (!raf) raf = requestAnimationFrame(apply); });
+  window.addEventListener('mouseup', () => {
+    if (!dragging) return;
+    dragging = false; document.body.classList.remove('resizing');
+    const w = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--sidebar-w'), 10);
+    if (w) localStorage.setItem('taskhub.sidebarWidth', String(w));
+  });
+})();
+
+// Small monochrome marks for each tab kind.
+const TAB_ICON = {
+  github: '<svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.6 7.6 0 0 1 4 0c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>',
+  jira:   '<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path fill="#2684FF" d="M14.7 7.3 8.5 1.1 7.9.5 3.2 5.2l-2 2a1 1 0 0 0 0 1.4l4 4 .7.7 4.7-4.7 1.4-1.4a1 1 0 0 0 0-.9zM7.9 9.8 5.8 7.7l2.1-2.1L10 7.7 7.9 9.8z"/><path fill="#2684FF" opacity=".6" d="M7.9 5.6a3.5 3.5 0 0 1 0-4.9L3.2 5.2 5.8 7.7 7.9 5.6zM10 7.7 7.9 9.8a3.5 3.5 0 0 1 0 4.9l4.7-4.7L10 7.7z"/></svg>',
+};
+
+// Render the grouped tabs into the panel strip ('split' mode) or the sidebar nav
+// ('sidebar' mode). Tabs: left-click activates, middle-click closes, right-click menu.
+function renderTabs() {
+  const sidebar = _linkMode === 'sidebar';
+  document.body.classList.toggle('link-mode-sidebar', sidebar);
+  const panelEl = document.getElementById('split-tabs');
+  const navEl   = document.getElementById('opentabs-nav');
+  const titleEl = document.getElementById('split-title');
+  if (sidebar) {
+    if (panelEl) panelEl.innerHTML = '';
+    if (navEl)   navEl.innerHTML = tabsMarkup('opentab');
+    if (titleEl) titleEl.textContent = activeTab()?.title || '';
+  } else {
+    if (navEl)   navEl.innerHTML = '';
+    if (panelEl) panelEl.innerHTML = tabsMarkup('tab');
+    if (titleEl) titleEl.textContent = '';
+  }
+  initTabSort();
+}
+
+// Grouped markup. variant 'tab' = panel chips (horizontal); 'opentab' = sidebar rows.
+function tabsMarkup(variant) {
+  const activeCls = variant === 'tab' ? 'tab-active' : 'active';
+  const itemHtml = t =>
+    `<div class="${variant} ${t.id === _activeTab ? activeCls : ''}" data-id="${t.id}"
+          onclick="activateTab('${t.id}')"
+          onauxclick="if(event.button===1){event.preventDefault();closeTab('${t.id}')}"
+          oncontextmenu="return tabMenu(event,'${t.id}')" title="${esc(t.url)}">
+       <span class="tab-ic">${TAB_ICON[t.kind] || ''}</span>
+       <span class="tab-title">${esc(t.title)}</span>
+       <button class="tab-x" onclick="event.stopPropagation();closeTab('${t.id}')" title="Close tab">×</button>
+     </div>`;
+  const group = (label, kind) => {
+    const items = _tabs.filter(t => t.kind === kind);
+    if (!items.length) return '';
+    return `<div class="tab-group" data-kind="${kind}"><span class="tab-group-label">${label}</span>${items.map(itemHtml).join('')}</div>`;
+  };
+  const gh = group('GitHub', 'github'), jira = group('Jira', 'jira');
+  const divider = variant === 'tab' && gh && jira ? '<span class="tab-divider"></span>' : '';
+  return gh + divider + jira;
+}
+
+// Drag-to-reorder within each group (works in both modes). Reorder stays within a
+// group — a PR tab can't become a Jira tab. After a drop, sync `_tabs` to DOM order.
+let _sortables = [];
+function initTabSort() {
+  if (typeof Sortable === 'undefined') return;
+  _sortables.forEach(s => s.destroy());
+  _sortables = [];
+  document.querySelectorAll('#split-tabs .tab-group, #opentabs-nav .tab-group').forEach(group => {
+    _sortables.push(new Sortable(group, { draggable: '[data-id]', animation: 150, filter: '.tab-x', onEnd: syncTabOrder }));
+  });
+}
+function syncTabOrder() {
+  const order = [...document.querySelectorAll('#split-tabs [data-id], #opentabs-nav [data-id]')].map(el => el.dataset.id);
+  _tabs.sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
+  saveTabs();
+}
+
+// Switch where opened links appear; persist the choice and re-lay-out open tabs.
+function setLinkMode(mode) {
+  _linkMode = mode === 'sidebar' ? 'sidebar' : 'split';
+  document.querySelectorAll('.linkmode-card').forEach(c => c.classList.toggle('selected', c.dataset.mode === _linkMode));
+  document.body.classList.toggle('link-mode-sidebar', _linkMode === 'sidebar');
+  // Reset layout, then reopen the active view so open tabs carry over to the new mode.
+  if (_splitInstance) { _splitInstance.destroy(); _splitInstance = null; }
+  document.body.classList.remove('viewing-tab');
+  document.getElementById('split').hidden = true;
+  const focus = _activeTab || (_tabs[0] && _tabs[0].id);
+  _activeTab = null;
+  if (focus) { ensurePanelOpen(); activateTab(focus); } else renderTabs();
+  api('/api/config', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ link_mode: _linkMode }) }).catch(() => {});
+}
+
+// Close every tab except `id`.
+function closeOthers(id) {
+  _tabs.filter(t => t.id !== id).forEach(t => t.wv?.remove());
+  _tabs = _tabs.filter(t => t.id === id);
+  activateTab(id);
+}
+
+// Right-click tab menu (reuses .status-menu styling).
+let _tabMenuEl = null;
+function closeTabMenu() {
+  if (_tabMenuEl) { _tabMenuEl.remove(); _tabMenuEl = null; }
+  document.removeEventListener('click', closeTabMenu, true);
+}
+function tabMenu(e, id) {
+  e.preventDefault();
+  closeTabMenu();
+  const m = document.createElement('div');
+  m.className = 'status-menu';
+  const item = (label, fn) => { const b = document.createElement('button'); b.className = 'status-menu-item'; b.textContent = label; b.onclick = () => { closeTabMenu(); fn(); }; m.appendChild(b); };
+  item('Close tab', () => closeTab(id));
+  if (_tabs.length > 1) item('Close others', () => closeOthers(id));
+  item('Close all', () => closeSplit());
+  document.body.appendChild(m);
+  m.style.top = (window.scrollY + e.clientY) + 'px';
+  m.style.left = Math.min(window.scrollX + e.clientX, window.scrollX + window.innerWidth - m.offsetWidth - 8) + 'px';
+  _tabMenuEl = m;
+  setTimeout(() => document.addEventListener('click', closeTabMenu, true), 0);
+  return false;
+}
+
+// PR card / Jira badge click handlers.
+function openPrSplit(url, num) { openInSplit(url, `PR ${num}`, 'github'); }
+function jiraClick(e, url, key) {
+  e.stopPropagation();   // don't trigger a parent PR card
+  e.preventDefault();    // open in the embedded viewer, not the <a> href
+  openInSplit(url, key, 'jira');
+}
 const fmtDate = s => s ? new Date(s).toLocaleDateString('en-US',{month:'short',day:'numeric'}) : '';
 const timeAgo = s => {
   const sec = Math.max(0, Math.round((Date.now() - Date.parse(s)) / 1000));
@@ -341,17 +824,22 @@ const timeAgo = s => {
   if (min < 60) return `${min}m ago`;
   return `${Math.round(min/60)}h ago`;
 };
-const stateClass = s => ({OPEN:'open',MERGED:'merged',CLOSED:'closed'}[s]||'default');
-const stateLabel = s => ({OPEN:'Open',MERGED:'Merged',CLOSED:'Closed'}[s]||s);
 
 // State
 let _projects = [];
 let _activeProjectId = null;
+let _sprintSnap = { items: [] }; // dashboard "Current Sprint" snapshot
 
 // ── Navigation ────────────────────────────────────────────────────────────────
-const PAGE_TITLES = { dashboard:'Dashboard', project:'', events:'Activity', settings:'Settings' };
-
 function showPage(name, projectId) {
+  // In sidebar mode the viewer replaces the content, so navigating to a page must
+  // hide the viewer and bring <main> back.
+  if (_linkMode === 'sidebar') {
+    document.getElementById('split').hidden = true;
+    document.body.classList.remove('viewing-tab');
+    _activeTab = null;
+    renderTabs();
+  }
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
   document.getElementById('page-'+(name==='project'?'project':name)).classList.add('active');
@@ -362,6 +850,9 @@ function showPage(name, projectId) {
   if (name === 'dashboard') {
     document.getElementById('page-title').textContent = 'Dashboard';
     loadDashboard();
+  } else if (name === 'mytickets') {
+    document.getElementById('page-title').textContent = 'JIRA Tickets';
+    loadMyTickets();
   } else if (name === 'project' && projectId) {
     _activeProjectId = projectId;
     const proj = _projects.find(p=>p.id===projectId);
@@ -369,13 +860,19 @@ function showPage(name, projectId) {
     document.getElementById('topbar-actions').innerHTML = `<button class="btn btn-secondary btn-sm" onclick="openEditProjectModal('${projectId}')">⚙ Edit</button>`;
     document.querySelectorAll('.nav-btn[data-project]').forEach(b => { if(b.dataset.project===projectId) b.classList.add('active'); });
     loadProjectPage(projectId);
-  } else if (name === 'events') {
-    document.getElementById('page-title').textContent = 'Activity';
-    loadEvents();
   } else if (name === 'settings') {
     document.getElementById('page-title').textContent = 'Settings';
+    settingsTab('settings'); // default to the Settings tab (Activity is the other)
     loadSettings();
   }
+}
+
+// Settings page sub-tabs: 'settings' | 'activity'.
+function settingsTab(name, btn) {
+  ['settings','activity'].forEach(t =>
+    document.getElementById('settings-tab-' + t)?.classList.toggle('active', t === name));
+  document.querySelectorAll('#settings-tabbar .tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+  if (name === 'activity') loadEvents();
 }
 
 // ── Projects sidebar nav ──────────────────────────────────────────────────────
@@ -397,8 +894,15 @@ function renderProjectNav(projects) {
 // Other people's PRs live under each project, not here.
 async function loadDashboard() {
   // Reads the snapshot (instant) — no leading spinner so SSE refreshes are seamless.
-  const [groups, events] = await Promise.all([api('/api/dashboard'), api('/api/events')]);
+  const [groups, events, mineSnap, sprintSnap] = await Promise.all([
+    api('/api/dashboard'),
+    api('/api/events'),
+    api('/api/jira/mine').catch(() => ({ items: [] })),
+    api('/api/jira/sprint').catch(() => ({ items: [] })),
+  ]);
   _projects = groups;
+  _sprintSnap = sprintSnap;
+  rememberStatuses(sprintSnap.items);
   renderProjectNav(groups);
 
   // Flatten open PRs across all projects.
@@ -412,14 +916,11 @@ async function loadDashboard() {
     <div class="stat-card"><div class="stat-val">${groups.length}</div><div class="stat-label">Projects</div></div>
     <div class="stat-card"><div class="stat-val" style="color:var(--accent)">${mine.length}</div><div class="stat-label">My PRs</div></div>
     <div class="stat-card"><div class="stat-val" style="color:var(--warn)">${review.length}</div><div class="stat-label">To Review</div></div>
+    <div class="stat-card"><div class="stat-val" style="color:var(--warn)">${(sprintSnap.items||[]).length}</div><div class="stat-label">In Sprint</div></div>
+    <div class="stat-card" onclick="showPage('mytickets')" style="cursor:pointer"><div class="stat-val" style="color:var(--accent)">${(mineSnap.items||[]).length}</div><div class="stat-label">JIRA Tickets</div></div>
     <div class="stat-card"><div class="stat-val" style="color:var(--success)">${events.filter(e=>e.type==='jira_transitioned').length}</div><div class="stat-label">Auto-transitions</div></div>
   `;
   document.getElementById('synced-label').textContent = lastSynced ? `Updated ${timeAgo(lastSynced)}` : '';
-
-  if (!groups.length) {
-    document.getElementById('dashboard-groups').innerHTML = `<div class="empty"><div class="empty-icon">⬡</div><p>No projects yet. Create one to get started.</p><br><button class="btn btn-primary" onclick="openNewProjectModal()">+ New project</button></div>`;
-    return;
-  }
 
   const section = (title, prs, emptyMsg) => `
     <div class="project-group">
@@ -432,38 +933,70 @@ async function loadDashboard() {
         : `<div style="font-size:13px;color:var(--text-3);padding:12px 0">${emptyMsg}</div>`}
     </div>`;
 
-  document.getElementById('dashboard-groups').innerHTML =
-    errors.map(e=>`<p style="font-size:12px;color:var(--danger);margin-bottom:8px">⚠ ${esc(e.repo)}: ${esc(e.error)}</p>`).join('') +
-    section('Tasks · My Pull Requests', mine, 'No open PRs you authored.') +
-    section('Review Requested', review, 'Nothing awaiting your review.');
+  const prHtml = groups.length
+    ? errors.map(e=>`<p style="font-size:12px;color:var(--danger);margin-bottom:8px">⚠ ${esc(e.repo)}: ${esc(e.error)}</p>`).join('') +
+      section('Tasks · My Pull Requests', mine, 'No open PRs you authored.') +
+      section('Review Requested', review, 'Nothing awaiting your review.')
+    : `<div class="empty"><div class="empty-icon">⬡</div><p>No projects yet. Create one to get started.</p><br><button class="btn btn-primary" onclick="openNewProjectModal()">+ New project</button></div>`;
+
+  // Current Sprint (Jira) renders at the bottom, below the PR sections. It lives in
+  // its own node so a status change can re-render just this section.
+  document.getElementById('dashboard-groups').innerHTML = prHtml + `<div id="dashboard-sprint"></div>`;
+  renderDashboardSprint();
+}
+
+// Render the "Current Sprint" section from the cached snapshot (used on load and
+// after a status change). Reuses the shared Jira table so the status menu works here.
+function renderDashboardSprint() {
+  const el = document.getElementById('dashboard-sprint');
+  if (!el) return;
+  const items = _sprintSnap.items || [];
+  const emptyMsg = _sprintSnap.error ? esc(_sprintSnap.error) : 'No open tickets in an active sprint.';
+  el.innerHTML = `
+    <div class="project-group">
+      <div class="project-group-header">
+        <span class="project-name">Current Sprint</span>
+        <span class="project-meta">${items.length}</span>
+      </div>
+      ${items.length
+        ? `<div class="card"><div class="table-wrap"><table>
+            <thead><tr><th>Key</th><th>Summary</th><th>Status</th><th>Type</th><th>Priority</th></tr></thead>
+            <tbody>${jiraRowsHtml(items)}</tbody></table></div></div>`
+        : `<div style="font-size:13px;color:var(--text-3);padding:12px 0">${emptyMsg}</div>`}
+    </div>`;
 }
 
 function ciLabel(ci) {
-  if (!ci) return '<span style="color:var(--text-3)">○ CI</span>';
-  if (ci.status === 'in_progress' || ci.status === 'queued')
-    return '<span style="color:var(--warn)">⏳ Running</span>';
-  if (ci.conclusion === 'success')
-    return '<span style="color:var(--success)">✅ Passing</span>';
-  if (ci.conclusion === 'failure')
-    return `<span style="color:var(--danger)">❌ Failing</span>`;
-  if (ci.conclusion === 'cancelled')
-    return '<span style="color:var(--text-3)">⊘ Cancelled</span>';
-  return '<span style="color:var(--text-3)">○ CI</span>';
+  if (!ci) return '';
+  if (ci.status === 'in_progress' || ci.status === 'queued') return '<span class="ci ci-running">Running</span>';
+  if (ci.conclusion === 'success')   return '<span class="ci ci-success">Passing</span>';
+  if (ci.conclusion === 'failure')   return '<span class="ci ci-failure">Failing</span>';
+  if (ci.conclusion === 'cancelled') return '<span class="ci ci-none">Cancelled</span>';
+  return '';
 }
 
+const PR_STATE_COLOR = { OPEN:'var(--success)', MERGED:'var(--merged)', CLOSED:'var(--danger)' };
+
+// A flat, whole-card-clickable PR card. The card opens the PR; Jira badges keep
+// their own link to Jira (stopPropagation so they don't also trigger the card).
 function prCard(pr) {
-  const sc = stateClass(pr.state);
-  const jiraHtml = (pr.jiraKeys||[]).map(k=>`<a href="https://accedo.atlassian.net/browse/${k}" target="_blank" class="badge badge-jira">${esc(k)}</a>`).join('');
-  return `<div class="pr-card">
+  const stripe = PR_STATE_COLOR[pr.state] || 'var(--border-focus)';
+  const ci = ciLabel(pr.ci);
+  const jiraHtml = (pr.jiraKeys||[]).map(k =>
+    `<a href="${jiraUrl(k)}" target="_blank" rel="noopener" class="badge badge-jira" onclick="jiraClick(event, this.href, '${esc(k)}')">${esc(k)}</a>`).join('');
+  return `<div class="pr-card" style="--st:${stripe}" onclick="openPrSplit('${pr.url}','#${pr.number}')" title="Open PR #${pr.number}">
     <div class="pr-card-top">
-      <div class="pr-title"><a href="${pr.url}" target="_blank">#${pr.number} ${esc(pr.title)}</a></div>
-      <span class="badge badge-${sc}">${stateLabel(pr.state)}</span>
+      <span class="pr-num">#${pr.number}</span>
+      <div class="pr-title">${esc(pr.title)}</div>
+      ${pr.isDraft ? `<span class="pr-draft">Draft</span>` : ''}
     </div>
     <div class="pr-meta">
-      <span class="tag">${esc(pr.repo)}</span>
+      <span class="pr-repo">${esc(pr.repo)}</span>
+      <span class="sep">·</span>
       <span>${esc(pr.author?.login||'')}</span>
+      <span class="sep">·</span>
       <span>${fmtDate(pr.createdAt)}</span>
-      <span>${ciLabel(pr.ci)}</span>
+      ${ci}
     </div>
     ${jiraHtml?`<div class="pr-tags">${jiraHtml}</div>`:''}
   </div>`;
@@ -523,15 +1056,16 @@ async function loadProjectPage(id) {
 
     <!-- Jira tab -->
     <div class="tab-panel" id="tab-jira-${id}">
-      <div style="display:flex;justify-content:flex-end;margin-bottom:14px">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:14px">
+        <div id="proj-jira-filter-${id}" class="ticket-filter" style="margin-bottom:0"></div>
         <button class="btn btn-secondary btn-sm" onclick="loadProjectJira('${id}')">↻ Refresh</button>
       </div>
       <div class="card">
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Key</th><th>Summary</th><th>Status</th><th>Type</th><th></th></tr></thead>
+            <thead><tr><th>Key</th><th>Summary</th><th>Status</th><th>Type</th><th>Priority</th></tr></thead>
             <tbody id="proj-jira-${id}">
-              <tr><td colspan="5"><div class="empty" style="padding:20px">${proj.jql ? 'Click Refresh to run the saved JQL.' : 'Set a JQL query in settings above.'}</div></td></tr>
+              <tr><td colspan="5"><div class="loading-row"><div class="spinner"></div> Loading…</div></td></tr>
             </tbody>
           </table>
         </div>
@@ -555,6 +1089,7 @@ function switchTab(projectId, tab, btn) {
   });
   btn.closest('.tabs').querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
+  if (tab === 'jira') loadProjectJira(projectId);
 }
 
 async function saveProjectSettings(id) {
@@ -580,32 +1115,236 @@ async function reloadProjectPRs(id, state, { silent = false } = {}) {
   if (target) target.innerHTML = prListHtml(prs.filter(p=>!p.error), proj?.repo, state);
 }
 
-async function loadProjectJira(id) {
-  const tbody = document.getElementById(`proj-jira-${id}`);
-  const jql = document.getElementById(`proj-jql-${id}`)?.value.trim();
-  if (!jql) { tbody.innerHTML = '<tr><td colspan="5"><div class="empty" style="padding:16px">Set a JQL query in settings above.</div></td></tr>'; return; }
-  tbody.innerHTML = '<tr><td colspan="5"><div class="loading-row"><div class="spinner"></div> Loading…</div></td></tr>';
-  try {
-    const items = await api('/api/jira/search?jql=' + encodeURIComponent(jql));
-    if (!items.length) { tbody.innerHTML = '<tr><td colspan="5"><div class="empty" style="padding:16px">No Jira items found.</div></td></tr>'; return; }
-    tbody.innerHTML = items.map(item => `<tr>
-      <td><a class="link" href="https://accedo.atlassian.net/browse/${item.key}" target="_blank">${item.key}</a></td>
-      <td>${esc(item.summary || item.fields?.summary || '')}</td>
-      <td><span class="badge badge-default">${esc(item.status || item.fields?.status?.name || '')}</span></td>
-      <td>${esc(item.type || item.fields?.issuetype?.name || '')}</td>
-      <td><button class="btn btn-ghost btn-xs" onclick="transitionJira('${item.key}')">Transition</button></td>
-    </tr>`).join('');
-  } catch(e) { tbody.innerHTML = `<tr><td colspan="5" style="color:var(--danger);padding:16px">${esc(e.message)}</td></tr>`; }
+// Shared 5-column row renderer for the snapshot-backed Jira tables (JIRA Tickets +
+// per-project tab). `items` are lean tickets from the snapshot endpoints. The status
+// cell is a button: clicking it opens a menu of the ticket's possible next statuses.
+function jiraRowsHtml(items) {
+  return items.map(item => `<tr>
+    <td><a class="link" href="${jiraUrl(item.key)}" target="_blank" onclick="jiraClick(event, this.href, '${esc(item.key)}')">${item.key}</a></td>
+    <td>${esc(item.summary || '')}</td>
+    <td><button class="badge badge-default status-btn" data-key="${esc(item.key)}" data-status="${esc(item.status || '')}" onclick="openStatusMenu(this)" title="Change status">${esc(item.status || '')} <span class="status-caret">▾</span></button></td>
+    <td>${esc(item.type || '')}</td>
+    <td>${esc(item.priority || '')}</td>
+  </tr>`).join('');
+}
+const jiraRow = (msg, color) => `<tr><td colspan="5"><div class="empty" style="padding:16px${color?`;color:${color}`:''}">${msg}</div></td></tr>`;
+
+// Renders a snapshot ({items, lastSynced, error}) into a tbody. Shared by the
+// project tab and My Tickets — both read the background-synced snapshot (SWR).
+function renderJiraSnapshot(tbody, snap, { emptyMsg } = {}) {
+  if (!tbody) return;
+  const items = snap?.items || [];
+  if (snap?.error && !items.length) { tbody.innerHTML = jiraRow(esc(snap.error), 'var(--danger)'); return; }
+  if (!items.length) { tbody.innerHTML = jiraRow(emptyMsg || 'No tickets found.'); return; }
+  tbody.innerHTML = jiraRowsHtml(items);
 }
 
-// ── Jira transition ───────────────────────────────────────────────────────────
-async function transitionJira(key) {
-  const t = prompt(`Transition ${key} to:`);
-  if (!t) return;
+// ── Jira ticket filters (shared: JIRA Tickets page + project Jira tab) ────────────
+// A "Filters" bar of compact dropdowns — project, status, type, priority. Filtering
+// is AND across dimensions and faceted (each dropdown lists only the values still
+// available given the other selections, with counts). Done client-side over the
+// snapshot (instant), and the selection is persisted to the config store as JSON.
+const ticketProjectOf = key => (key || '').split('-')[0];
+
+const TICKET_FILTERS = [
+  { key: 'project',  label: 'projects',   valueOf: i => ticketProjectOf(i.key) },
+  { key: 'status',   label: 'statuses',   valueOf: i => i.status },
+  { key: 'type',     label: 'types',      valueOf: i => i.type },
+  { key: 'priority', label: 'priorities', valueOf: i => i.priority },
+];
+
+// Parse a saved filter value: JSON object, or a legacy bare/comma project string.
+function parseFilters(raw) {
+  if (!raw) return {};
+  try { const o = JSON.parse(raw); if (o && typeof o === 'object' && !Array.isArray(o)) return o; } catch {}
+  return { project: String(raw).split(',')[0].trim() };
+}
+
+// Items matching every active filter except `exceptKey` (used for faceted lists).
+function itemsMatching(items, filters, exceptKey) {
+  return items.filter(i => TICKET_FILTERS.every(f =>
+    f.key === exceptKey || !filters[f.key] || f.valueOf(i) === filters[f.key]));
+}
+
+// Build the "Filters" bar. `onchangeFor(dimKey)` returns the JS expr run on change.
+// A dimension's dropdown is shown only when it offers a real choice (2+ values) or
+// already has a selection (so it can be cleared).
+function ticketFilterBar(items, filters, onchangeFor) {
+  if (!items.length) return '';
+  const opt = (v, label, sel) => `<option value="${esc(v)}" ${sel ? 'selected' : ''}>${esc(label)}</option>`;
+  const selects = TICKET_FILTERS.map(f => {
+    const base = itemsMatching(items, filters, f.key);
+    const values = [...new Set(base.map(f.valueOf).filter(Boolean))].sort();
+    const cur = filters[f.key] || '';
+    if (values.length < 2 && !cur) return '';
+    return `<select class="filter-select" onchange="${onchangeFor(f.key)}">` +
+      opt('', `All ${f.label}`, !cur) +
+      values.map(v => opt(v, `${v} (${base.filter(i => f.valueOf(i) === v).length})`, cur === v)).join('') +
+    `</select>`;
+  }).filter(Boolean);
+  return selects.length ? `<span class="filter-label">Filters</span>` + selects.join('') : '';
+}
+
+// Persist only the active (non-empty) dimensions, as JSON, under a config key.
+async function persistFilters(cfgKey, filters) {
+  const clean = {};
+  for (const f of TICKET_FILTERS) if (filters[f.key]) clean[f.key] = filters[f.key];
   try {
-    await api(`/api/jira/${key}/transition`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({transition:t}) });
-    toast(`${key} → ${t}`);
+    await api('/api/config', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ [cfgKey]: JSON.stringify(clean) }) });
   } catch(e) { toastErr(e.message); }
+}
+
+// ── JIRA Tickets (assigned-to-me feed) ──────────────────────────────────────────
+let _ticketFilters = null;     // {project,status,...}; null = not loaded yet
+let _mineSnap = { items: [] }; // last snapshot, cached so filter changes re-render without refetch
+
+async function loadMyTickets() {
+  const tbody = document.getElementById('mytickets-body');
+  if (!tbody) return;
+  try {
+    const [snap, cfg] = await Promise.all([api('/api/jira/mine'), api('/api/config')]);
+    if (_ticketFilters === null) _ticketFilters = parseFilters(cfg.my_ticket_filters || cfg.my_ticket_projects);
+    _mineSnap = snap;
+    rememberStatuses(snap.items);
+    renderMyTicketsFilter();
+    renderMyTickets();
+    const label = document.getElementById('synced-label');
+    if (label && snap.lastSynced) label.textContent = `Updated ${timeAgo(snap.lastSynced)}`;
+  } catch(e) { tbody.innerHTML = jiraRow(esc(e.message), 'var(--danger)'); }
+}
+
+function renderMyTicketsFilter() {
+  const el = document.getElementById('mytickets-filter');
+  if (el) el.innerHTML = ticketFilterBar(_mineSnap.items || [], _ticketFilters, k => `setTicketFilter('${k}', this.value)`);
+}
+
+function renderMyTickets() {
+  const tbody = document.getElementById('mytickets-body');
+  if (!tbody) return;
+  const items = _mineSnap.items || [];
+  const filtered = itemsMatching(items, _ticketFilters, null);
+  const emptyMsg = items.length ? 'No tickets match these filters.' : 'No tickets assigned to you. 🎉';
+  renderJiraSnapshot(tbody, { items: filtered, error: items.length ? null : _mineSnap.error, lastSynced: _mineSnap.lastSynced }, { emptyMsg });
+}
+
+async function setTicketFilter(key, value) {
+  _ticketFilters[key] = value;
+  renderMyTicketsFilter(); // faceted options shift with each selection
+  renderMyTickets();
+  await persistFilters('my_ticket_filters', _ticketFilters);
+}
+
+// ── Project Jira tab (the active project's saved JQL) ────────────────────────────
+const _projJiraSnap    = {}; // projectId -> last snapshot
+const _projJiraFilters = {}; // projectId -> filters object
+
+async function loadProjectJira(id) {
+  const tbody = document.getElementById(`proj-jira-${id}`);
+  if (!tbody) return;
+  try {
+    const [snap, cfg] = await Promise.all([api(`/api/projects/${id}/jira`), api('/api/config')]);
+    if (_projJiraFilters[id] === undefined) _projJiraFilters[id] = parseFilters(cfg['ticket_filter_' + id]);
+    _projJiraSnap[id] = snap;
+    rememberStatuses(snap.items);
+    renderProjJiraFilter(id);
+    renderProjJira(id);
+  } catch(e) { tbody.innerHTML = jiraRow(esc(e.message), 'var(--danger)'); }
+}
+
+function renderProjJiraFilter(id) {
+  const fEl = document.getElementById(`proj-jira-filter-${id}`);
+  if (fEl) fEl.innerHTML = ticketFilterBar((_projJiraSnap[id] || {}).items || [], _projJiraFilters[id] || {}, k => `setProjJiraFilter('${id}', '${k}', this.value)`);
+}
+
+function renderProjJira(id) {
+  const tbody = document.getElementById(`proj-jira-${id}`);
+  if (!tbody) return;
+  const snap = _projJiraSnap[id] || { items: [] };
+  const items = snap.items || [];
+  const filtered = itemsMatching(items, _projJiraFilters[id] || {}, null);
+  const emptyMsg = !snap.jql ? 'Set a JQL query in this project’s settings above.'
+    : items.length ? 'No tickets match these filters.' : 'No Jira items found.';
+  renderJiraSnapshot(tbody, { items: filtered, error: items.length ? null : snap.error, lastSynced: snap.lastSynced }, { emptyMsg });
+}
+
+async function setProjJiraFilter(id, key, value) {
+  if (!_projJiraFilters[id]) _projJiraFilters[id] = {};
+  _projJiraFilters[id][key] = value;
+  renderProjJiraFilter(id);
+  renderProjJira(id);
+  await persistFilters('ticket_filter_' + id, _projJiraFilters[id]);
+}
+
+// ── Jira transition (status menu) ───────────────────────────────────────────────
+// acli can't list a ticket's real transitions, so we offer the workflow statuses
+// seen across loaded tickets (minus the current one). acli validates the move on
+// submit and surfaces an error if it isn't a permitted transition.
+const _knownStatuses = new Set();
+const rememberStatuses = items => (items || []).forEach(i => { if (i.status) _knownStatuses.add(i.status); });
+
+let _statusMenuEl = null;
+function closeStatusMenu() {
+  if (_statusMenuEl) { _statusMenuEl.remove(); _statusMenuEl = null; }
+  document.removeEventListener('click', onStatusMenuOutside, true);
+  document.removeEventListener('keydown', onStatusMenuKey);
+}
+function onStatusMenuOutside(e) { if (_statusMenuEl && !_statusMenuEl.contains(e.target)) closeStatusMenu(); }
+function onStatusMenuKey(e) { if (e.key === 'Escape') closeStatusMenu(); }
+
+function openStatusMenu(btn) {
+  const open = _statusMenuEl;
+  closeStatusMenu();
+  if (open) return; // second click on the same trigger just closes it
+  const key = btn.dataset.key, current = btn.dataset.status;
+  const targets = [..._knownStatuses].filter(s => s !== current).sort();
+  if (!targets.length) { toast('No other statuses known yet — open more tickets first.'); return; }
+
+  const menu = document.createElement('div');
+  menu.className = 'status-menu';
+  const head = document.createElement('div');
+  head.className = 'status-menu-head';
+  head.textContent = `Move ${key} to…`;
+  menu.appendChild(head);
+  for (const s of targets) {
+    const item = document.createElement('button');
+    item.className = 'status-menu-item';
+    item.textContent = s;
+    item.onclick = () => { closeStatusMenu(); doTransition(key, s); };
+    menu.appendChild(item);
+  }
+  document.body.appendChild(menu);
+
+  const r = btn.getBoundingClientRect();
+  // Flip above the button if it would overflow the viewport bottom.
+  const below = r.bottom + menu.offsetHeight + 6 < window.innerHeight;
+  menu.style.top  = window.scrollY + (below ? r.bottom + 4 : r.top - menu.offsetHeight - 4) + 'px';
+  menu.style.left = Math.min(window.scrollX + r.left, window.scrollX + window.innerWidth - menu.offsetWidth - 8) + 'px';
+  _statusMenuEl = menu;
+  setTimeout(() => {
+    document.addEventListener('click', onStatusMenuOutside, true);
+    document.addEventListener('keydown', onStatusMenuKey);
+  }, 0);
+}
+
+async function doTransition(key, status) {
+  try {
+    await api(`/api/jira/${key}/transition`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ transition: status }) });
+    toast(`${key} → ${status}`);
+    applyStatusLocally(key, status); // optimistic — the next poll confirms
+  } catch(e) { toastErr(e.message); }
+}
+
+// Update the cached snapshots so the new status shows immediately, then re-render
+// whichever view is active.
+function applyStatusLocally(key, status) {
+  _knownStatuses.add(status);
+  const patch = snap => { const it = (snap?.items || []).find(i => i.key === key); if (it) it.status = status; };
+  patch(_mineSnap);
+  patch(_sprintSnap);
+  Object.values(_projJiraSnap).forEach(patch);
+  if (document.getElementById('page-dashboard')?.classList.contains('active')) renderDashboardSprint();
+  if (document.getElementById('page-mytickets')?.classList.contains('active')) { renderMyTicketsFilter(); renderMyTickets(); }
+  if (_activeProjectId && document.getElementById(`tab-jira-${_activeProjectId}`)?.classList.contains('active')) { renderProjJiraFilter(_activeProjectId); renderProjJira(_activeProjectId); }
 }
 
 // ── Events ────────────────────────────────────────────────────────────────────
@@ -638,7 +1377,16 @@ async function loadEvents() {
 async function loadSettings() {
   const [cfg, fwds, dbinfo] = await Promise.all([api('/api/config'), api('/api/forwarders'), api('/api/db')]);
 
-  if (cfg.poll_interval) document.getElementById('poll-interval').value = cfg.poll_interval;
+  if (cfg.poll_interval)      document.getElementById('poll-interval').value = cfg.poll_interval;
+  if (cfg.jira_base_url)      document.getElementById('jira-base-url').value = cfg.jira_base_url;
+  if (cfg.my_jql)             document.getElementById('my-jql').value = cfg.my_jql;
+  if (cfg.sprint_jql)         document.getElementById('sprint-jql').value = cfg.sprint_jql;
+  // Show the auto-detected site as the placeholder so it's clear what's in effect.
+  api('/api/jira/site').then(s => { if (s.baseUrl) document.getElementById('jira-base-url').placeholder = `${s.baseUrl} (auto-detected)`; }).catch(()=>{});
+  if (cfg.jira_poll_interval) document.getElementById('jira-poll-interval').value = cfg.jira_poll_interval;
+  if (cfg.jira_limit)         document.getElementById('jira-limit').value = cfg.jira_limit;
+  _linkMode = cfg.link_mode === 'split' ? 'split' : 'sidebar'; // default sidebar
+  document.querySelectorAll('.linkmode-card').forEach(c => c.classList.toggle('selected', c.dataset.mode === _linkMode));
 
   const allRepos = [...new Set(dbinfo.projects.map(p=>p.repo).filter(Boolean))];
   document.getElementById('forwarder-list').innerHTML = allRepos.length
@@ -711,8 +1459,15 @@ async function syncForwarders() {
 async function saveConfig() {
   try {
     await api('/api/config', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({
-      poll_interval: document.getElementById('poll-interval').value || '60',
+      poll_interval:      document.getElementById('poll-interval').value || '60',
+      jira_base_url:      document.getElementById('jira-base-url').value.trim(), // blank = auto-detect
+      my_jql:             document.getElementById('my-jql').value.trim() || 'assignee = currentUser() AND statusCategory != Done ORDER BY updated DESC',
+      sprint_jql:         document.getElementById('sprint-jql').value.trim() || 'assignee = currentUser() AND sprint in openSprints() AND statusCategory != Done ORDER BY updated DESC',
+      jira_poll_interval: document.getElementById('jira-poll-interval').value || '120',
+      jira_limit:         document.getElementById('jira-limit').value || '100',
     })});
+    // Ticket links depend on the base URL — refresh it after a save.
+    try { _jiraBase = (await api('/api/jira/site')).baseUrl || _jiraBase; } catch {}
     toast('Settings saved');
   } catch(e) { toastErr(e.message); }
 }
@@ -789,14 +1544,14 @@ async function saveProject() {
   } catch(e) { toastErr(e.message); }
 }
 
-// ── Sync ──────────────────────────────────────────────────────────────────────
-async function syncNow() {
-  try { await api('/api/poll',{method:'POST'}); toast('Sync complete'); loadDashboard(); }
-  catch(e) { toastErr(e.message); }
-}
 
 // ── Keyboard ──────────────────────────────────────────────────────────────────
-document.addEventListener('keydown', e => { if(e.key==='Escape') closeModal(); });
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape') return;
+  if (_tabMenuEl) { closeTabMenu(); return; }   // close the tab menu first
+  closeModal();
+  if (!document.getElementById('split').hidden) closeSplit();
+});
 
 // ── Live updates (SSE) ──────────────────────────────────────────────────────────
 // The server pushes a "sync" event whenever a project's snapshot changes; we
@@ -807,12 +1562,16 @@ function refreshActivePage() {
   const active = document.querySelector('.page.active')?.id;
   if (active === 'page-dashboard') {
     loadDashboard();
+  } else if (active === 'page-mytickets') {
+    loadMyTickets();
   } else if (active === 'page-project' && _activeProjectId) {
-    const panel = document.getElementById(`tab-prs-${_activeProjectId}`);
-    if (panel?.classList.contains('active')) {
+    const prPanel = document.getElementById(`tab-prs-${_activeProjectId}`);
+    if (prPanel?.classList.contains('active')) {
       const sel = document.querySelector(`#tab-prs-${_activeProjectId} select`);
       reloadProjectPRs(_activeProjectId, sel?.value || 'open', { silent: true });
     }
+    const jiraPanel = document.getElementById(`tab-jira-${_activeProjectId}`);
+    if (jiraPanel?.classList.contains('active')) loadProjectJira(_activeProjectId);
   }
 }
 function scheduleRefresh() {
@@ -849,7 +1608,16 @@ setInterval(() => {
 }, 10_000);
 
 // ── Init ──────────────────────────────────────────────────────────────────────
-loadDashboard(); // renderProjectNav is called inside loadDashboard
+(async () => {
+  try {
+    const [site, cfg] = await Promise.all([api('/api/jira/site'), api('/api/config')]);
+    _jiraBase = site.baseUrl || '';
+    _linkMode = cfg.link_mode === 'split' ? 'split' : 'sidebar'; // default sidebar
+    document.body.classList.toggle('link-mode-sidebar', _linkMode === 'sidebar');
+  } catch {}
+  loadDashboard(); // renderProjectNav is called inside loadDashboard
+  restoreTabs();   // rehydrate GitHub/Jira tabs from the last session
+})();
 </script>
 </body>
 </html>

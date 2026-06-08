@@ -27,12 +27,15 @@ If you need fresher data in the UI, fix the sync loop. Do not make endpoints cal
 
 ```bash
 npm install
-PORT=3000 bun --watch server.js
-npm run build:run
-electron .
+npm run dev            # web dev: frees the port, watch-runs server.js, opens the browser
+npm run build:run      # package + launch the Electron tray app
 ```
 
-- Web changes: just save; the page auto-reloads. Open http://localhost:3000.
+- `npm run dev` → `./dev.sh`: kills any stale server, runs `bun --watch server.js`
+  (falls back to `node --watch` if bun is absent), and opens http://localhost:3000.
+  Override the port with `PORT=4000 npm run dev`; skip the browser with `./dev.sh --no-open`.
+  Raw watch (no port-free / browser) is still `npm run dev:server`.
+- Web changes: just save; the page auto-reloads (server watches `public/` → SSE `reload`).
 - Tray, `tray.js`, or `server.js` startup changes: rebuild with `npm run build:run`.
 - `build:run` kills any running instance and frees port 3000 first.
 

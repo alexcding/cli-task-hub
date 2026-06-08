@@ -9,7 +9,9 @@
   "type": "commonjs",
   "scripts": {
     "start": "node server.js",
-    "dev": "bun --watch server.js",
+    "dev": "./dev.sh",
+    "dev:app": "./dev.sh --app",
+    "dev:server": "bun --watch server.js",
     "dev:tray": "electron .",
     "build": "node scripts/build.js",
     "build:run": "node scripts/build.js --run",

@@ -142,6 +142,54 @@ app.get('/api/dashboard', (req, res) => {
 });
 
 // ── Jira ──────────────────────────────────────────────────────────────────────
+// Snapshots (assigned-to-me + per-project) follow the same stale-while-revalidate
+// model as PRs: read the cached snapshot the Jira sync loop writes; if it's stale,
+// kick a background refresh whose result lands over SSE. Jira changes less often
+// than PR CI, so the staleness window is longer.
+const JIRA_STALE_MS = 90_000;
+const jiraStale = snap => !snap || !snap.lastSynced || (Date.now() - Date.parse(snap.lastSynced) > JIRA_STALE_MS);
+
+// Base URL for ticket links. Prefer an explicit `jira_base_url` config override;
+// otherwise auto-detect the site from `acli jira auth status` (cached — it doesn't
+// change within a session). The UI reads this instead of hardcoding a host.
+let _jiraBaseCache = null;
+function jiraBaseUrl() {
+  const override = db.get('jira_base_url');
+  if (override) return override.replace(/\/+$/, '');
+  if (_jiraBaseCache) return _jiraBaseCache;
+  try {
+    const site = jira.getSite();
+    if (site) _jiraBaseCache = /^https?:\/\//.test(site) ? site.replace(/\/+$/, '') : `https://${site}`;
+  } catch { /* not authed yet — UI falls back to no link */ }
+  return _jiraBaseCache || '';
+}
+app.get('/api/jira/site', wrap((req, res) => res.json({ baseUrl: jiraBaseUrl() })));
+
+// Global "assigned to me" feed. Declared before '/api/jira/:key' so this literal
+// path wins over the :key param.
+app.get('/api/jira/mine', wrap((req, res) => {
+  const snap = db.getJiraSnapshot(poller.MY_TICKETS_ID);
+  if (jiraStale(snap)) poller.syncJiraMine();
+  res.json(snap || { items: [], jql: '', lastSynced: null, error: null });
+}));
+
+// Global "my work in the active sprint(s)" feed (dashboard).
+app.get('/api/jira/sprint', wrap((req, res) => {
+  const snap = db.getJiraSnapshot(poller.MY_SPRINT_ID);
+  if (jiraStale(snap)) poller.syncJiraSprint();
+  res.json(snap || { items: [], jql: '', lastSynced: null, error: null });
+}));
+
+// Per-project Jira feed (the project's saved JQL).
+app.get('/api/projects/:id/jira', wrap((req, res) => {
+  const project = db.getProject(req.params.id);
+  if (!project) return res.status(404).json({ error: 'Not found' });
+  const snap = db.getJiraSnapshot(project.id);
+  if (project.jql && jiraStale(snap)) poller.syncProjectJira(project);
+  res.json(snap || { items: [], jql: project.jql || '', lastSynced: null, error: null });
+}));
+
+// Ad-hoc live search (e.g. previewing a JQL before saving it).
 app.get('/api/jira/search', wrap((req, res) => {
   const jql = req.query.jql || 'assignee = currentUser() ORDER BY updated DESC';
   res.json(jira.searchWorkItems(jql, 30));
@@ -171,12 +219,15 @@ app.get('/api/events', (req, res) => res.json(db.getEvents(100)));
 // ── DB inspector (Settings) ─────────────────────────────────────────────────────
 app.get('/api/db', (req, res) => {
   const snaps = db.getAllSnapshots();
+  const jsnaps = db.getAllJiraSnapshots();
   res.json({
     config: db.getConfig(),
     projects: db.getProjects(),
     counts: { projects: db.getProjects().length, links: db.getLinks().length, events: db.getEvents(1000).length },
     snapshots: Object.fromEntries(Object.entries(snaps).map(([id, s]) =>
       [id, { open: s.prs?.length || 0, lastSynced: s.lastSynced, error: s.error || null }])),
+    jiraSnapshots: Object.fromEntries(Object.entries(jsnaps).map(([id, s]) =>
+      [id, { tickets: s.items?.length || 0, lastSynced: s.lastSynced, error: s.error || null }])),
   });
 });
 
@@ -201,6 +252,7 @@ function broadcast(payload) {
   for (const res of sseClients) { try { res.write(msg); } catch {} }
 }
 const publishSync = projectId => broadcast({ type: 'sync', projectId });
+const publishJiraSync = id => broadcast({ type: 'jira-sync', id });
 
 // ── Dev live reload ─────────────────────────────────────────────────────────────
 // Watch public/ and tell open pages to reload on change. Disabled in the packaged
@@ -235,14 +287,15 @@ app.post('/api/forwarders/sync', (req, res) => { forwarder.sync(PORT); res.json(
 
 // ── Poll trigger ────────────────────────────────────────────────────────────────
 app.post('/api/poll', async (req, res) => {
-  try { await poller.poll(); res.json({ ok: true }); }
+  try { await poller.poll(); poller.pollJira(); res.json({ ok: true }); }
   catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 // ── Start ─────────────────────────────────────────────────────────────────────
 const server = app.listen(PORT, () => {
   console.log(`TaskHub running at http://localhost:${PORT}`);
-  poller.start(publishSync); // sync loop publishes snapshot updates over SSE
+  poller.start(publishSync);         // PR sync loop publishes snapshot updates over SSE
+  poller.startJira(publishJiraSync); // Jira sync loop (assigned-to-me + per-project)
   forwarder.sync(PORT);
 });
 

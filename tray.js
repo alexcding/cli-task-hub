@@ -1,4 +1,4 @@
-const { app, Tray, Menu, shell, nativeImage } = require('electron');
+const { app, Tray, Menu, shell, nativeImage, BrowserWindow, session } = require('electron');
 const { fork, execSync } = require('child_process');
 const path = require('path');
 const http = require('http');
@@ -9,6 +9,56 @@ const BASE_URL = `http://localhost:${PORT}`;
 
 let tray = null;
 let serverProcess = null;
+let win = null;
+
+// Main dashboard window. Hosts the SPA and lets it embed GitHub/Jira in a <webview>
+// (the header-stripping below allows framing those sites). Reused if already open.
+function openWindow() {
+  if (win && !win.isDestroyed()) { win.show(); win.focus(); return; }
+  win = new BrowserWindow({
+    width: 1320, height: 880, minWidth: 720, title: 'TaskHub',
+    webPreferences: { webviewTag: true, contextIsolation: true, nodeIntegration: false },
+  });
+  win.loadURL(BASE_URL);
+  // "Open in browser" / window.open(http…) → system browser, not a child window.
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:/.test(url)) { shell.openExternal(url); return { action: 'deny' }; }
+    return { action: 'allow' };
+  });
+  win.on('blur', refreshMenu);   // refresh tray tabs as focus moves to the menu bar
+  win.on('closed', () => { win = null; });
+}
+
+// Read the dashboard's open tabs (lives in the renderer) for the tray menu.
+async function getOpenTabs() {
+  if (!win || win.isDestroyed()) return [];
+  try { return await win.webContents.executeJavaScript('window.__getTabs ? __getTabs() : []'); }
+  catch { return []; }
+}
+
+// Focus the window and switch it to the tab for `url`.
+function activateTabInApp(url) {
+  openWindow();
+  if (win && !win.isDestroyed()) {
+    win.webContents.executeJavaScript(`window.__activateTabByUrl && __activateTabByUrl(${JSON.stringify(url)})`).catch(() => {});
+  }
+}
+
+// Strip frame-blocking headers so the <webview> can load GitHub/Jira pages, which
+// otherwise refuse to be embedded (X-Frame-Options / CSP frame-ancestors).
+function allowFraming() {
+  session.defaultSession.webRequest.onHeadersReceived((details, cb) => {
+    const h = details.responseHeaders || {};
+    for (const key of Object.keys(h)) {
+      const lk = key.toLowerCase();
+      if (lk === 'x-frame-options') delete h[key];
+      else if (lk === 'content-security-policy') {
+        h[key] = (Array.isArray(h[key]) ? h[key] : [h[key]]).map(v => v.replace(/frame-ancestors[^;]*(;|$)/gi, ''));
+      }
+    }
+    cb({ responseHeaders: h });
+  });
+}
 
 // Kill whatever is holding our port (e.g. a stale server from a previous run).
 function freePort() {
@@ -69,6 +119,20 @@ function pngDot(size, [r, g, b]) {
   return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ihdr), chunk('IDAT', idat), chunk('IEND', Buffer.alloc(0))]);
 }
 
+// Per-kind dot for open-tab menu items: GitHub = dark gray, Jira = blue.
+const TAB_COLORS = {
+  github: [0x57, 0x60, 0x6a],
+  jira:   [0x26, 0x84, 0xff],
+};
+const tabImgCache = {};
+function tabIcon(kind) {
+  const key = TAB_COLORS[kind] ? kind : 'github';
+  if (!tabImgCache[key]) {
+    tabImgCache[key] = nativeImage.createFromBuffer(pngDot(18, TAB_COLORS[key]), { width: 9, height: 9, scaleFactor: 2 });
+  }
+  return tabImgCache[key];
+}
+
 const CI_COLORS = {
   none:    [0x9a, 0xa0, 0xa6], // gray
   running: [0xf5, 0x9e, 0x0b], // amber
@@ -105,24 +169,42 @@ function prSection(label, prs) {
   return items;
 }
 
+// A labeled section of open-tab menu items. Clicking focuses the window + that tab.
+function tabSection(label, tabs) {
+  if (!tabs.length) return [];
+  const items = [{ label, enabled: false }];
+  for (const t of tabs) {
+    const title = (t.title || t.url).slice(0, 44);
+    items.push({ label: (t.active ? '● ' : '   ') + title, icon: tabIcon(t.kind), click: () => activateTabInApp(t.url) });
+  }
+  return items;
+}
+
 async function buildMenu() {
-  const all = await fetchJSON('/api/prs/tray');
+  const [all, tabs] = await Promise.all([fetchJSON('/api/prs/tray'), getOpenTabs()]);
   // Menu shows only the user's own PRs (Tasks) and PRs awaiting their review.
   const mine   = all.filter(p => p.category === 'mine');
   const review = all.filter(p => p.category === 'review');
-  const shown  = [...mine, ...review];
 
   let prItems = [...prSection('Tasks', mine), ...prSection('Review', review)];
   if (!prItems.length) prItems = [{ label: 'No tasks or reviews', enabled: false }];
+
+  // Open tabs from the dashboard, grouped GitHub / Jira.
+  const tabItems = [
+    ...tabSection('GitHub', tabs.filter(t => t.kind === 'github')),
+    ...tabSection('Jira',   tabs.filter(t => t.kind === 'jira')),
+  ];
 
   // Icon color by state: red = review requested, blue = only your tasks, green = clear.
   const state = review.length ? 'review' : mine.length ? 'tasks' : 'idle';
   if (tray) { tray.setImage(trayIcon(state)); tray.setTitle(''); }
 
   return Menu.buildFromTemplate([
-    { label: 'Dashboard', click: () => shell.openExternal(BASE_URL) },
+    { label: 'Open TaskHub', click: () => openWindow() },
+    { label: 'Open in browser', click: () => shell.openExternal(BASE_URL) },
     { type: 'separator' },
     ...prItems,
+    ...(tabItems.length ? [{ type: 'separator' }, ...tabItems] : []),
     { type: 'separator' },
     { label: 'Quit', click: () => app.quit() },
   ]);
@@ -144,22 +226,30 @@ app.whenReady().then(async () => {
   // Suppress Dock icon — menu bar only
   if (app.dock) app.dock.hide();
 
-  // Free the port in case a previous server is still lingering, then start ours.
-  freePort();
-  serverProcess = fork(path.join(__dirname, 'server.js'), [], {
-    // The forked server is plain Node and can't read Electron's app paths,
-    // so hand it a writable data dir explicitly (never inside the asar).
-    env: { ...process.env, PORT: String(PORT), TASKHUB_DATA_DIR: app.getPath('userData') },
-    silent: false,
-  });
-
-  serverProcess.on('error', (err) => console.error('[tray] server error:', err));
+  // In dev (`npm run dev:app`) a watched server is already running — connect to it
+  // instead of forking, so we get hot reload and don't fight over the port.
+  if (process.env.TASKHUB_EXTERNAL_SERVER === '1') {
+    console.log(`[tray] using external server at ${BASE_URL}`);
+  } else {
+    // Free the port in case a previous server is still lingering, then start ours.
+    freePort();
+    serverProcess = fork(path.join(__dirname, 'server.js'), [], {
+      // The forked server is plain Node and can't read Electron's app paths,
+      // so hand it a writable data dir explicitly (never inside the asar).
+      env: { ...process.env, PORT: String(PORT), TASKHUB_DATA_DIR: app.getPath('userData') },
+      silent: false,
+    });
+    serverProcess.on('error', (err) => console.error('[tray] server error:', err));
+  }
 
   try {
     await waitForServer();
   } catch (err) {
     console.error('[tray] Could not connect to server:', err.message);
   }
+
+  allowFraming();   // let the dashboard's <webview> embed GitHub/Jira
+  openWindow();     // show the dashboard window on launch
 
   tray = new Tray(trayIcon('idle')); // colored by state in buildMenu()
   tray.setToolTip('TaskHub');
