@@ -21,6 +21,15 @@ app.use(express.static(path.join(__dirname, 'public'), {
   setHeaders: res => res.setHeader('Cache-Control', 'no-store'),
 }));
 
+// Serve SF Mono (bundled with macOS Terminal.app) at /sf-mono when present, so the
+// terminal can use it. Absent on machines without it → the route 404s and the UI
+// falls back to Menlo. No-op on non-mac / if the folder isn't there.
+const SF_MONO_DIRS = [
+  '/System/Applications/Utilities/Terminal.app/Contents/Resources/Fonts', // Catalina+
+  '/Applications/Utilities/Terminal.app/Contents/Resources/Fonts',        // older macOS
+];
+try { const dir = SF_MONO_DIRS.find(d => require('fs').existsSync(d)); if (dir) app.use('/sf-mono', express.static(dir)); } catch { /* ignore */ }
+
 const wrap = fn => (req, res) => {
   try { fn(req, res); }
   catch (err) { res.status(500).json({ error: err.message }); }
@@ -96,6 +105,14 @@ app.get('/api/detect-repo', async (req, res) => {
   const dir = req.query.path;
   if (!dir) return res.status(400).json({ error: 'path required' });
   res.json({ repo: (await github.gitRemoteRepo(String(dir))) || '' });
+});
+
+// Local worktree path checked out at `branch` within `path` (so a PR's terminal can
+// open in the matching worktree instead of the main checkout). { path: '' } if none.
+app.get('/api/worktree', async (req, res) => {
+  const { path: dir, branch } = req.query;
+  if (!dir || !branch) return res.json({ path: '' });
+  res.json({ path: (await github.worktreeForBranch(String(dir), String(branch))) || '' });
 });
 
 // ── Pull requests (stale-while-revalidate) ──────────────────────────────────────

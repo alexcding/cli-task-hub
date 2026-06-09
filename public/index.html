@@ -59,14 +59,32 @@
        replacing <main>. */
     .split { min-width:0; min-height:0; height:100vh; flex:1; background:var(--surface); display:flex; flex-direction:column; }
     .split[hidden] { display:none; }
-    .split-bar { height:52px; flex-shrink:0; display:flex; align-items:center; gap:4px; padding:0 6px 0 8px; border-bottom:1px solid var(--border); }
+    /* The toolbar is two segments — webview controls + terminal controls — that mirror
+       the panes below: in split mode the divide sits at the same --pr-split boundary. */
+    .split-bar { height:52px; flex-shrink:0; display:flex; align-items:stretch; border-bottom:1px solid var(--border); }
+    .bar-seg { display:flex; align-items:center; gap:4px; padding:0 6px 0 8px; min-width:0; }
+    .bar-wv { flex:1; }
+    .bar-term { display:none; flex:1; min-width:0; border-left:1px solid var(--border); }
+    body.pr-split .bar-wv   { flex:none; width:var(--pr-split, 60%); }
+    body.pr-split .bar-term { display:flex; }
+    body.viewing-term .bar-wv   { display:none; }
+    body.viewing-term .bar-term { display:flex; border-left:none; }
+    /* Terminal toggle is pinned to the far right of the whole toolbar (a direct child of
+       .split-bar, after both segments) so it keeps its position when the split opens.
+       It's webview-only, so hide it when a standalone terminal is the sole view. */
+    #split-toggle-term { align-self:center; margin-right:4px; }
+    body.viewing-term #split-toggle-term { display:none; }
     .split-btn { background:none; border:none; color:var(--text-2); cursor:pointer; padding:6px; border-radius:6px; flex-shrink:0; display:inline-flex; align-items:center; justify-content:center; }
     .split-btn:hover { background:var(--surface-hover); color:var(--text); }
     .split-btn:disabled { opacity:.3; cursor:default; }
     .split-btn:disabled:hover { background:none; color:var(--text-2); }
     .split-btn svg { display:block; }
-    /* Panel header shows the active tab's title. */
+    /* Each segment's header shows its title (PR title left, terminal folder right). */
     .split-title { flex:1; min-width:0; font-size:13px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    /* The webview title doubles as the "open in browser" action. */
+    #split-title { cursor:pointer; }
+    #split-title:hover { color:var(--text); text-decoration:underline; }
+    #split-title:empty { cursor:default; }
     body.viewing-tab main { display:none; }
     .tab-group { display:flex; align-items:center; gap:3px; }
     .tab-group-label { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.4px; color:var(--text-3); padding:0 3px; flex-shrink:0; }
@@ -78,6 +96,22 @@
     .tab-x:hover { opacity:1; background:rgb(0 0 0/.08); }
     .split-body { flex:1; position:relative; background:var(--bg); }
     .split-body webview { position:absolute; inset:0; width:100%; height:100%; border:0; }
+    /* SF Mono copy served from Terminal.app (/sf-mono) under a DISTINCT family name so it
+       never shadows a system-installed "SF Mono". 404s harmlessly when the folder is absent. */
+    @font-face { font-family:'SFMonoServed'; src:url('/sf-mono/SF-Mono-Regular.otf') format('opentype'); font-weight:400; font-style:normal; font-display:swap; }
+    @font-face { font-family:'SFMonoServed'; src:url('/sf-mono/SF-Mono-Bold.otf') format('opentype'); font-weight:700; font-style:normal; font-display:swap; }
+    /* One xterm terminal pane per worktree; only the active one is shown. */
+    .term-pane { position:absolute; inset:0; background:#1e1e1e; padding:6px 4px 6px 8px; }
+    .term-pane .xterm, .term-pane .xterm-viewport { height:100%; }
+    /* PR ↔ terminal split: the PR webview takes the left `--pr-split` fraction, the
+       paired terminal the rest on the right; a draggable divider sits between them. */
+    body.pr-split .split-body webview { width: var(--pr-split, 60%); }
+    body.pr-split .split-body .term-pane { left: var(--pr-split, 60%); }
+    #pr-divider { position:absolute; top:0; bottom:0; left:var(--pr-split, 60%); width:7px; transform:translateX(-50%); cursor:col-resize; z-index:3; display:none; }
+    #pr-divider::before { content:''; position:absolute; left:50%; top:0; bottom:0; width:1px; transform:translateX(-50%); background:var(--border); }
+    #pr-divider:hover::before { background:var(--accent); }
+    body.pr-split #pr-divider { display:block; }
+    .split-btn.on { color:var(--accent); background:var(--accent-bg); }
     .split-loading { position:absolute; inset:0; z-index:2; display:flex; align-items:center; justify-content:center; background:var(--bg); color:var(--text-3); font-size:13px; gap:8px; }
     .split-loading[hidden] { display:none; }
     /* While dragging the sidebar, disable webview pointer events so a full-width page
@@ -361,6 +395,21 @@
           </div>
 
           <div class="card">
+            <div class="card-header"><h3>Terminal</h3></div>
+            <div class="card-pad">
+              <div class="form-group">
+                <label class="form-label">Theme</label>
+                <select id="terminal-theme" class="filter-select" style="max-width:220px" onchange="setTerminalTheme(this.value)">
+                  <option value="auto">Match system (light / dark)</option>
+                  <option value="light">Always light</option>
+                  <option value="dark">Always dark</option>
+                </select>
+                <p style="font-size:12px;color:var(--text-3);margin-top:6px">Applies to all open terminals immediately.</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
             <div class="card-header"><h3>JIRA Tickets</h3></div>
             <div class="card-pad">
               <div class="form-group">
@@ -425,25 +474,33 @@
   <!-- Embedded viewer: shows the active left-nav tab's page in an Electron webview -->
   <div id="split" class="split" hidden>
     <div class="split-bar">
-      <button class="split-btn" id="split-back" title="Back" onclick="splitBack()">
-        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
-      </button>
-      <button class="split-btn" title="Home (default page)" onclick="splitHome()">
-        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9.5 12 3l9 6.5"/><path d="M5 9v11h14V9"/><path d="M9.5 20v-6h5v6"/></svg>
-      </button>
-      <span class="split-title" id="split-title"></span>
-      <button class="split-btn" title="Reload" onclick="splitReload()">
-        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 4v5h-5"/></svg>
-      </button>
-      <button class="split-btn" title="Open in browser" onclick="splitOpenExternal()">
-        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><path d="M15 3h6v6"/><path d="M10 14 21 3"/></svg>
-      </button>
-      <button class="split-btn" title="Close panel (Esc)" onclick="closeSplit()">
-        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="M6 6l12 12"/></svg>
+      <!-- Webview segment (over the PR pane in split mode) -->
+      <div class="bar-seg bar-wv">
+        <button class="split-btn" id="split-back" title="Back" onclick="splitBack()">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+        </button>
+        <button class="split-btn" title="Home (default page)" onclick="splitHome()">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9.5 12 3l9 6.5"/><path d="M5 9v11h14V9"/><path d="M9.5 20v-6h5v6"/></svg>
+        </button>
+        <!-- Click the title to open the page in the external browser. -->
+        <span class="split-title" id="split-title" title="Open in browser" onclick="splitOpenExternal()"></span>
+      </div>
+      <!-- Terminal segment (over the terminal pane in split mode, or full-width when a terminal is the sole view) -->
+      <div class="bar-seg bar-term">
+        <span class="split-title" id="term-title"></span>
+        <button class="split-btn" title="Clear terminal" onclick="clearVisibleTerm()">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/><path d="M6 7l1 13h10l1-13"/></svg>
+        </button>
+      </div>
+      <!-- Terminal toggle lives outside both segments so it stays pinned to the far
+           right of the toolbar — its position doesn't shift when the split opens. -->
+      <button class="split-btn" id="split-toggle-term" title="Show/hide the terminal" onclick="togglePrSplit()">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="4.5" width="19" height="15" rx="2.5"/><path d="M7 10l2.5 2L7 14"/><path d="M12.5 14.5H16"/></svg>
       </button>
     </div>
     <div class="split-body" id="split-body">
       <div class="split-loading" id="split-loading" hidden><div class="spinner"></div> Loading…</div>
+      <div id="pr-divider" title="Drag to resize"></div>
     </div>
   </div>
   </div><!-- /workarea -->
@@ -509,16 +566,46 @@ let _activeTab = null;      // active tab id
 let _tabSeq = 0;
 const activeTab = () => _tabs.find(t => t.id === _activeTab) || null;
 
+// Terminals share the same right-side viewer as webview tabs (only one pane shown at
+// a time). Each terminal is an xterm view bound to a main-process PTY by id.
+let _terms = new Map();     // id -> { el, term, fit, off, offExit, cwd, title, paired }
+let _activeTermId = null;
+
+// ── Terminal theme ────────────────────────────────────────────────────────────────
+// 'auto' follows the OS light/dark setting; 'light'/'dark' force one. Persisted to the
+// config store as `terminal_theme`; applied to every open terminal when it changes.
+let _termThemePref = 'auto';
+const TERM_THEMES = {
+  dark:  { background:'#1e1e1e', foreground:'#e6e6e6', cursor:'#e6e6e6', cursorAccent:'#1e1e1e', selectionBackground:'#5b5b5b' },
+  light: { background:'#ffffff', foreground:'#1f2430', cursor:'#1f2430', cursorAccent:'#ffffff', selectionBackground:'#b3d4fc',
+           black:'#1f2430', red:'#c91b00', green:'#00a33f', yellow:'#a5740b', blue:'#0451a5', magenta:'#a626a4', cyan:'#0998b3', white:'#5c6370',
+           brightBlack:'#7f848e', brightRed:'#e8364f', brightGreen:'#00a33f', brightYellow:'#b58900', brightBlue:'#2472c8', brightMagenta:'#bc05bc', brightCyan:'#0598bc', brightWhite:'#1f2430' },
+};
+function termMode() {
+  if (_termThemePref === 'light' || _termThemePref === 'dark') return _termThemePref;
+  return window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+}
+const termTheme = () => TERM_THEMES[termMode()];
+// Re-skin every open terminal (on setting change or, in auto mode, an OS theme switch).
+function applyTermThemes() {
+  const th = termTheme();
+  for (const t of _terms.values()) { try { t.term.options.theme = th; } catch {} t.el.style.background = th.background; }
+}
+if (window.matchMedia) matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { if (_termThemePref === 'auto') applyTermThemes(); });
+// PR ↔ terminal split: each GitHub PR tab gets a paired terminal shown to its right.
+let _prSplit = localStorage.getItem('taskhub.prSplit') !== '0'; // on by default
+let _prRatio = parseFloat(localStorage.getItem('taskhub.prRatio')) || 0.6; // PR pane fraction
+
 // Open a URL as a tab in the left nav. New tabs append at the bottom; re-opening an
 // already-open URL just focuses it (keeps its position).
-function openInSplit(url, title, kind) {
+function openInSplit(url, title, kind, meta = {}) {
   const existing = _tabs.find(t => t.url === url);
   if (existing) {
     ensurePanelOpen();
     activateTab(existing.id);
     return;
   }
-  const tab = createTab(url, title, kind);
+  const tab = createTab(url, title, kind, meta);
   _tabs.push(tab);
   ensurePanelOpen();
   activateTab(tab.id);
@@ -526,7 +613,7 @@ function openInSplit(url, title, kind) {
 
 // Build a <webview>-backed tab object (not yet added to `_tabs`). Shared by
 // openInSplit (new tab) and restoreTabs (rehydrate from localStorage).
-function createTab(url, title, kind) {
+function createTab(url, title, kind, meta = {}) {
   const id = 'tab' + (++_tabSeq);
   const wv = document.createElement('webview');
   // Perf: (1) lazy — `src` is set on first activation (see activateTab), so restored
@@ -538,7 +625,9 @@ function createTab(url, title, kind) {
   wv.setAttribute('allowpopups', '');
   wv.style.display = 'none';
   document.getElementById('split-body').appendChild(wv);
-  const tab = { id, kind: kind === 'jira' ? 'jira' : 'github', title: title || url, url, wv, loaded: false, started: false };
+  // repo/branch (for GitHub PRs) let the terminal map to the right project workspace +
+  // worktree without depending on _projects still holding PR data.
+  const tab = { id, kind: kind === 'jira' ? 'jira' : 'github', title: title || url, url, wv, loaded: false, started: false, repo: meta.repo || '', branch: meta.branch || '' };
   wv.addEventListener('did-stop-loading', () => { tab.loaded = true; if (id === _activeTab) showSplitLoading(false); });
   // Keep the Back button's enabled state in sync as the user navigates within the tab.
   const onNav = () => { if (id === _activeTab) updateNavButtons(); };
@@ -556,7 +645,7 @@ function saveTabs() {
   try {
     const active = activeTab();
     localStorage.setItem(TABS_KEY, JSON.stringify({
-      tabs: _tabs.map(t => ({ kind: t.kind, title: t.title, url: t.url })),
+      tabs: _tabs.map(t => ({ kind: t.kind, title: t.title, url: t.url, repo: t.repo, branch: t.branch })),
       active: active ? active.url : null,
     }));
   } catch {}
@@ -566,7 +655,7 @@ function restoreTabs() {
   try { data = JSON.parse(localStorage.getItem(TABS_KEY)); } catch {}
   if (!data || !Array.isArray(data.tabs) || !data.tabs.length) return;
   for (const t of data.tabs) {
-    if (t && t.url) _tabs.push(createTab(t.url, t.title, t.kind));
+    if (t && t.url) _tabs.push(createTab(t.url, t.title, t.kind, { repo: t.repo, branch: t.branch }));
   }
   if (!_tabs.length) return;
   const active = _tabs.find(t => t.url === data.active) || _tabs[0];
@@ -590,23 +679,40 @@ function ensurePanelOpen() {
 
 function activateTab(id) {
   _activeTab = id;
+  _activeTermId = null;                       // showing a page, not a terminal
+  document.body.classList.remove('viewing-term');
   // Lazy load: only kick off the page load the first time a tab is shown.
   const cur = _tabs.find(t => t.id === id);
   if (cur && cur.wv && !cur.started) { cur.started = true; cur.wv.setAttribute('src', cur.url); }
-  _tabs.forEach(t => { if (t.wv) t.wv.style.display = t.id === id ? '' : 'none'; });
+  hideAllPanes();
+  if (cur && cur.wv) cur.wv.style.display = '';
   document.getElementById('split').hidden = false;
   document.body.classList.add('viewing-tab');
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active')); // a tab is the view now
   const t = activeTab();
   showSplitLoading(t ? !t.loaded : false);
   updateNavButtons();
+  // PR ↔ terminal split: a GitHub PR shows a paired terminal to its right.
+  if (_prSplit && cur && cur.kind === 'github' && window.taskhub?.term) {
+    ensurePrTerminal(cur).then(() => { if (_activeTab === cur.id) applyPrLayout(cur); });
+  } else {
+    clearPrLayout();
+  }
+  document.getElementById('split-toggle-term')?.classList.toggle('on', _prSplit);
   renderTabs();
   saveTabs();
+}
+
+// Hide every pane in the viewer (webview tabs + terminals). The caller then shows one.
+function hideAllPanes() {
+  _tabs.forEach(t => { if (t.wv) t.wv.style.display = 'none'; });
+  for (const t of _terms.values()) t.el.style.display = 'none';
 }
 
 function closeTab(id) {
   const i = _tabs.findIndex(t => t.id === id);
   if (i < 0) return;
+  if (_tabs[i].termId) disposeTerm(_tabs[i].termId); // close the PR's paired terminal too
   _tabs[i].wv?.remove();
   _tabs.splice(i, 1);
   if (_activeTab === id) {
@@ -620,21 +726,246 @@ function closeTab(id) {
 }
 
 function closeSplit() {
-  _tabs.forEach(t => t.wv?.remove());
-  _tabs = []; _activeTab = null;
+  _tabs.forEach(t => { if (t.termId) disposeTerm(t.termId); t.wv?.remove(); });
+  _tabs = []; _activeTab = null; _activeTermId = null;
   document.getElementById('split').hidden = true;
-  document.body.classList.remove('viewing-tab'); // restore <main>
-  renderTabs(); // clear the sidebar nav entries
+  document.body.classList.remove('viewing-tab', 'viewing-term', 'pr-split'); // restore <main>
+  renderTabs(); // clear the sidebar nav entries (terminals stay alive in the background)
   saveTabs();
 }
 
 function splitBack()         { const t = activeTab(); try { if (t && t.wv.canGoBack()) t.wv.goBack(); } catch {} }
 function splitHome()         { const t = activeTab(); if (t && t.wv) { t.loaded = false; showSplitLoading(true); t.wv.loadURL(t.url); } } // back to the tab's default link
-function splitReload()       { const t = activeTab(); if (t) { t.loaded = false; showSplitLoading(true); t.wv.reload(); } }
 function splitOpenExternal() { const t = activeTab(); if (t) window.open(t.url, '_blank'); }
 function showSplitLoading(on){ document.getElementById('split-loading').hidden = !on; }
 // Grey out Back when the active tab has no history to go back to.
 function updateNavButtons() { const t = activeTab(); const b = document.getElementById('split-back'); if (b) { let can = false; try { can = !!(t && t.wv && t.started && t.wv.canGoBack()); } catch {} b.disabled = !can; } }
+
+// ── Terminals (xterm.js, backed by main-process PTYs) ─────────────────────────────
+const TERM_ICON = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="1.2" y="2.5" width="13.6" height="11" rx="1.6"/><path d="M4 6l2.2 2L4 10"/><path d="M8.2 10.2H11"/></svg>';
+
+// Load the vendored xterm bundle + addons once, on first use (keeps it off the
+// initial page load). Resolves when window.Terminal / FitAddon / WebglAddon exist.
+let _xtReady = null;
+function loadXterm() {
+  if (_xtReady) return _xtReady;
+  const loadScript = src => new Promise((res, rej) => {
+    const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = () => rej(new Error('failed to load ' + src));
+    document.head.appendChild(s);
+  });
+  _xtReady = (async () => {
+    const css = document.createElement('link'); css.rel = 'stylesheet'; css.href = '/vendor/xterm.css'; document.head.appendChild(css);
+    await loadScript('/vendor/xterm.js');
+    await Promise.all([loadScript('/vendor/xterm-addon-fit.js'), loadScript('/vendor/xterm-addon-webgl.js')]);
+    await ensureTermFont(); // load SF Mono (if present) before xterm measures glyph width
+  })();
+  return _xtReady;
+}
+
+// Font preference, in order: a system-installed "SF Mono" (family name "SF Mono"), the
+// copy served from Terminal.app ("SFMonoServed"), then Menlo. The renderer picks the
+// first available; we just await the loads so xterm measures the real glyph width.
+const _termFont = '"SF Mono", "SFMonoServed", Menlo, Monaco, monospace';
+async function ensureTermFont() {
+  if (!document.fonts) return;
+  try { await Promise.all([document.fonts.load('13px "SF Mono"'), document.fonts.load('13px "SFMonoServed"')]); } catch {}
+}
+
+// Spawn a terminal in `cwd` (a worktree folder) and show it. Reuses an existing
+// terminal for the same cwd rather than opening duplicates.
+// Create an xterm view bound to a fresh PTY (does NOT activate it). `paired` marks a
+// terminal that belongs to a PR tab (kept out of the standalone Terminals nav group).
+async function createTermView(cwd, title, { paired = false } = {}) {
+  await loadXterm();
+  const { id, cwd: dir, title: t } = await taskhub.term.create({ cwd: cwd || undefined });
+  const th = termTheme();
+  const el = document.createElement('div');
+  el.className = 'term-pane'; el.style.display = 'none'; el.style.background = th.background;
+  document.getElementById('split-body').appendChild(el);
+  const term = new Terminal({ cursorBlink: true, fontSize: 13, fontFamily: _termFont,
+    theme: th, scrollback: 4000, allowProposedApi: true });
+  const fit = new FitAddon.FitAddon();
+  term.loadAddon(fit);
+  term.open(el);
+  try { term.loadAddon(new WebglAddon.WebglAddon()); } catch {} // GPU renderer; falls back to DOM
+  // Wire the two directions: keystrokes → PTY, PTY output → xterm.
+  term.onData(d => taskhub.term.write(id, d));
+  const off = taskhub.term.onData(id, chunk => term.write(chunk));
+  const offExit = taskhub.term.onExit(id, () => onTermExit(id, paired));
+  _terms.set(id, { el, term, fit, off, offExit, cwd: dir, title: title || t, paired });
+  return id;
+}
+
+// Tear down a terminal's listeners + PTY + xterm view. No view switching.
+function disposeTerm(id) {
+  const t = _terms.get(id);
+  if (!t) return;
+  try { t.off?.(); t.offExit?.(); } catch {}
+  try { taskhub.term.kill(id); } catch {}
+  try { t.term.dispose(); } catch {}
+  t.el.remove();
+  _terms.delete(id);
+}
+
+// The shell exited (e.g. the user typed `exit`). Clean up; a paired terminal also
+// collapses its PR's split, a standalone one falls back to another view.
+function onTermExit(id, paired) {
+  if (paired) {
+    const tab = _tabs.find(x => x.termId === id);
+    disposeTerm(id);
+    if (tab) { tab.termId = null; if (_activeTab === tab.id) clearPrLayout(); }
+  } else {
+    closeTerminal(id);
+  }
+}
+
+// Open a standalone terminal in `cwd` and show it full-width (reuses one already open
+// on the same folder rather than duplicating).
+async function openTerminal(cwd, title) {
+  if (!window.taskhub?.term) { toastErr('Terminals run in the TaskHub app'); return; }
+  const existing = [..._terms.entries()].find(([, t]) => t.cwd === cwd && !t.paired);
+  if (existing) { ensurePanelOpen(); activateTerminal(existing[0]); return; }
+  try { const id = await createTermView(cwd, title); ensurePanelOpen(); activateTerminal(id); }
+  catch (e) { toastErr('Terminal failed: ' + e.message); }
+}
+
+function activateTerminal(id) {
+  const t = _terms.get(id);
+  if (!t) return;
+  _activeTab = null; _activeTermId = id;
+  ensurePanelOpen();
+  hideAllPanes();
+  document.body.classList.remove('pr-split'); // a standalone terminal is full-width
+  t.el.style.display = '';
+  document.body.classList.add('viewing-term'); // hide the webview-only toolbar buttons
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+  showSplitLoading(false);
+  updateNavButtons();
+  fitTerm(t);
+  t.term.focus();
+  renderTabs(); // also refreshes titles
+}
+
+function closeTerminal(id) {
+  disposeTerm(id);
+  if (_activeTermId === id) {
+    _activeTermId = null;
+    const next = [..._terms.keys()].find(k => !_terms.get(k).paired);
+    if (next) activateTerminal(next);
+    else if (!_tabs.length) closeSplit();
+    else activateTab(_tabs[0].id);
+  } else {
+    renderTabs();
+  }
+}
+
+// ── PR ↔ terminal split ───────────────────────────────────────────────────────────
+// The project that owns a PR (by url), so we can root its terminal in that project's
+// local workspace; null cwd → main falls back to the app's own repo.
+function projectByPrUrl(url) { return _projects.find(g => (g.prs || []).some(p => p.url === url)) || null; }
+function projectByRepo(repo) { return repo ? _projects.find(p => p.repo === repo) || null : null; }
+
+// Where a PR's terminal should start: the worktree checked out at the PR's branch if
+// one exists locally, else the project's workspace, else null (→ main uses the app repo).
+// Resolve the project by repo first (survives _projects losing its PR snapshot), then by url.
+async function prCwd(tab) {
+  const proj = projectByRepo(tab.repo) || projectByPrUrl(tab.url);
+  const ws = proj && proj.workspace;
+  if (!ws) return null;
+  const branch = tab.branch || (proj.prs || []).find(p => p.url === tab.url)?.headRefName;
+  if (branch) {
+    try { const r = await api(`/api/worktree?path=${encodeURIComponent(ws)}&branch=${encodeURIComponent(branch)}`); if (r.path) return r.path; } catch {}
+  }
+  return ws;
+}
+
+// Lazily create the PR's paired terminal (once per tab), guarded against double-create.
+function ensurePrTerminal(tab) {
+  if (tab.termId && _terms.has(tab.termId)) return Promise.resolve();
+  if (tab._termPromise) return tab._termPromise;
+  tab._termPromise = prCwd(tab)
+    .then(cwd => createTermView(cwd, null, { paired: true })) // title defaults to the folder/worktree name
+    .then(id => { tab.termId = id; })
+    .catch(e => toastErr('Terminal failed: ' + e.message))
+    .finally(() => { tab._termPromise = null; });
+  return tab._termPromise;
+}
+
+// Show the PR's paired terminal to the right of its webview (geometry is CSS-driven by
+// the `pr-split` body class + `--pr-split` variable; here we just reveal + fit).
+function applyPrLayout(tab) {
+  const t = tab.termId && _terms.get(tab.termId);
+  if (!t) return;
+  document.documentElement.style.setProperty('--pr-split', Math.round(_prRatio * 100) + '%');
+  document.body.classList.add('pr-split');
+  t.el.style.display = '';
+  fitTerm(t);
+  updateTitles(); // terminal segment now has a terminal to name
+}
+
+function clearPrLayout() { document.body.classList.remove('pr-split'); }
+
+// Toolbar toggle: show/hide the terminal beside PRs. Re-lays-out the current PR.
+function togglePrSplit() {
+  _prSplit = !_prSplit;
+  localStorage.setItem('taskhub.prSplit', _prSplit ? '1' : '0');
+  const cur = activeTab();
+  if (cur && cur.kind === 'github') activateTab(cur.id);
+}
+
+// Size the PTY to the rendered terminal (FitAddon measures the DOM, so the pane must
+// be visible first). Debounced refit on window/sidebar resize handled below.
+function fitTerm(t) {
+  if (!t) return;
+  try { t.fit.fit(); const { cols, rows } = t.term; taskhub.term.resize([..._terms].find(([, v]) => v === t)[0], cols, rows); } catch {}
+}
+// The terminal currently on screen: a standalone full-width one, or a PR's paired one.
+function visibleTerm() {
+  if (_activeTermId) return _terms.get(_activeTermId);
+  const cur = activeTab();
+  return cur && cur.termId ? _terms.get(cur.termId) : null;
+}
+function clearVisibleTerm() { const t = visibleTerm(); if (t) { t.term.clear(); t.term.focus(); } }
+
+// Titles: PR/page title in the webview segment, terminal folder in the terminal segment.
+function updateTitles() {
+  const st = document.getElementById('split-title');
+  const tt = document.getElementById('term-title');
+  if (st) st.textContent = _activeTermId ? '' : (activeTab()?.title || '');
+  if (tt) { const v = visibleTerm(); tt.textContent = v ? v.title : ''; }
+}
+let _termResizeRaf = 0;
+window.addEventListener('resize', () => {
+  if (_termResizeRaf) return;
+  _termResizeRaf = requestAnimationFrame(() => { _termResizeRaf = 0; fitTerm(visibleTerm()); });
+});
+
+// Drag the PR/terminal divider: update the split fraction (CSS var) live; refit on drop.
+(function initPrDivider() {
+  const d = document.getElementById('pr-divider');
+  if (!d) return;
+  let dragging = false;
+  d.addEventListener('mousedown', e => { dragging = true; e.preventDefault(); document.body.classList.add('resizing'); });
+  window.addEventListener('mousemove', e => {
+    if (!dragging) return;
+    const r = document.getElementById('split-body').getBoundingClientRect();
+    _prRatio = Math.min(0.85, Math.max(0.2, (e.clientX - r.left) / r.width));
+    document.documentElement.style.setProperty('--pr-split', Math.round(_prRatio * 100) + '%');
+  });
+  window.addEventListener('mouseup', () => {
+    if (!dragging) return;
+    dragging = false; document.body.classList.remove('resizing');
+    localStorage.setItem('taskhub.prRatio', String(_prRatio));
+    fitTerm(visibleTerm());
+  });
+})();
+
+// Project entry: open a terminal in this project's configured workspace folder.
+function openProjectTerminal(id) {
+  const proj = _projects.find(p => p.id === id);
+  if (!proj || !proj.workspace) { toastErr('Set a workspace folder for this project first'); return; }
+  openTerminal(proj.workspace, proj.name);
+}
 
 // ── Resizable left sidebar (width persisted in localStorage, restored next launch) ─
 (function initSidebarResize() {
@@ -664,10 +995,9 @@ const TAB_ICON = {
 // Render the open tabs as grouped rows in the left nav, and show the active tab's
 // title in the viewer header.
 function renderTabs() {
-  const navEl   = document.getElementById('opentabs-nav');
-  const titleEl = document.getElementById('split-title');
-  if (navEl)   navEl.innerHTML = tabsMarkup();
-  if (titleEl) titleEl.textContent = activeTab()?.title || '';
+  const navEl = document.getElementById('opentabs-nav');
+  if (navEl) navEl.innerHTML = tabsMarkup();
+  updateTitles();
   initTabSort();
 }
 
@@ -689,7 +1019,22 @@ function tabsMarkup() {
     if (!items.length) return '';
     return `<div class="tab-group" data-kind="${kind}"><span class="tab-group-label">${label}</span>${items.map(itemHtml).join('')}</div>`;
   };
-  return group('GitHub', 'github') + group('Jira', 'jira');
+  // Terminals group — rows use data-term (not draggable) and their own handlers.
+  const termHtml = t =>
+    `<div class="opentab ${t.id === _activeTermId ? 'active' : ''}" data-term="${t.id}"
+          onclick="activateTerminal('${t.id}')"
+          onauxclick="if(event.button===1){event.preventDefault();closeTerminal('${t.id}')}"
+          title="${esc(t.cwd)}">
+       <span class="tab-ic">${TERM_ICON}</span>
+       <span class="tab-title">${esc(t.title)}</span>
+       <button class="tab-x" onclick="event.stopPropagation();closeTerminal('${t.id}')" title="Close terminal">×</button>
+     </div>`;
+  // Only standalone terminals get a nav row; PR-paired terminals live with their PR.
+  const standalone = [..._terms.entries()].filter(([, t]) => !t.paired);
+  const termGroup = standalone.length
+    ? `<div class="tab-group"><span class="tab-group-label">Terminals</span>${standalone.map(([id, t]) => termHtml({ id, ...t })).join('')}</div>`
+    : '';
+  return group('GitHub', 'github') + group('Jira', 'jira') + termGroup;
 }
 
 // Drag-to-reorder within each group (works in both modes). Reorder stays within a
@@ -764,10 +1109,11 @@ function jiraByKey(key) {
 function prTabTitle(pr)          { return `PR #${pr.number} ${pr.title}`; }
 function jiraTabTitle(key, sum)  { return sum ? `${key} ${sum}` : key; }
 
-// PR card / Jira badge click handlers.
-function openPrSplit(url, num) {
+// PR card / Jira badge click handlers. repo/branch are passed from the card (so the
+// terminal can map to the project workspace + worktree even when _projects lost its PRs).
+function openPrSplit(url, num, repo, branch) {
   const pr = prByUrl(url);
-  openInSplit(url, pr ? prTabTitle(pr) : `PR ${num}`, 'github');
+  openInSplit(url, pr ? prTabTitle(pr) : `PR ${num}`, 'github', { repo: repo || pr?.repo, branch: branch || pr?.headRefName });
 }
 function jiraClick(e, url, key) {
   e.stopPropagation();   // don't trigger a parent PR card
@@ -795,8 +1141,8 @@ function showPage(name, projectId) {
   // The viewer replaces the content, so navigating to a page must hide it and bring
   // <main> back (the open tabs stay listed in the left nav).
   document.getElementById('split').hidden = true;
-  document.body.classList.remove('viewing-tab');
-  _activeTab = null;
+  document.body.classList.remove('viewing-tab', 'viewing-term', 'pr-split');
+  _activeTab = null; _activeTermId = null;     // terminals stay alive, just unfocused
   renderTabs();
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
@@ -815,7 +1161,9 @@ function showPage(name, projectId) {
     _activeProjectId = projectId;
     const proj = _projects.find(p=>p.id===projectId);
     document.getElementById('page-title').textContent = proj?.name || 'Project';
-    document.getElementById('topbar-actions').innerHTML = `<button class="btn btn-secondary btn-sm" onclick="openEditProjectModal('${projectId}')">⚙ Edit</button>`;
+    document.getElementById('topbar-actions').innerHTML =
+      `<button class="btn btn-secondary btn-sm" onclick="openProjectTerminal('${projectId}')" title="Open a terminal in this project's workspace"><span style="font-family:monospace">&gt;_</span> Terminal</button>
+       <button class="btn btn-secondary btn-sm" onclick="openEditProjectModal('${projectId}')">⚙ Edit</button>`;
     document.querySelectorAll('.nav-btn[data-project]').forEach(b => { if(b.dataset.project===projectId) b.classList.add('active'); });
     loadProjectPage(projectId);
   } else if (name === 'settings') {
@@ -949,7 +1297,7 @@ function prCard(pr) {
   // GitHub serves any user's avatar at github.com/<login>.png — no API call needed.
   const avatar = login ? `<img class="pr-avatar" src="https://github.com/${encodeURIComponent(login)}.png?size=40" alt="" title="${esc(login)}" loading="lazy">` : '';
   const foot = avatar + jiraHtml;
-  return `<div class="card clickable pr-card" onclick="openPrSplit('${pr.url}','#${pr.number}')" title="Open PR #${pr.number}">
+  return `<div class="card clickable pr-card" onclick="openPrSplit('${pr.url}','#${pr.number}','${esc(pr.repo||'')}','${esc(pr.headRefName||'')}')" title="Open PR #${pr.number}">
     <div class="pr-head">
       <span class="pr-num">#${pr.number}</span>
       <span class="pr-repo">${esc(pr.repo)}</span>
@@ -1378,6 +1726,8 @@ async function loadSettings() {
   api('/api/jira/site').then(s => { if (s.baseUrl) document.getElementById('jira-base-url').placeholder = `${s.baseUrl} (auto-detected)`; }).catch(()=>{});
   if (cfg.jira_poll_interval) document.getElementById('jira-poll-interval').value = cfg.jira_poll_interval;
   if (cfg.jira_limit)         document.getElementById('jira-limit').value = cfg.jira_limit;
+  _termThemePref = cfg.terminal_theme || 'auto';
+  document.getElementById('terminal-theme').value = _termThemePref;
 
   const allRepos = [...new Set(dbinfo.projects.map(p=>p.repo).filter(Boolean))];
   document.getElementById('forwarder-list').innerHTML = allRepos.length
@@ -1461,6 +1811,14 @@ async function saveConfig() {
     try { _jiraBase = (await api('/api/jira/site')).baseUrl || _jiraBase; } catch {}
     toast('Settings saved');
   } catch(e) { toastErr(e.message); }
+}
+
+// Terminal theme dropdown: persist the choice and re-skin open terminals immediately.
+async function setTerminalTheme(value) {
+  _termThemePref = value;
+  applyTermThemes();
+  try { await api('/api/config', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ terminal_theme: value }) }); }
+  catch(e) { toastErr(e.message); }
 }
 
 // ── Project modal ─────────────────────────────────────────────────────────────
@@ -1601,8 +1959,9 @@ setInterval(() => {
 // ── Init ──────────────────────────────────────────────────────────────────────
 (async () => {
   try {
-    const site = await api('/api/jira/site');
+    const [site, cfg] = await Promise.all([api('/api/jira/site'), api('/api/config')]);
     _jiraBase = site.baseUrl || '';
+    _termThemePref = cfg.terminal_theme || 'auto';
   } catch {}
   loadDashboard(); // renderProjectNav is called inside loadDashboard
   restoreTabs();   // rehydrate GitHub/Jira tabs from the last session

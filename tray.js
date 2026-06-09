@@ -4,8 +4,10 @@ try { require('node:module').enableCompileCache?.(); } catch {}
 const { app, Tray, Menu, shell, nativeImage, BrowserWindow, session, ipcMain, dialog } = require('electron');
 const { fork, execSync } = require('child_process');
 const path = require('path');
+const os = require('os');
 const http = require('http');
 const zlib = require('zlib');
+const pty = require('@homebridge/node-pty-prebuilt-multiarch');
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
 const BASE_URL = `http://localhost:${PORT}`;
@@ -44,6 +46,51 @@ ipcMain.handle('choose-folder', async () => {
   });
   return canceled || !filePaths.length ? null : filePaths[0];
 });
+
+// ── Terminals (node-pty) ────────────────────────────────────────────────────────
+// Each open terminal is an independent pseudo-terminal keyed by id, so many worktree
+// folders can have their own live shell at once. The renderer (window.taskhub.term)
+// drives each by id: create → write/onData → resize → kill. Output is pushed to the
+// window as `term:data` events; the shell's death is announced as `term:exit`.
+const terminals = new Map(); // id -> { pty, cwd, title }
+let termSeq = 0;
+
+// Push to the dashboard window if it's open; dropped otherwise (the renderer
+// re-syncs via term:list when it reloads).
+function sendToWin(channel, payload) {
+  if (win && !win.isDestroyed()) win.webContents.send(channel, payload);
+}
+
+// Spawn a login + interactive shell so it sources the user's dotfiles and gets the
+// full environment (PATH, nvm, Homebrew, aliases) — identical to a Terminal.app tab.
+ipcMain.handle('term:create', (_e, { cwd, shell: sh } = {}) => {
+  const id = 'pty' + (++termSeq);
+  // Fallback when no workspace is given: the app's own repo (dev), else home. In a
+  // packaged build getAppPath() points inside app.asar, which isn't a usable cwd.
+  const appPath = app.getAppPath();
+  const fallback = appPath && !appPath.includes('app.asar') ? appPath : os.homedir();
+  const dir = cwd && typeof cwd === 'string' ? cwd : fallback;
+  const p = pty.spawn(sh || process.env.SHELL || '/bin/zsh', ['-l', '-i'], {
+    name: 'xterm-256color',
+    cwd: dir,
+    cols: 80, rows: 24,
+    env: { ...process.env, TERM: 'xterm-256color', COLORTERM: 'truecolor', LANG: process.env.LANG || 'en_US.UTF-8' },
+  });
+  p.onData(chunk => sendToWin('term:data', { id, chunk }));
+  p.onExit(({ exitCode, signal }) => { terminals.delete(id); sendToWin('term:exit', { id, exitCode, signal }); });
+  terminals.set(id, { pty: p, cwd: dir, title: path.basename(dir) || dir });
+  return { id, cwd: dir, title: path.basename(dir) || dir };
+});
+
+ipcMain.on('term:write',  (_e, { id, data })       => { terminals.get(id)?.pty.write(data); });
+ipcMain.on('term:resize', (_e, { id, cols, rows }) => { try { terminals.get(id)?.pty.resize(cols, rows); } catch {} });
+ipcMain.handle('term:kill', (_e, { id }) => {
+  const t = terminals.get(id);
+  if (t) { try { t.pty.kill(); } catch {} terminals.delete(id); }
+  return true;
+});
+// Lets the renderer rehydrate its terminal list after a reload (PTYs outlive the page).
+ipcMain.handle('term:list', () => [...terminals.entries()].map(([id, t]) => ({ id, cwd: t.cwd, title: t.title })));
 
 // Read the dashboard's open tabs (lives in the renderer) for the tray menu.
 async function getOpenTabs() {
@@ -302,4 +349,5 @@ app.on('activate', () => openWindow());
 
 app.on('before-quit', () => {
   if (serverProcess) serverProcess.kill();
+  for (const { pty } of terminals.values()) { try { pty.kill(); } catch {} }
 });
