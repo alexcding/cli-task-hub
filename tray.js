@@ -34,7 +34,7 @@ function openWindow() {
     // solid instead.) Other platforms keep the standard window chrome.
     ...(mac ? {
       titleBarStyle: 'hiddenInset',
-      trafficLightPosition: { x: 16, y: 18 }, // vertically centered in the 52px band
+      trafficLightPosition: { x: 16, y: 12 }, // nudged up within the top band
     } : {}),
     webPreferences: {
       webviewTag: true, contextIsolation: true, nodeIntegration: false,
