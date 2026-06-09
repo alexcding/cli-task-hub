@@ -63,7 +63,7 @@ function render(size, [r, g, b]) {
         set(x, y, Math.max(0, Math.min(1, rad - Math.hypot(x - cx, y - cy) + 0.5)));
   };
   const P = CHECK.map(([px, py]) => [px * size, py * size]);
-  const rad = size * 0.09;
+  const rad = size * 0.078;
   for (let s = 0; s < P.length - 1; s++) {
     const [x0, y0] = P[s], [x1, y1] = P[s + 1];
     const steps = Math.ceil(Math.hypot(x1 - x0, y1 - y0) * 2);

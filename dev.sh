@@ -49,14 +49,10 @@ else
 fi
 
 # ── Runtime ─────────────────────────────────────────────────────────────────────
-# Prefer bun (fast --watch). Fall back to node's built-in --watch if bun is absent.
-if command -v bun >/dev/null 2>&1; then
-  RUNTIME=(bun --watch server.js)
-  green "Using bun $(bun --version)"
-else
-  RUNTIME=(node --watch server.js)
-  green "bun not found — falling back to node --watch"
-fi
+# Must be Node: the server uses node:sqlite (config.db), which bun doesn't implement.
+# Node's built-in --watch gives the same hot-reload bun used to provide here.
+RUNTIME=(node --watch server.js)
+green "Using node $(node --version)"
 
 # ── Free the port ────────────────────────────────────────────────────────────────
 # A stale dev server or the packaged TaskHub.app may already hold it (the server

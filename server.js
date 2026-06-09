@@ -4,6 +4,7 @@ try { require('node:module').enableCompileCache?.(); } catch {}
 const express = require('express');
 const path = require('path');
 const db = require('./lib/db');
+const configdb = require('./lib/configdb');
 const github = require('./lib/github');
 const jira = require('./lib/jira');
 const poller = require('./lib/poller');
@@ -46,6 +47,7 @@ function projectPatch(body) {
   if (body.color !== undefined) patch.color = body.color;
   if (body.jql   !== undefined) patch.jql   = String(body.jql).trim();
   if (body.workspace !== undefined) patch.workspace = String(body.workspace).trim();
+  if (body.jiraProjectKey !== undefined) patch.jiraProjectKey = String(body.jiraProjectKey).trim().toUpperCase();
   if (body.mergeTransition !== undefined) patch.mergeTransition = String(body.mergeTransition).trim();
   if (body.repo  !== undefined) {
     const raw = String(body.repo).trim();
@@ -65,6 +67,28 @@ app.post('/api/config', (req, res) => {
   for (const [k, v] of Object.entries(req.body)) db.set(k, v);
   res.json({ ok: true });
 });
+
+// ── Settings (config.db key/value — theme today, room for more) ─────────────────
+// One-time migration: the theme used to live in the JSON config store as `app_theme`.
+// Seed it into the settings table on first boot so existing users keep their choice.
+if (configdb.getSetting('theme') == null) {
+  const legacy = db.get('app_theme');
+  if (legacy) configdb.setSetting('theme', legacy);
+}
+app.get('/api/settings', wrap((req, res) => res.json(configdb.getAllSettings())));
+app.put('/api/settings/:key', wrap((req, res) => {
+  configdb.setSetting(req.params.key, req.body.value);
+  res.json({ ok: true });
+}));
+
+// ── Tabs (config.db — open viewer tabs, persisted across restarts) ──────────────
+// Rows, not a blob: see lib/configdb.js. The renderer PUTs its full ordered set on
+// every change; reads it back on launch to rehydrate the sidebar.
+app.get('/api/tabs', wrap((req, res) => res.json(configdb.getTabs())));
+app.put('/api/tabs', wrap((req, res) => {
+  configdb.setTabs(Array.isArray(req.body.tabs) ? req.body.tabs : [], req.body.active ?? null);
+  res.json({ ok: true });
+}));
 
 // ── Projects ──────────────────────────────────────────────────────────────────
 app.get('/api/projects', (req, res) => res.json(db.getProjects()));

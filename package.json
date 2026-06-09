@@ -11,10 +11,10 @@
     "start": "node server.js",
     "dev": "./dev.sh",
     "dev:app": "./dev.sh --app",
-    "dev:server": "bun --watch server.js",
+    "dev:server": "node --watch server.js",
     "dev:tray": "electron .",
     "build": "node scripts/build.js",
-    "build:run": "node scripts/build.js --run",
+    "release": "node scripts/build.js --publish",
     "gen-icon": "node scripts/gen-icon.js",
     "gen-tray-icon": "node scripts/gen-tray-icon.js"
   },
@@ -35,12 +35,18 @@
     "appId": "tv.accedo.taskhub",
     "productName": "TaskHub",
     "copyright": "Copyright © 2025 Accedo",
+    "afterPack": "scripts/afterPack.js",
+    "publish": {
+      "provider": "github",
+      "owner": "alexcding",
+      "repo": "cli-task-hub"
+    },
     "mac": {
       "category": "public.app-category.productivity",
       "icon": "build/icon.icns",
       "target": [
         {
-          "target": "dir",
+          "target": "dmg",
           "arch": [
             "arm64"
           ]
@@ -49,6 +55,21 @@
       "hardenedRuntime": false,
       "gatekeeperAssess": false,
       "identity": null
+    },
+    "dmg": {
+      "title": "${productName} ${version}",
+      "contents": [
+        {
+          "x": 130,
+          "y": 180
+        },
+        {
+          "x": 410,
+          "y": 180,
+          "type": "link",
+          "path": "/Applications"
+        }
+      ]
     },
     "files": [
       "tray.js",

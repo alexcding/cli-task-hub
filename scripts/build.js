@@ -6,6 +6,7 @@ const fs = require('fs');
 const path = require('path');
 
 const ROOT = path.join(__dirname, '..');
+const pkg = require(path.join(ROOT, 'package.json'));
 
 function run(cmd, opts = {}) {
   console.log(`\n› ${cmd}`);
@@ -41,47 +42,45 @@ if (!fs.existsSync(path.join(ROOT, 'build', 'icon.icns'))) {
 run('node scripts/gen-tray-icon.js');
 
 // ── 2. Build ──────────────────────────────────────────────────────────────────
-step('Building TaskHub.app (arm64)');
-// dir target → unpacked .app only, no DMG/installer. Ad-hoc sign for local use.
-run('CSC_IDENTITY_AUTO_DISCOVERY=false npx electron-builder --mac --arm64');
+// DMG target → a shareable disk image (the unpacked .app is also left in
+// dist/mac-arm64/). The .app is ad-hoc signed by scripts/afterPack.js while it
+// is assembled, so the signature is sealed into the DMG.
+const publish = process.argv.includes('--publish');
 
-// ── 3. Ad-hoc sign ──────────────────────────────────────────────────────────
-// electron-builder skips signing (identity: null), leaving only the linker's
-// stub signature — invalid for arm64 (no sealed resources). Re-sign the whole
-// bundle ad-hoc so it's a valid, locally-runnable signature.
+let buildCmd = 'CSC_IDENTITY_AUTO_DISCOVERY=false npx electron-builder --mac --arm64';
+
+if (publish) {
+  // electron-builder reads GH_TOKEN to push to GitHub Releases. Pull a token
+  // from the gh CLI so we don't depend on a separately-exported env var.
+  step('Resolving GitHub token from gh CLI');
+  let token;
+  try {
+    token = execSync('gh auth token', { cwd: ROOT }).toString().trim();
+  } catch {
+    console.error('\n\x1b[31m✗ Could not get a token from `gh auth token`.\x1b[0m');
+    console.error('  Run `gh auth login` (or set GH_TOKEN) and retry.');
+    process.exit(1);
+  }
+  process.env.GH_TOKEN = process.env.GH_TOKEN || token;
+  // --publish always → upload artifacts; electron-builder creates a draft
+  // release tagged v<version> on first run for that version.
+  buildCmd += ' --publish always';
+  step('Building + publishing TaskHub DMG (arm64) to GitHub Releases');
+} else {
+  step('Building TaskHub DMG (arm64)');
+}
+
+run(buildCmd);
+
 const distDir = path.join(ROOT, 'dist');
 const appDir = path.join(distDir, 'mac-arm64', 'TaskHub.app');
 
-step('Ad-hoc signing TaskHub.app');
-run(`codesign --force --deep --sign - "${appDir}"`);
-run(`codesign --verify --deep --strict "${appDir}"`);
-
-// ── 4. Done ───────────────────────────────────────────────────────────────────
+// ── 3. Done ───────────────────────────────────────────────────────────────────
 console.log('\n\x1b[32m✓ Build complete\x1b[0m');
 console.log(`  ${path.relative(ROOT, appDir)}`);
-
-// ── 5. Run (optional) ─────────────────────────────────────────────────────────
-function killPrevious() {
-  step('Stopping any running TaskHub');
-  // Packaged app, dev server, and anything still holding the port.
-  const cmds = [
-    `pkill -f "TaskHub.app/Contents/MacOS/TaskHub"`,
-    `pkill -f "${ROOT}/server.js"`,
-    `lsof -ti:${process.env.PORT || 3000} | xargs kill -9`,
-  ];
-  for (const c of cmds) {
-    try { execSync(c, { stdio: 'ignore' }); } catch { /* nothing to kill */ }
-  }
-}
-
-if (process.argv.includes('--run')) {
-  if (fs.existsSync(appDir)) {
-    killPrevious();
-    step('Launching TaskHub.app');
-    run(`open "${appDir}"`);
-  } else {
-    console.log('\nApp not found at', appDir);
-  }
-} else {
-  console.log('\nTo build and launch: npm run build:run');
+const dmgName = `${pkg.productName}-${pkg.version}-arm64.dmg`;
+console.log(`  ${path.join('dist', dmgName)}`);
+if (publish) {
+  console.log('\n  Published as a DRAFT GitHub release. Review and publish it at:');
+  console.log('  https://github.com/alexcding/cli-task-hub/releases');
 }

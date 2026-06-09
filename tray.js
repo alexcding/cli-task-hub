@@ -2,7 +2,7 @@
 try { require('node:module').enableCompileCache?.(); } catch {}
 
 const { app, Tray, Menu, shell, nativeImage, BrowserWindow, session, ipcMain, dialog, nativeTheme, Notification } = require('electron');
-const { fork, execSync } = require('child_process');
+const { fork, execSync, execFile } = require('child_process');
 const path = require('path');
 const os = require('os');
 const http = require('http');
@@ -47,8 +47,7 @@ function openWindow() {
     if (/^https?:/.test(url)) { shell.openExternal(url); return { action: 'deny' }; }
     return { action: 'allow' };
   });
-  win.on('blur', refreshMenu);   // refresh tray tabs as focus moves to the menu bar
-  win.on('focus', markReviewsSeen); // looking at TaskHub clears the review blink
+  win.on('blur', refreshMenu);   // refresh the menu's PR list as focus moves to the menu bar
   win.on('closed', () => { win = null; });
 }
 
@@ -114,13 +113,6 @@ ipcMain.handle('term:kill', (_e, { id }) => {
 // Lets the renderer rehydrate its terminal list after a reload (PTYs outlive the page).
 ipcMain.handle('term:list', () => [...terminals.entries()].map(([id, t]) => ({ id, cwd: t.cwd, title: t.title })));
 
-// Read the dashboard's open tabs (lives in the renderer) for the tray menu.
-async function getOpenTabs() {
-  if (!win || win.isDestroyed()) return [];
-  try { return await win.webContents.executeJavaScript('window.__getTabs ? __getTabs() : []'); }
-  catch { return []; }
-}
-
 // Focus the window and run JS in the renderer. If the window was just created the
 // page isn't ready yet, so defer until it finishes loading.
 function runInApp(js) {
@@ -129,11 +121,6 @@ function runInApp(js) {
   const exec = () => win.webContents.executeJavaScript(js).catch(() => {});
   if (win.webContents.isLoading()) win.webContents.once('did-finish-load', exec);
   else exec();
-}
-
-// Focus the window and switch it to the tab for `url`.
-function activateTabInApp(url) {
-  runInApp(`window.__activateTabByUrl && __activateTabByUrl(${JSON.stringify(url)})`);
 }
 
 // Open `url` inside the app's embedded viewer (new tab, or focus it if already open).
@@ -174,21 +161,28 @@ function trayIcon(state) {
   return img;
 }
 
-// ── Review-request notifications + menu-bar blink ────────────────────────────────
-// Notify (and blink the tray) when a PR newly needs your review. GitHub drops you from
-// a PR's reviewRequests the moment you submit a review, so a PR that LEAVES the review
-// set and later RE-ENTERS it is a genuine re-request. That single absent→present
+// ── Review-request notifications ─────────────────────────────────────────────────
+// Notify (and play a system sound) when a PR newly needs your review. GitHub drops you
+// from a PR's reviewRequests the moment you submit a review, so a PR that LEAVES the
+// review set and later RE-ENTERS it is a genuine re-request. That single absent→present
 // transition covers both the first request and any re-request — so we just diff the
 // current review set against last cycle and act on whatever newly entered it.
 let reviewSeeded = false;        // first sync seeds silently — don't notify for reviews
                                  // already pending when the app launches
 const knownReviews = new Set();  // PR keys requesting my review as of last cycle
-const unseenReviews = new Set(); // pending reviews the user hasn't looked at → drives blink
-let blinkTimer = null;
-let blinkOn = false;
-let steadyState = 'idle';        // tray state when not blinking (set by buildMenu)
+let steadyState = 'idle';        // tray state (set by buildMenu)
 
 const prKey = pr => `${pr.repo}#${pr.number}`;
+
+// Play a macOS system sound to announce a newly-requested review (replaces the old
+// menu-bar blink). Best-effort: afplay is macOS-only; fall back to the system beep.
+function playReviewSound() {
+  if (process.platform === 'darwin') {
+    execFile('afplay', ['/System/Library/Sounds/Glass.aiff'], () => {});
+  } else {
+    shell.beep();
+  }
+}
 
 // Native notification; clicking it opens that PR in the dashboard.
 function notifyReviewRequested(pr) {
@@ -199,53 +193,20 @@ function notifyReviewRequested(pr) {
   n.show();
 }
 
-// Diff this cycle's review PRs against the last; notify + flag a blink for any that
-// just entered the set, and forget any that left it (reviewed / closed / merged).
+// Diff this cycle's review PRs against the last; notify + play a sound for any that
+// just entered the set. PRs that left it (reviewed / closed / merged) just fall out.
 function detectReviewChanges(reviewPRs) {
   const current = new Set(reviewPRs.map(prKey));
+  const fresh = reviewPRs.filter(pr => !knownReviews.has(prKey(pr)));
 
-  for (const pr of reviewPRs) {
-    const key = prKey(pr);
-    if (!knownReviews.has(key) && reviewSeeded) {
-      notifyReviewRequested(pr);
-      unseenReviews.add(key);
-    }
-  }
-  for (const key of [...unseenReviews]) {
-    if (!current.has(key)) unseenReviews.delete(key);
+  if (reviewSeeded && fresh.length) {
+    for (const pr of fresh) notifyReviewRequested(pr);
+    playReviewSound(); // one sound per cycle, even if several reviews arrive at once
   }
 
   knownReviews.clear();
   for (const key of current) knownReviews.add(key);
   reviewSeeded = true;
-
-  updateBlink();
-}
-
-// Pulse the menu-bar icon between the review color and idle while reviews are unseen;
-// hold the steady-state icon otherwise. The blink timer owns tray.setImage while active.
-function updateBlink() {
-  if (unseenReviews.size && !blinkTimer) {
-    blinkOn = true;
-    if (tray) tray.setImage(trayIcon('review'));
-    blinkTimer = setInterval(() => {
-      blinkOn = !blinkOn;
-      if (tray) tray.setImage(trayIcon(blinkOn ? 'review' : 'idle'));
-    }, 650);
-  } else if (!unseenReviews.size && blinkTimer) {
-    clearInterval(blinkTimer);
-    blinkTimer = null;
-    blinkOn = false;
-    if (tray) tray.setImage(trayIcon(steadyState));
-  }
-}
-
-// User focused the TaskHub window → they've seen the pending reviews. Stop blinking
-// until the next request (a re-request re-enters the set and starts this over).
-function markReviewsSeen() {
-  if (!unseenReviews.size) return;
-  unseenReviews.clear();
-  updateBlink();
 }
 
 // Wait for the HTTP server to be ready
@@ -290,20 +251,6 @@ function pngDot(size, [r, g, b]) {
   return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ihdr), chunk('IDAT', idat), chunk('IEND', Buffer.alloc(0))]);
 }
 
-// Per-kind dot for open-tab menu items: GitHub = dark gray, Jira = blue.
-const TAB_COLORS = {
-  github: [0x57, 0x60, 0x6a],
-  jira:   [0x26, 0x84, 0xff],
-};
-const tabImgCache = {};
-function tabIcon(kind) {
-  const key = TAB_COLORS[kind] ? kind : 'github';
-  if (!tabImgCache[key]) {
-    tabImgCache[key] = nativeImage.createFromBuffer(pngDot(18, TAB_COLORS[key]), { width: 9, height: 9, scaleFactor: 2 });
-  }
-  return tabImgCache[key];
-}
-
 const CI_COLORS = {
   none:    [0x9a, 0xa0, 0xa6], // gray
   running: [0xf5, 0x9e, 0x0b], // amber
@@ -341,41 +288,24 @@ function prSection(label, prs) {
   return items;
 }
 
-// A labeled section of open-tab menu items. Clicking focuses the window + that tab.
-function tabSection(label, tabs) {
-  if (!tabs.length) return [];
-  const items = [{ label, enabled: false }];
-  for (const t of tabs) {
-    const title = (t.title || t.url).slice(0, 44);
-    // Colored dot = kind (GitHub/Jira); native checkmark = the active tab.
-    items.push({ label: title, icon: tabIcon(t.kind), type: 'checkbox', checked: !!t.active, click: () => activateTabInApp(t.url) });
-  }
-  return items;
-}
-
 async function buildMenu() {
-  const [all, tabs] = await Promise.all([fetchJSON('/api/prs/tray'), getOpenTabs()]);
-  // Menu shows only the user's own PRs (Tasks) and PRs awaiting their review.
-  const mine   = all.filter(p => p.category === 'mine');
-  const review = all.filter(p => p.category === 'review');
+  const all = await fetchJSON('/api/prs/tray');
+  // Mirror the dashboard's logic (index.html loadDashboard): only open, non-error PRs,
+  // split into the user's own PRs (Tasks) and PRs awaiting their review.
+  const openPRs = all.filter(p => !p.error && p.state === 'OPEN');
+  const mine   = openPRs.filter(p => p.category === 'mine');
+  const review = openPRs.filter(p => p.category === 'review');
 
   let prItems = [...prSection('Tasks', mine), ...prSection('Review', review)];
   if (!prItems.length) prItems = [{ label: 'No tasks or reviews', enabled: false }];
 
-  // Open tabs from the dashboard. GitHub tabs are omitted — they just duplicate the
-  // Tasks/Review PR list above (clicking a PR there opens it in a GitHub tab). Only
-  // Jira tabs are shown, since those aren't listed anywhere else in the menu.
-  const tabItems = tabSection('Jira', tabs.filter(t => t.kind === 'jira'));
-
-  // Notify + blink on any newly-requested review (must run before we touch the icon,
-  // since a fresh request starts the blink, which then owns the tray image).
+  // Notify + play a sound on any newly-requested review.
   detectReviewChanges(review);
 
   // Icon color by state: red = review requested, blue = only your tasks, green = clear.
-  // While the blink timer is running it controls the image, so don't fight it here.
   steadyState = review.length ? 'review' : mine.length ? 'tasks' : 'idle';
   if (tray) {
-    if (!blinkTimer) tray.setImage(trayIcon(steadyState));
+    tray.setImage(trayIcon(steadyState));
     tray.setTitle('');
   }
 
@@ -383,7 +313,6 @@ async function buildMenu() {
     { label: 'Open TaskHub', click: () => openWindow() },
     { type: 'separator' },
     ...prItems,
-    ...(tabItems.length ? [{ type: 'separator' }, ...tabItems] : []),
     { type: 'separator' },
     { label: 'Quit', click: () => app.quit() },
   ]);

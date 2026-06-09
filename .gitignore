@@ -6,6 +6,14 @@ taskhub.json
 taskhub-snapshot.json
 taskhub-jira-snapshot.json
 taskhub.db
+config.db
+config.db-journal
+config.db-wal
+config.db-shm
+data.db
+data.db-journal
+data.db-wal
+data.db-shm
 
 # Intermediate icon build dir (the icon PNGs/ICNS themselves are committed)
 build/icon.iconset/

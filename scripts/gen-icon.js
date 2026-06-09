@@ -1,5 +1,5 @@
 // Generates build/icon.png (1024×1024 RGBA) — the macOS app icon.
-// A white checkmark on a brand-indigo rounded square. The SAME checkmark geometry
+// A brand-indigo checkmark on a white rounded square. The SAME checkmark geometry
 // is used by gen-tray-icon.js so the dock icon and menu-bar icon are consistent.
 
 const fs = require('fs');
@@ -15,7 +15,7 @@ const WHITE = [255, 255, 255];
 
 // Checkmark vertices in a 0..1 box (shared with the tray glyph) + stroke radius.
 const CHECK = [[0.27, 0.52], [0.44, 0.69], [0.74, 0.34]];
-const STROKE = 0.07; // fraction of SIZE
+const STROKE = 0.06; // fraction of SIZE
 
 // ── Minimal RGBA PNG writer ──────────────────────────────────────────────────
 function u32be(n) { const b = Buffer.alloc(4); b.writeUInt32BE(n >>> 0); return b; }
@@ -73,26 +73,27 @@ function squareCoverage(x, y, pad, radius) {
   return Math.max(0, Math.min(1, radius - d + 0.5));
 }
 
-// 1. Brand rounded square with a vertical gradient + transparent corners.
+// 1. White rounded square with transparent corners.
 const PAD = Math.round(SIZE * 0.085);
 const RADIUS = Math.round(SIZE * 0.225);
 for (let y = 0; y < SIZE; y++) {
-  const t = y / (SIZE - 1);
-  const r = Math.round(TOP[0] + (BOT[0] - TOP[0]) * t);
-  const g = Math.round(TOP[1] + (BOT[1] - TOP[1]) * t);
-  const b = Math.round(TOP[2] + (BOT[2] - TOP[2]) * t);
   for (let x = 0; x < SIZE; x++) {
     const cov = squareCoverage(x, y, PAD, RADIUS);
-    if (cov > 0) blend(x, y, r, g, b, cov);
+    if (cov > 0) blend(x, y, ...WHITE, cov);
   }
 }
 
-// 2. White checkmark (same geometry as the tray glyph).
+// 2. Brand-gradient checkmark (same geometry as the tray glyph).
 const dot = (cx, cy, rad) => {
   for (let y = Math.floor(cy - rad); y <= Math.ceil(cy + rad); y++)
     for (let x = Math.floor(cx - rad); x <= Math.ceil(cx + rad); x++) {
       const a = Math.max(0, Math.min(1, rad - Math.hypot(x - cx, y - cy) + 0.5));
-      if (a > 0) blend(x, y, ...WHITE, a);
+      if (a <= 0) continue;
+      const t = y / (SIZE - 1);
+      const r = Math.round(TOP[0] + (BOT[0] - TOP[0]) * t);
+      const g = Math.round(TOP[1] + (BOT[1] - TOP[1]) * t);
+      const b = Math.round(TOP[2] + (BOT[2] - TOP[2]) * t);
+      blend(x, y, r, g, b, a);
     }
 };
 const P = CHECK.map(([px, py]) => [px * SIZE, py * SIZE]);

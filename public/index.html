@@ -63,19 +63,21 @@
     aside { width:var(--sidebar-w); background:var(--surface); border-right:1px solid var(--border); display:flex; flex-direction:column; position:fixed; top:0;left:0;bottom:0; z-index:10; }
     .sidebar-resizer { position:absolute; top:0; right:-3px; bottom:0; width:7px; cursor:col-resize; z-index:11; }
     .sidebar-resizer::before { content:''; position:absolute; left:50%; top:0; bottom:0; width:1px; transform:translateX(-50%); background:transparent; }
-    .sidebar-resizer:hover::before { background:var(--accent); }
+    .sidebar-resizer:hover::before { background:var(--border-focus); }
     .sidebar-logo { height:52px; padding:0 16px; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:8px; }
     .logo-icon { width:26px;height:26px; background:var(--accent); border-radius:7px; display:flex;align-items:center;justify-content:center; flex-shrink:0; }
     .logo-text { font-size:15px; font-weight:650; letter-spacing:-.2px; }
     nav { padding:8px; flex:1; overflow-y:auto; }
     .nav-label { font-size:11px; font-weight:600; color:var(--text-3); text-transform:uppercase; letter-spacing:.5px; padding:10px 8px 4px; }
-    .nav-btn { display:flex; align-items:center; gap:9px; width:100%; padding:9px 10px; background:none; border:none; border-radius:var(--rs); color:var(--text-2); font-size:13.5px; font-weight:500; cursor:pointer; text-align:left; transition:background .12s,color .12s; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .nav-btn { display:flex; align-items:center; gap:9px; width:100%; padding:6px 10px; background:none; border:none; border-radius:var(--rs); color:var(--text-2); font-size:13.5px; font-weight:500; cursor:pointer; text-align:left; transition:background .12s,color .12s; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
     .nav-btn:hover { background:var(--surface-hover); color:var(--text); }
     .nav-btn.active { background:var(--surface-hover); color:var(--text); }
-    .nav-btn .icon { width:16px; height:16px; display:flex; align-items:center; justify-content:center; flex-shrink:0; color:var(--text-3); }
+    .nav-btn .icon { width:20px; height:20px; display:flex; align-items:center; justify-content:center; flex-shrink:0; color:var(--text-3); }
     .nav-btn:hover .icon, .nav-btn.active .icon { color:var(--text-2); }
-    .nav-btn .icon svg { width:16px; height:16px; display:block; }
+    .nav-btn .icon svg { width:20px; height:20px; display:block; stroke-width:1.5; }
     .nav-dot { width:8px;height:8px;border-radius:50%;flex-shrink:0; }
+    /* Project rows use a color dot; center it in the same 20px icon slot so labels line up. */
+    .nav-btn .nav-dot { margin:0 6px; }
     .nav-add { background:none;border:none;color:var(--text-3);cursor:pointer;padding:2px;line-height:0;border-radius:4px;transition:color .12s,background .12s;display:inline-flex; }
     .nav-add:hover { color:var(--text);background:var(--surface-hover); }
     .nav-add svg { width:14px;height:14px;display:block; }
@@ -149,14 +151,21 @@
     .split-btn:disabled:hover { background:none; color:var(--text-2); }
     .split-btn svg { display:block; }
     /* Each segment's header shows its title (PR title left, terminal folder right). */
-    .split-title { flex:1; min-width:0; font-size:13px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .split-title { flex:1; min-width:0; font-size:13px; font-weight:600; display:flex; align-items:center; gap:7px; overflow:hidden; }
+    .split-title .stitle-text { min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .split-title img { flex-shrink:0; width:16px; height:16px; border-radius:50%; object-fit:cover; }
     body.viewing-tab main { display:none; }
     .tab-group { display:flex; align-items:center; gap:3px; }
     .tab-group-label { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.4px; color:var(--text-3); padding:0 3px; flex-shrink:0; }
-    .tab-ic { display:inline-flex; flex-shrink:0; }
-    .tab-ic svg { display:block; }
+    .tab-ic { display:inline-flex; flex-shrink:0; position:relative; }
+    .tab-ic svg { display:block; width:20px; height:20px; }
+    .tab-ic img { display:block; width:20px; height:20px; border-radius:50%; object-fit:cover; }
     .tab-title { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; }
-    .opentab .ci-dot { width:8px; height:8px; }
+    /* Slack-style CI badge on the icon's bottom-right corner; surface ring separates it. */
+    .ci-badge { position:absolute; right:-1px; bottom:-1px; width:5px; height:5px; border-radius:50%; box-shadow:0 0 0 1.5px var(--surface); }
+    .ci-badge.ci-success { background:var(--success); }
+    .ci-badge.ci-failure { background:var(--danger); }
+    .ci-badge.ci-running { background:var(--warn); }
     /* Close button: out of flow (absolute) so the title uses the full row width. It
        reveals on row hover, floating over the right edge — a left gradient (matching the
        row's hover bg) fades the title out beneath it instead of reserving a slot. */
@@ -179,7 +188,7 @@
     body.pr-split .split-body .term-pane { left: var(--pr-split, 60%); }
     #pr-divider { position:absolute; top:0; bottom:0; left:var(--pr-split, 60%); width:7px; transform:translateX(-50%); cursor:col-resize; z-index:6; display:none; }
     #pr-divider::before { content:''; position:absolute; left:50%; top:0; bottom:0; width:1px; transform:translateX(-50%); background:var(--border); }
-    #pr-divider:hover::before { background:var(--accent); }
+    #pr-divider:hover::before { background:var(--border-focus); }
     body.pr-split #pr-divider { display:block; }
     .split-btn.on { color:var(--accent); background:var(--accent-bg); }
     .split-loading { position:absolute; inset:0; z-index:2; display:flex; align-items:center; justify-content:center; background:var(--bg); color:var(--text-3); font-size:13px; gap:8px; }
@@ -342,7 +351,7 @@
 
     /* Modal */
     .modal-backdrop { position:fixed;inset:0;background:rgb(0 0 0/.4);z-index:50;display:flex;align-items:center;justify-content:center;padding:16px; }
-    .modal { background:var(--surface);border-radius:var(--rl);box-shadow:0 20px 60px rgb(0 0 0/.2);width:100%;max-width:440px;padding:24px; }
+    .modal { background:var(--surface);border-radius:var(--rl);box-shadow:0 20px 60px rgb(0 0 0/.2);width:100%;max-width:440px;padding:24px;max-height:calc(100vh - 32px);overflow-y:auto; }
     .modal h2 { font-size:16px;font-weight:600;margin-bottom:16px; }
     .modal-actions { display:flex;justify-content:flex-end;gap:8px;margin-top:20px; }
 
@@ -476,26 +485,18 @@
           <div class="card">
             <div class="card-header"><h3>Polling</h3></div>
             <div class="card-pad">
+              <p style="font-size:13px;color:var(--text-2);margin:0 0 14px">TaskHub has no live connection to GitHub or Jira, so it checks on a timer instead. These are two independent fetch loops — GitHub PRs change far more often than Jira tickets, and each CLI hits a different rate-limited API — so they have their own intervals.</p>
               <div class="form-group">
-                <label class="form-label">Poll Interval (seconds)</label>
+                <label class="form-label">GitHub Poll Interval (seconds)</label>
                 <input type="number" id="poll-interval" placeholder="60" min="15">
+                <p style="font-size:12px;color:var(--text-3);margin-top:6px">How often <code style="background:var(--surface-hover);padding:1px 4px;border-radius:3px">gh</code> re-checks each project for PR/CI changes, new review requests, and merges. The GitHub API is rate-limited (5,000 requests/hour for an authenticated user), so polling too often across many projects can exhaust your quota. Lower = fresher data but more API calls. Minimum 15s.</p>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Jira Poll Interval (seconds)</label>
+                <input type="number" id="jira-poll-interval" placeholder="120" min="30">
+                <p style="font-size:12px;color:var(--text-3);margin-top:6px">How often <code style="background:var(--surface-hover);padding:1px 4px;border-radius:3px">acli</code> re-runs your Jira queries. Tickets move slower than PRs, so this defaults higher. Minimum 30s.</p>
               </div>
               <button class="btn btn-primary" onclick="saveConfig()">Save</button>
-            </div>
-          </div>
-
-          <div class="card">
-            <div class="card-header"><h3>Terminal</h3></div>
-            <div class="card-pad">
-              <div class="form-group">
-                <label class="form-label">Theme</label>
-                <select id="terminal-theme" class="filter-select" style="max-width:220px" onchange="setTerminalTheme(this.value)">
-                  <option value="auto">Match system (light / dark)</option>
-                  <option value="light">Always light</option>
-                  <option value="dark">Always dark</option>
-                </select>
-                <p style="font-size:12px;color:var(--text-3);margin-top:6px">Applies to all open terminals immediately.</p>
-              </div>
             </div>
           </div>
 
@@ -514,12 +515,8 @@
               </div>
               <div class="form-group">
                 <label class="form-label">“Current Sprint” JQL (dashboard)</label>
-                <input type="text" id="sprint-jql" placeholder="assignee = currentUser() AND sprint in openSprints() AND statusCategory != Done ORDER BY updated DESC">
-                <p style="font-size:12px;color:var(--text-3);margin-top:6px"><code style="background:var(--surface-hover);padding:1px 4px;border-radius:3px">openSprints()</code> matches any active sprint. Empty for Kanban projects with no sprint field.</p>
-              </div>
-              <div class="form-group">
-                <label class="form-label">Jira Poll Interval (seconds)</label>
-                <input type="number" id="jira-poll-interval" placeholder="120" min="30">
+                <input type="text" id="sprint-jql" placeholder="assignee = currentUser() AND sprint is not EMPTY AND statusCategory != Done ORDER BY updated DESC">
+                <p style="font-size:12px;color:var(--text-3);margin-top:6px"><code style="background:var(--surface-hover);padding:1px 4px;border-radius:3px">sprint is not EMPTY</code> matches tickets in any sprint (more reliable than <code style="background:var(--surface-hover);padding:1px 4px;border-radius:3px">openSprints()</code>, which can miss boards). Empty for Kanban projects with no sprint field.</p>
               </div>
               <div class="form-group">
                 <label class="form-label">Result Limit</label>
@@ -612,6 +609,28 @@
       <label class="form-label">Color</label>
       <div class="color-options" id="color-options"></div>
     </div>
+    <div class="form-group">
+      <label class="form-label">Local Git Repo</label>
+      <div style="display:flex;gap:8px">
+        <input type="text" id="modal-workspace" placeholder="/path/to/local/checkout" style="flex:1">
+        <button type="button" class="btn btn-secondary btn-sm" onclick="chooseModalWorkspace()">Choose…</button>
+      </div>
+      <input type="hidden" id="modal-repo">
+      <p id="modal-repo-hint" style="font-size:12px;color:var(--text-3);margin-top:6px"></p>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Jira Project Key</label>
+      <input type="text" id="modal-jira-key" placeholder="e.g. RECORD" style="text-transform:uppercase">
+      <p style="font-size:12px;color:var(--text-3);margin-top:6px">Scopes the <strong>JIRA Tickets</strong> feed: tickets are filtered to the projects you've added here.</p>
+    </div>
+    <div class="form-group">
+      <label class="form-label">On merge → Jira transition</label>
+      <input type="text" id="modal-merge" placeholder="e.g. In Review">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Jira JQL</label>
+      <input type="text" id="modal-jql" placeholder='project = "REC" ORDER BY updated DESC'>
+    </div>
     <div class="modal-actions">
       <button class="btn btn-danger" id="modal-delete" style="display:none;margin-right:auto" onclick="deleteProjectFromModal()">Delete</button>
       <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
@@ -682,32 +701,27 @@ let _terms = new Map();     // id -> { el, term, fit, off, offExit, cwd, title, 
 let _activeTermId = null;
 
 // ── Terminal theme ────────────────────────────────────────────────────────────────
-// 'auto' follows the OS light/dark setting; 'light'/'dark' force one. Persisted to the
-// config store as `terminal_theme`; applied to every open terminal when it changes.
-let _termThemePref = 'auto';
+// Terminals always match the system light/dark setting — no separate preference.
 const TERM_THEMES = {
   dark:  { background:'#1e1e1e', foreground:'#e6e6e6', cursor:'#e6e6e6', cursorAccent:'#1e1e1e', selectionBackground:'#5b5b5b' },
   light: { background:'#ffffff', foreground:'#1f2430', cursor:'#1f2430', cursorAccent:'#ffffff', selectionBackground:'#b3d4fc',
            black:'#1f2430', red:'#c91b00', green:'#00a33f', yellow:'#a5740b', blue:'#0451a5', magenta:'#a626a4', cyan:'#0998b3', white:'#5c6370',
            brightBlack:'#7f848e', brightRed:'#e8364f', brightGreen:'#00a33f', brightYellow:'#b58900', brightBlue:'#2472c8', brightMagenta:'#bc05bc', brightCyan:'#0598bc', brightWhite:'#1f2430' },
 };
-function termMode() {
-  if (_termThemePref === 'light' || _termThemePref === 'dark') return _termThemePref;
-  return window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-}
+const termMode = () => window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
 const termTheme = () => TERM_THEMES[termMode()];
-// Re-skin every open terminal (on setting change or, in auto mode, an OS theme switch).
+// Re-skin every open terminal when the OS theme switches.
 function applyTermThemes() {
   const th = termTheme();
   for (const t of _terms.values()) { try { t.term.options.theme = th; } catch {} t.el.style.background = th.background; }
 }
-if (window.matchMedia) matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { if (_termThemePref === 'auto') applyTermThemes(); });
+if (window.matchMedia) matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTermThemes);
 
 // ── App theme ──────────────────────────────────────────────────────────────────────
 // Light/dark theming for the whole UI. 'auto' follows the OS; 'light'/'dark' force one.
-// Persisted to the config store as `app_theme` AND mirrored to localStorage so the inline
-// head script can resolve it before first paint (no flash). The resolved mode is written
-// to <html data-theme>, which drives every CSS token. Independent of the terminal theme.
+// Persisted to config.db (settings table, key `theme`) AND mirrored to localStorage so the
+// inline head script can resolve it before first paint (no flash). The resolved mode is
+// written to <html data-theme>, which drives every CSS token. Independent of the terminal theme.
 let _appThemePref = (function () { try { return localStorage.getItem('taskhub.theme') || 'auto'; } catch { return 'auto'; } })();
 function appThemeMode() {
   if (_appThemePref === 'light' || _appThemePref === 'dark') return _appThemePref;
@@ -723,7 +737,9 @@ async function setAppTheme(value) {
   try { localStorage.setItem('taskhub.theme', value); } catch {}
   applyAppTheme();
   window.taskhub?.setTheme?.(value); // match native chrome appearance (traffic lights/scrollbars) to the theme; no-op in browser
-  try { await api('/api/config', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ app_theme: value }) }); }
+  // Durable home is the config.db settings table; the localStorage copy above is just a
+  // pre-paint cache so the window doesn't flash the wrong theme before this read lands.
+  try { await api('/api/settings/theme', { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ value }) }); }
   catch (e) { toastErr(e.message); }
 }
 if (window.matchMedia) matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { if (_appThemePref === 'auto') applyAppTheme(); });
@@ -776,29 +792,56 @@ function createTab(url, title, kind, meta = {}) {
 
 // ── Tab persistence ─────────────────────────────────────────────────────────────
 // Open tabs live only in `_tabs` (renderer memory), so they're lost when the window
-// reloads or the app restarts. Persist the list (url/title/kind + active tab) to
-// localStorage on every change and rehydrate it on launch.
-const TABS_KEY = 'taskhub.openTabs';
+// reloads or the app restarts. Persist the full ordered list to config.db (server)
+// on every change and rehydrate it on launch via /api/tabs.
+const TABS_KEY = 'taskhub.openTabs'; // legacy localStorage store — migrated once, below
+let _tabsReady = false;              // false until restoreTabs() has merged the saved set
 function saveTabs() {
-  try {
-    const active = activeTab();
-    localStorage.setItem(TABS_KEY, JSON.stringify({
+  // Don't persist before the saved set has been read back in — otherwise a tab opened
+  // from the tray (which fires on did-finish-load, before our async restore lands) would
+  // PUT a single-tab list and wipe everything else.
+  if (!_tabsReady) return;
+  const active = activeTab();
+  api('/api/tabs', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
       tabs: _tabs.map(t => ({ kind: t.kind, title: t.title, url: t.url, repo: t.repo, branch: t.branch, prSplit: t.prSplit })),
       active: active ? active.url : null,
-    }));
-  } catch {}
+    }),
+  }).catch(() => {});
 }
-function restoreTabs() {
-  let data;
-  try { data = JSON.parse(localStorage.getItem(TABS_KEY)); } catch {}
-  if (!data || !Array.isArray(data.tabs) || !data.tabs.length) return;
-  for (const t of data.tabs) {
-    if (t && t.url) _tabs.push(createTab(t.url, t.title, t.kind, { repo: t.repo, branch: t.branch, prSplit: t.prSplit }));
+async function restoreTabs() {
+  // Read the saved set first. If the server is briefly unreachable, retry a few times
+  // rather than proceeding — `_tabsReady` stays false so saveTabs() can't overwrite
+  // (and wipe) tabs we were never able to read. config.db is the source of truth.
+  let data = null;
+  for (let i = 0; i < 5 && !data; i++) {
+    try { data = await api('/api/tabs'); }
+    catch { await new Promise(r => setTimeout(r, 200)); }
   }
-  if (!_tabs.length) return;
+  if (!data) return;
+  let saved = Array.isArray(data.tabs) ? data.tabs : [];
+  // One-time migration from the old localStorage store (pre-config.db installs).
+  if (!saved.length) {
+    try {
+      const legacy = JSON.parse(localStorage.getItem(TABS_KEY));
+      if (legacy && Array.isArray(legacy.tabs)) saved = legacy.tabs;
+    } catch {}
+    try { localStorage.removeItem(TABS_KEY); } catch {}
+  }
+  for (const t of saved) {
+    // A tab opened from the tray may already be in `_tabs` by the time restore lands —
+    // skip it so we don't double-add.
+    if (t && t.url && !_tabs.some(x => x.url === t.url)) {
+      _tabs.push(createTab(t.url, t.title, t.kind, { repo: t.repo, branch: t.branch, prSplit: t.prSplit }));
+    }
+  }
+  _tabsReady = true;
   // Rehydrate the tabs into the sidebar nav, but keep the Dashboard selected on
   // launch — don't auto-activate a saved GitHub/Jira tab and switch the view away.
-  renderTabs();
+  if (_tabs.length) renderTabs();
+  saveTabs(); // persist the merged set (covers a tray tab opened before restore landed)
 }
 
 // Expose the open tabs + activation to the Electron main process, so the tray menu
@@ -1122,7 +1165,15 @@ function clearVisibleTerm() { const t = visibleTerm(); if (t) { t.term.clear(); 
 function updateTitles() {
   const st = document.getElementById('split-title');
   const tt = document.getElementById('term-title');
-  if (st) st.textContent = _activeTermId ? '' : (activeTab()?.title || '');
+  if (st) {
+    const t = _activeTermId ? null : activeTab();
+    if (!t) { st.innerHTML = ''; }
+    else {
+      const login = t.kind === 'github' ? prByUrl(t.url)?.author?.login : '';
+      const avatar = login ? `<img src="https://github.com/${encodeURIComponent(login)}.png?size=40" alt="" title="${esc(login)}" loading="lazy">` : '';
+      st.innerHTML = avatar + `<span class="stitle-text">${esc(t.title || '')}</span>`;
+    }
+  }
   if (tt) tt.textContent = visibleTerm() ? 'Terminal' : '';
 }
 let _termResizeRaf = 0;
@@ -1150,13 +1201,6 @@ window.addEventListener('resize', () => {
     fitTerm(visibleTerm());
   });
 })();
-
-// Project entry: open a terminal in this project's configured workspace folder.
-function openProjectTerminal(id) {
-  const proj = _projects.find(p => p.id === id);
-  if (!proj || !proj.workspace) { toastErr('Set a workspace folder for this project first'); return; }
-  openTerminal(proj.workspace, proj.name);
-}
 
 // ── Resizable left sidebar (width persisted in localStorage, restored next launch) ─
 (function initSidebarResize() {
@@ -1195,16 +1239,33 @@ function renderTabs() {
 // Grouped sidebar markup: a GitHub group then a Jira group, each a list of .opentab
 // rows. Left-click activates, middle-click closes, right-click opens a menu.
 function tabsMarkup() {
-  const itemHtml = t =>
-    `<div class="opentab ${t.id === _activeTab ? 'active' : ''}" data-id="${t.id}"
+  // GitHub tabs show the PR author's avatar (github.com/<login>.png, no API call),
+  // with the CI status as a colored ring around it. Fall back to the GitHub octicon
+  // + a right-side CI dot when the author isn't known.
+  const itemHtml = t => {
+    let icon;
+    if (t.kind === 'github') {
+      const pr = prByUrl(t.url);
+      const login = pr?.author?.login;
+      const { cls, label } = ciInfo(pr?.ci);
+      // CI shown as a Slack-style status badge on the avatar's bottom-right corner.
+      const badge = cls === 'ci-none' ? '' : `<span class="ci-badge ${cls}" title="${esc(label)}"></span>`;
+      const inner = login
+        ? `<img src="https://github.com/${encodeURIComponent(login)}.png?size=40" alt="" loading="lazy">`
+        : TAB_ICON.github;
+      icon = `<span class="tab-ic" title="${login ? esc(login) : ''}">${inner}${badge}</span>`;
+    } else {
+      icon = `<span class="tab-ic">${TAB_ICON[t.kind] || ''}</span>`;
+    }
+    return `<div class="opentab ${t.id === _activeTab ? 'active' : ''}" data-id="${t.id}"
           onclick="activateTab('${t.id}')"
           onauxclick="if(event.button===1){event.preventDefault();closeTab('${t.id}')}"
           oncontextmenu="return tabMenu(event,'${t.id}')" title="${esc(t.url)}">
-       <span class="tab-ic">${TAB_ICON[t.kind] || ''}</span>
+       ${icon}
        <span class="tab-title">${esc(t.title)}</span>
-       ${t.kind === 'github' ? ciDot(prByUrl(t.url)?.ci) : ''}
        <button class="tab-x" onclick="event.stopPropagation();closeTab('${t.id}')" title="Close tab">${ICON.close}</button>
      </div>`;
+  };
   const group = (label, kind) => {
     const items = _tabs.filter(t => t.kind === kind);
     if (!items.length) return '';
@@ -1353,8 +1414,7 @@ function showPage(name, projectId) {
     const proj = _projects.find(p=>p.id===projectId);
     document.getElementById('page-title').textContent = proj?.name || 'Project';
     document.getElementById('topbar-actions').innerHTML =
-      `<button class="btn btn-secondary btn-sm" onclick="openProjectTerminal('${projectId}')" title="Open a terminal in this project's workspace">${ICON.terminal} Terminal</button>
-       <button class="btn btn-secondary btn-sm" onclick="openEditProjectModal('${projectId}')">${ICON.edit} Edit</button>`;
+      `<button class="btn btn-secondary btn-sm" onclick="openEditProjectModal('${projectId}')">${ICON.edit} Edit</button>`;
     document.querySelectorAll('.nav-btn[data-project]').forEach(b => { if(b.dataset.project===projectId) b.classList.add('active'); });
     loadProjectPage(projectId);
   } else if (name === 'settings') {
@@ -1432,7 +1492,7 @@ async function loadDashboard() {
 
   const prHtml = groups.length
     ? errors.map(e=>`<p style="font-size:12px;color:var(--danger);margin-bottom:8px;display:flex;align-items:center;gap:5px">${ICON.warn} ${esc(e.repo)}: ${esc(e.error)}</p>`).join('') +
-      section('Tasks · My Pull Requests', mine, 'No open PRs you authored.') +
+      section('GitHub · My Pull Requests', mine, 'No open PRs you authored.') +
       section('Review Requested', review, 'Nothing awaiting your review.')
     : `<div class="empty"><div class="empty-icon">${ICON.folder}</div><p>No projects yet. Create one to get started.</p><br><button class="btn btn-primary" onclick="openNewProjectModal()">${ICON.plus} New project</button></div>`;
 
@@ -1466,7 +1526,7 @@ function renderDashboardSprint() {
 
 // CI shown as a bare colored dot (with a tooltip for the actual status). Always
 // returns a dot — even with no CI — so the card footer is never empty.
-function ciDot(ci) {
+function ciInfo(ci) {
   let cls = 'ci-none', label = 'No checks';
   if (ci) {
     if (ci.status === 'in_progress' || ci.status === 'queued') { cls = 'ci-running'; label = 'Running'; }
@@ -1474,6 +1534,10 @@ function ciDot(ci) {
     else if (ci.conclusion === 'failure')   { cls = 'ci-failure'; label = 'Failing'; }
     else if (ci.conclusion === 'cancelled') { cls = 'ci-none';    label = 'Cancelled'; }
   }
+  return { cls, label };
+}
+function ciDot(ci) {
+  const { cls, label } = ciInfo(ci);
   return `<span class="ci-dot ${cls}" title="${label}"></span>`;
 }
 
@@ -1511,35 +1575,6 @@ async function loadProjectPage(id) {
   if (!proj) { el.innerHTML = '<div class="empty">Project not found.</div>'; return; }
 
   el.innerHTML = `
-    <!-- Settings -->
-    <div class="card card-pad" style="margin-bottom:16px">
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
-        <div style="grid-column:1/-1">
-          <label class="form-label">Workspace folder</label>
-          <div style="display:flex;gap:8px">
-            <input type="text" id="proj-workspace-${id}" placeholder="/path/to/local/checkout" value="${esc(proj.workspace || '')}" style="flex:1" onchange="detectRepoFromWorkspace('${id}')">
-            <button type="button" class="btn btn-secondary btn-sm" onclick="chooseWorkspace('${id}')">Choose…</button>
-          </div>
-          <p style="font-size:12px;color:var(--text-3);margin-top:6px">Sets the terminal's working directory, and auto-detects the repo below from its <code style="background:var(--surface-hover);padding:1px 4px;border-radius:3px">git</code> origin.</p>
-        </div>
-        <div>
-          <label class="form-label">GitHub Repository</label>
-          <input type="text" id="proj-repo-${id}" placeholder="owner/repo or GitHub URL" value="${esc(proj.repo)}">
-        </div>
-        <div>
-          <label class="form-label">On merge → Jira transition</label>
-          <input type="text" id="proj-merge-${id}" placeholder="e.g. In Review" value="${esc(proj.mergeTransition)}">
-        </div>
-        <div style="grid-column:1/-1">
-          <label class="form-label">Jira JQL</label>
-          <input type="text" id="proj-jql-${id}" placeholder='project = "REC" ORDER BY updated DESC' value="${esc(proj.jql)}">
-        </div>
-      </div>
-      <div style="display:flex;justify-content:flex-end;margin-top:14px">
-        <button class="btn btn-primary btn-sm" onclick="saveProjectSettings('${id}')">Save settings</button>
-      </div>
-    </div>
-
     <!-- Tabs -->
     <div class="tabs">
       <button class="tab-btn active" onclick="switchTab('${id}','prs',this)">Pull Requests</button>
@@ -1599,42 +1634,19 @@ function switchTab(projectId, tab, btn) {
   if (tab === 'jira') loadProjectJira(projectId);
 }
 
-async function saveProjectSettings(id) {
-  const repo            = document.getElementById(`proj-repo-${id}`).value.trim();
-  const jql             = document.getElementById(`proj-jql-${id}`).value.trim();
-  const mergeTransition = document.getElementById(`proj-merge-${id}`).value.trim();
-  const workspace       = document.getElementById(`proj-workspace-${id}`).value.trim();
-  try {
-    await api(`/api/projects/${id}`, { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ repo, jql, mergeTransition, workspace }) });
-    toast('Settings saved');
-    const projects = await api('/api/projects');
-    renderProjectNav(projects);
-    loadProjectPage(id); // re-render so PRs reflect the new repo
-  } catch(e) { toastErr(e.message); }
-}
-
-// Open the native folder picker (Electron) and fill the workspace field, then detect
-// the repo from its git remote.
-async function chooseWorkspace(id) {
+// Native folder picker for the New/Edit Project modal's "Local Git Repo" field.
+// Fills the workspace path, then auto-detects the GitHub repo from its git origin into
+// the modal's Repository field (only overwrites it when a GitHub remote is actually found).
+async function chooseModalWorkspace() {
   if (!window.taskhub?.chooseFolder) { toastErr('Folder picker is only available in the app'); return; }
   const dir = await window.taskhub.chooseFolder();
   if (!dir) return;
-  const input = document.getElementById(`proj-workspace-${id}`);
-  if (input) input.value = dir;
-  detectRepoFromWorkspace(id);
-}
-
-// Read the chosen workspace's `git` origin and auto-fill the repo field. A repo the
-// user already typed is overwritten only when a GitHub remote is actually found.
-async function detectRepoFromWorkspace(id) {
-  const ws = document.getElementById(`proj-workspace-${id}`)?.value.trim();
-  if (!ws) return;
+  document.getElementById('modal-workspace').value = dir;
   try {
-    const { repo } = await api(`/api/detect-repo?path=${encodeURIComponent(ws)}`);
-    const repoInput = document.getElementById(`proj-repo-${id}`);
-    if (repo && repoInput) { repoInput.value = repo; toast(`Detected ${repo}`); }
-    else if (!repo) toast('No GitHub remote found in that folder');
-  } catch(e) { toastErr(e.message); }
+    const { repo } = await api(`/api/detect-repo?path=${encodeURIComponent(dir)}`);
+    if (repo) { setModalRepo(repo); toast(`Detected ${repo}`); }
+    else toast('No GitHub remote found in that folder');
+  } catch {}
 }
 
 async function reloadProjectPRs(id, state, { silent = false } = {}) {
@@ -1700,15 +1712,20 @@ function itemsMatching(items, filters, exceptKey) {
 
 // Build the "Filters" bar. `onchangeFor(dimKey)` returns the JS expr run on change.
 // A dimension's dropdown is shown only when it offers a real choice (2+ values) or
-// already has a selection (so it can be cleared).
-function ticketFilterBar(items, filters, onchangeFor) {
+// already has a selection (so it can be cleared). `valuesByKey` lets a caller fix a
+// dimension's option list explicitly (e.g. the project dropdown lists the Jira keys
+// you've configured on your projects, not whatever keys happen to be in the tickets).
+function ticketFilterBar(items, filters, onchangeFor, valuesByKey = {}) {
   if (!items.length) return '';
   const opt = (v, label, sel) => `<option value="${esc(v)}" ${sel ? 'selected' : ''}>${esc(label)}</option>`;
   const selects = TICKET_FILTERS.map(f => {
+    const fixed = Array.isArray(valuesByKey[f.key]) && valuesByKey[f.key].length; // explicit option list
     const base = itemsMatching(items, filters, f.key);
-    const values = [...new Set(base.map(f.valueOf).filter(Boolean))].sort();
+    const values = fixed ? valuesByKey[f.key] : [...new Set(base.map(f.valueOf).filter(Boolean))].sort();
     const cur = filters[f.key] || '';
-    if (values.length < 2 && !cur) return '';
+    // A dimension with a fixed list (e.g. your configured Jira project keys) always shows;
+    // a derived dimension shows only when it offers a real choice or already has a selection.
+    if (!fixed && values.length < 2 && !cur) return '';
     return `<select class="filter-select" onchange="${onchangeFor(f.key)}">` +
       opt('', `All ${f.label}`, !cur) +
       values.map(v => opt(v, `${v} (${base.filter(i => f.valueOf(i) === v).length})`, cur === v)).join('') +
@@ -1730,12 +1747,29 @@ async function persistFilters(cfgKey, filters) {
 let _ticketFilters = null;     // {project,status,...}; null = not loaded yet
 let _mineSnap = { items: [] }; // last snapshot, cached so filter changes re-render without refetch
 
+// Jira project keys across all configured projects (uppercased, deduped). Each project's
+// key now lives in its own record (replacing the old global `my_ticket_projects` config).
+function projectJiraKeys() {
+  return new Set((_projects || []).map(p => (p.jiraProjectKey || '').toUpperCase()).filter(Boolean));
+}
+
+// The assigned-to-me feed scoped to the projects you've added: when any project declares a
+// Jira key, only tickets in those projects are shown (union). With none set, nothing is hidden.
+function scopedMineItems() {
+  const items = _mineSnap.items || [];
+  const keys = projectJiraKeys();
+  return keys.size ? items.filter(i => keys.has(ticketProjectOf(i.key).toUpperCase())) : items;
+}
+
 async function loadMyTickets() {
   const tbody = document.getElementById('mytickets-body');
   if (!tbody) return;
   try {
-    const [snap, cfg] = await Promise.all([api('/api/jira/mine'), api('/api/config')]);
-    if (_ticketFilters === null) _ticketFilters = parseFilters(cfg.my_ticket_filters || cfg.my_ticket_projects);
+    // Projects fetched alongside so the per-project Jira-key scoping is current even if the
+    // dashboard hasn't loaded yet this session.
+    const [snap, cfg, projects] = await Promise.all([api('/api/jira/mine'), api('/api/config'), api('/api/projects')]);
+    _projects = projects;
+    if (_ticketFilters === null) _ticketFilters = parseFilters(cfg.my_ticket_filters);
     _mineSnap = snap;
     rememberStatuses(snap.items);
     renderMyTicketsFilter();
@@ -1747,15 +1781,17 @@ async function loadMyTickets() {
 
 function renderMyTicketsFilter() {
   const el = document.getElementById('mytickets-filter');
-  if (el) el.innerHTML = ticketFilterBar(_mineSnap.items || [], _ticketFilters, k => `setTicketFilter('${k}', this.value)`);
+  // The project dropdown lists only the Jira keys configured on your projects.
+  if (el) el.innerHTML = ticketFilterBar(scopedMineItems(), _ticketFilters,
+    k => `setTicketFilter('${k}', this.value)`, { project: [...projectJiraKeys()].sort() });
 }
 
 function renderMyTickets() {
   const tbody = document.getElementById('mytickets-body');
   if (!tbody) return;
-  const items = _mineSnap.items || [];
+  const items = scopedMineItems();
   const filtered = itemsMatching(items, _ticketFilters, null);
-  const emptyMsg = items.length ? 'No tickets match these filters.' : 'No tickets assigned to you.';
+  const emptyMsg = items.length ? 'No tickets match these filters.' : 'No tickets in your projects assigned to you.';
   renderJiraSnapshot(tbody, { items: filtered, error: items.length ? null : _mineSnap.error, lastSynced: _mineSnap.lastSynced }, { emptyMsg });
 }
 
@@ -1917,8 +1953,6 @@ async function loadSettings() {
   api('/api/jira/site').then(s => { if (s.baseUrl) document.getElementById('jira-base-url').placeholder = `${s.baseUrl} (auto-detected)`; }).catch(()=>{});
   if (cfg.jira_poll_interval) document.getElementById('jira-poll-interval').value = cfg.jira_poll_interval;
   if (cfg.jira_limit)         document.getElementById('jira-limit').value = cfg.jira_limit;
-  _termThemePref = cfg.terminal_theme || 'auto';
-  document.getElementById('terminal-theme').value = _termThemePref;
 
   const allRepos = [...new Set(dbinfo.projects.map(p=>p.repo).filter(Boolean))];
   document.getElementById('forwarder-list').innerHTML = allRepos.length
@@ -1994,7 +2028,7 @@ async function saveConfig() {
       poll_interval:      document.getElementById('poll-interval').value || '60',
       jira_base_url:      document.getElementById('jira-base-url').value.trim(), // blank = auto-detect
       my_jql:             document.getElementById('my-jql').value.trim() || 'assignee = currentUser() AND statusCategory != Done ORDER BY updated DESC',
-      sprint_jql:         document.getElementById('sprint-jql').value.trim() || 'assignee = currentUser() AND sprint in openSprints() AND statusCategory != Done ORDER BY updated DESC',
+      sprint_jql:         document.getElementById('sprint-jql').value.trim() || 'assignee = currentUser() AND sprint is not EMPTY AND statusCategory != Done ORDER BY updated DESC',
       jira_poll_interval: document.getElementById('jira-poll-interval').value || '120',
       jira_limit:         document.getElementById('jira-limit').value || '100',
     })});
@@ -2002,14 +2036,6 @@ async function saveConfig() {
     try { _jiraBase = (await api('/api/jira/site')).baseUrl || _jiraBase; } catch {}
     toast('Settings saved');
   } catch(e) { toastErr(e.message); }
-}
-
-// Terminal theme dropdown: persist the choice and re-skin open terminals immediately.
-async function setTerminalTheme(value) {
-  _termThemePref = value;
-  applyTermThemes();
-  try { await api('/api/config', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ terminal_theme: value }) }); }
-  catch(e) { toastErr(e.message); }
 }
 
 // ── Project modal ─────────────────────────────────────────────────────────────
@@ -2029,10 +2055,31 @@ function selectColor(c) {
   });
 }
 
+// Store the (auto-detected) GitHub repo in the hidden field and reflect it as a footer
+// hint under the Local Git Repo input — it's derived from git, not entered by hand.
+function setModalRepo(repo) {
+  document.getElementById('modal-repo').value = repo || '';
+  const hint = document.getElementById('modal-repo-hint');
+  if (!hint) return;
+  hint.innerHTML = repo
+    ? `GitHub repo: <code style="background:var(--surface-hover);padding:1px 4px;border-radius:3px">${esc(repo)}</code>`
+    : `Sets the terminal's working directory; the GitHub repo is auto-detected from its <code style="background:var(--surface-hover);padding:1px 4px;border-radius:3px">git</code> origin.`;
+}
+
+// Fill the (shared) project modal from a project object, or blanks for a new one.
+function fillProjectModal(proj) {
+  document.getElementById('modal-name').value      = proj.name || '';
+  document.getElementById('modal-workspace').value = proj.workspace || '';
+  setModalRepo(proj.repo || '');
+  document.getElementById('modal-jira-key').value  = proj.jiraProjectKey || '';
+  document.getElementById('modal-merge').value     = proj.mergeTransition || '';
+  document.getElementById('modal-jql').value       = proj.jql || '';
+}
+
 function openNewProjectModal() {
   document.getElementById('modal-title').textContent = 'New Project';
   document.getElementById('modal-project-id').value = '';
-  document.getElementById('modal-name').value = '';
+  fillProjectModal({});
   document.getElementById('modal-delete').style.display = 'none';
   buildColorPicker(COLORS[0]);
   document.getElementById('modal').style.display = 'flex';
@@ -2044,7 +2091,7 @@ function openEditProjectModal(id) {
   if (!proj) return;
   document.getElementById('modal-title').textContent = 'Edit Project';
   document.getElementById('modal-project-id').value = id;
-  document.getElementById('modal-name').value = proj.name;
+  fillProjectModal(proj);
   document.getElementById('modal-delete').style.display = ''; // existing project → can delete
   buildColorPicker(proj.color);
   document.getElementById('modal').style.display = 'flex';
@@ -2064,15 +2111,24 @@ function deleteProjectFromModal() {
 }
 
 async function saveProject() {
-  const id   = document.getElementById('modal-project-id').value;
-  const name = document.getElementById('modal-name').value.trim();
+  const id        = document.getElementById('modal-project-id').value;
+  const name      = document.getElementById('modal-name').value.trim();
   if (!name) { toastErr('Name required'); return; }
+  const payload = {
+    name,
+    color:          _selectedColor,
+    workspace:      document.getElementById('modal-workspace').value.trim(),
+    repo:           document.getElementById('modal-repo').value.trim(),
+    jiraProjectKey: document.getElementById('modal-jira-key').value.trim(),
+    mergeTransition:document.getElementById('modal-merge').value.trim(),
+    jql:            document.getElementById('modal-jql').value.trim(),
+  };
   try {
     if (id) {
-      await api(`/api/projects/${id}`, {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({name, color:_selectedColor})});
+      await api(`/api/projects/${id}`, {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
       toast('Project updated');
     } else {
-      await api('/api/projects', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({name, color:_selectedColor})});
+      await api('/api/projects', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
       toast(`Project "${name}" created`);
     }
     closeModal();
@@ -2081,6 +2137,10 @@ async function saveProject() {
     renderProjectNav(projects);
     if (document.getElementById('page-settings').classList.contains('active')) loadSettings();
     else if (document.getElementById('page-dashboard').classList.contains('active')) loadDashboard();
+    else if (id && _activeProjectId === id && document.getElementById('page-project').classList.contains('active')) {
+      document.getElementById('page-title').textContent = name; // name may have changed
+      loadProjectPage(id);
+    }
   } catch(e) { toastErr(e.message); }
 }
 
@@ -2148,21 +2208,24 @@ setInterval(() => {
 }, 10_000);
 
 // ── Init ──────────────────────────────────────────────────────────────────────
+// Kick off the tab rehydrate immediately. It's async (reads config.db over /api/tabs),
+// but the `_tabsReady` guard in saveTabs() means a tab opened from the tray before this
+// lands can't clobber the saved set — restore merges it in instead.
+restoreTabs();   // rehydrate GitHub/Jira tabs from the last session
+
 (async () => {
   try {
-    const [site, cfg] = await Promise.all([api('/api/jira/site'), api('/api/config')]);
+    const [site, settings] = await Promise.all([api('/api/jira/site'), api('/api/settings')]);
     _jiraBase = site.baseUrl || '';
-    _termThemePref = cfg.terminal_theme || 'auto';
-    // Config store is authoritative (survives a localStorage clear, shared across windows);
+    // config.db is authoritative (survives a localStorage clear, shared across windows);
     // re-sync the theme from it and re-apply if it differs from the pre-paint guess.
-    if (cfg.app_theme && cfg.app_theme !== _appThemePref) {
-      _appThemePref = cfg.app_theme;
+    if (settings.theme && settings.theme !== _appThemePref) {
+      _appThemePref = settings.theme;
       try { localStorage.setItem('taskhub.theme', _appThemePref); } catch {}
     }
     applyAppTheme();
   } catch {}
   loadDashboard(); // renderProjectNav is called inside loadDashboard
-  restoreTabs();   // rehydrate GitHub/Jira tabs from the last session
 })();
 </script>
 </body>

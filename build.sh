@@ -61,18 +61,13 @@ fi
 # Tray icon — monochrome template glyph (transparent bg, auto-tinted by macOS)
 node "$ROOT/scripts/gen-tray-icon.js"
 
-# ── Build (dir target → TaskHub.app only, no DMG) ───────────────────────────────
+# ── Build (--dir → unpacked TaskHub.app only, no DMG; fast for local runs) ──────
+# The .app is ad-hoc signed by scripts/afterPack.js during packaging (electron-
+# builder skips signing with identity: null, leaving an invalid arm64 stub).
+# DMG packaging + GitHub publishing live in `npm run release`.
 cyan "Building TaskHub.app (arm64)"
 cd "$ROOT"
-CSC_IDENTITY_AUTO_DISCOVERY=false npx electron-builder --mac --arm64
-
-# ── Ad-hoc sign ─────────────────────────────────────────────────────────────────
-# electron-builder skips signing (identity: null), leaving only the linker's stub
-# signature — invalid for arm64 (no sealed resources). Re-sign the whole bundle
-# ad-hoc so it's a valid, locally-runnable signature.
-cyan "Ad-hoc signing TaskHub.app"
-codesign --force --deep --sign - "$APP"
-codesign --verify --deep --strict "$APP"
+CSC_IDENTITY_AUTO_DISCOVERY=false npx electron-builder --mac --arm64 --dir
 
 green "Build complete"
 echo "  ${APP#$ROOT/}"
