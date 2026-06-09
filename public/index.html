@@ -685,6 +685,12 @@ const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>
 // loaded once at startup into _jiraBase — never hardcoded.
 let _jiraBase = '';
 const jiraUrl = key => _jiraBase ? `${_jiraBase}/browse/${key}` : '#';
+// Pull the ticket key out of a Jira URL ({base}/browse/RECORD-1234) so a restored or
+// tray-opened Jira tab can still map to a worktree without separate metadata.
+const jiraKeyFromUrl = url => (String(url || '').match(/\/browse\/([A-Z][A-Z0-9]+-\d+)/i) || [])[1] || '';
+// A webview tab (GitHub PR or Jira ticket) can pair a terminal beside it; standalone
+// terminals can't. Both kinds resolve their cwd via prCwd().
+const canSplitTerminal = t => !!t && (t.kind === 'github' || t.kind === 'jira');
 
 // ── Embedded viewer ──────────────────────────────────────────────────────────────
 // The Electron app embeds the real GitHub/Jira page in a <webview> (the main process
@@ -781,7 +787,11 @@ function createTab(url, title, kind, meta = {}) {
   document.getElementById('split-body').appendChild(wv);
   // repo/branch (for GitHub PRs) let the terminal map to the right project workspace +
   // worktree without depending on _projects still holding PR data.
-  const tab = { id, kind: kind === 'jira' ? 'jira' : 'github', title: title || url, url, wv, loaded: false, started: false, repo: meta.repo || '', branch: meta.branch || '', prSplit: !!meta.prSplit };
+  // category ('mine'|'review') is persisted like repo/branch so a GitHub tab keeps its
+  // sidebar group across restarts and even after its PR merges and leaves the snapshot —
+  // grouping never depends on _projects still holding the PR. Live data refreshes it (see
+  // loadDashboard); '' until known.
+  const tab = { id, kind: kind === 'jira' ? 'jira' : 'github', title: title || url, url, wv, loaded: false, started: false, repo: meta.repo || '', branch: meta.branch || '', jiraKey: meta.jiraKey || jiraKeyFromUrl(url), prSplit: !!meta.prSplit, category: meta.category || '' };
   wv.addEventListener('did-stop-loading', () => { tab.loaded = true; if (id === _activeTab) showSplitLoading(false); });
   // Keep the Back button's enabled state in sync as the user navigates within the tab.
   const onNav = () => { if (id === _activeTab) updateNavButtons(); };
@@ -805,7 +815,7 @@ function saveTabs() {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      tabs: _tabs.map(t => ({ kind: t.kind, title: t.title, url: t.url, repo: t.repo, branch: t.branch, prSplit: t.prSplit })),
+      tabs: _tabs.map(t => ({ kind: t.kind, title: t.title, url: t.url, repo: t.repo, branch: t.branch, jiraKey: t.jiraKey, prSplit: t.prSplit, category: t.category })),
       active: active ? active.url : null,
     }),
   }).catch(() => {});
@@ -825,7 +835,7 @@ async function restoreTabs() {
     // A tab opened from the tray may already be in `_tabs` by the time restore lands —
     // skip it so we don't double-add.
     if (t && t.url && !_tabs.some(x => x.url === t.url)) {
-      _tabs.push(createTab(t.url, t.title, t.kind, { repo: t.repo, branch: t.branch, prSplit: t.prSplit }));
+      _tabs.push(createTab(t.url, t.title, t.kind, { repo: t.repo, branch: t.branch, jiraKey: t.jiraKey, prSplit: t.prSplit, category: t.category }));
     }
   }
   _tabsReady = true;
@@ -866,12 +876,12 @@ function activateTab(id) {
   updateNavButtons();
   // PR ↔ terminal split: a GitHub PR shows a paired terminal to its right when ITS own
   // `prSplit` is on (per-tab, default off). Switching tabs reveals it instantly (no slide).
-  if (cur && cur.kind === 'github' && cur.prSplit && window.taskhub?.term) {
+  if (canSplitTerminal(cur) && cur.prSplit && window.taskhub?.term) {
     ensurePrTerminal(cur).then(() => { if (_activeTab === cur.id) applyPrLayout(cur); });
   } else {
     clearPrLayout();
   }
-  document.getElementById('split-toggle-term')?.classList.toggle('on', !!(cur && cur.kind === 'github' && cur.prSplit));
+  document.getElementById('split-toggle-term')?.classList.toggle('on', !!(canSplitTerminal(cur) && cur.prSplit));
   renderTabs();
   saveTabs();
 }
@@ -1036,11 +1046,19 @@ function closeTerminal(id) {
 // local workspace; null cwd → main falls back to the app's own repo.
 function projectByPrUrl(url) { return _projects.find(g => (g.prs || []).some(p => p.url === url)) || null; }
 function projectByRepo(repo) { return repo ? _projects.find(p => p.repo === repo) || null : null; }
+// The project that owns a Jira ticket, matched on the key's project prefix
+// (RECORD-1234 → RECORD) against each project's configured jiraProjectKey.
+function projectByJiraKey(key) {
+  const prefix = (key || '').split('-')[0].toUpperCase();
+  if (!prefix) return null;
+  return _projects.find(p => (p.jiraProjectKey || '').toUpperCase() === prefix) || null;
+}
 
-// Where a PR's terminal should start: the worktree checked out at the PR's branch if
-// one exists locally, else the project's workspace, else null (→ main uses the app repo).
-// Resolve the project by repo first (survives _projects losing its PR snapshot), then by url.
+// Where a tab's terminal should start. GitHub PR: the worktree at the PR's branch, else
+// the project workspace. Jira ticket: the worktree whose branch embeds the ticket key,
+// else the project workspace. null → main falls back to the app's own repo.
 async function prCwd(tab) {
+  if (tab.kind === 'jira') return jiraCwd(tab);
   const proj = projectByRepo(tab.repo) || projectByPrUrl(tab.url);
   const ws = proj && proj.workspace;
   if (!ws) return null;
@@ -1048,6 +1066,18 @@ async function prCwd(tab) {
   if (branch) {
     try { const r = await api(`/api/worktree?path=${encodeURIComponent(ws)}&branch=${encodeURIComponent(branch)}`); if (r.path) return r.path; } catch {}
   }
+  return ws;
+}
+
+// Jira ticket → terminal cwd. Find the owning project by key prefix, then ask the
+// server for a worktree whose branch embeds the key. Per design: an unambiguous single
+// match opens there; zero or multiple matches fall back to the project workspace.
+async function jiraCwd(tab) {
+  const key = tab.jiraKey || jiraKeyFromUrl(tab.url);
+  const proj = projectByJiraKey(key);
+  const ws = proj && proj.workspace;
+  if (!ws || !key) return ws || null;
+  try { const r = await api(`/api/worktree?path=${encodeURIComponent(ws)}&key=${encodeURIComponent(key)}`); if (r.path) return r.path; } catch {}
   return ws;
 }
 
@@ -1127,7 +1157,7 @@ function clearPrLayout(tab = null, animate = false) {
 // in/out. Only meaningful for GitHub tabs.
 function togglePrSplit() {
   const cur = activeTab();
-  if (!cur || cur.kind !== 'github') return;
+  if (!canSplitTerminal(cur)) return;
   cur.prSplit = !cur.prSplit;
   saveTabs();
   document.getElementById('split-toggle-term')?.classList.toggle('on', cur.prSplit);
@@ -1257,11 +1287,21 @@ function tabsMarkup() {
        <button class="tab-x" onclick="event.stopPropagation();closeTab('${t.id}')" title="Close tab">${ICON.close}</button>
      </div>`;
   };
-  const group = (label, kind) => {
-    const items = _tabs.filter(t => t.kind === kind);
-    if (!items.length) return '';
-    return `<div class="tab-group" data-kind="${kind}"><span class="tab-group-label">${label}</span>${items.map(itemHtml).join('')}</div>`;
+  // Render one labeled group of tab rows; self-hides when empty. `attrs` are extra
+  // attributes on the wrapper (data-kind/data-cat used for drag-reorder scoping).
+  const groupHtml = (label, attrs, items) =>
+    items.length ? `<div class="tab-group" ${attrs}><span class="tab-group-label">${label}</span>${items.map(itemHtml).join('')}</div>` : '';
+  const group = (label, kind) => groupHtml(label, `data-kind="${kind}"`, _tabs.filter(t => t.kind === kind));
+  // GitHub tabs split by the PR's category — same Tasks/Review split as the tray.
+  // Prefer the live PR category, fall back to the one saved on the tab so a restored
+  // tab (or one whose PR has merged and left the snapshot) keeps its group instead of
+  // vanishing. Unknown → Tasks, so a tab is always shown somewhere.
+  const ghCat = t => {
+    const c = prByUrl(t.url)?.category || t.category;
+    return c === 'review' ? 'review' : 'mine';
   };
+  const ghGroup = (label, cat) =>
+    groupHtml(label, `data-kind="github" data-cat="${cat}"`, _tabs.filter(t => t.kind === 'github' && ghCat(t) === cat));
   // Terminals group — rows use data-term (not draggable) and their own handlers.
   const termHtml = t =>
     `<div class="opentab ${t.id === _activeTermId ? 'active' : ''}" data-term="${t.id}"
@@ -1277,7 +1317,11 @@ function tabsMarkup() {
   const termGroup = standalone.length
     ? `<div class="tab-group"><span class="tab-group-label">Terminals</span>${standalone.map(([id, t]) => termHtml({ id, ...t })).join('')}</div>`
     : '';
-  return group('GitHub', 'github') + group('Jira', 'jira') + termGroup;
+  // Only the two categorized GitHub groups render. Tabs that are neither 'mine' nor
+  // 'review' (uncategorized / stale / not-yet-loaded PRs) show no row. Each group
+  // self-hides when empty, so no bare headers appear.
+  return ghGroup('Mine', 'mine') + ghGroup('Review', 'review')
+       + group('Jira', 'jira') + termGroup;
 }
 
 // Drag-to-reorder within each group (works in both modes). Reorder stays within a
@@ -1356,13 +1400,13 @@ function jiraTabTitle(key, sum)  { return sum ? `${key} ${sum}` : key; }
 // terminal can map to the project workspace + worktree even when _projects lost its PRs).
 function openPrSplit(url, num, repo, branch) {
   const pr = prByUrl(url);
-  openInSplit(url, pr ? prTabTitle(pr) : `PR ${num}`, 'github', { repo: repo || pr?.repo, branch: branch || pr?.headRefName });
+  openInSplit(url, pr ? prTabTitle(pr) : `PR ${num}`, 'github', { repo: repo || pr?.repo, branch: branch || pr?.headRefName, category: pr?.category });
 }
 function jiraClick(e, url, key) {
   e.stopPropagation();   // don't trigger a parent PR card
   e.preventDefault();    // open in the embedded viewer, not the <a> href
   const it = jiraByKey(key);
-  openInSplit(url, jiraTabTitle(key, it && it.summary), 'jira');
+  openInSplit(url, jiraTabTitle(key, it && it.summary), 'jira', { jiraKey: key });
 }
 const fmtDate = s => s ? new Date(s).toLocaleDateString('en-US',{month:'short',day:'numeric'}) : '';
 const timeAgo = s => {
@@ -1491,6 +1535,18 @@ async function loadDashboard() {
   // its own node so a status change can re-render just this section.
   document.getElementById('dashboard-groups').innerHTML = prHtml + `<div id="dashboard-sprint"></div>`;
   renderDashboardSprint();
+
+  // Refresh each open GitHub tab's saved category from the freshly-loaded snapshot, so a
+  // PR that moved mine↔review re-groups and legacy/tray-opened tabs (saved with '') get
+  // backfilled. Persist only if something actually changed.
+  let catChanged = false;
+  for (const t of _tabs) {
+    if (t.kind !== 'github') continue;
+    const live = prByUrl(t.url)?.category;
+    if (live && live !== t.category) { t.category = live; catChanged = true; }
+  }
+  if (catChanged) saveTabs();
+
   renderTabs(); // refresh CI dots on open GitHub tabs now that PR data (with CI) is loaded
 }
 

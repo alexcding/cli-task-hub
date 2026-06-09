@@ -45,7 +45,7 @@ module.exports = {
   ],
   asarUnpack: ['**/node_modules/*node-pty*/**'],
   extraResources: [
-    { from: 'build', to: '.', filter: ['tray-icon-*.png'] },
+    { from: 'build', to: '.', filter: ['tray-icon-*.png', 'tray-jira.png'] },
   ],
   mac: {
     category: 'public.app-category.productivity',

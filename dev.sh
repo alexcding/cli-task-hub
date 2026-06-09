@@ -33,19 +33,17 @@ done
 cd "$ROOT"
 
 # ── Data dir ──────────────────────────────────────────────────────────────────────
-# The packaged tray app stores its data in Electron's userData dir; plain Node/bun
-# would otherwise default to the repo root and show an empty store. Point dev at the
-# same "prod" data so you see your real projects/config. db.js honors TASKHUB_DATA_DIR
-# first. Export your own TASKHUB_DATA_DIR to override, or set it to "." for an
-# isolated repo-local store.
+# Dev uses the SAME store as the packaged app — Electron's userData dir — so you work
+# against your real projects/config, not a separate repo-local copy. db.js honors
+# TASKHUB_DATA_DIR first; export your own (e.g. TASKHUB_DATA_DIR=/tmp/taskhub-test) for
+# an isolated store when you don't want to touch prod data.
 PROD_DATA="$HOME/Library/Application Support/TaskHub"
-if [ -z "$TASKHUB_DATA_DIR" ] && [ -f "$PROD_DATA/taskhub.json" ]; then
-  export TASKHUB_DATA_DIR="$PROD_DATA"
-  green "Using prod data: $PROD_DATA"
-elif [ -n "$TASKHUB_DATA_DIR" ]; then
-  green "Using data dir: $TASKHUB_DATA_DIR"
+if [ -n "$TASKHUB_DATA_DIR" ]; then
+  green "Using data dir (override): $TASKHUB_DATA_DIR"
 else
-  green "Using repo-local data: $ROOT (no prod store found)"
+  export TASKHUB_DATA_DIR="$PROD_DATA"
+  mkdir -p "$PROD_DATA"
+  green "Using prod data: $PROD_DATA"
 fi
 
 # ── Runtime ─────────────────────────────────────────────────────────────────────
@@ -69,6 +67,24 @@ if $APP; then
   SERVER_PID=$!
   trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
   for _ in $(seq 1 40); do curl -s -o /dev/null "$URL" && break; sleep 0.25; done
+
+  # Brand the dev Electron.app as "TaskHub" so the menu bar AND Dock match the packaged
+  # build. The name lives in the bundle's Info.plist (ships as "Electron"); app.setName()
+  # can't change it in dev. Editing the plist breaks the bundle's code signature, so the
+  # Dock keeps the old signed name until we ad-hoc re-sign, then refresh Launch Services.
+  # Guarded on the current name so the (slow) codesign runs once after a fresh npm install,
+  # not on every launch.
+  EL_APP="$ROOT/node_modules/electron/dist/Electron.app"
+  EL_PLIST="$EL_APP/Contents/Info.plist"
+  if [ -f "$EL_PLIST" ] && [ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleName' "$EL_PLIST" 2>/dev/null)" != "TaskHub" ]; then
+    cyan "Branding dev Electron bundle as TaskHub (one-time after install)"
+    /usr/libexec/PlistBuddy -c "Set :CFBundleName TaskHub"        "$EL_PLIST" 2>/dev/null || true
+    /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName TaskHub" "$EL_PLIST" 2>/dev/null || true
+    codesign --force --deep --sign - "$EL_APP" 2>/dev/null || true
+    LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Versions/A/Support/lsregister"
+    [ -x "$LSREGISTER" ] && "$LSREGISTER" -f "$EL_APP" 2>/dev/null || true
+  fi
+
   cyan "Launching Electron app (connecting to the dev server)"
   TASKHUB_EXTERNAL_SERVER=1 PORT="$PORT" ./node_modules/.bin/electron . || true
   exit 0

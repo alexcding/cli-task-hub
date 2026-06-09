@@ -125,12 +125,17 @@ app.get('/api/detect-repo', async (req, res) => {
   res.json({ repo: (await github.gitRemoteRepo(String(dir))) || '' });
 });
 
-// Local worktree path checked out at `branch` within `path` (so a PR's terminal can
-// open in the matching worktree instead of the main checkout). { path: '' } if none.
+// Local worktree path within `path` so a tab's terminal can open in the matching
+// worktree instead of the main checkout. Resolve by exact `branch` (GitHub PR) or by
+// Jira `key` embedded in a branch name (RECORD-1234 → feature/RECORD-1234-foo).
+// { path: '' } when nothing matches (or, for a key, when the match is ambiguous).
 app.get('/api/worktree', async (req, res) => {
-  const { path: dir, branch } = req.query;
-  if (!dir || !branch) return res.json({ path: '' });
-  res.json({ path: (await github.worktreeForBranch(String(dir), String(branch))) || '' });
+  const { path: dir, branch, key } = req.query;
+  if (!dir || (!branch && !key)) return res.json({ path: '' });
+  const found = key
+    ? await github.worktreeForJiraKey(String(dir), String(key))
+    : await github.worktreeForBranch(String(dir), String(branch));
+  res.json({ path: found || '' });
 });
 
 // ── Pull requests (stale-while-revalidate) ──────────────────────────────────────

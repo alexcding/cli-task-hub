@@ -1,7 +1,7 @@
 // Cache compiled V8 bytecode to disk for faster cold starts (no-op pre-Node 22.8).
 try { require('node:module').enableCompileCache?.(); } catch {}
 
-const { app, Tray, Menu, shell, nativeImage, BrowserWindow, session, ipcMain, dialog, nativeTheme, Notification } = require('electron');
+const { app, Tray, Menu, shell, nativeImage, BrowserWindow, session, ipcMain, dialog, nativeTheme, Notification, net } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const { fork, execSync, execFile } = require('child_process');
 const path = require('path');
@@ -172,6 +172,10 @@ function trayIcon(state) {
 let reviewSeeded = false;        // first sync seeds silently — don't notify for reviews
                                  // already pending when the app launches
 const knownReviews = new Set();  // PR keys requesting my review as of last cycle
+// PR keys you've CLICKED in "Review requested" — hidden from that list afterward, until
+// GitHub re-requests your review (the key re-enters the review set as 'fresh'; see below).
+// In-memory: a fresh app launch re-surfaces all current requests.
+const acknowledgedReviews = new Set();
 let steadyState = 'idle';        // tray state (set by buildMenu)
 
 const prKey = pr => `${pr.repo}#${pr.number}`;
@@ -205,6 +209,13 @@ function detectReviewChanges(reviewPRs) {
     for (const pr of fresh) notifyReviewRequested(pr);
     playReviewSound(); // one sound per cycle, even if several reviews arrive at once
   }
+
+  // A (re-)requested PR must re-appear in "Review requested" even if you clicked it
+  // before — so clear its acknowledgement whenever it newly (re-)enters the review set.
+  for (const pr of fresh) acknowledgedReviews.delete(prKey(pr));
+  // Drop acks for PRs no longer requesting review (a later re-request re-enters as
+  // 'fresh' anyway), keeping the set bounded.
+  for (const key of [...acknowledgedReviews]) if (!current.has(key)) acknowledgedReviews.delete(key);
 
   knownReviews.clear();
   for (const key of current) knownReviews.add(key);
@@ -259,14 +270,18 @@ const CI_COLORS = {
   success: [0x16, 0xa3, 0x4a], // green
   failure: [0xdc, 0x26, 0x26], // red
 };
+// Map a CI snapshot to a color key — shared by the dot fallback and the avatar badge.
+function ciKey(ci) {
+  if (ci) {
+    if (ci.status === 'in_progress' || ci.status === 'queued') return 'running';
+    if (ci.conclusion === 'success') return 'success';
+    if (ci.conclusion === 'failure') return 'failure';
+  }
+  return 'none';
+}
 const ciImgCache = {};
 function ciIcon(ci) {
-  let key = 'none';
-  if (ci) {
-    if (ci.status === 'in_progress' || ci.status === 'queued') key = 'running';
-    else if (ci.conclusion === 'success') key = 'success';
-    else if (ci.conclusion === 'failure') key = 'failure';
-  }
+  const key = ciKey(ci);
   if (!ciImgCache[key]) {
     // 18px buffer rendered at scaleFactor 2 → ~9pt dot, small and subtle in the menu.
     ciImgCache[key] = nativeImage.createFromBuffer(pngDot(18, CI_COLORS[key]), { width: 9, height: 9, scaleFactor: 2 });
@@ -274,32 +289,199 @@ function ciIcon(ci) {
   return ciImgCache[key];
 }
 
-// Build a labeled section of PR menu items.
-function prSection(label, prs) {
+// ── Author avatars (menu-item icons) ─────────────────────────────────────────────
+// Mirror the sidebar's tab rows: each PR shows its author's ROUND avatar with a small
+// CI badge. nativeImage can't rasterize SVG or round corners, so we fetch
+// github.com/<login>.png, circular-mask it, and composite the CI dot by hand on the BGRA
+// bitmap (same pixel approach as pngDot). Falls back to the plain CI dot if no avatar.
+const AVATAR_PX = 32;            // bitmap px; rendered @2x → 16pt in the menu
+const avatarCache = new Map();   // login -> circular BGRA bitmap (no badge) | null (failed)
+
+// Download bytes via Chromium's net stack — follows the github.com→avatars redirect and
+// shares the session. Resolves null on any failure so the menu still builds.
+function fetchBytes(url) {
+  return new Promise(resolve => {
+    try {
+      const req = net.request(url);
+      const chunks = [];
+      req.on('response', res => {
+        if (res.statusCode >= 400) { res.on('data', () => {}); res.on('end', () => resolve(null)); return; }
+        res.on('data', c => chunks.push(c));
+        res.on('end', () => resolve(Buffer.concat(chunks)));
+      });
+      req.on('error', () => resolve(null));
+      req.end();
+    } catch { resolve(null); }
+  });
+}
+
+// Premultiplied-alpha circular mask: fade pixels to transparent outside the radius.
+function maskCircle(bmp, size) {
+  const c = (size - 1) / 2, r = size / 2;
+  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+    const a = Math.max(0, Math.min(1, r - Math.hypot(x - c, y - c) + 0.5));
+    if (a < 1) {
+      const i = (y * size + x) * 4;
+      bmp[i] = Math.round(bmp[i] * a); bmp[i + 1] = Math.round(bmp[i + 1] * a);
+      bmp[i + 2] = Math.round(bmp[i + 2] * a); bmp[i + 3] = Math.round(bmp[i + 3] * a);
+    }
+  }
+}
+
+// Fetch + circular-mask one author's avatar into a reusable base bitmap (cached by login).
+async function loadAvatar(login) {
+  if (!login) return null;
+  if (avatarCache.has(login)) return avatarCache.get(login);
+  const buf = await fetchBytes(`https://github.com/${encodeURIComponent(login)}.png?size=64`);
+  let entry = null;
+  if (buf) {
+    let img = nativeImage.createFromBuffer(buf);
+    if (!img.isEmpty()) {
+      img = img.resize({ width: AVATAR_PX, height: AVATAR_PX, quality: 'best' });
+      const bmp = Buffer.from(img.toBitmap());   // BGRA, AVATAR_PX² · 4
+      maskCircle(bmp, AVATAR_PX);
+      entry = bmp;
+    }
+  }
+  avatarCache.set(login, entry);   // cache null too, so we don't re-fetch a bad login
+  return entry;
+}
+
+// Source-over one BGRA pixel: color (r,g,b) at coverage a∈[0,1].
+function blendPx(bmp, i, r, g, b, a) {
+  if (a <= 0) return;
+  const ia = 1 - a;
+  bmp[i]     = Math.round(b * a + bmp[i]     * ia);
+  bmp[i + 1] = Math.round(g * a + bmp[i + 1] * ia);
+  bmp[i + 2] = Math.round(r * a + bmp[i + 2] * ia);
+  bmp[i + 3] = Math.round(255 * a + bmp[i + 3] * ia);
+}
+
+// Final menu icon: cached circular avatar + a corner CI badge (colored dot ringed in the
+// menu background, mirroring the sidebar's box-shadow ring). No avatar → plain CI dot.
+function avatarIcon(login, ci) {
+  const base = login ? avatarCache.get(login) : null;
+  if (!base) return ciIcon(ci);
+  const bmp = Buffer.from(base);     // copy so the cached base stays badge-free
+  const key = ciKey(ci);
+  if (key !== 'none') {
+    const ring = nativeTheme.shouldUseDarkColors ? [38, 38, 40] : [255, 255, 255];
+    const [r, g, b] = CI_COLORS[key];
+    const cx = AVATAR_PX - 7, cy = AVATAR_PX - 7;
+    for (let y = 0; y < AVATAR_PX; y++) for (let x = 0; x < AVATAR_PX; x++) {
+      const d = Math.hypot(x - cx, y - cy), i = (y * AVATAR_PX + x) * 4;
+      blendPx(bmp, i, ring[0], ring[1], ring[2], Math.max(0, Math.min(1, 6 - d + 0.5))); // ring
+      blendPx(bmp, i, r, g, b, Math.max(0, Math.min(1, 4 - d + 0.5)));                    // dot
+    }
+  }
+  return nativeImage.createFromBitmap(bmp, { width: AVATAR_PX, height: AVATAR_PX, scaleFactor: 2 });
+}
+
+// Jira tabs have no author avatar, so without an icon they'd sit flush-left while GitHub
+// rows are inset by their avatar — a ragged column. Use the EXACT same Jira mark the
+// sidebar shows (public/index.html TAB_ICON.jira), pre-rasterized to build/tray-jira.png
+// (64px) since nativeImage can't render SVG. Downscale to an AVATAR_PX bitmap @2x so it
+// renders at the same 16pt size as the avatar column. Cached — it never changes.
+let _jiraIcon = null;
+function jiraIcon() {
+  if (_jiraIcon) return _jiraIcon;
+  const dir = app.isPackaged ? process.resourcesPath : path.join(__dirname, 'build');
+  const src = nativeImage.createFromPath(path.join(dir, 'tray-jira.png'));
+  if (src.isEmpty()) return (_jiraIcon = src);   // asset missing → no icon (cached so we don't retry)
+  const bmp = Buffer.from(src.resize({ width: AVATAR_PX, height: AVATAR_PX, quality: 'best' }).toBitmap());
+  _jiraIcon = nativeImage.createFromBitmap(bmp, { width: AVATAR_PX, height: AVATAR_PX, scaleFactor: 2 });
+  return _jiraIcon;
+}
+
+// Build a labeled section of open-tab menu items. The tray menu MIRRORS the app's
+// open tabs (the same /api/tabs list the sidebar restores from), so each item maps
+// 1:1 to a sidebar row and clicking it focuses that exact tab. Titles are the ones
+// saved on the tab (produced by the renderer's prTabTitle/jiraTabTitle at open time),
+// so they read identically in both places. GitHub tabs show the PR author's avatar with
+// a CI badge (looked up in prByUrl); Jira tabs show Jira's blue diamond mark.
+const menuLabel = s => s.length > 48 ? s.slice(0, 48) + '…' : s;   // truncate to fit the menu
+function tabSection(label, tabs, prByUrl) {
+  if (!tabs.length) return [];
+  const items = [{ label, enabled: false }];
+  for (const t of tabs) {
+    const title = t.title || t.url;
+    const item = {
+      label: menuLabel(title),
+      click: () => openLinkInApp(t.url, title, t.kind),
+    };
+    if (t.kind === 'github') { const pr = prByUrl[t.url]; item.icon = avatarIcon(pr?.author?.login, pr?.ci); }
+    else if (t.kind === 'jira') { item.icon = jiraIcon(); }
+    items.push(item);
+  }
+  return items;
+}
+
+// Build a section from PR snapshot objects (not open tabs) — used for "Review
+// requested": pending reviews you haven't opened yet. Title matches the renderer's
+// prTabTitle() so it reads identically once clicked (which opens it as a tab).
+function prMenuItems(label, prs) {
   if (!prs.length) return [];
   const items = [{ label, enabled: false }];
   for (const pr of prs) {
-    // Same format as the renderer's prTabTitle(): "PR #1233 <title>".
     const full = `PR #${pr.number} ${pr.title}`;
     items.push({
-      label: full.length > 48 ? full.slice(0, 48) + '…' : full,
-      icon: ciIcon(pr.ci),
-      click: () => openLinkInApp(pr.url, full, 'github'),
+      label: menuLabel(full),
+      icon: avatarIcon(pr.author?.login, pr.ci),
+      // Clicking acknowledges the request (hides it from "Review requested" until a
+      // re-request) and opens it as a tab; rebuild so it drops on the next menu open.
+      click: () => { acknowledgedReviews.add(prKey(pr)); openLinkInApp(pr.url, full, 'github'); refreshMenu(); },
     });
   }
   return items;
 }
 
 async function buildMenu() {
-  const all = await fetchJSON('/api/prs/tray');
-  // Mirror the dashboard's logic (index.html loadDashboard): only open, non-error PRs,
-  // split into the user's own PRs (Tasks) and PRs awaiting their review.
-  const openPRs = all.filter(p => !p.error && p.state === 'OPEN');
+  // The menu LIST mirrors the app's open tabs (same /api/tabs source as the sidebar),
+  // grouped exactly like the sidebar: GitHub tabs split into Tasks ('mine') and Review
+  // ('review') by their saved category — anything not 'review' falls under Tasks, matching
+  // the renderer's ghCat — plus Jira tabs. The PR snapshot (/api/prs/tray) is still read,
+  // but only to attach CI dots, fire review notifications, and color the menu-bar icon for
+  // ALL pending reviews (not just opened ones). fetchJSON returns [] on error.
+  const [tabData, prs] = await Promise.all([
+    fetchJSON('/api/tabs'),
+    fetchJSON('/api/prs/tray'),
+  ]);
+  const tabs = (tabData && tabData.tabs) || [];
+  const prList = Array.isArray(prs) ? prs : [];
+  const prByUrl = {};
+  for (const p of prList) if (p && p.url) prByUrl[p.url] = p;
+
+  const github   = tabs.filter(t => t.kind === 'github');
+  // Tasks / Review / Jira mirror your OPEN tabs (split by saved category). "Review
+  // requested" (below) is the broader master list — every PR awaiting your review from
+  // the snapshot, opened or not — so an unopened request is never missed.
+  const taskTabs   = github.filter(t => t.category !== 'review');
+  const reviewTabs = github.filter(t => t.category === 'review');
+  const jiraTabs   = tabs.filter(t => t.kind === 'jira');
+
+  // Notifications + icon color track ALL pending reviews from the snapshot, independent
+  // of which tabs are open — so a newly-requested review still alerts you even unopened.
+  const openPRs = prList.filter(p => !p.error && p.state === 'OPEN');
   const mine   = openPRs.filter(p => p.category === 'mine');
   const review = openPRs.filter(p => p.category === 'review');
 
-  let prItems = [...prSection('Tasks', mine), ...prSection('Review', review)];
-  if (!prItems.length) prItems = [{ label: 'No tasks or reviews', enabled: false }];
+  // Pre-load each author avatar we're about to render (unique logins, in parallel) so the
+  // section builders below can read them synchronously from the cache.
+  const logins = new Set();
+  for (const pr of review) if (pr.author?.login) logins.add(pr.author.login);
+  for (const t of [...taskTabs, ...reviewTabs]) { const l = prByUrl[t.url]?.author?.login; if (l) logins.add(l); }
+  await Promise.all([...logins].map(loadAvatar));
+
+  const tabItems = [
+    ...tabSection('Mine', taskTabs, prByUrl),
+    ...tabSection('Review', reviewTabs, prByUrl),
+    ...tabSection('Jira', jiraTabs, prByUrl),
+  ];
+
+  // "Review requested": every PR awaiting your review, opened or not — MINUS the ones
+  // you've already clicked (acknowledged). A re-request clears the ack and re-surfaces it
+  // (see detectReviewChanges). Clicking opens the PR (focusing its tab if already open).
+  const reviewReqItems = prMenuItems('Review requested', review.filter(pr => !acknowledgedReviews.has(prKey(pr))));
 
   // Notify + play a sound on any newly-requested review.
   detectReviewChanges(review);
@@ -311,10 +493,17 @@ async function buildMenu() {
     tray.setTitle('');
   }
 
+  // Review requested on top (the priority — others are waiting on you), then your opened
+  // Tasks/Jira tabs. Separator between only when both exist; placeholder when empty.
+  let body = (reviewReqItems.length && tabItems.length)
+    ? [...reviewReqItems, { type: 'separator' }, ...tabItems]
+    : [...reviewReqItems, ...tabItems];
+  if (!body.length) body = [{ label: 'Nothing to review or open', enabled: false }];
+
   return Menu.buildFromTemplate([
     { label: 'Open TaskHub', click: () => openWindow() },
     { type: 'separator' },
-    ...prItems,
+    ...body,
     { type: 'separator' },
     { label: 'Quit', click: () => app.quit() },
   ]);
