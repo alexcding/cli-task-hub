@@ -38,7 +38,6 @@
       --shadow-md: 0 4px 6px -1px rgb(0 0 0/.07),0 2px 4px -2px rgb(0 0 0/.07);
       --r: 8px; --rs: 6px; --rl: 12px;
       --sidebar-w: 220px;
-      --bar-h: 52px; /* shared height for every top band (sidebar header, topbar, viewer toolbar) so they line up */
     }
     /* Dark theme — neutral grays anchored on the terminal background (#1e1e1e), no blue/purple
        tint. Surfaces/borders/text are pure gray; the indigo accent (same brand as light) and the
@@ -65,7 +64,7 @@
     .sidebar-resizer { position:absolute; top:0; right:-3px; bottom:0; width:7px; cursor:col-resize; z-index:11; }
     .sidebar-resizer::before { content:''; position:absolute; left:50%; top:0; bottom:0; width:1px; transform:translateX(-50%); background:transparent; }
     .sidebar-resizer:hover::before { background:var(--accent); }
-    .sidebar-logo { height:var(--bar-h); padding:0 16px; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:8px; }
+    .sidebar-logo { height:52px; padding:0 16px; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:8px; }
     .logo-icon { width:28px;height:28px; background:linear-gradient(#6c6ff1,#4f46e5); border-radius:8px; display:flex;align-items:center;justify-content:center; flex-shrink:0; }
     .logo-text { font-size:15px; font-weight:600; letter-spacing:-.3px; }
     nav { padding:8px; flex:1; overflow-y:auto; }
@@ -81,7 +80,7 @@
 
     .workarea { margin-left:var(--sidebar-w); flex:1; min-width:0; height:100vh; display:flex; align-items:stretch; }
     main { flex:1; min-width:0; min-height:0; display:flex; flex-direction:column; }
-    .topbar { background:var(--surface); border-bottom:1px solid var(--border); padding:0 24px; height:var(--bar-h); flex-shrink:0; display:flex; align-items:center; gap:12px; z-index:5; }
+    .topbar { background:var(--surface); border-bottom:1px solid var(--border); padding:0 24px; height:52px; flex-shrink:0; display:flex; align-items:center; gap:12px; z-index:5; }
     .topbar-title { font-size:14px; font-weight:600; flex:1; }
     /* Each pane scrolls on its own — left content here, the webview on the right —
        so scrolling one never moves the other. */
@@ -117,7 +116,7 @@
     .split[hidden] { display:none; }
     /* The toolbar is two segments — webview controls + terminal controls — that mirror
        the panes below: in split mode the divide sits at the same --pr-split boundary. */
-    .split-bar { height:var(--bar-h); flex-shrink:0; display:flex; align-items:stretch; border-bottom:1px solid var(--border); }
+    .split-bar { height:52px; flex-shrink:0; display:flex; align-items:stretch; border-bottom:1px solid var(--border); }
     .bar-seg { display:flex; align-items:center; gap:4px; padding:0 6px 0 8px; min-width:0; }
     .bar-wv { flex:1; }
     .bar-term { display:none; flex:1; min-width:0; border-left:1px solid var(--border); }
