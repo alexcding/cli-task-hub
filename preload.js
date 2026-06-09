@@ -21,6 +21,14 @@ ipcRenderer.on('term:data', (_e, { id, chunk }) => { dataListeners.get(id)?.forE
 ipcRenderer.on('term:exit', (_e, payload)      => { exitListeners.get(payload.id)?.forEach(cb => cb(payload)); });
 
 contextBridge.exposeInMainWorld('taskhub', {
+  // Host platform — the renderer uses this to enable the macOS native chrome (inset
+  // traffic lights + vibrancy sidebar) only where the window opts into it.
+  platform: process.platform,
+
+  // Mirror the app's light/dark/auto choice to the native appearance so the vibrancy
+  // sidebar material matches (see tray.js 'set-native-theme').
+  setTheme: (value) => ipcRenderer.send('set-native-theme', value),
+
   // Open the native folder picker; resolves to the chosen absolute path, or null if
   // the dialog was cancelled. Used to set a project's workspace folder.
   chooseFolder: () => ipcRenderer.invoke('choose-folder'),

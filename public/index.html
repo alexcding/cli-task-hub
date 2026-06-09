@@ -14,6 +14,9 @@
       var t = localStorage.getItem('taskhub.theme') || 'auto';
       var dark = t === 'dark' || (t !== 'light' && window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches);
       document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+      // macOS native chrome (inset traffic lights / unified toolbar + drag regions). Set
+      // before first paint so the toolbar layout doesn't shift. Browser/non-mac use is plain.
+      if (window.taskhub && window.taskhub.platform === 'darwin') document.documentElement.classList.add('native-mac');
     } catch (e) {}
   </script>
   <style>
@@ -83,6 +86,28 @@
        so scrolling one never moves the other. */
     .content { padding:24px; flex:1; min-height:0; overflow-y:auto; overscroll-behavior:contain; }
 
+    /* ── macOS native chrome (html.native-mac, set only by the Electron build) ──────────
+       The window uses titleBarStyle:'hiddenInset' (tray.js) so the inset traffic lights sit
+       over the top band and the sidebar + topbar read as one native unified toolbar. The
+       sidebar stays solid (live vibrancy was dropped for performance). Drag regions turn the
+       top band into a real title bar. None of this applies in a plain browser (class never added). */
+    /* The top band is draggable like a native toolbar; interactive bits opt back out. */
+    html.native-mac .topbar, html.native-mac .sidebar-logo,
+    html.native-mac .split-bar { -webkit-app-region:drag; }
+    html.native-mac .topbar button, html.native-mac .topbar input,
+    html.native-mac .topbar select, html.native-mac .topbar a,
+    html.native-mac .sidebar-logo button,
+    html.native-mac .split-bar button { -webkit-app-region:no-drag; }
+    /* The window's traffic lights occupy the top-left of the sidebar, so hide the in-app
+       logo + wordmark there. The 52px bar stays as an empty draggable spacer that aligns the
+       nav with the topbar below — like native macOS sidebars leaving room for the controls. */
+    html.native-mac .logo-icon, html.native-mac .logo-text { display:none; }
+    /* Logo's gone, so the top spacer only needs to clear the traffic lights (~32px) rather
+       than match the 52px content toolbar. Trim it + the first header's padding so "Overview"
+       sits just below the close buttons, like a standard macOS sidebar. No stray separator. */
+    html.native-mac .sidebar-logo { height:30px; border-bottom:none; }
+    html.native-mac nav > .nav-label:first-child { padding-top:4px; }
+
     /* Embedded viewer — full-width panel that shows the real GitHub/Jira page in an
        Electron <webview> (the main process strips X-Frame-Options/CSP so framing is
        allowed). Open links live as tabs in the left nav; activating one shows it here,
@@ -111,10 +136,6 @@
     .split-btn svg { display:block; }
     /* Each segment's header shows its title (PR title left, terminal folder right). */
     .split-title { flex:1; min-width:0; font-size:13px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-    /* The webview title doubles as the "open in browser" action. */
-    #split-title { cursor:pointer; }
-    #split-title:hover { color:var(--text); text-decoration:underline; }
-    #split-title:empty { cursor:default; }
     body.viewing-tab main { display:none; }
     .tab-group { display:flex; align-items:center; gap:3px; }
     .tab-group-label { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.4px; color:var(--text-3); padding:0 3px; flex-shrink:0; }
@@ -531,8 +552,8 @@
         <button class="split-btn" title="Home (default page)" onclick="splitHome()">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9.5 12 3l9 6.5"/><path d="M5 9v11h14V9"/><path d="M9.5 20v-6h5v6"/></svg>
         </button>
-        <!-- Click the title to open the page in the external browser. -->
-        <span class="split-title" id="split-title" title="Open in browser" onclick="splitOpenExternal()"></span>
+        <!-- Plain page title — no link, so the toolbar band stays draggable. -->
+        <span class="split-title" id="split-title"></span>
       </div>
       <!-- Terminal segment (over the terminal pane in split mode, or full-width when a terminal is the sole view) -->
       <div class="bar-seg bar-term">
@@ -664,11 +685,13 @@ async function setAppTheme(value) {
   _appThemePref = value;
   try { localStorage.setItem('taskhub.theme', value); } catch {}
   applyAppTheme();
+  window.taskhub?.setTheme?.(value); // match native chrome appearance (traffic lights/scrollbars) to the theme; no-op in browser
   try { await api('/api/config', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ app_theme: value }) }); }
   catch (e) { toastErr(e.message); }
 }
 if (window.matchMedia) matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { if (_appThemePref === 'auto') applyAppTheme(); });
 applyAppTheme(); // reflect the localStorage value on the toggle immediately (config sync follows in init)
+window.taskhub?.setTheme?.(_appThemePref); // sync native appearance on load so vibrancy matches
 // PR ↔ terminal split: each GitHub PR tab can show a paired terminal to its right. The
 // on/off choice is PER TAB (stored on the tab as `tab.prSplit`, persisted with the tab) and
 // defaults to OFF — opening a PR no longer auto-spawns a terminal until you toggle it on.
@@ -815,7 +838,6 @@ function closeSplit() {
 
 function splitBack()         { const t = activeTab(); try { if (t && t.wv.canGoBack()) t.wv.goBack(); } catch {} }
 function splitHome()         { const t = activeTab(); if (t && t.wv) { t.loaded = false; showSplitLoading(true); t.wv.loadURL(t.url); } } // back to the tab's default link
-function splitOpenExternal() { const t = activeTab(); if (t) window.open(t.url, '_blank'); }
 function showSplitLoading(on){ document.getElementById('split-loading').hidden = !on; }
 // Grey out Back when the active tab has no history to go back to.
 function updateNavButtons() { const t = activeTab(); const b = document.getElementById('split-back'); if (b) { let can = false; try { can = !!(t && t.wv && t.started && t.wv.canGoBack()); } catch {} b.disabled = !can; } }

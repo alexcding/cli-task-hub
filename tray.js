@@ -1,13 +1,18 @@
 // Cache compiled V8 bytecode to disk for faster cold starts (no-op pre-Node 22.8).
 try { require('node:module').enableCompileCache?.(); } catch {}
 
-const { app, Tray, Menu, shell, nativeImage, BrowserWindow, session, ipcMain, dialog } = require('electron');
+const { app, Tray, Menu, shell, nativeImage, BrowserWindow, session, ipcMain, dialog, nativeTheme, Notification } = require('electron');
 const { fork, execSync } = require('child_process');
 const path = require('path');
 const os = require('os');
 const http = require('http');
 const zlib = require('zlib');
 const pty = require('@homebridge/node-pty-prebuilt-multiarch');
+
+// Show "TaskHub" (not "Electron") in the menu bar, About panel, and Dock during dev.
+// Must run before app is ready so the default app menu picks it up. Packaged builds already
+// get this from the bundle's productName.
+app.setName('TaskHub');
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
 const BASE_URL = `http://localhost:${PORT}`;
@@ -20,8 +25,17 @@ let win = null;
 // (the header-stripping below allows framing those sites). Reused if already open.
 function openWindow() {
   if (win && !win.isDestroyed()) { win.show(); win.focus(); return; }
+  const mac = process.platform === 'darwin';
   win = new BrowserWindow({
     width: 1320, height: 880, minWidth: 720, title: 'TaskHub',
+    // macOS native chrome: inset traffic lights over the 52px top band so the sidebar +
+    // topbar read as one native unified toolbar. (Live `vibrancy` was tried but dropped —
+    // blurring the desktop behind the heavy <webview> cost too much GPU; the sidebar stays
+    // solid instead.) Other platforms keep the standard window chrome.
+    ...(mac ? {
+      titleBarStyle: 'hiddenInset',
+      trafficLightPosition: { x: 16, y: 18 }, // vertically centered in the 52px band
+    } : {}),
     webPreferences: {
       webviewTag: true, contextIsolation: true, nodeIntegration: false,
       preload: path.join(__dirname, 'preload.js'), // exposes window.taskhub.* (folder picker, …)
@@ -34,8 +48,16 @@ function openWindow() {
     return { action: 'allow' };
   });
   win.on('blur', refreshMenu);   // refresh tray tabs as focus moves to the menu bar
+  win.on('focus', markReviewsSeen); // looking at TaskHub clears the review blink
   win.on('closed', () => { win = null; });
 }
+
+// Drive the app's native appearance from the dashboard's theme toggle so native chrome
+// (inset traffic lights, scrollbars, menus) renders light/dark to match — 'auto' follows
+// the OS. Without this they'd track the system appearance even when the user forces a theme.
+ipcMain.on('set-native-theme', (_e, value) => {
+  nativeTheme.themeSource = value === 'light' || value === 'dark' ? value : 'system';
+});
 
 // Native folder picker for choosing a project's workspace folder (window.taskhub.chooseFolder).
 ipcMain.handle('choose-folder', async () => {
@@ -150,6 +172,80 @@ function trayIcon(state) {
   // tasks/review keep their color.
   img.setTemplateImage(state === 'idle');
   return img;
+}
+
+// ── Review-request notifications + menu-bar blink ────────────────────────────────
+// Notify (and blink the tray) when a PR newly needs your review. GitHub drops you from
+// a PR's reviewRequests the moment you submit a review, so a PR that LEAVES the review
+// set and later RE-ENTERS it is a genuine re-request. That single absent→present
+// transition covers both the first request and any re-request — so we just diff the
+// current review set against last cycle and act on whatever newly entered it.
+let reviewSeeded = false;        // first sync seeds silently — don't notify for reviews
+                                 // already pending when the app launches
+const knownReviews = new Set();  // PR keys requesting my review as of last cycle
+const unseenReviews = new Set(); // pending reviews the user hasn't looked at → drives blink
+let blinkTimer = null;
+let blinkOn = false;
+let steadyState = 'idle';        // tray state when not blinking (set by buildMenu)
+
+const prKey = pr => `${pr.repo}#${pr.number}`;
+
+// Native notification; clicking it opens that PR in the dashboard.
+function notifyReviewRequested(pr) {
+  if (!Notification.isSupported()) return;
+  const full = `PR #${pr.number} ${pr.title}`;
+  const n = new Notification({ title: 'Review requested', body: full });
+  n.on('click', () => openLinkInApp(pr.url, full, 'github'));
+  n.show();
+}
+
+// Diff this cycle's review PRs against the last; notify + flag a blink for any that
+// just entered the set, and forget any that left it (reviewed / closed / merged).
+function detectReviewChanges(reviewPRs) {
+  const current = new Set(reviewPRs.map(prKey));
+
+  for (const pr of reviewPRs) {
+    const key = prKey(pr);
+    if (!knownReviews.has(key) && reviewSeeded) {
+      notifyReviewRequested(pr);
+      unseenReviews.add(key);
+    }
+  }
+  for (const key of [...unseenReviews]) {
+    if (!current.has(key)) unseenReviews.delete(key);
+  }
+
+  knownReviews.clear();
+  for (const key of current) knownReviews.add(key);
+  reviewSeeded = true;
+
+  updateBlink();
+}
+
+// Pulse the menu-bar icon between the review color and idle while reviews are unseen;
+// hold the steady-state icon otherwise. The blink timer owns tray.setImage while active.
+function updateBlink() {
+  if (unseenReviews.size && !blinkTimer) {
+    blinkOn = true;
+    if (tray) tray.setImage(trayIcon('review'));
+    blinkTimer = setInterval(() => {
+      blinkOn = !blinkOn;
+      if (tray) tray.setImage(trayIcon(blinkOn ? 'review' : 'idle'));
+    }, 650);
+  } else if (!unseenReviews.size && blinkTimer) {
+    clearInterval(blinkTimer);
+    blinkTimer = null;
+    blinkOn = false;
+    if (tray) tray.setImage(trayIcon(steadyState));
+  }
+}
+
+// User focused the TaskHub window → they've seen the pending reviews. Stop blinking
+// until the next request (a re-request re-enters the set and starts this over).
+function markReviewsSeen() {
+  if (!unseenReviews.size) return;
+  unseenReviews.clear();
+  updateBlink();
 }
 
 // Wait for the HTTP server to be ready
@@ -271,9 +367,17 @@ async function buildMenu() {
   // Jira tabs are shown, since those aren't listed anywhere else in the menu.
   const tabItems = tabSection('Jira', tabs.filter(t => t.kind === 'jira'));
 
+  // Notify + blink on any newly-requested review (must run before we touch the icon,
+  // since a fresh request starts the blink, which then owns the tray image).
+  detectReviewChanges(review);
+
   // Icon color by state: red = review requested, blue = only your tasks, green = clear.
-  const state = review.length ? 'review' : mine.length ? 'tasks' : 'idle';
-  if (tray) { tray.setImage(trayIcon(state)); tray.setTitle(''); }
+  // While the blink timer is running it controls the image, so don't fight it here.
+  steadyState = review.length ? 'review' : mine.length ? 'tasks' : 'idle';
+  if (tray) {
+    if (!blinkTimer) tray.setImage(trayIcon(steadyState));
+    tray.setTitle('');
+  }
 
   return Menu.buildFromTemplate([
     { label: 'Open TaskHub', click: () => openWindow() },
