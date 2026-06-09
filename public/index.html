@@ -142,7 +142,7 @@
     body.viewing-term .bar-term { display:flex; border-left:none; }
     /* Terminal toggle is pinned to the far right of the whole toolbar (a direct child of
        .split-bar, after both segments) so it keeps its position when the split opens.
-       It's webview-only, so hide it when a standalone terminal is the sole view. */
+       It's webview-only, so hide it when a terminal is the sole view. */
     #split-toggle-term { align-self:center; margin-right:4px; }
     body.viewing-term #split-toggle-term { display:none; }
     .split-btn { background:none; border:none; color:var(--text-2); cursor:pointer; padding:6px; border-radius:6px; flex-shrink:0; display:inline-flex; align-items:center; justify-content:center; }
@@ -266,6 +266,8 @@
     .ci-dot.ci-failure { background:var(--danger); }
     .ci-dot.ci-running { background:var(--warn);box-shadow:0 0 0 3px var(--warn-bg); }
     .ci-dot.ci-none    { background:var(--border-focus); }
+    /* PR approved mark — green circle + white check, sits beside the CI dot. */
+    .pr-approved { width:13px;height:13px;flex-shrink:0;display:block;color:var(--success); }
 
     /* Badges */
     .badge { display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:600;padding:2px 8px;border-radius:99px; }
@@ -371,8 +373,6 @@
     .inline-form .form-group { margin:0; }
 
     /* fw status */
-    .fw-row { display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border); }
-    .fw-row:last-child { border-bottom:none; }
 
     /* Tabs */
     .tabs { display:flex; gap:0; border-bottom:1px solid var(--border); margin-bottom:20px; }
@@ -380,15 +380,28 @@
     .tab-btn:hover { color:var(--text); }
     .tab-btn.active { color:var(--accent); border-bottom-color:var(--accent); }
     .tab-panel { display:none; }
+    .log-toolbar { display:flex; align-items:center; gap:12px; margin-bottom:12px; flex-wrap:wrap; }
+    .log-chips { display:flex; gap:6px; flex-wrap:wrap; flex:1; }
+    .log-chip { background:var(--surface-hover); border:1px solid var(--border); color:var(--text-2); border-radius:999px; padding:3px 11px; font-size:12px; cursor:pointer; transition:background .12s,color .12s,border-color .12s; }
+    .log-chip:hover { color:var(--text); }
+    .log-chip.active { background:var(--accent); border-color:var(--accent); color:#fff; }
+    .log-errors { display:flex; align-items:center; gap:5px; font-size:12px; color:var(--text-2); cursor:pointer; }
+    .log-errors input { width:auto; margin:0; }
+    .log-level { font-size:10.5px; font-weight:600; text-transform:uppercase; letter-spacing:.03em; padding:1px 5px; border-radius:3px; }
     .tab-panel.active { display:block; }
 
-    /* Theme toggle — a 3-way segmented control (auto / light / dark) pinned to the right
-       of the Settings button in the sidebar footer. */
-    .theme-toggle { display:flex;gap:2px;background:var(--bg);border:1px solid var(--border);border-radius:var(--rs);padding:2px;flex-shrink:0; }
-    .theme-opt { display:flex;align-items:center;justify-content:center;width:26px;height:24px;border:none;background:none;color:var(--text-3);border-radius:4px;cursor:pointer;transition:background .12s,color .12s; }
+    /* Theme picker (Settings → Appearance): a label + description on the left, three labeled
+       options (Light / Dark / System) on the right. The selected option wears a rounded
+       outline; the rest are quiet icon+text. Inactive options keep a transparent border so
+       selecting one never shifts the row. */
+    .theme-row { display:flex;align-items:center;justify-content:space-between;gap:24px; }
+    .theme-row-title { font-size:14px;font-weight:600; }
+    .theme-row-sub { font-size:13px;color:var(--text-3);margin-top:3px; }
+    .theme-toggle { display:inline-flex;align-items:center;gap:4px;flex-shrink:0; }
+    .theme-opt { display:inline-flex;align-items:center;gap:7px;padding:6px 13px;border:1px solid transparent;background:none;color:var(--text-3);font-size:13.5px;font-weight:500;border-radius:8px;cursor:pointer;transition:color .12s,border-color .12s; }
     .theme-opt:hover { color:var(--text); }
-    .theme-opt.active { background:var(--surface);color:var(--accent);box-shadow:var(--shadow); }
-    .theme-opt svg { width:15px;height:15px;display:block; }
+    .theme-opt.active { color:var(--text);border-color:var(--border); }
+    .theme-opt svg { width:16px;height:16px;display:block; }
   </style>
 </head>
 <body>
@@ -412,19 +425,8 @@
       <!-- Open links (sidebar mode): grouped GitHub / Jira tabs render here -->
       <div id="opentabs-nav"></div>
     </nav>
-    <div class="sidebar-footer" style="display:flex;align-items:center;gap:8px">
-      <button class="nav-btn" data-page="settings" onclick="showPage('settings')" style="flex:1"><span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span> Settings</button>
-      <div class="theme-toggle" id="theme-toggle" role="group" aria-label="Theme">
-        <button class="theme-opt" data-theme-opt="auto" title="Match system" aria-label="Match system theme" onclick="setAppTheme('auto')">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
-        </button>
-        <button class="theme-opt" data-theme-opt="light" title="Light" aria-label="Light theme" onclick="setAppTheme('light')">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
-        </button>
-        <button class="theme-opt" data-theme-opt="dark" title="Dark" aria-label="Dark theme" onclick="setAppTheme('dark')">
-          <svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
-        </button>
-      </div>
+    <div class="sidebar-footer">
+      <button class="nav-btn" data-page="settings" onclick="showPage('settings')"><span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span> Settings</button>
     </div>
     <div class="sidebar-resizer" id="sidebar-resizer" title="Drag to resize"></div>
   </aside>
@@ -435,7 +437,6 @@
   <main>
     <div class="topbar">
       <span class="topbar-title" id="page-title">Dashboard</span>
-      <span id="synced-label" style="font-size:12px;color:var(--text-3)"></span>
       <div id="topbar-actions"></div>
     </div>
     <div class="content">
@@ -483,6 +484,29 @@
         <div style="max-width:760px;display:flex;flex-direction:column;gap:16px">
 
           <div class="card">
+            <div class="card-pad theme-row">
+              <div>
+                <div class="theme-row-title">Theme</div>
+                <div class="theme-row-sub">Use light, dark, or match your system</div>
+              </div>
+              <div class="theme-toggle" id="theme-toggle" role="group" aria-label="Theme">
+                <button class="theme-opt" data-theme-opt="light" aria-label="Light theme" onclick="setAppTheme('light')">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+                  Light
+                </button>
+                <button class="theme-opt" data-theme-opt="dark" aria-label="Dark theme" onclick="setAppTheme('dark')">
+                  <svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+                  Dark
+                </button>
+                <button class="theme-opt" data-theme-opt="auto" aria-label="Match system theme" onclick="setAppTheme('auto')">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+                  System
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
             <div class="card-header"><h3>Polling</h3></div>
             <div class="card-pad">
               <p style="font-size:13px;color:var(--text-2);margin:0 0 14px">TaskHub has no live connection to GitHub or Jira, so it checks on a timer instead. These are two independent fetch loops — GitHub PRs change far more often than Jira tickets, and each CLI hits a different rate-limited API — so they have their own intervals.</p>
@@ -528,17 +552,6 @@
 
           <div class="card">
             <div class="card-header">
-              <h3>Webhook Forwarders</h3>
-              <button class="btn btn-secondary btn-sm" onclick="syncForwarders()">Re-sync</button>
-            </div>
-            <div class="card-pad">
-              <div id="forwarder-list"></div>
-              <p style="font-size:12px;color:var(--text-3);margin-top:8px">Runs <code style="background:var(--surface-hover);padding:1px 4px;border-radius:3px">gh webhook forward</code> per repo.</p>
-            </div>
-          </div>
-
-          <div class="card">
-            <div class="card-header">
               <h3>Database</h3>
               <button class="btn btn-secondary btn-sm" onclick="loadSettings()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v5h-5"/></svg> Refresh</button>
             </div>
@@ -551,6 +564,11 @@
         </div><!-- /settings-tab-settings -->
 
         <div class="tab-panel" id="settings-tab-activity">
+          <div class="log-toolbar">
+            <div id="log-cats" class="log-chips"></div>
+            <label class="log-errors"><input type="checkbox" id="log-errors-only" onchange="loadLogs()"> Errors only</label>
+            <button class="btn btn-secondary btn-sm" onclick="clearLogs()">Clear</button>
+          </div>
           <div class="card" id="events-list"></div>
         </div>
       </div>
@@ -619,13 +637,22 @@
       <p id="modal-repo-hint" style="font-size:12px;color:var(--text-3);margin-top:6px"></p>
     </div>
     <div class="form-group">
-      <label class="form-label">Jira Project Key</label>
-      <input type="text" id="modal-jira-key" placeholder="e.g. RECORD" style="text-transform:uppercase">
-      <p style="font-size:12px;color:var(--text-3);margin-top:6px">Scopes the <strong>JIRA Tickets</strong> feed: tickets are filtered to the projects you've added here.</p>
+      <label class="form-label" style="display:flex;align-items:center;gap:8px;cursor:pointer">
+        <input type="checkbox" id="modal-forward" style="width:auto;margin:0">
+        Forward GitHub webhooks
+        <span id="modal-forward-status" style="font-size:12px;font-weight:normal;color:var(--text-3)"></span>
+      </label>
+      <p style="font-size:12px;color:var(--text-3);margin-top:6px">Runs <code style="background:var(--surface-hover);padding:1px 4px;border-radius:3px">gh webhook forward</code> for this repo so PR events update live. Needs a GitHub repo.</p>
     </div>
     <div class="form-group">
       <label class="form-label">On merge → Jira transition</label>
       <input type="text" id="modal-merge" placeholder="e.g. In Review">
+      <p style="font-size:12px;color:var(--text-3);margin-top:6px">When a forwarded PR merges, move its linked ticket to this status.</p>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Jira Project Key</label>
+      <input type="text" id="modal-jira-key" placeholder="e.g. RECORD" style="text-transform:uppercase">
+      <p style="font-size:12px;color:var(--text-3);margin-top:6px">Scopes the <strong>JIRA Tickets</strong> feed: tickets are filtered to the projects you've added here.</p>
     </div>
     <div class="form-group">
       <label class="form-label">Jira JQL</label>
@@ -688,8 +715,7 @@ const jiraUrl = key => _jiraBase ? `${_jiraBase}/browse/${key}` : '#';
 // Pull the ticket key out of a Jira URL ({base}/browse/RECORD-1234) so a restored or
 // tray-opened Jira tab can still map to a worktree without separate metadata.
 const jiraKeyFromUrl = url => (String(url || '').match(/\/browse\/([A-Z][A-Z0-9]+-\d+)/i) || [])[1] || '';
-// A webview tab (GitHub PR or Jira ticket) can pair a terminal beside it; standalone
-// terminals can't. Both kinds resolve their cwd via prCwd().
+// A webview tab (GitHub PR or Jira ticket) can pair a terminal beside it.
 const canSplitTerminal = t => !!t && (t.kind === 'github' || t.kind === 'jira');
 
 // ── Embedded viewer ──────────────────────────────────────────────────────────────
@@ -703,7 +729,8 @@ const activeTab = () => _tabs.find(t => t.id === _activeTab) || null;
 
 // Terminals share the same right-side viewer as webview tabs (only one pane shown at
 // a time). Each terminal is an xterm view bound to a main-process PTY by id.
-let _terms = new Map();     // id -> { el, term, fit, off, offExit, cwd, title, paired }
+let _terms = new Map();     // id -> { el, term, fit, off, offExit, cwd, title, paired, pairKey, hasContext }
+let _tabTermInit = null;
 let _activeTermId = null;
 
 // ── Terminal theme ────────────────────────────────────────────────────────────────
@@ -892,11 +919,33 @@ function hideAllPanes() {
   for (const t of _terms.values()) t.el.style.display = 'none';
 }
 
+function pairedTermHasContext(tab) {
+  return !!(tab && tab.termId && _terms.get(tab.termId)?.hasContext);
+}
+
+function confirmCloseTabTerminals(tabs) {
+  const contextual = tabs.filter(pairedTermHasContext);
+  if (!contextual.length) return true;
+  if (contextual.length === 1) {
+    const title = contextual[0].title || 'this task';
+    return confirm(`Close "${title}" and stop its terminal?\n\nThe terminal has input/history that will be lost.`);
+  }
+  return confirm(`Close ${contextual.length} tabs and stop their terminals?\n\nThese terminals have input/history that will be lost.`);
+}
+
+function closePairedTerm(tab) {
+  if (!tab?.termId) return;
+  disposeTerm(tab.termId);
+  tab.termId = null;
+}
+
 function closeTab(id) {
   const i = _tabs.findIndex(t => t.id === id);
   if (i < 0) return;
-  if (_tabs[i].termId) disposeTerm(_tabs[i].termId); // close the PR's paired terminal too
-  _tabs[i].wv?.remove();
+  const tab = _tabs[i];
+  if (!confirmCloseTabTerminals([tab])) return;
+  closePairedTerm(tab);
+  tab.wv?.remove();
   _tabs.splice(i, 1);
   if (_activeTab === id) {
     const next = _tabs[i] || _tabs[i - 1];
@@ -909,11 +958,12 @@ function closeTab(id) {
 }
 
 function closeSplit() {
-  _tabs.forEach(t => { if (t.termId) disposeTerm(t.termId); t.wv?.remove(); });
+  if (!confirmCloseTabTerminals(_tabs)) return;
+  _tabs.forEach(t => { closePairedTerm(t); t.wv?.remove(); });
   _tabs = []; _activeTab = null; _activeTermId = null;
   document.getElementById('split').hidden = true;
   document.body.classList.remove('viewing-tab', 'viewing-term', 'pr-split'); // restore <main>
-  renderTabs(); // clear the sidebar nav entries (terminals stay alive in the background)
+  renderTabs(); // clear tab rows; paired terminals were stopped above
   saveTabs();
 }
 
@@ -953,13 +1003,19 @@ async function ensureTermFont() {
   try { await Promise.all([document.fonts.load('13px "SF Mono"'), document.fonts.load('13px "SFMonoServed"')]); } catch {}
 }
 
-// Spawn a terminal in `cwd` (a worktree folder) and show it. Reuses an existing
-// terminal for the same cwd rather than opening duplicates.
 // Create an xterm view bound to a fresh PTY (does NOT activate it). `paired` marks a
-// terminal that belongs to a PR tab (kept out of the standalone Terminals nav group).
-async function createTermView(cwd, title, { paired = false } = {}) {
+// terminal that belongs to a GitHub/Jira tab and `pairKey` is that tab's URL.
+async function createTermView(cwd, title, { paired = false, pairKey = '' } = {}) {
   await loadXterm();
-  const { id, cwd: dir, title: t } = await taskhub.term.create({ cwd: cwd || undefined });
+  const { id, cwd: dir, title: t, pairKey: key, hasContext } = await taskhub.term.create({ cwd: cwd || undefined, paired, pairKey });
+  return attachTermView(id, dir, title || t, { paired, pairKey: key || pairKey, hasContext });
+}
+
+// Build an xterm view bound to an EXISTING PTY id (used right after create and to
+// rehydrate live PTYs after the window was closed and reopened). `replay` re-draws the
+// PTY's buffered output captured while no window was attached. Does NOT activate the view.
+async function attachTermView(id, dir, title, { paired = false, pairKey = '', hasContext = false, replay = false } = {}) {
+  await loadXterm();
   const th = termTheme();
   const el = document.createElement('div');
   el.className = 'term-pane'; el.style.display = 'none'; el.style.background = th.background;
@@ -970,12 +1026,63 @@ async function createTermView(cwd, title, { paired = false } = {}) {
   term.loadAddon(fit);
   term.open(el);
   try { term.loadAddon(new WebglAddon.WebglAddon()); } catch {} // GPU renderer; falls back to DOM
-  // Wire the two directions: keystrokes → PTY, PTY output → xterm.
-  term.onData(d => taskhub.term.write(id, d));
-  const off = taskhub.term.onData(id, chunk => term.write(chunk));
-  const offExit = taskhub.term.onExit(id, () => onTermExit(id, paired));
-  _terms.set(id, { el, term, fit, off, offExit, cwd: dir, title: title || t, paired });
+  const entry = { el, term, fit, off: null, offExit: null, cwd: dir, title, paired, pairKey, hasContext: !!hasContext };
+  // Register in _terms and wire BOTH listeners before any await. On replay there's an attach
+  // round-trip below; if the PTY exits during it, onExit must already be subscribed (and the
+  // entry findable) so onTermExit → disposeTerm cleans up instead of leaving a frozen view
+  // whose paired tab never collapses.
+  _terms.set(id, entry);
+  // keystrokes → PTY. A shell prompt by itself is disposable; once the user types, closing its
+  // task tab asks before stopping the PTY.
+  term.onData(d => { entry.hasContext = true; taskhub.term.write(id, d); });
+  entry.offExit = taskhub.term.onExit(id, () => onTermExit(id, _terms.get(id)?.paired));
+  // Subscribe to live output FIRST. On replay we queue chunks until the buffered backlog is
+  // written, then flush only the chunks newer than the backlog (by seq) — so output produced
+  // during the attach round-trip is neither dropped nor duplicated at the boundary.
+  let flushing = !!replay;
+  const queued = [];
+  entry.off = taskhub.term.onData(id, (chunk, seq) => {
+    if (flushing) queued.push({ seq, chunk });
+    else term.write(chunk);
+  });
+  if (replay) {
+    let attachSeq = 0;
+    try {
+      const res = await taskhub.term.attach(id);
+      const buf = typeof res === 'string' ? res : res?.buf;
+      if (buf) term.write(buf);
+      attachSeq = typeof res === 'object' && res ? res.seq || 0 : 0;
+    } catch {}
+    // The PTY may have exited mid-round-trip; disposeTerm() then dropped our entry. Bail
+    // rather than writing to a disposed xterm (re-adding happened above, before the await).
+    if (_terms.get(id) !== entry) return id;
+    flushing = false;
+    for (const q of queued) if (q.seq > attachSeq) term.write(q.chunk);
+  }
   return id;
+}
+
+function bindPairedTermToTab(id, pairKey) {
+  if (!pairKey) return;
+  const tab = _tabs.find(t => t.url === pairKey);
+  if (tab && !tab.termId) tab.termId = id;
+}
+
+// After the window is reopened, the renderer is fresh but the main-process PTYs can still
+// be alive. Terminals are kept hidden until their matching GitHub/Jira tab is opened again.
+// There is no standalone terminal group; older unkeyed PTYs can still be claimed by cwd.
+async function rehydrateTerminals() {
+  if (!window.taskhub?.term?.list) return;
+  let live = [];
+  try { live = await taskhub.term.list(); } catch { return; }
+  for (const { id, cwd, title, pairKey, hasContext } of live) {
+    if (_terms.has(id)) continue;
+    try {
+      await attachTermView(id, cwd, title, { paired: true, pairKey, hasContext, replay: true });
+      bindPairedTermToTab(id, pairKey);
+    } catch {}
+  }
+  if (live.length) renderTabs();
 }
 
 // Tear down a terminal's listeners + PTY + xterm view. No view switching.
@@ -990,7 +1097,7 @@ function disposeTerm(id) {
 }
 
 // The shell exited (e.g. the user typed `exit`). Clean up; a paired terminal also
-// collapses its PR's split, a standalone one falls back to another view.
+// collapses its PR/Jira split.
 function onTermExit(id, paired) {
   if (paired) {
     const tab = _tabs.find(x => x.termId === id);
@@ -1001,14 +1108,9 @@ function onTermExit(id, paired) {
   }
 }
 
-// Open a standalone terminal in `cwd` and show it full-width (reuses one already open
-// on the same folder rather than duplicating).
+// Legacy/manual terminal path is disabled: TaskHub terminals are paired to GitHub/Jira tabs.
 async function openTerminal(cwd, title) {
-  if (!window.taskhub?.term) { toastErr('Terminals run in the TaskHub app'); return; }
-  const existing = [..._terms.entries()].find(([, t]) => t.cwd === cwd && !t.paired);
-  if (existing) { ensurePanelOpen(); activateTerminal(existing[0]); return; }
-  try { const id = await createTermView(cwd, title); ensurePanelOpen(); activateTerminal(id); }
-  catch (e) { toastErr('Terminal failed: ' + e.message); }
+  toastErr('Open a GitHub or Jira tab to use its terminal');
 }
 
 function activateTerminal(id) {
@@ -1017,7 +1119,7 @@ function activateTerminal(id) {
   _activeTab = null; _activeTermId = id;
   ensurePanelOpen();
   hideAllPanes();
-  document.body.classList.remove('pr-split'); // a standalone terminal is full-width
+  document.body.classList.remove('pr-split'); // a direct terminal is full-width
   t.el.style.display = '';
   document.body.classList.add('viewing-term'); // hide the webview-only toolbar buttons
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
@@ -1081,13 +1183,22 @@ async function jiraCwd(tab) {
   return ws;
 }
 
-// Lazily create the PR's paired terminal (once per tab), guarded against double-create.
+// Lazily create or resume the tab's paired terminal. A live PTY from a previous window
+// instance is matched by URL first, then by cwd for older sessions that predate pairKey.
 function ensurePrTerminal(tab) {
   if (tab.termId && _terms.has(tab.termId)) return Promise.resolve();
   if (tab._termPromise) return tab._termPromise;
-  tab._termPromise = prCwd(tab)
-    .then(cwd => createTermView(cwd, null, { paired: true })) // title defaults to the folder/worktree name
-    .then(id => { tab.termId = id; })
+  tab._termPromise = (async () => {
+    if (_tabTermInit) { try { await _tabTermInit; } catch {} }
+    if (tab.termId && _terms.has(tab.termId)) return tab.termId;
+    const byKey = [..._terms.entries()].find(([, t]) => t.paired && t.pairKey === tab.url);
+    if (byKey) { tab.termId = byKey[0]; return byKey[0]; }
+    const cwd = await prCwd(tab);
+    const byCwd = [..._terms.entries()].find(([, t]) => t.paired && !t.pairKey && t.cwd === cwd);
+    if (byCwd) { byCwd[1].pairKey = tab.url; tab.termId = byCwd[0]; return byCwd[0]; }
+    tab.termId = await createTermView(cwd, null, { paired: true, pairKey: tab.url }); // title defaults to the folder/worktree name
+    return tab.termId;
+  })()
     .catch(e => toastErr('Terminal failed: ' + e.message))
     .finally(() => { tab._termPromise = null; });
   return tab._termPromise;
@@ -1174,7 +1285,7 @@ function fitTerm(t) {
   if (!t) return;
   try { t.fit.fit(); const { cols, rows } = t.term; taskhub.term.resize([..._terms].find(([, v]) => v === t)[0], cols, rows); } catch {}
 }
-// The terminal currently on screen: a standalone full-width one, or a PR's paired one.
+// The terminal currently on screen: a direct full-width one, or a PR/Jira paired one.
 function visibleTerm() {
   if (_activeTermId) return _terms.get(_activeTermId);
   const cur = activeTab();
@@ -1302,26 +1413,11 @@ function tabsMarkup() {
   };
   const ghGroup = (label, cat) =>
     groupHtml(label, `data-kind="github" data-cat="${cat}"`, _tabs.filter(t => t.kind === 'github' && ghCat(t) === cat));
-  // Terminals group — rows use data-term (not draggable) and their own handlers.
-  const termHtml = t =>
-    `<div class="opentab ${t.id === _activeTermId ? 'active' : ''}" data-term="${t.id}"
-          onclick="activateTerminal('${t.id}')"
-          onauxclick="if(event.button===1){event.preventDefault();closeTerminal('${t.id}')}"
-          title="${esc(t.cwd)}">
-       <span class="tab-ic">${TERM_ICON}</span>
-       <span class="tab-title">${esc(t.title)}</span>
-       <button class="tab-x" onclick="event.stopPropagation();closeTerminal('${t.id}')" title="Close terminal">${ICON.close}</button>
-     </div>`;
-  // Only standalone terminals get a nav row; PR-paired terminals live with their PR.
-  const standalone = [..._terms.entries()].filter(([, t]) => !t.paired);
-  const termGroup = standalone.length
-    ? `<div class="tab-group"><span class="tab-group-label">Terminals</span>${standalone.map(([id, t]) => termHtml({ id, ...t })).join('')}</div>`
-    : '';
   // Only the two categorized GitHub groups render. Tabs that are neither 'mine' nor
   // 'review' (uncategorized / stale / not-yet-loaded PRs) show no row. Each group
   // self-hides when empty, so no bare headers appear.
   return ghGroup('Mine', 'mine') + ghGroup('Review', 'review')
-       + group('Jira', 'jira') + termGroup;
+       + group('Jira', 'jira');
 }
 
 // Drag-to-reorder within each group (works in both modes). Reorder stays within a
@@ -1343,8 +1439,12 @@ function syncTabOrder() {
 
 // Close every tab except `id`.
 function closeOthers(id) {
-  _tabs.filter(t => t.id !== id).forEach(t => t.wv?.remove());
-  _tabs = _tabs.filter(t => t.id === id);
+  const keep = _tabs.find(t => t.id === id);
+  if (!keep) return;
+  const closing = _tabs.filter(t => t.id !== id);
+  if (!confirmCloseTabTerminals(closing)) return;
+  closing.forEach(t => { closePairedTerm(t); t.wv?.remove(); });
+  _tabs = [keep];
   activateTab(id);
 }
 
@@ -1436,7 +1536,6 @@ function showPage(name, projectId) {
   document.getElementById('page-'+(name==='project'?'project':name)).classList.add('active');
   document.querySelectorAll('.nav-btn[data-page]').forEach(b => { if(b.dataset.page===name) b.classList.add('active'); });
   document.getElementById('topbar-actions').innerHTML = '';
-  if (name !== 'dashboard') document.getElementById('synced-label').textContent = '';
 
   if (name === 'dashboard') {
     document.getElementById('page-title').textContent = 'Dashboard';
@@ -1464,7 +1563,7 @@ function settingsTab(name, btn) {
   ['settings','activity'].forEach(t =>
     document.getElementById('settings-tab-' + t)?.classList.toggle('active', t === name));
   document.querySelectorAll('#settings-tabbar .tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
-  if (name === 'activity') loadEvents();
+  if (name === 'activity') loadLogs();
 }
 
 // ── Projects sidebar nav ──────────────────────────────────────────────────────
@@ -1502,7 +1601,6 @@ async function loadDashboard() {
   const mine    = openPRs.filter(p => p.category === 'mine');
   const review  = openPRs.filter(p => p.category === 'review');
   const errors  = groups.flatMap(g => (g.prs||[]).filter(p => p.error));
-  const lastSynced = groups.map(g => g.lastSynced).filter(Boolean).sort().pop();
 
   document.getElementById('stats').innerHTML = `
     <div class="stat-card"><div class="stat-val">${groups.length}</div><div class="stat-label">Projects</div></div>
@@ -1512,7 +1610,6 @@ async function loadDashboard() {
     <div class="stat-card" onclick="showPage('mytickets')" style="cursor:pointer"><div class="stat-val" style="color:var(--accent)">${(mineSnap.items||[]).length}</div><div class="stat-label">JIRA Tickets</div></div>
     <div class="stat-card"><div class="stat-val" style="color:var(--success)">${events.filter(e=>e.type==='jira_transitioned').length}</div><div class="stat-label">Auto-transitions</div></div>
   `;
-  document.getElementById('synced-label').textContent = lastSynced ? `Updated ${timeAgo(lastSynced)}` : '';
 
   const section = (title, prs, emptyMsg) => `
     <div class="project-group">
@@ -1587,6 +1684,15 @@ function ciDot(ci) {
   const { cls, label } = ciInfo(ci);
   return `<span class="ci-dot ${cls}" title="${label}"></span>`;
 }
+// GitHub's reviewDecision === 'APPROVED' → a green circle with a white check. Shown
+// next to the CI dot (approval and build status are independent signals). '' otherwise.
+function approvedMark(pr) {
+  if (pr?.reviewDecision !== 'APPROVED') return '';
+  return `<svg class="pr-approved" viewBox="0 0 16 16" title="Approved" aria-label="Approved">
+    <circle cx="8" cy="8" r="8" fill="currentColor"></circle>
+    <path d="M4.5 8.3l2.2 2.2 4.8-5" fill="none" stroke="#fff" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"></path>
+  </svg>`;
+}
 
 // A flat, whole-card-clickable PR card. The card opens the PR; the Jira badge keeps
 // its own link to Jira (stopPropagation so it doesn't also trigger the card).
@@ -1606,6 +1712,7 @@ function prCard(pr) {
       ${pr.isDraft ? `<span class="pr-draft">Draft</span>` : ''}
       <span class="pr-date">${fmtDate(pr.createdAt)}</span>
       ${ciDot(pr.ci)}
+      ${approvedMark(pr)}
     </div>
     <div class="pr-body"><div class="pr-title">${esc(pr.title)}</div></div>
     ${foot ? `<div class="pr-foot">${foot}</div>` : ''}
@@ -1822,8 +1929,6 @@ async function loadMyTickets() {
     rememberStatuses(snap.items);
     renderMyTicketsFilter();
     renderMyTickets();
-    const label = document.getElementById('synced-label');
-    if (label && snap.lastSynced) label.textContent = `Updated ${timeAgo(snap.lastSynced)}`;
   } catch(e) { tbody.innerHTML = jiraRow(esc(e.message), 'var(--danger)'); }
 }
 
@@ -1964,26 +2069,80 @@ function applyStatusLocally(key, status) {
 }
 
 // ── Events ────────────────────────────────────────────────────────────────────
-async function loadEvents() {
-  const events = await api('/api/events');
+// ── Logs / Activity ─────────────────────────────────────────────────────────────
+// One log store (logs.db) with a `category` column. category='event' is the activity
+// feed (rich descriptions); other categories (webhook, poller, …) render generically.
+let _logCategory = 'event'; // 'all' | 'event' | 'webhook' | …
+let _logCats = null;        // cached category list (categories change rarely); null → refetch
+let _logChipsKey = null;    // signature of the last-rendered chip set, to avoid rebuilding it
+const LOG_LEVEL_COLOR = { error: 'var(--danger)', warn: 'var(--warning, #f59e0b)', info: 'var(--text-3)' };
+
+async function loadLogs() {
+  const errorsOnly = document.getElementById('log-errors-only')?.checked;
+  const params = new URLSearchParams();
+  if (_logCategory && _logCategory !== 'all') params.set('category', _logCategory);
+  if (errorsOnly) params.set('level', 'error');
+  const logsP = api('/api/logs?' + params);          // the only request a filter click needs
+  if (_logCats === null) { try { _logCats = await api('/api/logs/categories'); } catch { _logCats = []; } }
+  renderLogChips(_logCats);
+  renderLogs(await logsP);
+}
+
+function renderLogChips(cats) {
+  // Always offer All + Activity(event), then any other categories that exist.
+  const known = ['all', 'event', ...cats.filter(c => c !== 'event')];
+  const key = known.join('|');
+  if (key !== _logChipsKey) { // rebuild the row only when the category set actually changes
+    const label = c => c === 'all' ? 'All' : c === 'event' ? 'Activity' : c[0].toUpperCase() + c.slice(1);
+    document.getElementById('log-cats').innerHTML = known.map(c =>
+      `<button class="log-chip" data-cat="${c}" onclick="setLogCategory('${c}')">${label(c)}</button>`).join('');
+    _logChipsKey = key;
+  }
+  // Active state flips on every filter click — toggle the class instead of rebuilding.
+  document.querySelectorAll('#log-cats .log-chip').forEach(b => b.classList.toggle('active', b.dataset.cat === _logCategory));
+}
+
+function setLogCategory(c) { _logCategory = c; loadLogs(); }
+
+async function clearLogs() {
+  const scope = _logCategory === 'all' ? 'all logs' : `"${_logCategory}" logs`;
+  if (!confirm(`Clear ${scope}?`)) return;
+  try {
+    await api('/api/logs/clear', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ category: _logCategory }) });
+    _logCats = null; // a cleared category may vanish — refetch the chip set
+    loadLogs();
+  } catch (e) { toastErr(e.message); }
+}
+
+// Rich descriptions for activity events; other categories fall through to generic.
+function describeEvent(type, p) {
+  if (type === 'pr_opened')              return { desc: `PR #${p.pr?.number} opened in ${p.repo}`,    color: 'var(--accent)' };
+  if (type === 'pr_merged')              return { desc: `PR #${p.pr?.number} in ${p.repo} merged`,    color: 'var(--merged)' };
+  if (type === 'pr_closed')              return { desc: `PR #${p.pr?.number} in ${p.repo} closed`,    color: 'var(--text-3)' };
+  if (type === 'jira_transitioned')      return { desc: `${p.key} → ${p.transition} (${p.trigger})`,  color: 'var(--success)' };
+  if (type === 'jira_transition_failed') return { desc: `Failed: ${p.key} — ${p.error}`,              color: 'var(--danger)' };
+  if (type === 'sync_failed')            return { desc: `Sync failed for ${p.repo}: ${p.error}`,      color: 'var(--danger)' };
+  return null;
+}
+
+function renderLogs(logs) {
   const el = document.getElementById('events-list');
-  if (!events.length) { el.innerHTML = `<div class="empty"><div class="empty-icon">${ICON.clock}</div><p>No activity yet.</p></div>`; return; }
-  el.innerHTML = events.map(ev => {
-    const p = JSON.parse(ev.payload);
-    let desc='', color='var(--text-3)';
-    if (ev.type==='pr_opened')              { desc=`PR #${p.pr?.number} opened in ${p.repo}`;                 color='var(--accent)'; }
-    else if (ev.type==='pr_merged')         { desc=`PR #${p.pr?.number} in ${p.repo} merged`;                color='var(--merged)'; }
-    else if (ev.type==='pr_closed')         { desc=`PR #${p.pr?.number} in ${p.repo} closed`;                color='var(--text-3)'; }
-    else if (ev.type==='jira_transitioned') { desc=`${p.key} → ${p.transition} (${p.trigger})`;             color='var(--success)'; }
-    else if (ev.type==='jira_transition_failed') { desc=`Failed: ${p.key} — ${p.error}`;                    color='var(--danger)'; }
-    else if (ev.type==='sync_failed')       { desc=`Sync failed for ${p.repo}: ${p.error}`;                  color='var(--danger)'; }
-    else desc = JSON.stringify(p);
+  if (!logs.length) { el.innerHTML = `<div class="empty"><div class="empty-icon">${ICON.clock}</div><p>No logs yet.</p></div>`; return; }
+  el.innerHTML = logs.map(ev => {
+    let p = {}; try { p = ev.payload ? JSON.parse(ev.payload) : {}; } catch { p = { raw: ev.payload }; }
+    const known = describeEvent(ev.type, p);
+    const color = known ? known.color : (LOG_LEVEL_COLOR[ev.level] || 'var(--text-3)');
+    const desc = known ? known.desc : (p.raw != null ? String(p.raw) : JSON.stringify(p));
+    const typeText = esc((ev.type || '').replace(/_/g, ' '));
     const title = p.pr?.url
-      ? `<a class="link" href="${p.pr.url}" target="_blank">${ev.type.replace(/_/g,' ')}</a>`
-      : ev.type.replace(/_/g,' ');
+      ? `<a class="link" href="${esc(p.pr.url).replace(/"/g, '&quot;')}" target="_blank">${typeText}</a>`
+      : typeText;
+    // Show category + level badges when viewing across categories or non-activity streams.
+    const badge = (ev.category && ev.category !== 'event')
+      ? `<span class="log-level" style="background:${color}22;color:${color}">${esc(ev.category)}</span> ` : '';
     return `<div class="event-row">
       <div class="event-dot" style="background:${color};margin-top:5px;width:8px;height:8px;border-radius:50%;flex-shrink:0"></div>
-      <div class="event-body"><div class="event-type">${title}</div><div>${esc(desc)}</div></div>
+      <div class="event-body"><div class="event-type">${badge}${title}</div><div>${esc(desc)}</div></div>
       <div class="event-time">${timeAgo(ev.created_at)}</div>
     </div>`;
   }).join('');
@@ -1991,7 +2150,7 @@ async function loadEvents() {
 
 // ── Settings ──────────────────────────────────────────────────────────────────
 async function loadSettings() {
-  const [cfg, fwds, dbinfo] = await Promise.all([api('/api/config'), api('/api/forwarders'), api('/api/db')]);
+  const [cfg, dbinfo] = await Promise.all([api('/api/config'), api('/api/db')]);
 
   if (cfg.poll_interval)      document.getElementById('poll-interval').value = cfg.poll_interval;
   if (cfg.jira_base_url)      document.getElementById('jira-base-url').value = cfg.jira_base_url;
@@ -2001,15 +2160,6 @@ async function loadSettings() {
   api('/api/jira/site').then(s => { if (s.baseUrl) document.getElementById('jira-base-url').placeholder = `${s.baseUrl} (auto-detected)`; }).catch(()=>{});
   if (cfg.jira_poll_interval) document.getElementById('jira-poll-interval').value = cfg.jira_poll_interval;
   if (cfg.jira_limit)         document.getElementById('jira-limit').value = cfg.jira_limit;
-
-  const allRepos = [...new Set(dbinfo.projects.map(p=>p.repo).filter(Boolean))];
-  document.getElementById('forwarder-list').innerHTML = allRepos.length
-    ? allRepos.map(r => `<div class="fw-row">
-        <span class="nav-dot" style="background:${fwds.includes(r)?'var(--success)':'var(--danger)'}"></span>
-        <span style="font-size:13px;flex:1">${esc(r)}</span>
-        <span style="font-size:12px;color:var(--text-3)">${fwds.includes(r)?'forwarding':'not running'}</span>
-      </div>`).join('')
-    : '<p style="font-size:13px;color:var(--text-3)">No repos configured.</p>';
 
   renderDbInspector(dbinfo);
 }
@@ -2026,10 +2176,6 @@ function renderDbInspector(d) {
     </tr>`;
   }).join('');
 
-  const cfgRows = Object.entries(d.config).map(([k,v]) =>
-    `<tr><td><code>${esc(k)}</code></td><td>${esc(String(v))}</td></tr>`).join('')
-    || '<tr><td colspan="2" style="color:var(--text-3)">empty</td></tr>';
-
   document.getElementById('db-inspector').innerHTML = `
     <div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:14px;font-size:13px;color:var(--text-2)">
       <span><b>${d.counts.projects}</b> projects</span>
@@ -2040,13 +2186,6 @@ function renderDbInspector(d) {
       <table>
         <thead><tr><th>Project</th><th>Repo</th><th>On merge →</th><th>Open PRs</th><th>Synced</th></tr></thead>
         <tbody>${rows || '<tr><td colspan="5" style="color:var(--text-3)">No projects.</td></tr>'}</tbody>
-      </table>
-    </div>
-    <div class="form-label" style="margin-bottom:6px">Config</div>
-    <div class="table-wrap">
-      <table>
-        <thead><tr><th>Key</th><th>Value</th></tr></thead>
-        <tbody>${cfgRows}</tbody>
       </table>
     </div>`;
 }
@@ -2062,12 +2201,6 @@ async function deleteProject(id) {
     renderProjectNav(projects);
     showPage('dashboard');
   } catch(e) { toastErr(e.message); }
-}
-
-async function syncForwarders() {
-  const [active, projects] = await Promise.all([api('/api/forwarders/sync',{method:'POST'}), api('/api/projects')]);
-  toast('Forwarders synced');
-  loadSettings();
 }
 
 async function saveConfig() {
@@ -2122,6 +2255,21 @@ function fillProjectModal(proj) {
   document.getElementById('modal-jira-key').value  = proj.jiraProjectKey || '';
   document.getElementById('modal-merge').value     = proj.mergeTransition || '';
   document.getElementById('modal-jql').value       = proj.jql || '';
+  // New projects default to forwarding enabled; existing ones reflect their stored flag.
+  document.getElementById('modal-forward').checked = proj.forwardWebhooks !== false;
+  document.getElementById('modal-forward-status').textContent = '';
+}
+
+// Reflect whether `gh webhook forward` is actually running for this project's repo.
+async function showForwardStatus(repo) {
+  const el = document.getElementById('modal-forward-status');
+  if (!el || !repo) { if (el) el.textContent = ''; return; }
+  try {
+    const fwds = await api('/api/forwarders');
+    const on = fwds.includes(repo);
+    el.textContent = on ? '— forwarding' : '— not running';
+    el.style.color = on ? 'var(--success)' : 'var(--text-3)';
+  } catch { el.textContent = ''; }
 }
 
 function openNewProjectModal() {
@@ -2144,6 +2292,7 @@ function openEditProjectModal(id) {
   buildColorPicker(proj.color);
   document.getElementById('modal').style.display = 'flex';
   document.getElementById('modal-name').focus();
+  showForwardStatus(proj.repo);
 }
 
 function closeModal() {
@@ -2170,6 +2319,7 @@ async function saveProject() {
     jiraProjectKey: document.getElementById('modal-jira-key').value.trim(),
     mergeTransition:document.getElementById('modal-merge').value.trim(),
     jql:            document.getElementById('modal-jql').value.trim(),
+    forwardWebhooks:document.getElementById('modal-forward').checked,
   };
   try {
     if (id) {
@@ -2244,22 +2394,14 @@ function connectStream() {
 }
 connectStream();
 
-// Keep the "Updated Xs ago" label ticking even between syncs.
-setInterval(() => {
-  const el = document.getElementById('synced-label');
-  if (el && _projects.length) {
-    const last = _projects.map(g => g.lastSynced).filter(Boolean).sort().pop();
-    if (last && document.getElementById('page-dashboard').classList.contains('active')) {
-      el.textContent = `Updated ${timeAgo(last)}`;
-    }
-  }
-}, 10_000);
-
 // ── Init ──────────────────────────────────────────────────────────────────────
-// Kick off the tab rehydrate immediately. It's async (reads config.db over /api/tabs),
-// but the `_tabsReady` guard in saveTabs() means a tab opened from the tray before this
+// Restore saved web tabs first, then reattach live paired PTYs to matching tabs.
+// The `_tabsReady` guard in saveTabs() means a tab opened from the tray before this
 // lands can't clobber the saved set — restore merges it in instead.
-restoreTabs();   // rehydrate GitHub/Jira tabs from the last session
+_tabTermInit = (async () => {
+  await restoreTabs();        // rehydrate GitHub/Jira tabs from the last session
+  await rehydrateTerminals(); // reattach PTYs that outlived a window close/reopen
+})().catch(e => console.error('[init] tab/terminal restore failed:', e)); // never leave it unhandled — awaiters in ensurePrTerminal() still try/catch
 
 (async () => {
   try {

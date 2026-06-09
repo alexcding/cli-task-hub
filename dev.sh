@@ -65,7 +65,15 @@ if $APP; then
   cyan "Starting watched server at $URL"
   PORT="$PORT" "${RUNTIME[@]}" >/tmp/taskhub-dev-server.log 2>&1 &
   SERVER_PID=$!
-  trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
+  # `node --watch` is a supervisor that forks a worker holding the port — killing
+  # SERVER_PID alone orphans the worker. Tear down the whole tree, then free the
+  # port as a backstop (catches workers respawned by --watch after a file change).
+  cleanup() {
+    pkill -P "$SERVER_PID" 2>/dev/null || true
+    kill "$SERVER_PID" 2>/dev/null || true
+    lsof -ti:"$PORT" | xargs kill -9 2>/dev/null || true
+  }
+  trap cleanup EXIT INT TERM
   for _ in $(seq 1 40); do curl -s -o /dev/null "$URL" && break; sleep 0.25; done
 
   # Brand the dev Electron.app as "TaskHub" so the menu bar AND Dock match the packaged

@@ -7,7 +7,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 // Main pushes per-terminal events tagged with the terminal id; we dispatch to the
 // callbacks the renderer registered for that id. Keyed by id so many terminals can
 // be read independently. onData/onExit each return an unsubscribe function.
-const dataListeners = new Map(); // id -> Set<cb(chunk)>
+const dataListeners = new Map(); // id -> Set<cb(chunk, seq)>
 const exitListeners = new Map(); // id -> Set<cb({exitCode, signal})>
 
 function subscribe(map, id, cb) {
@@ -17,7 +17,7 @@ function subscribe(map, id, cb) {
   return () => { set.delete(cb); if (!set.size) map.delete(id); };
 }
 
-ipcRenderer.on('term:data', (_e, { id, chunk }) => { dataListeners.get(id)?.forEach(cb => cb(chunk)); });
+ipcRenderer.on('term:data', (_e, { id, chunk, seq }) => { dataListeners.get(id)?.forEach(cb => cb(chunk, seq)); });
 ipcRenderer.on('term:exit', (_e, payload)      => { exitListeners.get(payload.id)?.forEach(cb => cb(payload)); });
 
 contextBridge.exposeInMainWorld('taskhub', {
@@ -35,7 +35,7 @@ contextBridge.exposeInMainWorld('taskhub', {
 
   // Multiple independent terminals, each an OS pseudo-terminal in the main process.
   term: {
-    // Spawn a login shell in `cwd`; resolves to { id, cwd, title }.
+    // Spawn a login shell in `cwd`; opts.paired + opts.pairKey identify a GitHub/Jira split terminal.
     create: (opts = {}) => ipcRenderer.invoke('term:create', opts),
     // Type raw bytes into a terminal (include '\n'/'\r' for Enter).
     write:  (id, data) => ipcRenderer.send('term:write', { id, data }),
@@ -43,9 +43,12 @@ contextBridge.exposeInMainWorld('taskhub', {
     resize: (id, cols, rows) => ipcRenderer.send('term:resize', { id, cols, rows }),
     // Terminate a terminal's shell and free the PTY.
     kill:   (id) => ipcRenderer.invoke('term:kill', { id }),
-    // Live list of terminals (id/cwd/title) — for rehydrating the UI after a reload.
+    // Live list of terminals — for rehydrating the UI after a reload.
     list:   () => ipcRenderer.invoke('term:list'),
-    // Stream a terminal's output; cb(chunk). Returns an unsubscribe function.
+    // Reattach after a window reopen; resolves to { buf, seq }: the buffered backlog to
+    // replay plus the seq of its last chunk (so live output can resume without a gap/dup).
+    attach: (id) => ipcRenderer.invoke('term:attach', { id }),
+    // Stream a terminal's output; cb(chunk, seq). Returns an unsubscribe function.
     onData: (id, cb) => subscribe(dataListeners, id, cb),
     // Notified when a terminal's shell exits; cb({ exitCode, signal }). Returns unsubscribe.
     onExit: (id, cb) => subscribe(exitListeners, id, cb),

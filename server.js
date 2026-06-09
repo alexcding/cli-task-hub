@@ -1,6 +1,9 @@
 // Cache compiled V8 bytecode to disk for faster cold starts (no-op pre-Node 22.8).
 try { require('node:module').enableCompileCache?.(); } catch {}
 
+// Load first so console.* is routed to the log file before any other module logs.
+require('./lib/logger');
+
 const express = require('express');
 const path = require('path');
 const db = require('./lib/db');
@@ -49,6 +52,7 @@ function projectPatch(body) {
   if (body.workspace !== undefined) patch.workspace = String(body.workspace).trim();
   if (body.jiraProjectKey !== undefined) patch.jiraProjectKey = String(body.jiraProjectKey).trim().toUpperCase();
   if (body.mergeTransition !== undefined) patch.mergeTransition = String(body.mergeTransition).trim();
+  if (body.forwardWebhooks !== undefined) patch.forwardWebhooks = !!body.forwardWebhooks;
   if (body.repo  !== undefined) {
     const raw = String(body.repo).trim();
     if (raw === '') { patch.repo = ''; }
@@ -265,8 +269,17 @@ app.post('/api/links', (req, res) => {
 });
 app.delete('/api/links/:id', (req, res) => { db.removeLink(req.params.id); res.json({ ok: true }); });
 
-// ── Events ────────────────────────────────────────────────────────────────────
+// ── Events / Logs ────────────────────────────────────────────────────────────────
+// /api/events is the activity feed (category='event'); /api/logs is the full,
+// filterable log viewer across all categories.
 app.get('/api/events', (req, res) => res.json(db.getEvents(100)));
+app.get('/api/logs', (req, res) => res.json(db.getLogs({
+  category: req.query.category,
+  level: req.query.level,
+  limit: parseInt(req.query.limit, 10) || 200,
+})));
+app.get('/api/logs/categories', (req, res) => res.json(db.logCategories()));
+app.post('/api/logs/clear', (req, res) => { db.clearLogs(req.body && req.body.category); res.json({ ok: true }); });
 
 // ── DB inspector (Settings) ─────────────────────────────────────────────────────
 app.get('/api/db', (req, res) => {
@@ -335,7 +348,6 @@ app.post('/webhook/github', (req, res) => {
 
 // ── Forwarders ────────────────────────────────────────────────────────────────
 app.get('/api/forwarders', (req, res) => res.json(forwarder.list()));
-app.post('/api/forwarders/sync', (req, res) => { forwarder.sync(PORT); res.json(forwarder.list()); });
 
 // ── Poll trigger ────────────────────────────────────────────────────────────────
 app.post('/api/poll', async (req, res) => {
@@ -344,25 +356,67 @@ app.post('/api/poll', async (req, res) => {
 });
 
 // ── Start ─────────────────────────────────────────────────────────────────────
+// The HTTP server + poller + webhook forwarder run either standalone (`node server.js`,
+// dev / tray child process) or through start()/stop() in tests. Nothing listens or
+// schedules at require time.
+let server = null;
+
 // Bind to loopback only: TaskHub is an Electron-only app, not meant to be reached
 // over the LAN by IP (the embedded GitHub/Jira <webview>s and header-stripping are
-// Electron-only and don't work in a plain browser anyway).
-const server = app.listen(PORT, '127.0.0.1', () => {
-  console.log(`TaskHub running at http://localhost:${PORT}`);
-  poller.start(publishSync);         // PR sync loop publishes snapshot updates over SSE
-  poller.startJira(publishJiraSync); // Jira sync loop (assigned-to-me + per-project)
-  forwarder.sync(PORT);
-});
+// Electron-only and don't work in a plain browser anyway). Resolves on a successful
+// bind, rejects on a hard failure — `server` is only set once we're actually listening,
+// so a failed bind leaves it null and a retry can re-listen.
+function listenOnce(port) {
+  return new Promise((resolve, reject) => {
+    const srv = app.listen(port, '127.0.0.1');
+    srv.once('listening', () => resolve(srv));
+    srv.once('error', reject);
+  });
+}
 
-server.on('error', (err) => {
-  if (err.code === 'EADDRINUSE') {
-    console.error(`[server] Port ${PORT} is already in use — another TaskHub is running.`);
-    process.exit(1);
+// Start listening, then launch the poller + forwarder. A just-freed port (freePort's
+// `kill -9` races the OS releasing the socket) is retried a few times; if it's still
+// unavailable we reject so the caller surfaces it instead of running against a dead backend.
+async function start(port = PORT) {
+  if (server) return server;
+  const ATTEMPTS = 6;
+  for (let attempt = 1; attempt <= ATTEMPTS; attempt++) {
+    try {
+      const srv = await listenOnce(port);
+      server = srv;
+      server.on('error', (err) => console.error('[server] runtime error:', err)); // post-listen errors
+      console.log(`TaskHub running at http://localhost:${port}`);
+      poller.start(publishSync);         // PR sync loop publishes snapshot updates over SSE
+      poller.startJira(publishJiraSync); // Jira sync loop (assigned-to-me + per-project)
+      forwarder.sync(port);
+      return server;
+    } catch (err) {
+      if (err.code === 'EADDRINUSE' && attempt < ATTEMPTS) {
+        console.warn(`[server] Port ${port} busy — retry ${attempt}/${ATTEMPTS - 1}`);
+        await new Promise(r => setTimeout(r, 300));
+        continue;
+      }
+      throw err; // give up — caller decides what to do (standalone exits; tray shows an error)
+    }
   }
-  throw err;
-});
+}
 
-process.on('SIGTERM', () => { forwarder.stopAll(); process.exit(0); });
-process.on('SIGINT',  () => { forwarder.stopAll(); process.exit(0); });
+// Tear down background work and release the port (the Electron main process calls this on quit).
+function stop() {
+  poller.stop();
+  forwarder.stopAll();
+  if (server) { try { server.close(); } catch {} server = null; }
+}
 
-module.exports = app;
+// Standalone (`node server.js`, dev:server) self-starts; when required in-process by
+// tray.js it stays dormant until tray calls start() itself.
+if (require.main === module) {
+  start().catch((err) => {
+    console.error(`[server] failed to start: ${err.message}`);
+    process.exit(1);
+  });
+  process.on('SIGTERM', () => { stop(); process.exit(0); });
+  process.on('SIGINT',  () => { stop(); process.exit(0); });
+}
+
+module.exports = { app, start, stop };
