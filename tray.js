@@ -2,6 +2,7 @@
 try { require('node:module').enableCompileCache?.(); } catch {}
 
 const { app, Tray, Menu, shell, nativeImage, BrowserWindow, session, ipcMain, dialog, nativeTheme, Notification } = require('electron');
+const { autoUpdater } = require('electron-updater');
 const { fork, execSync, execFile } = require('child_process');
 const path = require('path');
 const os = require('os');
@@ -9,9 +10,10 @@ const http = require('http');
 const zlib = require('zlib');
 const pty = require('@homebridge/node-pty-prebuilt-multiarch');
 
-// Show "TaskHub" (not "Electron") in the menu bar, About panel, and Dock during dev.
-// Must run before app is ready so the default app menu picks it up. Packaged builds already
-// get this from the bundle's productName.
+// Show "TaskHub" (not "Electron") in the About panel, Dock, and userData path during dev.
+// Must run before app is ready. The macOS app-menu label is set separately via an explicit
+// application menu in whenReady() (setName alone can't relabel it in an unpackaged bundle).
+// Packaged builds get all of this from the bundle's productName.
 app.setName('TaskHub');
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
@@ -324,6 +326,27 @@ async function refreshMenu() {
   tray.setContextMenu(menu);
 }
 
+// Auto-update from GitHub Releases. The publish config baked into the build
+// tells electron-updater where to look; it fetches latest-mac.yml, downloads a
+// newer signed build in the background, and installs it on the next quit.
+// Only meaningful in a packaged, Developer-ID-signed build — Squirrel.Mac
+// rejects ad-hoc/unsigned updates, and dev runs have no update manifest.
+const SIX_HOURS = 6 * 60 * 60 * 1000;
+function setupAutoUpdates() {
+  if (!app.isPackaged) return;
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+  autoUpdater.on('error', (err) => console.error('[updater]', err?.message || err));
+  autoUpdater.on('update-downloaded', (info) => {
+    console.log(`[updater] ${info.version} downloaded — installs on quit`);
+  });
+  const check = () => autoUpdater.checkForUpdatesAndNotify().catch(
+    (err) => console.error('[updater] check failed:', err?.message || err),
+  );
+  check();
+  setInterval(check, SIX_HOURS); // tray app rarely quits, so poll periodically
+}
+
 // Only one TaskHub at a time — quit if another instance already holds the lock.
 if (!app.requestSingleInstanceLock()) {
   app.quit();
@@ -331,6 +354,18 @@ if (!app.requestSingleInstanceLock()) {
 }
 
 app.whenReady().then(async () => {
+  // macOS app menu (top-left, beside the Apple logo). Without our own template
+  // Electron uses its default one, whose first item is hard-coded to "Electron"
+  // in dev — app.setName() can't relabel it. `role: 'appMenu'` labels it with
+  // app.name ("TaskHub"); edit/window menus keep ⌘C/⌘V/⌘W working.
+  if (process.platform === 'darwin') {
+    Menu.setApplicationMenu(Menu.buildFromTemplate([
+      { role: 'appMenu' },
+      { role: 'editMenu' },
+      { role: 'windowMenu' },
+    ]));
+  }
+
   // Show the app icon in the Dock. Packaged builds pick it up from the bundle's
   // .icns automatically; in dev (`electron .`) set it explicitly so we show the
   // brand icon instead of Electron's default.
@@ -371,6 +406,8 @@ app.whenReady().then(async () => {
 
   // Refresh menu every 60 seconds
   setInterval(refreshMenu, 60_000);
+
+  setupAutoUpdates();
 });
 
 app.on('window-all-closed', () => {

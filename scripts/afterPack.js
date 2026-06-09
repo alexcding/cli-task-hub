@@ -11,6 +11,12 @@ exports.default = async function afterPack(context) {
   // macOS-only step.
   if (context.electronPlatformName !== 'darwin') return;
 
+  // In a real release, electron-builder signs the bundle with the Developer ID
+  // cert (and notarizes it) after this hook — so skip ad-hoc signing here; it
+  // would only be overwritten, and a hardened-runtime bundle must be signed
+  // with entitlements, not ad-hoc.
+  if (process.env.TASKHUB_RELEASE === '1') return;
+
   const appName = `${context.packager.appInfo.productFilename}.app`;
   const appPath = path.join(context.appOutDir, appName);
 

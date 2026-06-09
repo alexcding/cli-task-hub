@@ -117,7 +117,8 @@ npm run dev:tray
 For the packaged arm64 macOS app:
 
 ```bash
-npm run build:run
+./build.sh          # build the .app, ad-hoc sign it, and launch
+./build.sh --no-run # build only
 ```
 
 Build output lands at:
@@ -126,8 +127,9 @@ Build output lands at:
 dist/mac-arm64/TaskHub.app
 ```
 
-`build:run` regenerates icons, builds the `.app`, kills any old TaskHub instance,
-frees port 3000, and launches the new build.
+`build.sh` regenerates icons, builds the `.app` (ad-hoc signed, fast), kills any
+old TaskHub instance, frees port 3000, and launches the new build. To produce a
+distributable disk image instead, see [Releasing](#releasing--auto-update).
 
 ## How It Works
 
@@ -165,7 +167,7 @@ This keeps the UI responsive and keeps GitHub CLI/API usage predictable.
 | Webhook forwarder | `lib/webhook-forwarder.js` | Manage `gh webhook forward` child processes per repo |
 | Web UI | `public/index.html` | Single-file dashboard SPA |
 | Tray app | `tray.js` | Electron menu-bar app that forks the server and renders tray state |
-| Build scripts | `scripts/*.js`, `build.sh` | Generate icons and package the Electron app |
+| Build scripts | `scripts/*.js`, `build.sh`, `electron-builder.config.js` | Generate icons, package, sign, and publish the Electron app |
 
 ## Data Model
 
@@ -225,9 +227,10 @@ write outside the app bundle.
 ```bash
 npm install
 npm start          # plain local server
-npm run dev        # hot reload with Bun
+npm run dev        # hot reload (node --watch)
 npm run dev:tray   # quick Electron tray run
-npm run build:run  # package and launch macOS app
+./build.sh         # package and launch the macOS app
+npm run release    # signed + notarized DMG, published to GitHub Releases
 ```
 
 Useful notes:
@@ -236,7 +239,8 @@ Useful notes:
 - Editing `public/*` triggers browser reload through SSE in development.
 - Editing tray or packaged-server code requires a rebuild to affect a running
   `.app`.
-- The app currently targets arm64 macOS with an unsigned `dir` build.
+- The app targets arm64 macOS. Local builds are ad-hoc signed; releases are
+  Developer ID signed and notarized — see [Releasing](#releasing--auto-update).
 - The JSON store starts as `{config:{},projects:[],links:[],events:[]}`.
 - Project IDs are UUIDs. Quote them in inline HTML handlers:
   `onclick="fn('${id}')"`.
@@ -245,13 +249,70 @@ Useful notes:
 - If `gh webhook` is missing, install the extension with
   `gh extension install cli/gh-webhook`. Polling still catches merges without it.
 
+## Releasing & Auto-Update
+
+TaskHub ships as a signed, notarized DMG published to [GitHub Releases](https://github.com/alexcding/cli-task-hub/releases),
+and installed copies update themselves from there via `electron-updater`.
+
+### Build types
+
+| Command | Signing | Targets | Auto-updates? | Use for |
+| --- | --- | --- | --- | --- |
+| `./build.sh` | ad-hoc | `.app` only | no | local dev / quick launch |
+| `npm run build` | ad-hoc | dmg + zip | no | testing the packaged DMG locally |
+| `npm run release` | Developer ID + notarized | dmg + zip | yes | shipping to users |
+
+Build configuration lives in `electron-builder.config.js`. It switches between
+the ad-hoc and signed paths based on the `TASKHUB_RELEASE` env var, which
+`npm run release` sets automatically.
+
+### One-time setup for signed releases
+
+Silent macOS auto-update (Squirrel.Mac) only works between builds signed with
+the same Apple **Developer ID** — ad-hoc builds cannot auto-update. To cut real
+releases you need, once:
+
+1. An **Apple Developer Program** membership, with a **"Developer ID
+   Application"** certificate created and installed in your login keychain.
+2. An **app-specific password** for your Apple ID (appleid.apple.com → Sign-In
+   and Security → App-Specific Passwords), used for notarization.
+
+### Cutting a release
+
+1. Bump `version` in `package.json` (the updater compares versions, so every
+   release must be higher than the last).
+2. Export your Apple credentials and run the release:
+
+   ```bash
+   export APPLE_TEAM_ID=XXXXXXXXXX            # 10-char Developer Team ID
+   export APPLE_ID=you@accedo.tv
+   export APPLE_APP_SPECIFIC_PASSWORD=abcd-efgh-ijkl-mnop
+   npm run release
+   ```
+
+   This signs, notarizes, and uploads `TaskHub-<version>-arm64.dmg`, the update
+   zip, and `latest-mac.yml` to a **draft** GitHub release tagged `v<version>`.
+   The GitHub token is read from `gh auth token` automatically.
+3. Review the draft at the [Releases page](https://github.com/alexcding/cli-task-hub/releases)
+   and publish it. Installed apps pick up the update on their next check.
+
+### How auto-update works
+
+On launch (packaged builds only), `tray.js` calls `electron-updater`, which
+reads `latest-mac.yml` from the latest GitHub release, and — if a newer signed
+build exists — downloads it in the background and installs it on the next quit.
+It re-checks every 6 hours, since the tray app rarely quits.
+
+> **First signed release:** auto-update only chains between Developer-ID-signed
+> builds. Any ad-hoc copy already installed must be replaced by manually
+> downloading the first notarized DMG; updates are automatic from then on.
+
 ## Ideas Worth Building
 
 These are good directions for contributors or forks:
 
 - Desktop notifications for failed CI or new review requests.
 - Multi-provider CLI adapters for GitLab, Linear, Azure DevOps, or custom CLIs.
-- Better release packaging, signing, and update flow.
 - Keyboard-first command palette for the dashboard.
 - Per-project rules for labels, branches, and Jira transition policies.
 - Lightweight plugin hooks for custom task sources.

@@ -42,14 +42,29 @@ if (!fs.existsSync(path.join(ROOT, 'build', 'icon.icns'))) {
 run('node scripts/gen-tray-icon.js');
 
 // ── 2. Build ──────────────────────────────────────────────────────────────────
-// DMG target → a shareable disk image (the unpacked .app is also left in
-// dist/mac-arm64/). The .app is ad-hoc signed by scripts/afterPack.js while it
-// is assembled, so the signature is sealed into the DMG.
+// Produces a DMG (shareable image) + ZIP (Squirrel.Mac auto-update) + the
+// unpacked .app in dist/mac-arm64/.
+//
+//   default      → ad-hoc signed local build (no Apple account). Signed by
+//                  scripts/afterPack.js. CANNOT auto-update — for local testing.
+//   --publish    → real release: Developer ID signing + notarization (so
+//                  auto-update works) and upload to GitHub Releases.
 const publish = process.argv.includes('--publish');
 
-let buildCmd = 'CSC_IDENTITY_AUTO_DISCOVERY=false npx electron-builder --mac --arm64';
+let buildCmd = 'npx electron-builder --mac --arm64';
 
 if (publish) {
+  // Real signing/notarization needs Apple credentials. Fail early with a clear
+  // message rather than deep inside electron-builder.
+  const required = ['APPLE_TEAM_ID', 'APPLE_ID', 'APPLE_APP_SPECIFIC_PASSWORD'];
+  const missing = required.filter((k) => !process.env[k]);
+  if (missing.length) {
+    console.error(`\n\x1b[31m✗ Missing env for a signed release: ${missing.join(', ')}\x1b[0m`);
+    console.error('  Set them (plus a "Developer ID Application" cert in your keychain) and retry.');
+    console.error('  See electron-builder.config.js for the full list.');
+    process.exit(1);
+  }
+
   // electron-builder reads GH_TOKEN to push to GitHub Releases. Pull a token
   // from the gh CLI so we don't depend on a separately-exported env var.
   step('Resolving GitHub token from gh CLI');
@@ -62,12 +77,17 @@ if (publish) {
     process.exit(1);
   }
   process.env.GH_TOKEN = process.env.GH_TOKEN || token;
-  // --publish always → upload artifacts; electron-builder creates a draft
-  // release tagged v<version> on first run for that version.
+  // Switches electron-builder.config.js to the signed/notarized/hardened path.
+  process.env.TASKHUB_RELEASE = '1';
+  // --publish always → upload artifacts (incl. latest-mac.yml); electron-builder
+  // creates a draft release tagged v<version> on first run for that version.
   buildCmd += ' --publish always';
-  step('Building + publishing TaskHub DMG (arm64) to GitHub Releases');
+  step('Building + publishing TaskHub (signed + notarized, arm64) to GitHub Releases');
 } else {
-  step('Building TaskHub DMG (arm64)');
+  // Ad-hoc local build — skip identity auto-discovery so it doesn't try to sign
+  // with a real cert; scripts/afterPack.js handles the ad-hoc signature.
+  process.env.CSC_IDENTITY_AUTO_DISCOVERY = 'false';
+  step('Building TaskHub DMG (arm64, ad-hoc — no auto-update)');
 }
 
 run(buildCmd);

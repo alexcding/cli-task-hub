@@ -68,13 +68,7 @@ app.post('/api/config', (req, res) => {
   res.json({ ok: true });
 });
 
-// ── Settings (config.db key/value — theme today, room for more) ─────────────────
-// One-time migration: the theme used to live in the JSON config store as `app_theme`.
-// Seed it into the settings table on first boot so existing users keep their choice.
-if (configdb.getSetting('theme') == null) {
-  const legacy = db.get('app_theme');
-  if (legacy) configdb.setSetting('theme', legacy);
-}
+// ── Settings (config.db key/value — theme + ticket filter prefs) ────────────────
 app.get('/api/settings', wrap((req, res) => res.json(configdb.getAllSettings())));
 app.put('/api/settings/:key', wrap((req, res) => {
   configdb.setSetting(req.params.key, req.body.value);

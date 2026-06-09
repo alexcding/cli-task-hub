@@ -794,7 +794,6 @@ function createTab(url, title, kind, meta = {}) {
 // Open tabs live only in `_tabs` (renderer memory), so they're lost when the window
 // reloads or the app restarts. Persist the full ordered list to config.db (server)
 // on every change and rehydrate it on launch via /api/tabs.
-const TABS_KEY = 'taskhub.openTabs'; // legacy localStorage store — migrated once, below
 let _tabsReady = false;              // false until restoreTabs() has merged the saved set
 function saveTabs() {
   // Don't persist before the saved set has been read back in — otherwise a tab opened
@@ -821,15 +820,7 @@ async function restoreTabs() {
     catch { await new Promise(r => setTimeout(r, 200)); }
   }
   if (!data) return;
-  let saved = Array.isArray(data.tabs) ? data.tabs : [];
-  // One-time migration from the old localStorage store (pre-config.db installs).
-  if (!saved.length) {
-    try {
-      const legacy = JSON.parse(localStorage.getItem(TABS_KEY));
-      if (legacy && Array.isArray(legacy.tabs)) saved = legacy.tabs;
-    } catch {}
-    try { localStorage.removeItem(TABS_KEY); } catch {}
-  }
+  const saved = Array.isArray(data.tabs) ? data.tabs : [];
   for (const t of saved) {
     // A tab opened from the tray may already be in `_tabs` by the time restore lands —
     // skip it so we don't double-add.
@@ -1734,12 +1725,13 @@ function ticketFilterBar(items, filters, onchangeFor, valuesByKey = {}) {
   return selects.length ? `<span class="filter-label">Filters</span>` + selects.join('') : '';
 }
 
-// Persist only the active (non-empty) dimensions, as JSON, under a config key.
+// Persist only the active (non-empty) dimensions, as JSON, in config.db's settings
+// table (same store as tabs/theme — these are UI prefs, not source-of-truth config).
 async function persistFilters(cfgKey, filters) {
   const clean = {};
   for (const f of TICKET_FILTERS) if (filters[f.key]) clean[f.key] = filters[f.key];
   try {
-    await api('/api/config', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ [cfgKey]: JSON.stringify(clean) }) });
+    await api('/api/settings/' + encodeURIComponent(cfgKey), { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ value: JSON.stringify(clean) }) });
   } catch(e) { toastErr(e.message); }
 }
 
@@ -1767,9 +1759,9 @@ async function loadMyTickets() {
   try {
     // Projects fetched alongside so the per-project Jira-key scoping is current even if the
     // dashboard hasn't loaded yet this session.
-    const [snap, cfg, projects] = await Promise.all([api('/api/jira/mine'), api('/api/config'), api('/api/projects')]);
+    const [snap, settings, projects] = await Promise.all([api('/api/jira/mine'), api('/api/settings'), api('/api/projects')]);
     _projects = projects;
-    if (_ticketFilters === null) _ticketFilters = parseFilters(cfg.my_ticket_filters);
+    if (_ticketFilters === null) _ticketFilters = parseFilters(settings.my_ticket_filters);
     _mineSnap = snap;
     rememberStatuses(snap.items);
     renderMyTicketsFilter();
@@ -1810,8 +1802,8 @@ async function loadProjectJira(id) {
   const tbody = document.getElementById(`proj-jira-${id}`);
   if (!tbody) return;
   try {
-    const [snap, cfg] = await Promise.all([api(`/api/projects/${id}/jira`), api('/api/config')]);
-    if (_projJiraFilters[id] === undefined) _projJiraFilters[id] = parseFilters(cfg['ticket_filter_' + id]);
+    const [snap, settings] = await Promise.all([api(`/api/projects/${id}/jira`), api('/api/settings')]);
+    if (_projJiraFilters[id] === undefined) _projJiraFilters[id] = parseFilters(settings['ticket_filter_' + id]);
     _projJiraSnap[id] = snap;
     rememberStatuses(snap.items);
     renderProjJiraFilter(id);
