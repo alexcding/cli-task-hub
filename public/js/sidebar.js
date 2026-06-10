@@ -1,6 +1,6 @@
 // Left sidebar: project nav, the grouped open-tab rows, drag-reorder, and the
 // right-click tab menu.
-import { state, prByUrl, setProjects } from './store.js';
+import { state, prByUrl, prGroup, setProjects } from './store.js';
 import { esc, ghAvatarSrc } from './util.js';
 import { ICON, TAB_ICON } from './icons.js';
 import { ciInfo } from './views/cards.js';
@@ -62,13 +62,13 @@ function tabsMarkup() {
   const groupHtml = (label, attrs, items) =>
     items.length ? `<div class="tab-group" ${attrs}><span class="tab-group-label">${label}</span>${items.map(itemHtml).join('')}</div>` : '';
   const group = (label, kind) => groupHtml(label, `data-kind="${kind}"`, state.tabs.filter(t => t.kind === kind));
-  // GitHub tabs split by the PR's category — same Tasks/Review split as the tray.
-  // Prefer the live PR category, fall back to the one saved on the tab so a restored
-  // tab (or one whose PR has merged and left the snapshot) keeps its group instead of
-  // vanishing. Unknown → Tasks, so a tab is always shown somewhere.
+  // GitHub tabs split into Mine vs Review (same split as the dashboard sections). Prefer
+  // the live PR (prGroup understands awaitingMyReview, so a commented PR groups under
+  // Review not Mine); fall back to the group saved on the tab so a restored tab (or one
+  // whose PR has merged and left the snapshot) keeps its group instead of vanishing.
   const ghCat = t => {
-    const c = prByUrl(t.url)?.category || t.category;
-    return c === 'review' ? 'review' : 'mine';
+    const pr = prByUrl(t.url);
+    return pr ? prGroup(pr) : (t.category === 'review' ? 'review' : 'mine');
   };
   const ghGroup = (label, cat) =>
     groupHtml(label, `data-kind="github" data-cat="${cat}"`, state.tabs.filter(t => t.kind === 'github' && ghCat(t) === cat));

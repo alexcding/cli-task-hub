@@ -1,7 +1,7 @@
 // Embedded viewer: the Electron app embeds the real GitHub/Jira page in a <webview>
 // (the main process strips X-Frame-Options/CSP so framing is allowed). Opened links
 // live as tabs in the left nav; activating one shows it full-width here.
-import { state, activeTab, prByUrl, prTabTitle, jiraTabTitle, jiraByKey } from './store.js';
+import { state, activeTab, prByUrl, prGroup, prTabTitle, jiraTabTitle, jiraByKey } from './store.js';
 import { api } from './api.js';
 import { esc, jiraKeyFromUrl, canSplitTerminal, ghAvatarSrc } from './util.js';
 import { renderTabs } from './sidebar.js';
@@ -226,7 +226,9 @@ export function updateTitles() {
 export function openPrSplit(url, num, repo, branch) {
   const pr = prByUrl(url);
   const login = pr?.author?.login;
-  openInSplit(url, pr ? prTabTitle(pr) : `PR ${num}`, 'github', { repo: repo || pr?.repo, branch: branch || pr?.headRefName, category: pr?.category, login });
+  // Persist the sidebar GROUP ('mine'|'review'), not the raw category — a PR I've only
+  // commented on is category 'other' but belongs under Review (see prGroup).
+  openInSplit(url, pr ? prTabTitle(pr) : `PR ${num}`, 'github', { repo: repo || pr?.repo, branch: branch || pr?.headRefName, category: pr ? prGroup(pr) : '', login });
   freezeAvatar(url, login);
 }
 

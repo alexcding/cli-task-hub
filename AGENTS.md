@@ -60,7 +60,19 @@ npm run build:run      # package + launch the Electron tray app
 - **Schema is `CREATE TABLE IF NOT EXISTS`** in each `lib/*db.js` — no migration framework;
   `data.db` and `logs.db` are safe to delete (regenerable), `taskhub.db` is not.
 - **CI is inline** via `gh pr list --json ...,statusCheckRollup`, collapsed by `summarizeCI`.
-- **PR `category`** (`mine`/`review`/`other`) is computed from `gh api user`.
+- **Two PR classifications, different surfaces — don't conflate them** (`lib/github.js`):
+  - **`category`** (`mine`/`review`/`other`) — strictly "I'm an *actively requested* reviewer".
+    Drives the **tray menu + sound** (`main/menu.js`, `main/notifications.js`). Keep it narrow:
+    broadening it would re-fire review sounds. GitHub drops you from `reviewRequests` the moment
+    you submit *any* review (even a comment), so `category` flips to `other` then.
+  - **`awaitingMyReview`** — broader "still in my review orbit": requested **OR** I've left any
+    review (commented / approved-but-unmerged / changes-requested), non-draft, not mine. Drives the
+    **dashboard "Review Requested"** section and the **sidebar Mine/Review grouping** (via
+    `store.prGroup`). Mirror it in any new Mine-vs-Review split — never group on raw `category`.
+- **The snapshot is *lean*** (`lib/poller.js#lean`): the renderer only ever sees fields `lean()`
+  copies through. If a card/view needs a new `gh` field (e.g. `reviewDecision`, `awaitingMyReview`),
+  add it to both `PR_FIELDS` (`lib/github.js`) **and** `lean()` — a field present on the raw PR but
+  absent from `lean()` is silently `undefined` client-side (this bit the approved-check + grouping).
 - **Data dir**: `TASKHUB_DATA_DIR` -> Electron `userData` -> repo root.
 - **Storage is built-in `node:sqlite`** (Node 22+/Electron's Node) — no native module like
   `better-sqlite3`, which is incompatible with the current Electron and must stay out.

@@ -44,6 +44,12 @@ separation everything follows:
 
 - Escape everything interpolated into HTML with `esc()` (`util.js`).
 - PR links open the embedded viewer: `openPrSplit(url, '#<num>', repo, branch)`.
+- **Mine vs Review splits use `store.prGroup(pr)`, never raw `pr.category`.** The dashboard
+  "Review Requested" section and the sidebar's GitHub groups must agree, so both route through
+  `prGroup` (`'review'` when `awaitingMyReview`, else `'mine'`). A PR I've only commented on is
+  `category:'other'` but belongs under Review — grouping on `category` sends it to Mine. Persist
+  the *group* on a tab (`prGroup`), not the raw category, so restored tabs land correctly. The
+  tray/sound are the exception: they intentionally stay on `category==='review'` (see AGENTS.md).
 - Jira keys link via `jiraUrl(key)` with `onclick="jiraClick(event, this.href, key)"`.
 - Icons come from `icons.js` (`ICON` for UI strokes, `TAB_ICON` for GitHub/Jira
   brand marks). SVG only — no emoji.

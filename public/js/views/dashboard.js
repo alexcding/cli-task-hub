@@ -1,6 +1,6 @@
 // Dashboard (taskboard). Personal view: "Tasks" = PRs you authored, "Review" = PRs
 // awaiting your review. Other people's PRs live under each project, not here.
-import { state, prByUrl } from '../store.js';
+import { state, prByUrl, prGroup } from '../store.js';
 import { api } from '../api.js';
 import { esc } from '../util.js';
 import { ICON } from '../icons.js';
@@ -26,7 +26,12 @@ export async function loadDashboard() {
   // Flatten open PRs across all projects.
   const openPRs = groups.flatMap(g => (g.prs||[]).filter(p => !p.error && p.state==='OPEN'));
   const mine    = openPRs.filter(p => p.category === 'mine');
-  const review  = openPRs.filter(p => p.category === 'review');
+  // "Review Requested" tracks PRs in my review orbit — kept while open if I'm requested OR
+  // I've left any review (so a PR I've commented on, or approved but not yet merged, stays
+  // instead of dropping off when GitHub removes me from reviewRequests). Falls back to
+  // category for older snapshots written before awaitingMyReview existed. (Tray/sound still
+  // use category.)
+  const review  = openPRs.filter(p => p.awaitingMyReview ?? (p.category === 'review'));
   const errors  = groups.flatMap(g => (g.prs||[]).filter(p => p.error));
 
   document.getElementById('stats').innerHTML = `
@@ -60,15 +65,19 @@ export async function loadDashboard() {
   document.getElementById('dashboard-groups').innerHTML = `${prHtml}<div id="dashboard-sprint"></div>`;
   renderDashboardSprint();
 
-  // Refresh each open GitHub tab's saved category + author login from the freshly-loaded
+  // Refresh each open GitHub tab's saved group + author login from the freshly-loaded
   // snapshot, so a PR that moved mine↔review re-groups and legacy/tray-opened tabs (saved
-  // with '') get backfilled. Persist only if something actually changed.
+  // with '') get backfilled. Store the sidebar GROUP ('mine'|'review') via prGroup — not the
+  // raw category — so a commented PR (category 'other') stays under Review. Persist only if
+  // something actually changed.
   let tabChanged = false;
   for (const t of state.tabs) {
     if (t.kind !== 'github') continue;
     const pr = prByUrl(t.url);
-    if (pr?.category && pr.category !== t.category) { t.category = pr.category; tabChanged = true; }
-    if (pr?.author?.login && pr.author.login !== t.login) { t.login = pr.author.login; tabChanged = true; }
+    if (!pr) continue;
+    const group = prGroup(pr);
+    if (group !== t.category) { t.category = group; tabChanged = true; }
+    if (pr.author?.login && pr.author.login !== t.login) { t.login = pr.author.login; tabChanged = true; }
   }
   if (tabChanged) saveTabs();
 

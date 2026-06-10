@@ -67,6 +67,13 @@ export function prByUrl(url) {
   return null;
 }
 
+// Which sidebar/tab group a PR belongs to: 'review' if it's still in my review orbit
+// (awaiting my review — includes PRs I've only commented on, where `category` has fallen
+// back to 'other'), else 'mine'. Single source of truth so a PR opened from the dashboard's
+// "Review Requested" section lands under the sidebar's "Review" group, not "Mine". Mirrors
+// the dashboard filter; falls back to category for snapshots predating awaitingMyReview.
+export const prGroup = pr => ((pr?.awaitingMyReview ?? (pr?.category === 'review')) ? 'review' : 'mine');
+
 // A loaded Jira ticket by key, across the cached snapshots (mine, sprint, per-project).
 export function jiraByKey(key) {
   const pools = [state.mineSnap?.items, state.sprintSnap?.items,

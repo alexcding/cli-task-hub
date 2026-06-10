@@ -389,14 +389,17 @@
     .pr-avatar { width:18px;height:18px;border-radius:50%;flex-shrink:0;object-fit:cover;background:var(--surface-hover); }
     .pr-foot .badge-jira { text-decoration:none;transition:background .1s,color .1s; }
     .pr-foot .badge-jira:hover { background:var(--accent);color:#fff; }
+    /* Approved mark pinned to the footer's far (bottom) right. margin-left:auto pushes it
+       to the edge whether or not there's an avatar/Jira tag on the left. */
+    .pr-foot-end { margin-left:auto;display:flex;align-items:center;flex-shrink:0; }
     /* CI status dot — reusable across PR cards and the sidebar PR list. */
     .ci-dot { width:9px;height:9px;border-radius:50%;flex-shrink:0; }
     .ci-dot.ci-success { background:var(--success); }
     .ci-dot.ci-failure { background:var(--danger); }
     .ci-dot.ci-running { background:var(--warn);box-shadow:0 0 0 3px var(--warn-bg); }
     .ci-dot.ci-none    { background:var(--border-focus); }
-    /* PR approved mark — green circle + white check, sits beside the CI dot. */
-    .pr-approved { width:13px;height:13px;flex-shrink:0;display:block;color:var(--success); }
+    /* PR approved mark — green circle + white check, pinned bottom-right (see .pr-foot-end). */
+    .pr-approved { width:14px;height:14px;flex-shrink:0;display:block;color:var(--success); }
 
     /* Badges */
     .badge { display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:600;padding:2px 8px;border-radius:99px; }

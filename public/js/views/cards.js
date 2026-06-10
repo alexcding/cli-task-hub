@@ -20,8 +20,9 @@ export function ciDot(ci) {
   return `<span class="ci-dot ${cls}" title="${label}"></span>`;
 }
 
-// GitHub's reviewDecision === 'APPROVED' → a green circle with a white check. Shown
-// next to the CI dot (approval and build status are independent signals). '' otherwise.
+// GitHub's reviewDecision === 'APPROVED' → a green circle with a white check, pinned to
+// the card footer's bottom-right (approved-but-not-yet-merged, in both My PRs and Review
+// Requested). '' otherwise. Shown via lib/poller lean() carrying reviewDecision.
 export function approvedMark(pr) {
   if (pr?.reviewDecision !== 'APPROVED') return '';
   return `<svg class="pr-approved" viewBox="0 0 16 16" title="Approved" aria-label="Approved">
@@ -40,7 +41,13 @@ export function prCard(pr) {
   const login = pr.author?.login || '';
   // GitHub serves any user's avatar at github.com/<login>.png — no API call needed.
   const avatar = login ? `<img class="pr-avatar" src="${ghAvatarSrc(login)}" alt="" title="${esc(login)}" loading="lazy">` : '';
-  const foot = avatar + jiraHtml;
+  const footLeft = avatar + jiraHtml;
+  const approved = approvedMark(pr); // green check, pinned bottom-right (see .pr-foot-end)
+  // Footer renders whenever there's a left item (avatar/Jira) OR an approved mark, so the
+  // check shows even on a card with no avatar/Jira tags.
+  const foot = (footLeft || approved)
+    ? `<div class="pr-foot">${footLeft}${approved ? `<span class="pr-foot-end">${approved}</span>` : ''}</div>`
+    : '';
   return `<div class="card clickable pr-card" onclick="openPrSplit('${pr.url}','#${pr.number}','${esc(pr.repo||'')}','${esc(pr.headRefName||'')}')" title="Open PR #${pr.number}">
     <div class="pr-head">
       <span class="pr-num">#${pr.number}</span>
@@ -48,10 +55,9 @@ export function prCard(pr) {
       ${pr.isDraft ? `<span class="pr-draft">Draft</span>` : ''}
       <span class="pr-date">${fmtDate(pr.createdAt)}</span>
       ${ciDot(pr.ci)}
-      ${approvedMark(pr)}
     </div>
     <div class="pr-body"><div class="pr-title">${esc(pr.title)}</div></div>
-    ${foot ? `<div class="pr-foot">${foot}</div>` : ''}
+    ${foot}
   </div>`;
 }
 
