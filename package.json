@@ -9,6 +9,7 @@
   "type": "commonjs",
   "scripts": {
     "start": "node server.js",
+    "test": "node --test --test-force-exit 'test/**/*.test.js'",
     "dev": "./dev.sh",
     "dev:app": "./dev.sh --app",
     "dev:server": "node --watch server.js",
