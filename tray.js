@@ -15,6 +15,15 @@ const path = require('path');
 // Packaged builds get all of this from the bundle's productName.
 app.setName('TaskHub');
 
+// Memory: every tab is a <webview>, and Chromium's default model (process-per-site-instance)
+// gives each one its own renderer process — each carrying tens of MB of fixed V8/Blink
+// overhead on top of the page. We only ever show one tab at a time and most tabs are the
+// same site (github.com), so collapse all same-site webviews into a single shared renderer.
+// The dashboard window (localhost) and Jira (atlassian) stay separate processes — only
+// like-sites merge. Tradeoff: a renderer crash drops all tabs of that site at once. Must run
+// before app is ready.
+app.commandLine.appendSwitch('process-per-site');
+
 // Initialize logging before any window is created (log.initialize wires the renderer
 // IPC bridge). Routes console.* in this process to <userData>/logs/main.log. Required for
 // its side-effect — the import itself sets up logging.
