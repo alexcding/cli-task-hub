@@ -171,7 +171,7 @@ export function renderProjJira(id) {
   const snap = state.projJiraSnap[id] || { items: [] };
   const items = snap.items || [];
   const filtered = itemsMatching(items, state.projJiraFilters[id] || {}, null);
-  const emptyMsg = !snap.jql ? 'Set a JQL query in this project’s settings above.'
+  const emptyMsg = !snap.jql ? 'Set a Jira project key or JQL in this project’s settings.'
     : items.length ? 'No tickets match these filters.' : 'No Jira items found.';
   renderJiraSnapshot(tbody, { items: filtered, error: items.length ? null : snap.error, lastSynced: snap.lastSynced }, { emptyMsg });
 }

@@ -132,7 +132,7 @@ function refreshActivePage() {
   } else if (active === 'page-project' && state.activeProjectId) {
     const prPanel = document.getElementById(`tab-prs-${state.activeProjectId}`);
     if (prPanel?.classList.contains('active')) {
-      const sel = document.querySelector(`#tab-prs-${state.activeProjectId} select`);
+      const sel = document.getElementById(`pr-state-${state.activeProjectId}`);
       reloadProjectPRs(state.activeProjectId, sel?.value || 'open', { silent: true });
     }
     const jiraPanel = document.getElementById(`tab-jira-${state.activeProjectId}`);

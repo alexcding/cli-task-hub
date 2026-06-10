@@ -14,22 +14,31 @@ export async function loadProjectPage(id) {
   if (!proj) { el.innerHTML = '<div class="empty">Project not found.</div>'; return; }
 
   el.innerHTML = `
-    <!-- Tabs -->
-    <div class="tabs">
-      <button class="tab-btn active" onclick="switchTab('${id}','prs',this)">Pull Requests</button>
-      <button class="tab-btn" onclick="switchTab('${id}','jira',this)">Jira</button>
+    <!-- Tab bar: the segmented tab widget (same as Settings/Activity) on the left,
+         the active tab's controls on the right of the same row — so neither costs a
+         filter row above its content. PR state is a dropdown (like the Jira filters);
+         Jira shows its ticket filters + Refresh. -->
+    <div class="proj-tabbar">
+      <div class="seg-tabs" role="tablist">
+        <button class="seg-tab active" onclick="switchTab('${id}','prs',this)">Pull Requests</button>
+        <button class="seg-tab" onclick="switchTab('${id}','jira',this)">Jira</button>
+      </div>
+      <div class="proj-tab-controls">
+        ${proj.repo ? `
+        <select class="filter-select" id="pr-state-${id}" onchange="reloadProjectPRs('${id}',this.value)">
+          <option value="open">Open</option>
+          <option value="merged">Merged</option>
+          <option value="all">All</option>
+        </select>` : ''}
+        <div class="tab-controls" id="jira-controls-${id}" style="display:none;gap:8px;align-items:center">
+          <div id="proj-jira-filter-${id}" class="ticket-filter" style="margin-bottom:0"></div>
+          <button class="btn btn-secondary btn-sm" onclick="loadProjectJira('${id}')">${ICON.refresh} Refresh</button>
+        </div>
+      </div>
     </div>
 
     <!-- PR tab -->
     <div class="tab-panel active" id="tab-prs-${id}">
-      ${proj.repo ? `
-      <div style="display:flex;justify-content:flex-end;margin-bottom:14px">
-        <select onchange="reloadProjectPRs('${id}',this.value)" style="width:auto">
-          <option value="open">Open</option>
-          <option value="merged">Merged</option>
-          <option value="all">All</option>
-        </select>
-      </div>` : ''}
       <div id="proj-prs-${id}">${proj.repo
         ? '<div class="loading-row"><div class="spinner"></div> Loading pull requests…</div>'
         : prListHtml([], '', 'open')}</div>
@@ -37,10 +46,6 @@ export async function loadProjectPage(id) {
 
     <!-- Jira tab -->
     <div class="tab-panel" id="tab-jira-${id}">
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:14px">
-        <div id="proj-jira-filter-${id}" class="ticket-filter" style="margin-bottom:0"></div>
-        <button class="btn btn-secondary btn-sm" onclick="loadProjectJira('${id}')">${ICON.refresh} Refresh</button>
-      </div>
       <div class="card">
         <div class="table-wrap">
           <table>
@@ -62,8 +67,13 @@ export function switchTab(projectId, tab, btn) {
   ['prs','jira'].forEach(t => {
     document.getElementById(`tab-${t}-${projectId}`)?.classList.toggle('active', t === tab);
   });
-  btn.closest('.tabs').querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  btn.closest('.seg-tabs').querySelectorAll('.seg-tab').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
+  // Each tab's controls live on the tab bar; show only the active tab's.
+  const prState = document.getElementById(`pr-state-${projectId}`);
+  if (prState) prState.style.display = tab === 'prs' ? '' : 'none';
+  const jiraCtl = document.getElementById(`jira-controls-${projectId}`);
+  if (jiraCtl) jiraCtl.style.display = tab === 'jira' ? 'flex' : 'none';
   if (tab === 'jira') loadProjectJira(projectId);
 }
 

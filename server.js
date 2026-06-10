@@ -295,8 +295,12 @@ app.get('/api/projects/:id/jira', wrap((req, res) => {
   const project = db.getProject(req.params.id);
   if (!project) return res.status(404).json({ error: 'Not found' });
   const snap = db.getJiraSnapshot(project.id);
-  if (project.jql && jiraStale(snap)) poller.syncProjectJira(project);
-  res.json(snap || { items: [], jql: project.jql || '', lastSynced: null, error: null });
+  // Effective JQL falls back to the project's Jira key, so a key-only project still
+  // has a feed (see poller.projectJql). Gate the sync and report it so the tab knows
+  // there's a query even before the first snapshot lands.
+  const eff = poller.projectJql(project);
+  if (eff && jiraStale(snap)) poller.syncProjectJira(project);
+  res.json(snap ? { ...snap, jql: snap.jql || eff } : { items: [], jql: eff, lastSynced: null, error: null });
 }));
 
 // Ad-hoc live search (e.g. previewing a JQL before saving it).
