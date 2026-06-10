@@ -21,7 +21,7 @@ function applyTermThemes() {
 
 // ── App theme ──────────────────────────────────────────────────────────────────
 // Light/dark theming for the whole UI. 'auto' follows the OS; 'light'/'dark' force one.
-// Persisted to config.db (settings table, key `theme`) AND mirrored to localStorage so the
+// Persisted to taskhub.db (settings table, key `theme`) AND mirrored to localStorage so the
 // inline head script can resolve it before first paint (no flash). The resolved mode is
 // written to <html data-theme>, which drives every CSS token. Independent of the terminal theme.
 let _appThemePref = (function () { try { return localStorage.getItem('taskhub.theme') || 'auto'; } catch { return 'auto'; } })();
@@ -42,13 +42,13 @@ export async function setAppTheme(value) {
   try { localStorage.setItem('taskhub.theme', value); } catch {}
   applyAppTheme();
   window.taskhub?.setTheme?.(value); // match native chrome appearance (traffic lights/scrollbars) to the theme; no-op in browser
-  // Durable home is the config.db settings table; the localStorage copy above is just a
+  // Durable home is the taskhub.db settings table; the localStorage copy above is just a
   // pre-paint cache so the window doesn't flash the wrong theme before this read lands.
   try { await api('/api/settings/theme', { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ value }) }); }
   catch (e) { toastErr(e.message); }
 }
 
-// config.db is authoritative (survives a localStorage clear, shared across windows);
+// taskhub.db is authoritative (survives a localStorage clear, shared across windows);
 // re-sync from it after the pre-paint localStorage guess (called from init).
 export function syncThemeFromSettings(saved) {
   if (saved && saved !== _appThemePref) {

@@ -60,7 +60,7 @@ export function createTab(url, title, kind, meta = {}) {
 
 // ── Tab persistence ─────────────────────────────────────────────────────────────
 // Open tabs live only in state.tabs (renderer memory), so they're lost when the window
-// reloads or the app restarts. Persist the full ordered list to config.db (server)
+// reloads or the app restarts. Persist the full ordered list to taskhub.db (server)
 // on every change and rehydrate it on launch via /api/tabs.
 export function saveTabs() {
   // Don't persist before the saved set has been read back in — otherwise a tab opened
@@ -81,7 +81,7 @@ export function saveTabs() {
 export async function restoreTabs() {
   // Read the saved set first. If the server is briefly unreachable, retry a few times
   // rather than proceeding — state.tabsReady stays false so saveTabs() can't overwrite
-  // (and wipe) tabs we were never able to read. config.db is the source of truth.
+  // (and wipe) tabs we were never able to read. taskhub.db is the source of truth.
   let data = null;
   for (let i = 0; i < 5 && !data; i++) {
     try { data = await api('/api/tabs'); }

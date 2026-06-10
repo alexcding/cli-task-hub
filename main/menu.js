@@ -2,10 +2,10 @@
 // /api/tabs source as the sidebar), grouped exactly like the sidebar, plus the
 // "Review requested" master list and the resource-usage readout.
 const { Menu } = require('electron');
-const { fetchJSON } = require('./server-supervisor');
+const { fetchJSON, postJSON } = require('./server-supervisor');
 const { openWindow, openLinkInApp } = require('./window');
 const { trayIcon, avatarIcon, loadAvatar, jiraIcon } = require('./icons');
-const { detectReviewChanges, acknowledgedReviews, prKey } = require('./notifications');
+const { detectReviewChanges } = require('./notifications');
 const { computeUsage, fmtKB } = require('./usage');
 
 // Build a labeled section of open-tab menu items. Each item maps 1:1 to a sidebar row
@@ -44,9 +44,14 @@ function prMenuItems(label, prs, refreshMenu) {
     items.push({
       label: menuLabel(full),
       icon: avatarIcon(pr.author?.login, pr.ci, pr.reviewDecision === 'APPROVED'),
-      // Clicking acknowledges the request (hides it from "Review requested" until a
-      // re-request) and opens it as a tab; rebuild so it drops on the next menu open.
-      click: () => { acknowledgedReviews.add(prKey(pr)); openLinkInApp(pr.url, full, 'github'); refreshMenu(); },
+      // Opening records a durable "viewed" on the server (hides it from "Review requested"
+      // until a newer request), then opens it as a tab. Await the record before rebuilding
+      // so the next menu read already reflects it and the item doesn't flash back.
+      click: async () => {
+        openLinkInApp(pr.url, full, 'github');
+        await postJSON('/api/prs/viewed', { repo: pr.repo, number: pr.number });
+        refreshMenu();
+      },
     });
   }
   return items;
@@ -105,9 +110,10 @@ async function refreshMenuData(tray, refreshMenu) {
   ];
 
   // "Review requested": every PR awaiting your review, opened or not — MINUS the ones
-  // you've already clicked (acknowledged). A re-request clears the ack and re-surfaces it
-  // (see notifications.js). Clicking opens the PR (focusing its tab if already open).
-  const reviewReqItems = prMenuItems('Review requested', review.filter(pr => !acknowledgedReviews.has(prKey(pr))), refreshMenu);
+  // you've already opened (reviewPending is false once viewed, until a newer request
+  // re-surfaces it; computed server-side from persisted viewed_at — see server.js).
+  // Clicking opens the PR (focusing its tab if already open).
+  const reviewReqItems = prMenuItems('Review requested', review.filter(pr => pr.reviewPending), refreshMenu);
 
   // Notify + play a sound on any newly-requested review.
   detectReviewChanges(review);

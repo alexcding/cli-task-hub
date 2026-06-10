@@ -47,7 +47,7 @@ else
 fi
 
 # ── Runtime ─────────────────────────────────────────────────────────────────────
-# Must be Node: the server uses node:sqlite (config.db), which bun doesn't implement.
+# Must be Node: the server uses node:sqlite (taskhub.db), which bun doesn't implement.
 # Node's built-in --watch gives the same hot-reload bun used to provide here.
 RUNTIME=(node --watch server.js)
 green "Using node $(node --version)"

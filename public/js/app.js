@@ -205,7 +205,7 @@ state.tabTermInit = (async () => {
   try {
     const [site, settings] = await Promise.all([api('/api/jira/site'), api('/api/settings')]);
     state.jiraBase = site.baseUrl || '';
-    // config.db is authoritative (survives a localStorage clear, shared across windows);
+    // taskhub.db is authoritative (survives a localStorage clear, shared across windows);
     // re-sync the theme from it and re-apply if it differs from the pre-paint guess.
     syncThemeFromSettings(settings.theme);
     syncFontsFromSettings(settings); // any terminal rehydrated before this lands is updated in place by applyFonts

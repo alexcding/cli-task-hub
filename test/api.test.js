@@ -147,6 +147,40 @@ test('PR endpoints serve a seeded fresh snapshot without syncing', async () => {
   await send('DELETE', `/api/projects/${proj.id}`);
 });
 
+test('tray review requests track viewed vs (re-)requested state', async () => {
+  const proj = (await send('POST', '/api/projects', { name: 'Rev' })).body;
+  const t0 = '2026-06-01T00:00:00Z';
+  const pr = { number: 9, title: 'Review me', url: 'https://github.com/o/r/pull/9', state: 'OPEN', repo: 'o/r', category: 'review', requestedAt: t0 };
+  db.setSnapshot(proj.id, { prs: [pr], lastSynced: new Date().toISOString(), error: null });
+
+  const findItem = async () => (await get('/api/prs/tray')).body.find(p => p.number === 9 && p.repo === 'o/r');
+
+  // Never viewed → pending.
+  assert.equal((await findItem()).reviewPending, true);
+
+  // Open it (records viewed_at = now, which is after t0) → no longer pending.
+  const viewed = await send('POST', '/api/prs/viewed', { repo: 'o/r', number: 9 });
+  assert.equal(viewed.status, 200);
+  assert.equal((await findItem()).reviewPending, false);
+
+  // A newer request (later requestedAt) re-surfaces it.
+  db.setSnapshot(proj.id, { prs: [{ ...pr, requestedAt: new Date().toISOString() }], lastSynced: new Date().toISOString(), error: null });
+  assert.equal((await findItem()).reviewPending, true);
+
+  // Missing requestedAt → pending (never silently drop a request).
+  db.setSnapshot(proj.id, { prs: [{ ...pr, requestedAt: undefined }], lastSynced: new Date().toISOString(), error: null });
+  // Stored requested_at (t0, from setReviewRequestedAt? none here) — none was set via the
+  // poller, so the fallback is the live state's requested_at (null) → pending.
+  assert.equal((await findItem()).reviewPending, true);
+
+  await send('DELETE', `/api/projects/${proj.id}`);
+});
+
+test('POST /api/prs/viewed validates its body', async () => {
+  const bad = await send('POST', '/api/prs/viewed', { repo: 'o/r' });
+  assert.equal(bad.status, 400);
+});
+
 test('jira feeds serve a seeded fresh snapshot without acli', async () => {
   const poller = require('../lib/poller');
   const item = { key: 'REC-9', summary: 'S', status: 'To Do', type: 'Task', priority: 'High' };

@@ -82,7 +82,7 @@ export function ticketFilterBar(items, filters, onchangeFor, valuesByKey = {}) {
   return selects.length ? `<span class="filter-label">Filters</span>` + selects.join('') : '';
 }
 
-// Persist only the active (non-empty) dimensions, as JSON, in config.db's settings
+// Persist only the active (non-empty) dimensions, as JSON, in taskhub.db's settings
 // table (same store as tabs/theme — these are UI prefs, not source-of-truth config).
 async function persistFilters(cfgKey, filters) {
   const clean = {};

@@ -167,7 +167,7 @@ This keeps the UI responsive and keeps GitHub CLI/API usage predictable.
 | Sync engine | `lib/poller.js` | Poll projects, write snapshots, detect PR lifecycle changes, run merge automation |
 | GitHub adapter | `lib/github.js` | Wrap `gh`, parse repos, classify PRs, summarize CI |
 | Jira adapter | `lib/jira.js` | Wrap `acli` work item search, view, and transition commands |
-| Storage | `lib/db.js`, `lib/configdb.js`, `lib/datadb.js`, `lib/logdb.js` | SQLite via built-in `node:sqlite`: `config.db` (durable app data), `data.db` (volatile CLI snapshot cache), `logs.db` (rolling activity/diagnostic log). `db.js` is the facade callers require |
+| Storage | `lib/db.js`, `lib/configdb.js`, `lib/datadb.js`, `lib/logdb.js` | SQLite via built-in `node:sqlite`: `taskhub.db` (durable app data), `data.db` (volatile CLI snapshot cache), `logs.db` (rolling activity/diagnostic log). `db.js` is the facade callers require |
 | Logging | `lib/logger.js` | electron-log file transports per process; routes existing `console.*` call sites |
 | Webhook forwarder | `lib/webhook-forwarder.js` | Manage `gh webhook forward` child processes per repo |
 | Web UI | `public/index.html`, `public/js/` | No-build ES-module SPA: `index.html` holds markup + stylesheet; `store.js` holds renderer state; `views/*` render pages from it (see `CLAUDE.md` for the pattern) |
@@ -177,7 +177,7 @@ This keeps the UI responsive and keeps GitHub CLI/API usage predictable.
 ## Data Model
 
 ```js
-// project row in config.db (returned camelCase by the API)
+// project row in taskhub.db (returned camelCase by the API)
 { id, name, color, repo, workspace, jiraProjectKey, jql,
   mergeTransition, forwardWebhooks, created_at }
 
@@ -258,7 +258,7 @@ Useful notes:
 - The app targets arm64 macOS. Local builds are ad-hoc signed; releases are
   Developer ID signed and notarized — see [Releasing](#releasing--auto-update).
 - Storage is three SQLite files via built-in `node:sqlite` (no native module to
-  rebuild): `config.db` is the durable source of truth, `data.db` is a
+  rebuild): `taskhub.db` is the durable source of truth, `data.db` is a
   regenerable CLI cache (safe to delete), `logs.db` is a capped rolling log.
 - Project IDs are UUIDs. Quote them in inline HTML handlers:
   `onclick="fn('${id}')"`.

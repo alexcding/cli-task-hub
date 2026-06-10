@@ -6,6 +6,9 @@ taskhub.json
 taskhub-snapshot.json
 taskhub-jira-snapshot.json
 taskhub.db
+taskhub.db-journal
+taskhub.db-wal
+taskhub.db-shm
 config.db
 config.db-journal
 config.db-wal

@@ -43,7 +43,7 @@ npm run build:run      # package + launch the Electron tray app
 ## Files
 
 - `server.js` - routes, SSE, webhook, static serving.
-- `lib/db.js` - facade over the SQLite stores: `lib/configdb.js` (`config.db`, durable),
+- `lib/db.js` - facade over the SQLite stores: `lib/configdb.js` (`taskhub.db`, durable),
   `lib/datadb.js` (`data.db`, volatile CLI cache), `lib/logdb.js` (`logs.db`, rolling log).
 - `lib/github.js` - `gh` wrapper: `getPRs`, `parseRepo`, `summarizeCI`, `getCurrentUser`.
 - `lib/jira.js` - `acli` wrapper.
@@ -58,7 +58,7 @@ npm run build:run      # package + launch the Electron tray app
 - **One repo per project.** Project shape: `{id,name,color,repo,workspace,jiraProjectKey,jql,mergeTransition,forwardWebhooks,created_at}`.
 - **Project IDs are UUIDs.** In inline HTML `onclick`, always quote IDs: `onclick="fn('${id}')"` .
 - **Schema is `CREATE TABLE IF NOT EXISTS`** in each `lib/*db.js` — no migration framework;
-  `data.db` and `logs.db` are safe to delete (regenerable), `config.db` is not.
+  `data.db` and `logs.db` are safe to delete (regenerable), `taskhub.db` is not.
 - **CI is inline** via `gh pr list --json ...,statusCheckRollup`, collapsed by `summarizeCI`.
 - **PR `category`** (`mine`/`review`/`other`) is computed from `gh api user`.
 - **Data dir**: `TASKHUB_DATA_DIR` -> Electron `userData` -> repo root.

@@ -1,5 +1,5 @@
 // Code fonts: the terminal and the diff pane each have their own family + size pair
-// (Settings → Appearance), persisted in config.db settings like the theme.
+// (Settings → Appearance), persisted in taskhub.db settings like the theme.
 // The diff pane and the settings previews read the values from the --term-font /
 // --diff-font CSS custom properties; open terminals get them pushed into their xterm
 // options and refit. ⌘+ / ⌘− / ⌘0 (main/app-menu.js) bump the pane currently in view.
@@ -41,7 +41,7 @@ export function applyFonts(changed = null) {
 }
 
 // Coalesce rapid changes (holding ⌘+/⌘−) into one write per setting — only the final
-// value reaches config.db. Keyed by setting so term/diff family/size don't clobber.
+// value reaches taskhub.db. Keyed by setting so term/diff family/size don't clobber.
 const _persistTimers = new Map();
 function persist(key, value) {
   clearTimeout(_persistTimers.get(key));
@@ -78,7 +78,7 @@ export const zoomTarget = () =>
     : document.getElementById('page-settings')?.classList.contains('active') ? 'diff'
     : null;
 
-// Adopt the persisted values at startup (config.db is authoritative). Any terminal
+// Adopt the persisted values at startup (taskhub.db is authoritative). Any terminal
 // rehydrated before this lands is updated in place by applyFonts.
 export function syncFontsFromSettings(s = {}) {
   for (const kind of KINDS) {

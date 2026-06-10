@@ -77,6 +77,25 @@ async function fetchJSON(path) {
   });
 }
 
+// POST JSON to a local API path; resolves null on any failure (callers are best-effort,
+// like the tray recording a viewed review). Mirrors fetchJSON's never-throw contract.
+function postJSON(path, body) {
+  return new Promise((resolve) => {
+    const data = Buffer.from(JSON.stringify(body || {}));
+    const req = http.request(BASE_URL + path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Content-Length': data.length },
+    }, (res) => {
+      let buf = '';
+      res.on('data', c => buf += c);
+      res.on('end', () => { try { resolve(JSON.parse(buf)); } catch { resolve(null); } });
+    });
+    req.on('error', () => resolve(null));
+    req.write(data);
+    req.end();
+  });
+}
+
 const getServerPid = () => serverProcess?.pid || null;
 
 // Deliberate teardown on quit: stop the respawn loop and kill the child.
@@ -90,4 +109,4 @@ function shutdown() {
   }
 }
 
-module.exports = { startServer, freePort, waitForServer, fetchJSON, getServerPid, shutdown };
+module.exports = { startServer, freePort, waitForServer, fetchJSON, postJSON, getServerPid, shutdown };

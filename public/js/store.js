@@ -37,7 +37,7 @@ export const state = {
   prRatio: parseFloat(localStorage.getItem('taskhub.prRatio')) || 0.6,
 
   // Code fonts (Settings → Appearance; ⌘+/⌘− adjust the size of the pane in view).
-  // Terminal and diff pane each have their own family + size, persisted in config.db
+  // Terminal and diff pane each have their own family + size, persisted in taskhub.db
   // settings; family '' = the default stack (see codeFontStack in util.js).
   fonts: {
     term: { family: '', size: FONT_DEFAULTS.term },

@@ -76,14 +76,14 @@ app.post('/api/config', (req, res) => {
   res.json({ ok: true });
 });
 
-// ── Settings (config.db key/value — theme + ticket filter prefs) ────────────────
+// ── Settings (taskhub.db key/value — theme + ticket filter prefs) ───────────────
 app.get('/api/settings', wrap((req, res) => res.json(configdb.getAllSettings())));
 app.put('/api/settings/:key', wrap((req, res) => {
   configdb.setSetting(req.params.key, req.body.value);
   res.json({ ok: true });
 }));
 
-// ── Tabs (config.db — open viewer tabs, persisted across restarts) ──────────────
+// ── Tabs (taskhub.db — open viewer tabs, persisted across restarts) ─────────────
 // Rows, not a blob: see lib/configdb.js. The renderer PUTs its full ordered set on
 // every change; reads it back on launch to rehydrate the sidebar.
 app.get('/api/tabs', wrap((req, res) => res.json(configdb.getTabs())));
@@ -212,16 +212,35 @@ app.get('/api/projects/:id/prs', async (req, res) => {
   }
 });
 
-// Compact list with CI for the tray — read straight from snapshots.
+// Compact list with CI for the tray — read straight from snapshots. For PRs awaiting my
+// review we attach reviewPending: the tray's "Review requested" list shows a PR while its
+// latest request (requestedAt, set by the poller) is newer than when I last opened it
+// (viewedAt). Missing requestedAt → pending (never silently drop a request).
 app.get('/api/prs/tray', (req, res) => {
   const items = [];
   for (const project of db.getProjects()) {
     const snap = snapshotFor(project);
     for (const pr of snap?.prs || []) {
-      items.push({ ...pr, projectId: project.id, projectName: project.name });
+      const item = { ...pr, projectId: project.id, projectName: project.name };
+      if (pr.category === 'review') {
+        const st = db.getReviewState(`${pr.repo}#${pr.number}`);
+        item.viewedAt = st?.viewed_at || null;
+        item.requestedAt = pr.requestedAt || st?.requested_at || null;
+        item.reviewPending = !item.requestedAt || !item.viewedAt || item.requestedAt > item.viewedAt;
+      }
+      items.push(item);
     }
   }
   res.json(items);
+});
+
+// Mark a review request as opened (acknowledged) — clicked from the tray's "Review
+// requested" list. Hides it until a newer request arrives (see /api/prs/tray).
+app.post('/api/prs/viewed', (req, res) => {
+  const { repo, number } = req.body || {};
+  if (!repo || number == null) return res.status(400).json({ error: 'repo and number required' });
+  db.setReviewViewed(`${repo}#${number}`, new Date().toISOString());
+  res.json({ ok: true });
 });
 
 // Dashboard: every project with its snapshotted open PRs + freshness info.
