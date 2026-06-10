@@ -100,7 +100,7 @@ test('repo accepts owner/repo and GitHub URLs', async () => {
 
 test('tabs round-trip through /api/tabs', async () => {
   const tabs = [
-    { kind: 'github', title: 'PR #1 Fix', url: 'https://github.com/o/r/pull/1', repo: 'o/r', branch: 'fix', jiraKey: '', prSplit: false, category: 'mine' },
+    { kind: 'github', title: 'PR #1 Fix', url: 'https://github.com/o/r/pull/1', repo: 'o/r', branch: 'fix', jiraKey: '', prSplit: false, category: 'mine', login: 'octocat', avatar: 'data:image/png;base64,AAAA' },
     { kind: 'jira', title: 'REC-1 Thing', url: 'https://example.atlassian.net/browse/REC-1', jiraKey: 'REC-1' },
   ];
   const put = await send('PUT', '/api/tabs', { tabs, active: tabs[0].url });
@@ -109,6 +109,8 @@ test('tabs round-trip through /api/tabs', async () => {
   assert.equal(body.tabs.length, 2);
   assert.equal(body.tabs[0].url, tabs[0].url);
   assert.equal(body.tabs[0].category, 'mine');
+  assert.equal(body.tabs[0].login, 'octocat');
+  assert.equal(body.tabs[0].avatar, 'data:image/png;base64,AAAA');
   assert.equal(body.active, tabs[0].url);
 });
 

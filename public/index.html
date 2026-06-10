@@ -38,6 +38,14 @@
       --shadow-md: 0 4px 12px -2px rgb(16 24 40/.10),0 2px 6px -2px rgb(16 24 40/.06);
       --r: 7px; --rs: 6px; --rl: 10px;
       --sidebar-w: 220px;
+      /* Code fonts — terminal and diff pane each have their own pair (Settings →
+         Appearance). Defaults here cover the pre-JS paint; fonts.js overwrites them
+         from the persisted settings (and on ⌘+/⌘−). The terminal itself reads xterm
+         options, not these; --term-font* drive its settings preview. */
+      --term-font: "SF Mono", "SFMonoServed", Menlo, Monaco, monospace;
+      --term-font-size: 13px;
+      --diff-font: "SF Mono", "SFMonoServed", Menlo, Monaco, monospace;
+      --diff-font-size: 12px;
     }
     /* Dark theme — neutral grays anchored on the terminal background (#1e1e1e), no blue/purple
        tint. Surfaces/borders/text are pure gray; the indigo accent (same brand as light) and the
@@ -203,8 +211,20 @@
       --diff-add-bg:rgba(63,185,80,.13); --diff-add-gut:rgba(63,185,80,.28); --diff-add-fg:#56d364;
       --diff-del-bg:rgba(248,81,73,.13); --diff-del-gut:rgba(248,81,73,.28); --diff-del-fg:#f85149;
     }
-    .diff-pane { position:absolute; inset:0; overflow:auto; background:var(--bg); font:12px/1.5 "SF Mono","SFMonoServed",Menlo,Monaco,monospace; }
+    .diff-pane { position:absolute; inset:0; overflow:auto; background:var(--bg); font:var(--diff-font-size)/1.5 var(--diff-font); }
     body.pr-split .split-body .diff-pane { left:var(--pr-split, 60%); }
+    /* Discard confirm: dims + covers only the diff pane's region (same left offset as the
+       pane in split mode), so it never blocks the webview or the rest of the window. */
+    .diff-confirm { position:absolute; inset:0; z-index:20; display:flex; align-items:center; justify-content:center; padding:16px; background:rgba(0,0,0,.32); }
+    /* display:flex above overrides the UA [hidden]{display:none}, so el.hidden alone won't
+       hide it — without this the dark overlay sits on the pane permanently (cf. split-loading). */
+    .diff-confirm[hidden] { display:none; }
+    body.pr-split .split-body .diff-confirm { left:var(--pr-split, 60%); }
+    .diff-confirm-card { width:min(340px,100%); background:var(--surface); border:1px solid var(--border); border-radius:12px; box-shadow:0 12px 32px rgba(0,0,0,.22),0 2px 8px rgba(0,0,0,.10); padding:16px; }
+    .diff-confirm-msg { font-size:13px; line-height:1.5; color:var(--text); }
+    .diff-confirm-msg b { font-weight:600; word-break:break-all; }
+    .diff-confirm-sub { margin-top:6px; font-size:12px; color:var(--text-2); }
+    .diff-confirm-actions { display:flex; justify-content:flex-end; gap:8px; margin-top:16px; }
     /* View switch: a macOS-style segmented control — recessed track, raised neutral
        thumb on the active segment. Every segment shows icon + label; the thumb alone
        marks the selection (so nothing moves or resizes when switching). */
@@ -269,7 +289,9 @@
     /* separate+0 spacing (not collapse): collapsed rows share paint edges, which lets a
        row's background slice the hover frame's vertical shadow lines at each row seam. */
     .diff-table { width:100%; border-collapse:separate; border-spacing:0; border-top:1px solid var(--border); }
-    .diff-table td { padding:0 8px 0 0; border-bottom:none; vertical-align:top; }
+    /* font-size:inherit — the global `td` rule pins 13.5px, which would otherwise beat
+       the size inherited from .diff-pane and pin the code rows while headers resize. */
+    .diff-table td { padding:0 8px 0 0; border-bottom:none; vertical-align:top; font-size:inherit; }
     .dg { width:1%; min-width:34px; text-align:right; color:var(--text-3); user-select:none; padding:0 6px; }
     .dx { white-space:pre-wrap; word-break:break-all; width:100%; }
     .dm { display:inline-block; width:1ch; margin-right:4px; user-select:none; opacity:.7; }
@@ -297,6 +319,9 @@
     .diff-untracked { padding:2px 12px 2px 30px; color:var(--diff-add-fg); border-top:1px solid var(--border); }
     .split-loading { position:absolute; inset:0; z-index:2; display:flex; align-items:center; justify-content:center; background:var(--bg); color:var(--text-3); font-size:13px; gap:8px; }
     .split-loading[hidden] { display:none; }
+    /* The spinner covers the webview's page load only — in split mode confine it to the
+       webview's left --pr-split fraction so the terminal/diff pane on the right stays visible. */
+    body.pr-split .split-body .split-loading { right:auto; width:var(--pr-split, 60%); }
     /* While dragging the sidebar, disable webview pointer events so a full-width page
        doesn't swallow the mouse and the resize tracks reliably. */
     body.resizing .split-body webview { pointer-events:none; }
@@ -512,6 +537,19 @@
     .theme-opt:hover { color:var(--text); }
     .theme-opt.active { color:var(--text);border-color:var(--border); }
     .theme-opt svg { width:16px;height:16px;display:block; }
+    /* Code font rows (Settings → Appearance): family select + size stepper per pane,
+       each with a live preview driven by the same --term-font/--diff-font tokens. */
+    .font-controls { display:flex;align-items:center;gap:10px;flex-shrink:0; }
+    .font-controls select { width:180px; }
+    .font-size-ctl { display:inline-flex;align-items:center;border:1px solid var(--border);border-radius:var(--rs);overflow:hidden; }
+    .font-size-ctl button { width:28px;height:32px;border:none;background:none;color:var(--text-2);font-size:15px;line-height:1;cursor:pointer;transition:color .12s,background .12s; }
+    .font-size-ctl button:hover { color:var(--text);background:var(--surface-hover); }
+    .font-size-ctl .fs-val { min-width:48px;text-align:center;font-size:12.5px;color:var(--text-2);font-variant-numeric:tabular-nums;user-select:none; }
+    .font-preview { color:var(--text-2);white-space:pre;overflow-x:auto;border-top:1px solid var(--border); }
+    .font-preview-term { font:var(--term-font-size)/1.6 var(--term-font); }
+    .font-preview-diff { font:var(--diff-font-size)/1.6 var(--diff-font); }
+    .font-preview .fp-del { color:var(--danger); }
+    .font-preview .fp-add { color:var(--success); }
   </style>
 </head>
 <body>
@@ -621,6 +659,58 @@
                 </button>
               </div>
             </div>
+            <!-- Code fonts, one row per pane, each with a live preview. Saved on change
+                 (no Save button, like the theme); ⌘+ / ⌘− / ⌘0 adjust whichever pane
+                 is in view (diff font from a plain page, so the preview reacts). -->
+            <div class="card-pad theme-row" style="border-top:1px solid var(--border)">
+              <div>
+                <div class="theme-row-title">Terminal font</div>
+                <div class="theme-row-sub">⌘+ / ⌘− resize the pane in view, ⌘0 resets</div>
+              </div>
+              <div class="font-controls">
+                <select id="term-font-family" onchange="setFontFamily('term', this.value)" aria-label="Terminal font family">
+                  <option value="">SF Mono (default)</option>
+                  <option value="Menlo">Menlo</option>
+                  <option value="Monaco">Monaco</option>
+                  <option value="JetBrains Mono">JetBrains Mono</option>
+                  <option value="Fira Code">Fira Code</option>
+                  <option value="Source Code Pro">Source Code Pro</option>
+                  <option value="Courier New">Courier New</option>
+                </select>
+                <div class="font-size-ctl" role="group" aria-label="Terminal font size">
+                  <button onclick="bumpFontSize('term', -1)" title="Smaller (⌘−)" aria-label="Smaller">−</button>
+                  <span class="fs-val" id="term-font-size-val">13 px</span>
+                  <button onclick="bumpFontSize('term', 1)" title="Bigger (⌘+)" aria-label="Bigger">+</button>
+                </div>
+              </div>
+            </div>
+            <div class="card-pad font-preview font-preview-term">$ npm test
+✓ 26 tests passed <span class="fp-add">(834ms)</span></div>
+            <div class="card-pad theme-row" style="border-top:1px solid var(--border)">
+              <div>
+                <div class="theme-row-title">Diff font</div>
+                <div class="theme-row-sub">The Changes pane (git diff)</div>
+              </div>
+              <div class="font-controls">
+                <select id="diff-font-family" onchange="setFontFamily('diff', this.value)" aria-label="Diff font family">
+                  <option value="">SF Mono (default)</option>
+                  <option value="Menlo">Menlo</option>
+                  <option value="Monaco">Monaco</option>
+                  <option value="JetBrains Mono">JetBrains Mono</option>
+                  <option value="Fira Code">Fira Code</option>
+                  <option value="Source Code Pro">Source Code Pro</option>
+                  <option value="Courier New">Courier New</option>
+                </select>
+                <div class="font-size-ctl" role="group" aria-label="Diff font size">
+                  <button onclick="bumpFontSize('diff', -1)" title="Smaller (⌘−)" aria-label="Smaller">−</button>
+                  <span class="fs-val" id="diff-font-size-val">12 px</span>
+                  <button onclick="bumpFontSize('diff', 1)" title="Bigger (⌘+)" aria-label="Bigger">+</button>
+                </div>
+              </div>
+            </div>
+            <div class="card-pad font-preview font-preview-diff">$ git diff --stat
+<span class="fp-del">- const size = settings.fontSize ?? 12;</span>
+<span class="fp-add">+ const { family, size } = state.fonts.diff;</span></div>
           </div>
 
           <div class="card">
@@ -688,7 +778,7 @@
     <div class="split-bar">
       <!-- Webview segment (over the PR pane in split mode) -->
       <div class="bar-seg bar-wv">
-        <button class="split-btn" id="split-back" title="Back" onclick="splitBack()">
+        <button class="split-btn" id="split-back" title="Back (⌘[)" onclick="splitBack()">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
         </button>
         <button class="split-btn" title="Home (default page)" onclick="splitHome()">
@@ -702,15 +792,15 @@
            `git diff` of the same worktree (split-mode tabs only — hidden in solo terminal view). -->
       <div class="bar-seg bar-term">
         <div class="pane-switch">
-          <button class="pane-view on" id="pane-view-term" title="Terminal" onclick="setPaneView('term')">
+          <button class="pane-view on" id="pane-view-term" title="Terminal (⇧⌘D)" onclick="setPaneView('term')">
             <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 7l4 5-4 5"/><path d="M12 17h7"/></svg><span class="pv-label">Terminal</span>
           </button>
-          <button class="pane-view" id="pane-view-diff" title="Changes (git diff)" onclick="setPaneView('diff')">
+          <button class="pane-view" id="pane-view-diff" title="Changes — git diff (⇧⌘D)" onclick="setPaneView('diff')">
             <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4.5v6"/><path d="M9 7.5h6"/><path d="M9 16.5h6"/></svg><span class="pv-label">Changes</span>
           </button>
         </div>
         <span class="split-title" id="term-title"></span>
-        <button class="split-btn" id="term-clear" title="Clear terminal" onclick="clearVisibleTerm()">
+        <button class="split-btn" id="term-clear" title="Clear terminal (⌘K)" onclick="clearVisibleTerm()">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19.5 4.5l-7.3 7.3"/><path d="M12.2 11.8c-3.2-.8-6 .6-7.4 3.6L3 19.5l4.6-.9c3.3-.6 5-2.7 4.6-6.8z"/><path d="M7.5 14.5l2 2"/></svg>
         </button>
         <button class="split-btn" id="commit-btn" title="Commit changes" onclick="toggleCommitPop()">
@@ -720,7 +810,7 @@
       <!-- Right-panel toggle (terminal/changes pane) lives outside both segments so it
            stays pinned to the far right of the toolbar — its position doesn't shift
            when the split opens. -->
-      <button class="split-btn" id="split-toggle-term" title="Show/hide the right panel" onclick="togglePrSplit()">
+      <button class="split-btn" id="split-toggle-term" title="Show/hide the right panel (⌘J)" onclick="togglePrSplit()">
         <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="4.5" width="19" height="15" rx="2.5"/><path d="M14.5 4.5v15"/></svg>
       </button>
     </div>
@@ -728,6 +818,9 @@
       <div class="split-loading" id="split-loading" hidden><div class="spinner"></div> Loading…</div>
       <!-- Diff pane: shares the terminal's slot in the split; diff.js renders into it. -->
       <div class="diff-pane" id="diff-pane" style="display:none"></div>
+      <!-- Discard confirmation: an overlay scoped to the diff pane's region (not a
+           window-blocking native confirm). diff.js fills + toggles it. -->
+      <div class="diff-confirm" id="diff-confirm" hidden></div>
     </div>
     <!-- Divider is a child of .split (not .split-body) so it spans the FULL height — through
          the toolbar to the very top — matching the sidebar resizer, instead of stopping at

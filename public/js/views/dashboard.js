@@ -60,16 +60,17 @@ export async function loadDashboard() {
   document.getElementById('dashboard-groups').innerHTML = `${prHtml}<div id="dashboard-sprint"></div>`;
   renderDashboardSprint();
 
-  // Refresh each open GitHub tab's saved category from the freshly-loaded snapshot, so a
-  // PR that moved mine↔review re-groups and legacy/tray-opened tabs (saved with '') get
-  // backfilled. Persist only if something actually changed.
-  let catChanged = false;
+  // Refresh each open GitHub tab's saved category + author login from the freshly-loaded
+  // snapshot, so a PR that moved mine↔review re-groups and legacy/tray-opened tabs (saved
+  // with '') get backfilled. Persist only if something actually changed.
+  let tabChanged = false;
   for (const t of state.tabs) {
     if (t.kind !== 'github') continue;
-    const live = prByUrl(t.url)?.category;
-    if (live && live !== t.category) { t.category = live; catChanged = true; }
+    const pr = prByUrl(t.url);
+    if (pr?.category && pr.category !== t.category) { t.category = pr.category; tabChanged = true; }
+    if (pr?.author?.login && pr.author.login !== t.login) { t.login = pr.author.login; tabChanged = true; }
   }
-  if (catChanged) saveTabs();
+  if (tabChanged) saveTabs();
 
   renderTabs(); // refresh CI dots on open GitHub tabs now that PR data (with CI) is loaded
 }

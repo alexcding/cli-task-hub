@@ -33,6 +33,13 @@ contextBridge.exposeInMainWorld('taskhub', {
   // the dialog was cancelled. Used to set a project's workspace folder.
   chooseFolder: () => ipcRenderer.invoke('choose-folder'),
 
+  // Close the dashboard window — ⌘W's fallback when no tab is in view.
+  closeWindow: () => ipcRenderer.send('close-window'),
+
+  // Fetch a PR author's avatar as a base64 data URI (or null). Used to freeze the image
+  // onto a tab so it survives reloads unchanged; see freezeAvatar in viewer.js.
+  fetchAvatar: (login) => ipcRenderer.invoke('avatar:fetch', login),
+
   // Multiple independent terminals, each an OS pseudo-terminal in the main process.
   term: {
     // Spawn a login shell in `cwd`; opts.paired + opts.pairKey identify a GitHub/Jira split terminal.

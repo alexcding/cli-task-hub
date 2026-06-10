@@ -52,9 +52,18 @@ function prMenuItems(label, prs, refreshMenu) {
   return items;
 }
 
-// `tray` is the Tray instance (recolored by state); `refreshMenu` re-invokes the caller
-// so a click can rebuild the menu.
-async function buildMenu(tray, refreshMenu) {
+// The fetched menu body (tab + review sections) is cached here so the tray can build a
+// menu synchronously when it (re-)arms the context menu: refreshMenuData() renews it on
+// the 60s tick / window blur, while buildMenuNow() recomputes the usage readout fresh on
+// every build — tray.js re-arms on mouse-enter, so the figure the opened menu shows is
+// moments old, not the previous rebuild's. (A menu must stay set via setContextMenu;
+// popping one from a tray 'click' handler doesn't display on macOS — see tray.js.)
+let _body = null;
+
+// Refresh the cached menu body + tray icon color + review notifications. `tray` is the
+// Tray instance (recolored by state); `refreshMenu` re-invokes the caller so a click can
+// rebuild the data.
+async function refreshMenuData(tray, refreshMenu) {
   // The PR snapshot (/api/prs/tray) is read alongside the tabs, but only to attach CI
   // dots, fire review notifications, and color the menu-bar icon for ALL pending
   // reviews (not just opened ones). fetchJSON returns [] on error.
@@ -116,9 +125,14 @@ async function buildMenu(tray, refreshMenu) {
     ? [...reviewReqItems, { type: 'separator' }, ...tabItems]
     : [...reviewReqItems, ...tabItems];
   if (!body.length) body = [{ label: 'Nothing to review or open', enabled: false }];
+  _body = body;
+}
 
-  // Total RAM + CPU across every TaskHub process, with a per-component breakdown in the
-  // submenu. Refreshed whenever the menu rebuilds (every 60s and on window blur).
+// Build the menu to show RIGHT NOW: the cached body plus a usage readout computed at
+// this moment. Total RAM + CPU across every TaskHub process, with a per-component
+// breakdown in the submenu. computeUsage() is synchronous (getAppMetrics + a briefly
+// cached ps pass), so popping the menu stays instant.
+function buildMenuNow() {
   const usage = computeUsage();
   const usageItem = {
     label: `App Usage — CPU ${Math.round(usage.totalCPU)}% · Memory ${fmtKB(usage.totalKB)}`,
@@ -128,11 +142,11 @@ async function buildMenu(tray, refreshMenu) {
   return Menu.buildFromTemplate([
     { label: 'Open TaskHub', click: () => openWindow() },
     { type: 'separator' },
-    ...body,
+    ...(_body || [{ label: 'Loading…', enabled: false }]),
     { type: 'separator' },
     usageItem,
     { label: 'Quit', click: () => require('electron').app.quit() },
   ]);
 }
 
-module.exports = { buildMenu };
+module.exports = { refreshMenuData, buildMenuNow };

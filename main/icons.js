@@ -89,6 +89,17 @@ function fetchBytes(url) {
   });
 }
 
+// Fetch an author's avatar PNG and return it as a base64 data URI (or null on failure).
+// Lets the renderer FREEZE a tab's avatar at open time: any github.com URL always serves
+// the author's CURRENT picture, so to pin the exact image we must store the bytes. A pinned
+// tab then keeps that image even if the author later changes it; closing + reopening the PR
+// re-runs this and re-freshes. size=64 keeps the data URI to a few KB.
+async function avatarDataUrl(login) {
+  if (!login) return null;
+  const buf = await fetchBytes(`https://github.com/${encodeURIComponent(login)}.png?size=64`);
+  return buf ? `data:image/png;base64,${buf.toString('base64')}` : null;
+}
+
 // Premultiplied-alpha circular mask: fade pixels to transparent outside the radius.
 function maskCircle(bmp, size) {
   const c = (size - 1) / 2, r = size / 2;
@@ -197,4 +208,4 @@ function jiraIcon() {
   return _jiraIcon;
 }
 
-module.exports = { trayIcon, ciIcon, ciKey, avatarIcon, loadAvatar, jiraIcon };
+module.exports = { trayIcon, ciIcon, ciKey, avatarIcon, loadAvatar, avatarDataUrl, jiraIcon };

@@ -53,11 +53,7 @@ function registerIpc() {
 
   ipcMain.on('term:write',  (_e, { id, data })       => { const t = terminals.get(id); if (t) { t.hasContext = true; t.pty.write(data); } });
   ipcMain.on('term:resize', (_e, { id, cols, rows }) => { try { terminals.get(id)?.pty.resize(cols, rows); } catch {} });
-  ipcMain.handle('term:kill', (_e, { id }) => {
-    const t = terminals.get(id);
-    if (t) { try { t.pty.kill(); } catch {} terminals.delete(id); }
-    return true;
-  });
+  ipcMain.handle('term:kill', (_e, { id }) => { killTerm(id); return true; });
   // Lets the renderer rehydrate its terminal list after a reload (PTYs outlive the page).
   ipcMain.handle('term:list', () => [...terminals.entries()].map(([id, t]) => ({ id, cwd: t.cwd, title: t.title, paired: !!t.paired, pairKey: t.pairKey || '', hasContext: !!t.hasContext })));
   // Reattach to a live PTY after the window was reopened: returns the buffered backlog to
@@ -70,8 +66,30 @@ function registerIpc() {
 
 const getPids = () => [...terminals.values()].map(t => t.pty.pid).filter(Boolean);
 
-function killAll() {
-  for (const { pty: p } of terminals.values()) { try { p.kill(); } catch {} }
+// Kill a terminal's PTY and drop it from the registry. The one teardown path so every
+// removal (explicit kill, reap-on-window-close) stays in sync.
+function killTerm(id) {
+  const t = terminals.get(id);
+  if (!t) return;
+  try { t.pty.kill(); } catch {}
+  terminals.delete(id);
 }
 
-module.exports = { registerIpc, getPids, killAll };
+function killAll() {
+  for (const id of [...terminals.keys()]) killTerm(id);
+}
+
+// Reap the terminals with nothing worth preserving when the dashboard window closes:
+// PTYs deliberately outlive the window so running work survives a reopen, but a bare
+// shell prompt is dead weight until app quit. "Worth preserving" = was typed into
+// (hasContext) OR is currently running a child process (e.g. a command auto-started by
+// the shell's dotfiles, which never set hasContext since no key was pressed).
+function killEmpty() {
+  const { hasChildProcess } = require('./usage'); // lazy: usage.js requires this module
+  for (const [id, t] of terminals) {
+    if (t.hasContext || hasChildProcess(t.pty.pid)) continue;
+    killTerm(id);
+  }
+}
+
+module.exports = { registerIpc, getPids, killAll, killEmpty };

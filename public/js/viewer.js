@@ -3,7 +3,7 @@
 // live as tabs in the left nav; activating one shows it full-width here.
 import { state, activeTab, prByUrl, prTabTitle, jiraTabTitle, jiraByKey } from './store.js';
 import { api } from './api.js';
-import { esc, jiraKeyFromUrl, canSplitTerminal } from './util.js';
+import { esc, jiraKeyFromUrl, canSplitTerminal, ghAvatarSrc } from './util.js';
 import { renderTabs } from './sidebar.js';
 import { disposeTerm, visibleTerm } from './terminal.js';
 import { ensurePrTerminal, applyPrLayout, clearPrLayout } from './split.js';
@@ -42,11 +42,14 @@ export function createTab(url, title, kind, meta = {}) {
   document.getElementById('split-body').appendChild(wv);
   // repo/branch (for GitHub PRs) let the terminal map to the right project workspace +
   // worktree without depending on state.projects still holding PR data.
-  // category ('mine'|'review') is persisted like repo/branch so a GitHub tab keeps its
-  // sidebar group across restarts and even after its PR merges and leaves the snapshot —
-  // grouping never depends on state.projects still holding the PR. Live data refreshes it
-  // (see views/dashboard.js); '' until known.
-  const tab = { id, kind: kind === 'jira' ? 'jira' : 'github', title: title || url, url, wv, loaded: false, started: false, repo: meta.repo || '', branch: meta.branch || '', jiraKey: meta.jiraKey || jiraKeyFromUrl(url), prSplit: !!meta.prSplit, paneView: meta.paneView === 'diff' ? 'diff' : 'term', category: meta.category || '' };
+  // category ('mine'|'review') and login (the PR author) are persisted like repo/branch
+  // so a GitHub tab keeps its sidebar group AND its author avatar across restarts and even
+  // after its PR merges and leaves the snapshot — neither depends on state.projects still
+  // holding the PR. Live data refreshes both (see views/dashboard.js); '' until known.
+  // avatar is the author's avatar frozen as a data URI at open time (freezeAvatar): a
+  // pinned tab keeps the exact image even if the live PR vanishes or the author changes
+  // their picture. '' until fetched; falls back to the live github.com/<login>.png URL.
+  const tab = { id, kind: kind === 'jira' ? 'jira' : 'github', title: title || url, url, wv, loaded: false, started: false, repo: meta.repo || '', branch: meta.branch || '', jiraKey: meta.jiraKey || jiraKeyFromUrl(url), prSplit: !!meta.prSplit, paneView: meta.paneView === 'diff' ? 'diff' : 'term', category: meta.category || '', login: meta.login || '', avatar: meta.avatar || '' };
   wv.addEventListener('did-stop-loading', () => { tab.loaded = true; if (id === state.activeTabId) showSplitLoading(false); });
   // Keep the Back button's enabled state in sync as the user navigates within the tab.
   const onNav = () => { if (id === state.activeTabId) updateNavButtons(); };
@@ -69,7 +72,7 @@ export function saveTabs() {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      tabs: state.tabs.map(t => ({ kind: t.kind, title: t.title, url: t.url, repo: t.repo, branch: t.branch, jiraKey: t.jiraKey, prSplit: t.prSplit, paneView: t.paneView, category: t.category })),
+      tabs: state.tabs.map(t => ({ kind: t.kind, title: t.title, url: t.url, repo: t.repo, branch: t.branch, jiraKey: t.jiraKey, prSplit: t.prSplit, paneView: t.paneView, category: t.category, login: t.login, avatar: t.avatar })),
       active: active ? active.url : null,
     }),
   }).catch(() => {});
@@ -90,7 +93,7 @@ export async function restoreTabs() {
     // A tab opened from the tray may already be in state.tabs by the time restore lands —
     // skip it so we don't double-add.
     if (t && t.url && !state.tabs.some(x => x.url === t.url)) {
-      state.tabs.push(createTab(t.url, t.title, t.kind, { repo: t.repo, branch: t.branch, jiraKey: t.jiraKey, prSplit: t.prSplit, paneView: t.paneView, category: t.category }));
+      state.tabs.push(createTab(t.url, t.title, t.kind, { repo: t.repo, branch: t.branch, jiraKey: t.jiraKey, prSplit: t.prSplit, paneView: t.paneView, category: t.category, login: t.login, avatar: t.avatar }));
     }
   }
   state.tabsReady = true;
@@ -191,7 +194,8 @@ export function closeSplit() {
   saveTabs();
 }
 
-export function splitBack()  { const t = activeTab(); try { if (t && t.wv.canGoBack()) t.wv.goBack(); } catch {} }
+export function splitBack()    { const t = activeTab(); try { if (t && t.wv.canGoBack()) t.wv.goBack(); } catch {} }
+export function splitForward() { const t = activeTab(); try { if (t && t.wv.canGoForward()) t.wv.goForward(); } catch {} } // no toolbar button — ⌘] only
 export function splitHome()  { const t = activeTab(); if (t && t.wv) { t.loaded = false; showSplitLoading(true); t.wv.loadURL(t.url); } } // back to the tab's default link
 export function showSplitLoading(on) { document.getElementById('split-loading').hidden = !on; }
 // Grey out Back when the active tab has no history to go back to.
@@ -207,8 +211,10 @@ export function updateTitles() {
     const t = state.activeTermId ? null : activeTab();
     if (!t) { st.innerHTML = ''; }
     else {
-      const login = t.kind === 'github' ? prByUrl(t.url)?.author?.login : '';
-      const avatar = login ? `<img src="https://github.com/${encodeURIComponent(login)}.png?size=40" alt="" title="${esc(login)}" loading="lazy">` : '';
+      const login = t.kind === 'github' ? (prByUrl(t.url)?.author?.login || t.login) : '';
+      // Prefer the frozen data URI; fall back to the live github.com URL until it's fetched.
+      const src = ghAvatarSrc(login, t.avatar);
+      const avatar = src ? `<img src="${src}" alt="" title="${esc(login)}" loading="lazy">` : '';
       st.innerHTML = avatar + `<span class="stitle-text">${esc(t.title || '')}</span>`;
     }
   }
@@ -219,7 +225,26 @@ export function updateTitles() {
 // terminal can map to the project workspace + worktree even when projects lost their PRs).
 export function openPrSplit(url, num, repo, branch) {
   const pr = prByUrl(url);
-  openInSplit(url, pr ? prTabTitle(pr) : `PR ${num}`, 'github', { repo: repo || pr?.repo, branch: branch || pr?.headRefName, category: pr?.category });
+  const login = pr?.author?.login;
+  openInSplit(url, pr ? prTabTitle(pr) : `PR ${num}`, 'github', { repo: repo || pr?.repo, branch: branch || pr?.headRefName, category: pr?.category, login });
+  freezeAvatar(url, login);
+}
+
+// Freeze the PR author's avatar onto the tab: fetch the PNG bytes once (via main) and store
+// them as a data URI, so the tab keeps the exact image even after the live PR leaves the
+// snapshot or the author changes their picture. Only fetches on a fresh open — a restored
+// tab already carries its frozen bytes, so reopening a PR is what re-freshes the image.
+async function freezeAvatar(url, login) {
+  if (!login || !window.taskhub?.fetchAvatar) return;
+  const tab = state.tabs.find(t => t.url === url);
+  if (!tab || tab.avatar) return;            // restored/already frozen → leave it
+  const data = await window.taskhub.fetchAvatar(login).catch(() => null);
+  if (!data) return;
+  const live = state.tabs.find(t => t.url === url);   // may have closed mid-fetch
+  if (!live) return;
+  live.avatar = data;
+  saveTabs();
+  renderTabs();
 }
 
 export function jiraClick(e, url, key) {

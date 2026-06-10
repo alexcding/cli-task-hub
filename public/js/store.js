@@ -1,6 +1,12 @@
 // Central renderer state — the single place mutable app state lives. Modules read
 // and write `state` and call each other's render functions; nothing else holds
 // long-lived data. (Views are functions of this state; see views/*.)
+
+// Default code-font sizes (px). The single JS source — fonts.js imports these to seed,
+// clamp, and reset. index.html carries a matching CSS copy (--term-font-size /
+// --diff-font-size) for the pre-JS paint only; keep the two in sync if these change.
+export const FONT_DEFAULTS = { term: 13, diff: 12 };
+
 export const state = {
   // Projects + navigation
   projects: [],
@@ -29,9 +35,27 @@ export const state = {
 
   // PR ↔ terminal split fraction (PR pane share), persisted in localStorage.
   prRatio: parseFloat(localStorage.getItem('taskhub.prRatio')) || 0.6,
+
+  // Code fonts (Settings → Appearance; ⌘+/⌘− adjust the size of the pane in view).
+  // Terminal and diff pane each have their own family + size, persisted in config.db
+  // settings; family '' = the default stack (see codeFontStack in util.js).
+  fonts: {
+    term: { family: '', size: FONT_DEFAULTS.term },
+    diff: { family: '', size: FONT_DEFAULTS.diff },
+  },
 };
 
 export const activeTab = () => state.tabs.find(t => t.id === state.activeTabId) || null;
+
+// Replace the project list while keeping the live `prs` already loaded for matching
+// projects. The bare /api/projects feed (Jira/Settings/project CRUD) carries no PRs;
+// blindly assigning it would drop the PR data the sidebar reads for author avatars,
+// flickering each row back to the GitHub octicon until the next dashboard load.
+export function setProjects(list) {
+  const prevPrs = new Map(state.projects.map(p => [p.id, p.prs]));
+  state.projects = (list || []).map(p =>
+    p.prs ? p : (prevPrs.has(p.id) ? { ...p, prs: prevPrs.get(p.id) } : p));
+}
 
 // ── Lookups over loaded data ──────────────────────────────────────────────────
 // A loaded PR (with its CI status) by URL, across all project groups.

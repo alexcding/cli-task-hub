@@ -19,6 +19,19 @@ export const jiraKeyFromUrl = url => (String(url || '').match(/\/browse\/([A-Z][
 // A webview tab (GitHub PR or Jira ticket) can pair a terminal beside it.
 export const canSplitTerminal = t => !!t && (t.kind === 'github' || t.kind === 'jira');
 
+// <img> src for a PR author's avatar. GitHub serves any user's at github.com/<login>.png
+// (no API call). `frozen` is an optional data URI captured at tab-open time (freezeAvatar in
+// viewer.js) — preferred when present so the image never re-fetches or flickers. Returns ''
+// when there's no login or frozen copy, so callers fall back (octicon / nothing).
+export const ghAvatarSrc = (login, frozen = '') =>
+  frozen || (login ? `https://github.com/${encodeURIComponent(login)}.png?size=40` : '');
+
+// Shared code font (terminal + diff pane). The fallback chain prefers a system-installed
+// "SF Mono", then the copy served from /sf-mono ("SFMonoServed"), then Menlo. A chosen
+// family is prepended so missing fonts degrade to the same chain.
+export const CODE_FONT_FALLBACK = '"SF Mono", "SFMonoServed", Menlo, Monaco, monospace';
+export const codeFontStack = family => family ? `"${family}", ${CODE_FONT_FALLBACK}` : CODE_FONT_FALLBACK;
+
 export const fmtDate = s => s ? new Date(s).toLocaleDateString('en-US',{month:'short',day:'numeric'}) : '';
 export const timeAgo = s => {
   const sec = Math.max(0, Math.round((Date.now() - Date.parse(s)) / 1000));

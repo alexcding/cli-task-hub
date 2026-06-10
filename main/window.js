@@ -2,6 +2,7 @@
 const { BrowserWindow, shell, ipcMain, dialog, nativeTheme } = require('electron');
 const path = require('path');
 const { BASE_URL } = require('./const');
+const { avatarDataUrl } = require('./icons');
 
 let win = null;
 
@@ -9,9 +10,13 @@ const getWin = () => (win && !win.isDestroyed() ? win : null);
 
 // Main dashboard window. Hosts the SPA and lets it embed GitHub/Jira in a <webview>
 // (the header-stripping in tray.js allows framing those sites). Reused if already open.
-// `onBlur` lets the caller refresh the tray menu as focus moves to the menu bar.
+// `onBlur` lets the caller refresh the tray menu as focus moves to the menu bar;
+// `onClosed` lets it reap empty terminals (wired from tray.js, not required directly —
+// terminals.js already requires this module, so a require back would be a cycle).
 let _onBlur = null;
 const setOnBlur = fn => { _onBlur = fn; };
+let _onClosed = null;
+const setOnClosed = fn => { _onClosed = fn; };
 
 function openWindow() {
   if (win && !win.isDestroyed()) { win.show(); win.focus(); return; }
@@ -38,7 +43,7 @@ function openWindow() {
     return { action: 'allow' };
   });
   win.on('blur', () => _onBlur && _onBlur());
-  win.on('closed', () => { win = null; });
+  win.on('closed', () => { win = null; _onClosed && _onClosed(); });
 }
 
 // Push to the dashboard window if it's open; dropped otherwise (the renderer
@@ -71,6 +76,15 @@ function registerIpc() {
     nativeTheme.themeSource = value === 'light' || value === 'dark' ? value : 'system';
   });
 
+  // ⌘W with no tab in view → close the window (the renderer can't close a
+  // BrowserWindow it didn't open; see handleShortcut 'tab:close' in app.js).
+  ipcMain.on('close-window', () => getWin()?.close());
+
+  // Fetch a PR author's avatar as a data URI so the renderer can freeze it onto a tab
+  // (see freezeAvatar in viewer.js). Resolves null on any failure — the tab just falls
+  // back to the live github.com/<login>.png URL.
+  ipcMain.handle('avatar:fetch', (_e, login) => avatarDataUrl(login));
+
   ipcMain.handle('choose-folder', async () => {
     const parent = getWin() || undefined;
     const { canceled, filePaths } = await dialog.showOpenDialog(parent, {
@@ -81,4 +95,4 @@ function registerIpc() {
   });
 }
 
-module.exports = { openWindow, getWin, sendToWin, runInApp, openLinkInApp, registerIpc, setOnBlur };
+module.exports = { openWindow, getWin, sendToWin, runInApp, openLinkInApp, registerIpc, setOnBlur, setOnClosed };

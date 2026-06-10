@@ -2,6 +2,7 @@
 // with webview tabs (only one pane shown at a time); each terminal is an xterm view
 // bound to a main-process PTY by id.
 import { state, activeTab } from './store.js';
+import { codeFontStack } from './util.js';
 import { termTheme } from './theme.js';
 import { renderTabs } from './sidebar.js';
 import { ensurePanelOpen, hideAllPanes, showSplitLoading, updateNavButtons, closeSplit, activateTab as activateWebTab } from './viewer.js';
@@ -25,10 +26,9 @@ export function loadXterm() {
   return _xtReady;
 }
 
-// Font preference, in order: a system-installed "SF Mono" (family name "SF Mono"), the
-// copy served from Terminal.app ("SFMonoServed"), then Menlo. The renderer picks the
-// first available; we just await the loads so xterm measures the real glyph width.
-const _termFont = '"SF Mono", "SFMonoServed", Menlo, Monaco, monospace';
+// Await the SF Mono loads (system copy + the one served from /sf-mono) so xterm
+// measures the real glyph width. The font stack itself lives in util.js
+// (codeFontStack), shared with the diff pane and configurable in Settings.
 async function ensureTermFont() {
   if (!document.fonts) return;
   try { await Promise.all([document.fonts.load('13px "SF Mono"'), document.fonts.load('13px "SFMonoServed"')]); } catch {}
@@ -51,7 +51,7 @@ export async function attachTermView(id, dir, title, { paired = false, pairKey =
   const el = document.createElement('div');
   el.className = 'term-pane'; el.style.display = 'none'; el.style.background = th.background;
   document.getElementById('split-body').appendChild(el);
-  const term = new Terminal({ cursorBlink: true, fontSize: 13, fontFamily: _termFont,
+  const term = new Terminal({ cursorBlink: true, fontSize: state.fonts.term.size, fontFamily: codeFontStack(state.fonts.term.family),
     theme: th, scrollback: 4000, allowProposedApi: true });
   const fit = new FitAddon.FitAddon();
   term.loadAddon(fit);

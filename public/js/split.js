@@ -5,7 +5,7 @@ import { state, activeTab, projectByRepo, projectByPrUrl, projectByJiraKey } fro
 import { api } from './api.js';
 import { jiraKeyFromUrl, canSplitTerminal } from './util.js';
 import { toastErr } from './toast.js';
-import { createTermView, fitTerm, visibleTerm } from './terminal.js';
+import { createTermView, disposeTerm, fitTerm, visibleTerm } from './terminal.js';
 import { renderDiffPane, hideDiffPane } from './diff.js';
 import { saveTabs, updateTitles } from './viewer.js';
 
@@ -45,11 +45,24 @@ export function ensurePrTerminal(tab) {
     if (state.tabTermInit) { try { await state.tabTermInit; } catch {} }
     if (tab.termId && state.terms.has(tab.termId)) return tab.termId;
     const byKey = [...state.terms.entries()].find(([, t]) => t.paired && t.pairKey === tab.url);
-    if (byKey) { tab.termId = byKey[0]; return byKey[0]; }
-    const cwd = await prCwd(tab);
-    const byCwd = [...state.terms.entries()].find(([, t]) => t.paired && !t.pairKey && t.cwd === cwd);
-    if (byCwd) { byCwd[1].pairKey = tab.url; tab.termId = byCwd[0]; return byCwd[0]; }
-    tab.termId = await createTermView(cwd, null, { paired: true, pairKey: tab.url }); // title defaults to the folder/worktree name
+    if (byKey) { tab.termId = byKey[0]; }
+    else {
+      const cwd = await prCwd(tab);
+      const byCwd = [...state.terms.entries()].find(([, t]) => t.paired && !t.pairKey && t.cwd === cwd);
+      if (byCwd) { byCwd[1].pairKey = tab.url; tab.termId = byCwd[0]; }
+      else tab.termId = await createTermView(cwd, null, { paired: true, pairKey: tab.url }); // title defaults to the folder/worktree name
+    }
+    // The tab may have been closed while the awaits above were in flight (its closeTab
+    // saw termId still null). Mirror the close policy: a bare shell with no context is
+    // disposed — nothing references it and the PTY would just leak — but a terminal with
+    // context (running process / typed input) is deliberately kept alive; it stays
+    // paired by URL, so reopening the same tab re-adopts it via the byKey match above.
+    if (!state.tabs.includes(tab)) {
+      const t = state.terms.get(tab.termId);
+      if (t && !t.hasContext) disposeTerm(tab.termId);
+      tab.termId = null;
+      return null;
+    }
     return tab.termId;
   })()
     .catch(e => toastErr('Terminal failed: ' + e.message))

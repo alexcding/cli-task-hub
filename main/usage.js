@@ -46,9 +46,9 @@ function fmtKB(kb) {
 }
 
 // One `ps` pass parsed into { children: ppid->[pid], stat: pid->{kb,cpu} }, cached briefly so
-// the two tree walks in a single menu build — and rapid rebuilds (blur + the 60s tick) — don't
-// each shell out. macOS/Linux only; returns empty maps on any failure so the readout still
-// shows the Electron totals. The TTL is well under the 60s refresh, so the figure stays fresh.
+// the two tree walks in a single menu build — and rapid rebuilds (the menu is now built on
+// every tray open, plus blur + the 60s data tick) — don't each shell out. macOS/Linux only;
+// returns empty maps on any failure so the readout still shows the Electron totals.
 const PS_CACHE_MS = 3000;
 let _psCache = null, _psCacheAt = 0;
 function psSnapshot() {
@@ -91,4 +91,13 @@ function ptyTreeStats(rootPids, snap = psSnapshot()) {
   return { kb, cpu };
 }
 
-module.exports = { computeUsage, fmtKB };
+// Does `pid` have at least one child process? Used to tell a bare shell prompt
+// (disposable) from a shell running a command (worth keeping) when reaping terminals on
+// window close. Uses the same briefly-cached ps pass as the usage readout; returns false
+// if the snapshot is empty (ps failed) so reaping never spares on bad data.
+function hasChildProcess(pid) {
+  if (!pid) return false;
+  return (psSnapshot().children.get(pid) || []).length > 0;
+}
+
+module.exports = { computeUsage, fmtKB, hasChildProcess };

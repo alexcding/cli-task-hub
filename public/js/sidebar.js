@@ -1,7 +1,7 @@
 // Left sidebar: project nav, the grouped open-tab rows, drag-reorder, and the
 // right-click tab menu.
-import { state, prByUrl } from './store.js';
-import { esc } from './util.js';
+import { state, prByUrl, setProjects } from './store.js';
+import { esc, ghAvatarSrc } from './util.js';
 import { ICON, TAB_ICON } from './icons.js';
 import { ciInfo } from './views/cards.js';
 import { activateTab, closeTab, closeSplit, confirmCloseTabTerminals, closePairedTerm, saveTabs, updateTitles } from './viewer.js';
@@ -32,13 +32,18 @@ function tabsMarkup() {
     let icon;
     if (t.kind === 'github') {
       const pr = prByUrl(t.url);
-      const login = pr?.author?.login;
+      // Prefer the live author, fall back to the login persisted on the tab so the avatar
+      // survives a state.projects reload (Jira/Settings) and shows on cold start before the
+      // dashboard snapshot lands — mirrors the category fallback below. CI has no fallback:
+      // it's live-only (a persisted badge would go stale).
+      const login = pr?.author?.login || t.login;
       const { cls, label } = ciInfo(pr?.ci);
       // CI shown as a Slack-style status badge on the avatar's bottom-right corner.
       const badge = cls === 'ci-none' ? '' : `<span class="ci-badge ${cls}" title="${esc(label)}"></span>`;
-      const inner = login
-        ? `<img src="https://github.com/${encodeURIComponent(login)}.png?size=40" alt="" loading="lazy">`
-        : TAB_ICON.github;
+      // Prefer the avatar frozen onto the tab (a data URI — never re-fetches, never
+      // flickers); fall back to the live github.com URL, then the octicon.
+      const src = ghAvatarSrc(login, t.avatar);
+      const inner = src ? `<img src="${src}" alt="" loading="lazy">` : TAB_ICON.github;
       icon = `<span class="tab-ic" title="${login ? esc(login) : ''}">${inner}${badge}</span>`;
     } else {
       icon = `<span class="tab-ic">${TAB_ICON[t.kind] || ''}</span>`;
@@ -128,7 +133,7 @@ export function tabMenu(e, id) {
 
 // ── Projects sidebar nav ──────────────────────────────────────────────────────
 export function renderProjectNav(projects) {
-  state.projects = projects;
+  setProjects(projects);
   const list = projects.map(p => `
     <button class="nav-btn" data-page="project" data-project="${p.id}" onclick="showPage('project','${p.id}')">
       <span class="nav-dot" style="background:${p.color}"></span>

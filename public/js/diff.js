@@ -30,6 +30,41 @@ export const diffCwd = () => _cwd;
 export function hideDiffPane() {
   const p = pane();
   if (p) p.style.display = 'none';
+  closeConfirm(false); // a lingering discard prompt would float over the next view
+}
+
+// ── In-pane discard confirmation ─────────────────────────────────────────────────
+// Replaces window.confirm so only the diff panel is blocked, not the whole window
+// (the overlay is scoped to the pane's region in index.html). Promise resolves true on
+// confirm, false on cancel / Esc / backdrop click.
+const confirmEl = () => document.getElementById('diff-confirm');
+let _confirmResolve = null;
+
+function closeConfirm(result) {
+  const el = confirmEl();
+  if (el) { el.hidden = true; el.innerHTML = ''; }
+  const r = _confirmResolve;
+  _confirmResolve = null;
+  if (r) r(result);
+}
+
+function confirmDiscard(what, path) {
+  const el = confirmEl();
+  if (!el) return Promise.resolve(false);
+  closeConfirm(false); // never stack two prompts
+  el.innerHTML =
+    `<div class="diff-confirm-card" role="alertdialog" aria-modal="true">
+       <div class="diff-confirm-msg">Discard ${esc(what)} in <b>${esc(path)}</b>?
+         <div class="diff-confirm-sub">The file on disk is rewritten — this can't be undone.</div>
+       </div>
+       <div class="diff-confirm-actions">
+         <button class="btn btn-secondary btn-sm" data-dc="cancel">Cancel</button>
+         <button class="btn btn-danger btn-sm" data-dc="confirm">Discard</button>
+       </div>
+     </div>`;
+  el.hidden = false;
+  el.querySelector('[data-dc="confirm"]').focus();
+  return new Promise(res => { _confirmResolve = res; });
 }
 
 // Re-render after an action that changed the worktree (e.g. a commit/discard). Only
@@ -142,7 +177,7 @@ async function discardBlock(btn) {
   // "all changes" when this is the file's only block; otherwise it's one of several.
   const soleBlock = f.hunks.length === 1 && new Set(hunkBlocks(h).filter(x => x !== null)).size === 1;
   const what = !soleBlock ? 'this block' : f.status === 'added' ? 'this new file' : 'all changes';
-  if (!confirm(`Discard ${what} in "${diffPath(f)}"?\n\nThe file on disk is rewritten — this can't be undone.`)) return;
+  if (!(await confirmDiscard(what, diffPath(f)))) return;
   btn.disabled = true;
   try {
     const r = await apiJson('/api/git/discard', 'POST', { path: _cwd, patch: blockPatch(f, h, +btn.dataset.b) });
@@ -193,4 +228,17 @@ function initOnce(p) {
     frame.style.display = 'block';
   });
   p.addEventListener('mouseleave', () => { framed = null; frame.style.display = 'none'; });
+
+  // Discard-confirm overlay: button clicks resolve, a backdrop click cancels. Esc cancels
+  // in the CAPTURE phase + stops propagation so app.js's Esc handler doesn't also close the
+  // whole viewer (same approach as the commit popover).
+  const cf = confirmEl();
+  if (cf) cf.addEventListener('click', e => {
+    const btn = e.target.closest('[data-dc]');
+    if (btn) closeConfirm(btn.dataset.dc === 'confirm');
+    else if (e.target === cf) closeConfirm(false); // clicked the dimmed backdrop, not the card
+  });
+  document.addEventListener('keydown', e => {
+    if (_confirmResolve != null && e.key === 'Escape') { e.stopPropagation(); closeConfirm(false); }
+  }, true);
 }

@@ -1,6 +1,6 @@
 // Shared Jira UI: snapshot tables, ticket filters, the assigned-to-me feed, the
 // per-project Jira tab, and the status-transition menu.
-import { state } from '../store.js';
+import { state, setProjects } from '../store.js';
 import { api, apiJson } from '../api.js';
 import { esc, jiraUrl } from '../util.js';
 import { ICON } from '../icons.js';
@@ -114,7 +114,7 @@ export async function loadMyTickets() {
     // Projects fetched alongside so the per-project Jira-key scoping is current even if the
     // dashboard hasn't loaded yet this session.
     const [snap, settings, projects] = await Promise.all([api('/api/jira/mine'), api('/api/settings'), api('/api/projects')]);
-    state.projects = projects;
+    setProjects(projects);
     if (state.ticketFilters === null) state.ticketFilters = parseFilters(settings.my_ticket_filters);
     state.mineSnap = snap;
     rememberStatuses(snap.items);

@@ -1,9 +1,11 @@
 // Entry point: navigation, SSE live updates, init, and the window bridge that keeps
 // the inline on* handlers in markup working (ES modules aren't globals).
-import { state } from './store.js';
+import { state, activeTab } from './store.js';
 import { api } from './api.js';
+import { canSplitTerminal } from './util.js';
 import { ICON } from './icons.js';
 import { initTheme, setAppTheme, syncThemeFromSettings } from './theme.js';
+import { setFontFamily, bumpFontSize, resetFontSize, zoomTarget, syncFontsFromSettings } from './fonts.js';
 import { renderTabs, renderProjectNav, tabMenu, closeTabMenu, isTabMenuOpen, initSidebarResize } from './sidebar.js';
 import * as viewer from './viewer.js';
 import * as terminal from './terminal.js';
@@ -54,6 +56,58 @@ function showPage(name, projectId) {
 }
 
 // ── Keyboard ──────────────────────────────────────────────────────────────────
+// ⌘-shortcuts arrive from the native app menu (main/app-menu.js) as action names,
+// not from keydown — menu accelerators still fire when focus is inside a <webview>
+// or xterm, where this page never sees the key.
+function cycleTab(dir) {
+  const n = state.tabs.length;
+  if (!n) return;
+  const i = state.tabs.findIndex(t => t.id === state.activeTabId);
+  viewer.activateTab(state.tabs[i < 0 ? (dir > 0 ? 0 : n - 1) : (i + dir + n) % n].id);
+}
+
+function handleShortcut(action) {
+  const tab = activeTab(); // non-null only while a tab is the active view
+  switch (action) {
+    case 'nav:dashboard': showPage('dashboard'); break;
+    case 'nav:mytickets': showPage('mytickets'); break;
+    case 'nav:activity':  showPage('activity'); break;
+    case 'nav:settings':  showPage('settings'); break;
+    case 'project:new':   modal.openNewProjectModal(); break;
+    case 'nav:back':      viewer.splitBack(); break;
+    case 'nav:forward':   viewer.splitForward(); break;
+    case 'tab:next':      cycleTab(1); break;
+    case 'tab:prev':      cycleTab(-1); break;
+    // ⌘W mac semantics: close the active tab; with no tab in view, close the window.
+    case 'tab:close':
+      if (tab) viewer.closeTab(tab.id);
+      else window.taskhub?.closeWindow?.();
+      break;
+    case 'tab:closeAll':  if (state.tabs.length) viewer.closeSplit(); break;
+    case 'pane:toggleTerm': split.togglePrSplit(); break;
+    case 'pane:toggleView':
+      if (canSplitTerminal(tab) && tab.prSplit) split.setPaneView(tab.paneView === 'diff' ? 'term' : 'diff');
+      break;
+    case 'term:clear':    terminal.clearVisibleTerm(); break;
+    // ⌘+ / ⌘− / ⌘0: font size of the pane in view (terminal or diff), persisted.
+    // zoomTarget() is null when nothing zoomable is on screen → no-op.
+    case 'font:bigger':   { const z = zoomTarget(); if (z) bumpFontSize(z, 1); break; }
+    case 'font:smaller':  { const z = zoomTarget(); if (z) bumpFontSize(z, -1); break; }
+    case 'font:reset':    { const z = zoomTarget(); if (z) resetFontSize(z); break; }
+    // Reload the embedded page when a tab is in view; otherwise re-fetch the active page's data.
+    case 'view:reload':
+      if (tab && tab.started) {
+        tab.loaded = false;
+        viewer.showSplitLoading(true);
+        try { tab.wv.reload(); } catch {}
+      } else {
+        refreshActivePage();
+      }
+      break;
+  }
+}
+window.__shortcut = handleShortcut; // called by the app menu via executeJavaScript (like __openTab)
+
 document.addEventListener('keydown', e => {
   if (e.key !== 'Escape') return;
   if (isTabMenuOpen()) { closeTabMenu(); return; }   // close the tab menu first
@@ -109,7 +163,7 @@ function connectStream() {
 // Everything referenced from inline on* attributes (static markup and JS-built HTML
 // strings) must be a global. One explicit assignment keeps the list auditable.
 Object.assign(window, {
-  showPage, setAppTheme,
+  showPage, setAppTheme, setFontFamily, bumpFontSize,
   // sidebar / tabs
   activateTab: viewer.activateTab, closeTab: viewer.closeTab, tabMenu,
   openPrSplit: viewer.openPrSplit, jiraClick: viewer.jiraClick,
@@ -154,6 +208,7 @@ state.tabTermInit = (async () => {
     // config.db is authoritative (survives a localStorage clear, shared across windows);
     // re-sync the theme from it and re-apply if it differs from the pre-paint guess.
     syncThemeFromSettings(settings.theme);
+    syncFontsFromSettings(settings); // any terminal rehydrated before this lands is updated in place by applyFonts
   } catch {}
   loadDashboard(); // renderProjectNav is called inside loadDashboard
 })();
