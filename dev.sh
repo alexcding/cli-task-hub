@@ -69,6 +69,12 @@ if $APP; then
   # SERVER_PID alone orphans the worker. Tear down the whole tree, then free the
   # port as a backstop (catches workers respawned by --watch after a file change).
   cleanup() {
+    # Tear down the Electron we launched too. The app intercepts quit to stay in the tray
+    # (tray.js), so Ctrl+C / window-close would otherwise orphan it — and those leftovers
+    # pile up across dev runs until the machine bogs down. Kill the tracked PID, then sweep
+    # this project's Electron tree as a backstop (catches orphaned helpers whose parent died).
+    kill "$ELECTRON_PID" 2>/dev/null || true
+    pkill -9 -f "$ROOT/node_modules/electron" 2>/dev/null || true
     pkill -P "$SERVER_PID" 2>/dev/null || true
     kill "$SERVER_PID" 2>/dev/null || true
     lsof -ti:"$PORT" | xargs kill -9 2>/dev/null || true
@@ -94,7 +100,9 @@ if $APP; then
   fi
 
   cyan "Launching Electron app (connecting to the dev server)"
-  TASKHUB_EXTERNAL_SERVER=1 PORT="$PORT" ./node_modules/.bin/electron . || true
+  TASKHUB_EXTERNAL_SERVER=1 PORT="$PORT" ./node_modules/.bin/electron . &
+  ELECTRON_PID=$!
+  wait "$ELECTRON_PID" || true   # block here; the EXIT/INT trap (cleanup) kills server + Electron
   exit 0
 fi
 

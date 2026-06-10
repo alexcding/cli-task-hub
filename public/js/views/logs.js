@@ -30,11 +30,11 @@ function renderLogChips(cats) {
   if (key !== _logChipsKey) { // rebuild the row only when the category set actually changes
     const label = c => c === 'all' ? 'All' : c === 'event' ? 'Activity' : c[0].toUpperCase() + c.slice(1);
     document.getElementById('log-cats').innerHTML = known.map(c =>
-      `<button class="log-chip" data-cat="${c}" onclick="setLogCategory('${c}')">${label(c)}</button>`).join('');
+      `<button class="seg-tab" data-cat="${c}" onclick="setLogCategory('${c}')">${label(c)}</button>`).join('');
     _logChipsKey = key;
   }
   // Active state flips on every filter click — toggle the class instead of rebuilding.
-  document.querySelectorAll('#log-cats .log-chip').forEach(b => b.classList.toggle('active', b.dataset.cat === _logCategory));
+  document.querySelectorAll('#log-cats .seg-tab').forEach(b => b.classList.toggle('active', b.dataset.cat === _logCategory));
 }
 
 export function setLogCategory(c) { _logCategory = c; loadLogs(); }

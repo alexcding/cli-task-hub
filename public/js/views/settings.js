@@ -1,4 +1,4 @@
-// Settings page: config form + DB inspector.
+// Settings page: config form + DB inspector, grouped into horizontal tabs.
 import { state } from '../store.js';
 import { api, apiJson } from '../api.js';
 import { esc, timeAgo } from '../util.js';
@@ -19,6 +19,17 @@ export async function loadSettings() {
 
   renderDbInspector(dbinfo);
   initUsage();
+}
+
+// Horizontal tab picker — mirrors switchTab() in project.js. Panels live in
+// index.html (#settings-tab-<name>); all fields stay in the DOM regardless of the
+// active tab, so loadSettings() can populate them whether or not a panel is shown.
+export function switchSettingsTab(tab, btn) {
+  ['appearance','polling','jira','system'].forEach(t => {
+    document.getElementById(`settings-tab-${t}`)?.classList.toggle('active', t === tab);
+  });
+  btn.closest('.seg-tabs').querySelectorAll('.seg-tab').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
 }
 
 // ── Resource usage ──────────────────────────────────────────────────────────────

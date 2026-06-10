@@ -15,7 +15,7 @@ import { loadDashboard } from './views/dashboard.js';
 import { loadProjectPage, switchTab, reloadProjectPRs } from './views/project.js';
 import * as jiraView from './views/jira.js';
 import { loadLogs, setLogCategory, clearLogs } from './views/logs.js';
-import { loadSettings, saveConfig } from './views/settings.js';
+import { loadSettings, saveConfig, switchSettingsTab } from './views/settings.js';
 import * as modal from './views/modal.js';
 
 // ── Navigation ────────────────────────────────────────────────────────────────
@@ -178,7 +178,7 @@ Object.assign(window, {
   openStatusMenu: jiraView.openStatusMenu,
   switchTab, reloadProjectPRs,
   loadLogs, setLogCategory, clearLogs,
-  loadSettings, saveConfig,
+  loadSettings, saveConfig, switchSettingsTab,
   // project modal
   openNewProjectModal: modal.openNewProjectModal, openEditProjectModal: modal.openEditProjectModal,
   closeModal: modal.closeModal, saveProject: modal.saveProject,
