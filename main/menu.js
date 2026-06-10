@@ -24,7 +24,7 @@ function tabSection(label, tabs, prByUrl) {
     const title = t.title || t.url;
     const item = {
       label: menuLabel(title),
-      click: () => openLinkInApp(t.url, title, t.kind),
+      click: () => openLinkInApp(t.url, title, t.kind, t.category),
     };
     if (t.kind === 'github') { const pr = prByUrl[t.url]; item.icon = avatarIcon(pr?.author?.login, pr?.ci, pr?.reviewDecision === 'APPROVED'); }
     else if (t.kind === 'jira') { item.icon = jiraIcon(); }
@@ -48,7 +48,7 @@ function prMenuItems(label, prs, refreshMenu) {
       // until a newer request), then opens it as a tab. Await the record before rebuilding
       // so the next menu read already reflects it and the item doesn't flash back.
       click: async () => {
-        openLinkInApp(pr.url, full, 'github');
+        openLinkInApp(pr.url, full, 'github', pr.category || 'review');
         await postJSON('/api/prs/viewed', { repo: pr.repo, number: pr.number });
         refreshMenu();
       },

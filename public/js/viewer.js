@@ -260,5 +260,12 @@ export function initTrayBridge() {
   window.__getTabs = () => state.tabs.map(t => ({ id: t.id, kind: t.kind, title: t.title, url: t.url, active: t.id === state.activeTabId }));
   window.__activateTabByUrl = url => { const t = state.tabs.find(x => x.url === url); if (t) { ensurePanelOpen(); activateTab(t.id); } };
   // Open a link from the tray inside the embedded viewer (new tab, or focus if open).
-  window.__openTab = (url, title, kind) => openInSplit(url, title, kind);
+  // The tray passes the PR's category so the tab lands in the right sidebar group and
+  // keeps it across restarts; backfill an already-open tab whose saved category is stale
+  // (e.g. opened category-less before this) so it re-groups immediately.
+  window.__openTab = (url, title, kind, category) => {
+    const existing = state.tabs.find(t => t.url === url);
+    if (existing && category && existing.category !== category) { existing.category = category; saveTabs(); }
+    openInSplit(url, title, kind, { category });
+  };
 }

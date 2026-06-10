@@ -63,8 +63,11 @@ function runInApp(js) {
 }
 
 // Open `url` inside the app's embedded viewer (new tab, or focus it if already open).
-function openLinkInApp(url, title, kind) {
-  runInApp(`window.__openTab && __openTab(${JSON.stringify(url)}, ${JSON.stringify(title || '')}, ${JSON.stringify(kind || 'github')})`);
+// `category` ('mine'|'review') is passed so a tray-opened PR tab lands in the right
+// sidebar group and keeps it across restarts — without it the renderer saves category=''
+// and the tab falls under "Mine" until a dashboard visit backfills it (see __openTab).
+function openLinkInApp(url, title, kind, category) {
+  runInApp(`window.__openTab && __openTab(${JSON.stringify(url)}, ${JSON.stringify(title || '')}, ${JSON.stringify(kind || 'github')}, ${JSON.stringify(category || '')})`);
 }
 
 // Drive the app's native appearance from the dashboard's theme toggle so native chrome

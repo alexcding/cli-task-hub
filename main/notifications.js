@@ -36,7 +36,7 @@ function notifyReviewRequested(pr) {
   if (!Notification.isSupported()) return;
   const full = `PR #${pr.number} ${pr.title}`;
   const n = new Notification({ title: 'Review requested', body: full });
-  n.on('click', () => openLinkInApp(pr.url, full, 'github'));
+  n.on('click', () => openLinkInApp(pr.url, full, 'github', pr.category || 'review'));
   n.show();
 }
 
