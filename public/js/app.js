@@ -5,7 +5,7 @@ import { api } from './api.js';
 import { canSplitTerminal } from './util.js';
 import { ICON } from './icons.js';
 import { initTheme, setAppTheme, syncThemeFromSettings } from './theme.js';
-import { setFontFamily, bumpFontSize, resetFontSize, zoomTarget, syncFontsFromSettings } from './fonts.js';
+import { setFontFamily, bumpFontSize, resetFontSize, zoomTarget, syncFontsFromSettings, populateFontMenus } from './fonts.js';
 import { renderTabs, renderProjectNav, tabMenu, closeTabMenu, isTabMenuOpen, initSidebarResize } from './sidebar.js';
 import * as viewer from './viewer.js';
 import * as terminal from './terminal.js';
@@ -52,6 +52,7 @@ function showPage(name, projectId) {
   } else if (name === 'settings') {
     document.getElementById('page-title').textContent = 'Settings';
     loadSettings();
+    populateFontMenus(); // a settings visit is a user gesture — a chance to upgrade to the full list if the permission was deferred
   }
 }
 
@@ -210,5 +211,6 @@ state.tabTermInit = (async () => {
     syncThemeFromSettings(settings.theme);
     syncFontsFromSettings(settings); // any terminal rehydrated before this lands is updated in place by applyFonts
   } catch {}
+  populateFontMenus(); // fill the font pickers from this machine's installed fonts (replaces the static fallback)
   loadDashboard(); // renderProjectNav is called inside loadDashboard
 })();

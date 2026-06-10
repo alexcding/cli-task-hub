@@ -51,8 +51,11 @@ export async function attachTermView(id, dir, title, { paired = false, pairKey =
   const el = document.createElement('div');
   el.className = 'term-pane'; el.style.display = 'none'; el.style.background = th.background;
   document.getElementById('split-body').appendChild(el);
+  // fontWeight 500 (vs the default 400): the WebGL renderer rasterizes glyphs with grayscale AA
+  // and no stem-darkening, so SF Mono comes out noticeably thin on macOS — a medium weight
+  // restores the heft the native font-smoothing would otherwise give.
   const term = new Terminal({ cursorBlink: true, fontSize: state.fonts.term.size, fontFamily: codeFontStack(state.fonts.term.family),
-    theme: th, scrollback: 4000, allowProposedApi: true });
+    fontWeight: '500', fontWeightBold: '700', theme: th, scrollback: 4000, allowProposedApi: true });
   const fit = new FitAddon.FitAddon();
   term.loadAddon(fit);
   term.open(el);

@@ -1,5 +1,5 @@
 // Owns the dashboard BrowserWindow and the renderer-facing helpers around it.
-const { BrowserWindow, shell, ipcMain, dialog, nativeTheme } = require('electron');
+const { BrowserWindow, shell, ipcMain, dialog, nativeTheme, session } = require('electron');
 const path = require('path');
 const { BASE_URL } = require('./const');
 const { avatarDataUrl } = require('./icons');
@@ -75,6 +75,13 @@ function openLinkInApp(url, title, kind, category) {
 // the OS. Without this they'd track the system appearance even when the user forces a theme.
 // Plus the native folder picker for choosing a project's workspace folder.
 function registerIpc() {
+  // The Settings font picker enumerates installed fonts with queryLocalFonts() (Local Font
+  // Access API), which is gated behind the 'local-fonts' permission. Grant it, and otherwise
+  // keep Electron's allow-by-default so the embedded GitHub/Jira webviews — which share this
+  // default session (see viewer.js, deliberately no partition) — aren't restricted.
+  session.defaultSession.setPermissionRequestHandler((_wc, _permission, cb) => cb(true));
+  session.defaultSession.setPermissionCheckHandler(() => true);
+
   ipcMain.on('set-native-theme', (_e, value) => {
     nativeTheme.themeSource = value === 'light' || value === 'dark' ? value : 'system';
   });

@@ -190,6 +190,10 @@
     /* One xterm terminal pane per worktree; only the active one is shown. */
     .term-pane { position:absolute; inset:0; overflow:hidden; background:#1e1e1e; padding:6px 4px 6px 8px; }
     .term-pane .xterm, .term-pane .xterm-viewport { height:100%; }
+    /* xterm.css forces `overflow-y:scroll` + an opaque `#000` track, giving the terminal an
+       always-visible chunky scrollbar. Every other view uses overflow:auto → the native macOS
+       overlay scrollbar that auto-hides; match that here so the terminal looks the same. */
+    .term-pane .xterm-viewport { overflow-y:auto !important; background-color:transparent !important; }
     /* PR ↔ terminal split: the PR webview takes the left `--pr-split` fraction, the
        paired terminal the rest on the right; a draggable divider sits between them. */
     body.pr-split .split-body webview { width: var(--pr-split, 60%); }
