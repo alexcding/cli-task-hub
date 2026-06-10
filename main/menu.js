@@ -3,7 +3,7 @@
 // "Review requested" master list.
 const { Menu } = require('electron');
 const { fetchJSON, postJSON } = require('./server-supervisor');
-const { openWindow, openLinkInApp } = require('./window');
+const { openWindow, openLinkInApp, quitApp } = require('./window');
 const { trayIcon, avatarIcon, loadAvatar, jiraIcon } = require('./icons');
 const { detectReviewChanges } = require('./notifications');
 
@@ -140,7 +140,7 @@ function buildMenuNow() {
     { type: 'separator' },
     ...(_body || [{ label: 'Loading…', enabled: false }]),
     { type: 'separator' },
-    { label: 'Quit', click: () => require('electron').app.quit() },
+    { label: 'Quit', click: () => quitApp() }, // the ONE sanctioned exit — see window.js
   ]);
 }
 

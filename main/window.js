@@ -8,6 +8,14 @@ let win = null;
 
 const getWin = () => (win && !win.isDestroyed() ? win : null);
 
+// TaskHub is a menu-bar app: it exits ONLY via the tray menu's Quit. Every other quit
+// trigger — ⌘Q, the app-menu's Quit, Dock → Quit, the window's close button — must keep
+// the tray (and backend/terminals) running. quitApp() marks the one sanctioned exit;
+// before-quit (in tray.js) reads isQuitting() to tell a real quit from one to intercept.
+let _quitting = false;
+const isQuitting = () => _quitting;
+const quitApp = () => { _quitting = true; require('electron').app.quit(); };
+
 // Main dashboard window. Hosts the SPA and lets it embed GitHub/Jira in a <webview>
 // (the header-stripping in tray.js allows framing those sites). Reused if already open.
 // `onBlur` lets the caller refresh the tray menu as focus moves to the menu bar;
@@ -110,4 +118,4 @@ function registerIpc() {
   });
 }
 
-module.exports = { openWindow, getWin, sendToWin, runInApp, openLinkInApp, registerIpc, setOnBlur, setOnClosed };
+module.exports = { openWindow, getWin, sendToWin, runInApp, openLinkInApp, registerIpc, setOnBlur, setOnClosed, isQuitting, quitApp };

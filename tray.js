@@ -133,13 +133,25 @@ app.whenReady().then(async () => {
 });
 
 app.on('window-all-closed', () => {
-  // Keep running without windows
+  // Intentionally empty: TaskHub is a menu-bar app, so closing the dashboard window
+  // must NOT quit it. The tray (and its backend/terminals) keep running; reopen the
+  // window from the tray's "Open TaskHub" or the Dock icon (app.on('activate')). Do not
+  // add app.quit() here — that would make a window close kill the whole app.
 });
 
 // Clicking the Dock icon (with no window open) reopens the dashboard — standard macOS.
 app.on('activate', () => win.openWindow());
 
-app.on('before-quit', () => {
+app.on('before-quit', (e) => {
+  // The tray menu's Quit (quitApp) is the ONLY sanctioned exit. Any other quit trigger —
+  // ⌘Q, the app-menu's Quit, Dock → Quit, even an OS-issued quit — fires before-quit too,
+  // but for a menu-bar app those should just close the window and leave the tray running.
+  // So unless this quit came from quitApp(), cancel it and close the window instead.
+  if (!win.isQuitting()) {
+    e.preventDefault();
+    win.getWin()?.close();
+    return;
+  }
   supervisor.shutdown(); // stop the respawn loop + kill the backend child
   terminals.killAll();
 });
