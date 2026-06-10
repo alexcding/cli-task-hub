@@ -6,6 +6,7 @@ import { api } from './api.js';
 import { jiraKeyFromUrl, canSplitTerminal } from './util.js';
 import { toastErr } from './toast.js';
 import { createTermView, fitTerm, visibleTerm } from './terminal.js';
+import { renderDiffPane, hideDiffPane } from './diff.js';
 import { saveTabs, updateTitles } from './viewer.js';
 
 // Where a tab's terminal should start. GitHub PR: the worktree at the PR's branch, else
@@ -77,6 +78,20 @@ function tweenPrSplit(toPct, onDone) {
   _prAnimRaf = requestAnimationFrame(tick);
 }
 
+// Show the tab's pane content per its paneView: the paired terminal (default) or the
+// diff view of the same worktree. Also syncs the toolbar — the view-switch buttons'
+// active state and the body.pane-diff class that swaps the clear/refresh buttons.
+function showPaneContent(tab, t) {
+  const diff = tab.paneView === 'diff';
+  document.body.classList.toggle('pane-diff', diff);
+  document.getElementById('pane-view-term')?.classList.toggle('on', !diff);
+  document.getElementById('pane-view-diff')?.classList.toggle('on', diff);
+  t.el.style.display = diff ? 'none' : '';
+  if (diff) renderDiffPane(t.cwd);
+  else hideDiffPane();
+  return diff;
+}
+
 // Show the PR's paired terminal beside its webview. When `animate` is set (toolbar toggle) the
 // split expands open from the right; otherwise (switching to an already-split tab) it appears
 // at the resting boundary immediately.
@@ -85,23 +100,42 @@ export function applyPrLayout(tab, animate = false) {
   if (!t) return;
   const target = Math.round(state.prRatio * 100);
   document.body.classList.add('pr-split');
-  t.el.style.display = '';
+  const diff = showPaneContent(tab, t);
   if (animate) {
     document.documentElement.style.setProperty('--pr-split', target + '%'); // park at final geometry…
-    fitTerm(t);                                                             // …so the grid sizes correctly now
+    if (!diff) fitTerm(t);                                                  // …so the grid sizes correctly now
     document.documentElement.style.setProperty('--pr-split', '100%');        // …then start fully collapsed
-    tweenPrSplit(target, () => { if (state.activeTabId === tab.id && tab.prSplit) fitTerm(t); });
+    tweenPrSplit(target, () => { if (state.activeTabId === tab.id && tab.prSplit && tab.paneView !== 'diff') fitTerm(t); });
   } else {
     document.documentElement.style.setProperty('--pr-split', target + '%');
-    fitTerm(t);
+    if (!diff) fitTerm(t);
   }
   updateTitles(); // terminal segment now has a terminal to name
+}
+
+// Toolbar view switch: show the terminal or the worktree diff in THIS tab's pane
+// (persisted per tab, like prSplit). The PTY keeps running underneath the diff view,
+// so flipping back is instant and loses nothing.
+export function setPaneView(view) {
+  const tab = activeTab();
+  if (!canSplitTerminal(tab) || !tab.prSplit) return;
+  const next = view === 'diff' ? 'diff' : 'term';
+  if ((tab.paneView || 'term') === next) return;
+  tab.paneView = next;
+  saveTabs();
+  const t = tab.termId && state.terms.get(tab.termId);
+  if (!t) return; // terminal still spawning — applyPrLayout will honor paneView when it lands
+  showPaneContent(tab, t);
+  if (next === 'term') { fitTerm(t); t.term.focus(); }
+  updateTitles();
 }
 
 // Collapse the split. With `tab`/`animate`, the panel shrinks the terminal to zero width (the
 // webview grows to fill) before hiding the pane; without them (e.g. a tab closed) it just drops
 // the layout class.
 export function clearPrLayout(tab = null, animate = false) {
+  hideDiffPane();
+  document.body.classList.remove('pane-diff');
   const t = animate && tab && tab.termId && state.terms.get(tab.termId);
   if (!t) { stopPrTween(); document.body.classList.remove('pr-split'); return; }
   tweenPrSplit(100, () => {                              // 100% = terminal fully collapsed off the right

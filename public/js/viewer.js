@@ -7,6 +7,7 @@ import { esc, jiraKeyFromUrl, canSplitTerminal } from './util.js';
 import { renderTabs } from './sidebar.js';
 import { disposeTerm, visibleTerm } from './terminal.js';
 import { ensurePrTerminal, applyPrLayout, clearPrLayout } from './split.js';
+import { hideDiffPane } from './diff.js';
 
 let _tabSeq = 0;
 
@@ -45,7 +46,7 @@ export function createTab(url, title, kind, meta = {}) {
   // sidebar group across restarts and even after its PR merges and leaves the snapshot —
   // grouping never depends on state.projects still holding the PR. Live data refreshes it
   // (see views/dashboard.js); '' until known.
-  const tab = { id, kind: kind === 'jira' ? 'jira' : 'github', title: title || url, url, wv, loaded: false, started: false, repo: meta.repo || '', branch: meta.branch || '', jiraKey: meta.jiraKey || jiraKeyFromUrl(url), prSplit: !!meta.prSplit, category: meta.category || '' };
+  const tab = { id, kind: kind === 'jira' ? 'jira' : 'github', title: title || url, url, wv, loaded: false, started: false, repo: meta.repo || '', branch: meta.branch || '', jiraKey: meta.jiraKey || jiraKeyFromUrl(url), prSplit: !!meta.prSplit, paneView: meta.paneView === 'diff' ? 'diff' : 'term', category: meta.category || '' };
   wv.addEventListener('did-stop-loading', () => { tab.loaded = true; if (id === state.activeTabId) showSplitLoading(false); });
   // Keep the Back button's enabled state in sync as the user navigates within the tab.
   const onNav = () => { if (id === state.activeTabId) updateNavButtons(); };
@@ -68,7 +69,7 @@ export function saveTabs() {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      tabs: state.tabs.map(t => ({ kind: t.kind, title: t.title, url: t.url, repo: t.repo, branch: t.branch, jiraKey: t.jiraKey, prSplit: t.prSplit, category: t.category })),
+      tabs: state.tabs.map(t => ({ kind: t.kind, title: t.title, url: t.url, repo: t.repo, branch: t.branch, jiraKey: t.jiraKey, prSplit: t.prSplit, paneView: t.paneView, category: t.category })),
       active: active ? active.url : null,
     }),
   }).catch(() => {});
@@ -89,7 +90,7 @@ export async function restoreTabs() {
     // A tab opened from the tray may already be in state.tabs by the time restore lands —
     // skip it so we don't double-add.
     if (t && t.url && !state.tabs.some(x => x.url === t.url)) {
-      state.tabs.push(createTab(t.url, t.title, t.kind, { repo: t.repo, branch: t.branch, jiraKey: t.jiraKey, prSplit: t.prSplit, category: t.category }));
+      state.tabs.push(createTab(t.url, t.title, t.kind, { repo: t.repo, branch: t.branch, jiraKey: t.jiraKey, prSplit: t.prSplit, paneView: t.paneView, category: t.category }));
     }
   }
   state.tabsReady = true;
@@ -133,10 +134,13 @@ export function activateTab(id) {
   saveTabs();
 }
 
-// Hide every pane in the viewer (webview tabs + terminals). The caller then shows one.
+// Hide every pane in the viewer (webview tabs + terminals + diff). The caller then
+// shows one; applyPrLayout re-adds pane-diff when the incoming tab is in diff view.
 export function hideAllPanes() {
   state.tabs.forEach(t => { if (t.wv) t.wv.style.display = 'none'; });
   for (const t of state.terms.values()) t.el.style.display = 'none';
+  hideDiffPane();
+  document.body.classList.remove('pane-diff');
 }
 
 function pairedTermHasContext(tab) {
@@ -182,7 +186,7 @@ export function closeSplit() {
   state.tabs.forEach(t => { closePairedTerm(t); t.wv?.remove(); });
   state.tabs = []; state.activeTabId = null; state.activeTermId = null;
   document.getElementById('split').hidden = true;
-  document.body.classList.remove('viewing-tab', 'viewing-term', 'pr-split'); // restore <main>
+  document.body.classList.remove('viewing-tab', 'viewing-term', 'pr-split', 'pane-diff'); // restore <main>
   renderTabs(); // clear tab rows; paired terminals were stopped above
   saveTabs();
 }
@@ -193,7 +197,9 @@ export function showSplitLoading(on) { document.getElementById('split-loading').
 // Grey out Back when the active tab has no history to go back to.
 export function updateNavButtons() { const t = activeTab(); const b = document.getElementById('split-back'); if (b) { let can = false; try { can = !!(t && t.wv && t.started && t.wv.canGoBack()); } catch {} b.disabled = !can; } }
 
-// Titles: PR/page title in the webview segment, a static "Terminal" label in the terminal segment.
+// Titles: PR/page title in the webview segment. In split mode the pane's name lives on
+// the active view-switch button (segmented control), so the segment title stays empty;
+// a solo full-width terminal (no switch visible) still gets the "Terminal" label.
 export function updateTitles() {
   const st = document.getElementById('split-title');
   const tt = document.getElementById('term-title');
@@ -206,7 +212,7 @@ export function updateTitles() {
       st.innerHTML = avatar + `<span class="stitle-text">${esc(t.title || '')}</span>`;
     }
   }
-  if (tt) tt.textContent = visibleTerm() ? 'Terminal' : '';
+  if (tt) tt.textContent = (state.activeTermId && visibleTerm()) ? 'Terminal' : '';
 }
 
 // PR card / Jira badge click handlers. repo/branch are passed from the card (so the

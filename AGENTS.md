@@ -6,8 +6,9 @@ Read `README.md` for the full picture. This file is the fast path for making cha
 
 Localhost web dashboard + macOS menu-bar app that tracks GitHub PRs and Jira tickets
 per project, shows CI status, and auto-transitions Jira tickets when a PR merges.
-Pure Node + Express + a single-file SPA + Electron tray. Data via the `gh` and `acli`
-CLIs (no API tokens). No build step for the web; Electron only for the tray.
+Pure Node + Express + a no-build ES-module SPA (`public/index.html` + `public/js/`,
+see `CLAUDE.md` for the renderer pattern) + Electron tray. Data via the `gh` and
+`acli` CLIs (no API tokens). No build step for the web; Electron only for the tray.
 
 ## The one mental model that matters
 
@@ -15,7 +16,7 @@ CLIs (no API tokens). No build step for the web; Electron only for the tray.
 
 - `lib/poller.js` is the **only** thing that calls `gh`. Every `poll_interval` (default 60s)
   it fetches each project's PRs once and writes a **lean snapshot** to
-  `taskhub-snapshot.json` (via `lib/db.js`).
+  `data.db` (via `lib/db.js`).
 - Every API endpoint **reads the snapshot** (instant). On read, a stale snapshot (>30s)
   triggers a background sync (SWR). Never add a `gh` call to a request handler.
 - `/api/stream` (SSE) pushes `{type:'sync'}` when a snapshot changes, so open pages re-read
@@ -42,24 +43,27 @@ npm run build:run      # package + launch the Electron tray app
 ## Files
 
 - `server.js` - routes, SSE, webhook, static serving.
-- `lib/db.js` - JSON store (`taskhub.json`) + snapshot sidecar (`taskhub-snapshot.json`).
+- `lib/db.js` - facade over the SQLite stores: `lib/configdb.js` (`config.db`, durable),
+  `lib/datadb.js` (`data.db`, volatile CLI cache), `lib/logdb.js` (`logs.db`, rolling log).
 - `lib/github.js` - `gh` wrapper: `getPRs`, `parseRepo`, `summarizeCI`, `getCurrentUser`.
 - `lib/jira.js` - `acli` wrapper.
 - `lib/poller.js` - sync engine + merge automation + lifecycle events.
 - `lib/webhook-forwarder.js` - `gh webhook forward` child processes.
-- `public/index.html` - the whole SPA.
-- `tray.js` - Electron menu bar.
+- `public/index.html` - SPA markup + stylesheet; `public/js/` - renderer modules (see `CLAUDE.md`).
+- `tray.js` + `main/` - Electron menu bar (menu, notifications, PTYs, window, updater).
 - `scripts/gen-icon.js`, `scripts/gen-tray-icon.js`, `scripts/build.js` - app/tray icon generation and packaging.
 
 ## Conventions / gotchas
 
-- **One repo per project.** Project shape: `{id,name,color,repo,jql,mergeTransition,created_at}`.
+- **One repo per project.** Project shape: `{id,name,color,repo,workspace,jiraProjectKey,jql,mergeTransition,forwardWebhooks,created_at}`.
 - **Project IDs are UUIDs.** In inline HTML `onclick`, always quote IDs: `onclick="fn('${id}')"` .
-- **No DB migrations.** Fresh `taskhub.json` = `{config:{},projects:[],links:[],events:[]}`.
+- **Schema is `CREATE TABLE IF NOT EXISTS`** in each `lib/*db.js` — no migration framework;
+  `data.db` and `logs.db` are safe to delete (regenerable), `config.db` is not.
 - **CI is inline** via `gh pr list --json ...,statusCheckRollup`, collapsed by `summarizeCI`.
 - **PR `category`** (`mine`/`review`/`other`) is computed from `gh api user`.
 - **Data dir**: `TASKHUB_DATA_DIR` -> Electron `userData` -> repo root.
-- **better-sqlite3 is incompatible with Electron 42**, so the app uses a pure JSON store.
+- **Storage is built-in `node:sqlite`** (Node 22+/Electron's Node) — no native module like
+  `better-sqlite3`, which is incompatible with the current Electron and must stay out.
 - **`acli` flags**: `workitem transition --key K --status S --yes`; use `--json` for reads.
 - **`gh webhook` extension may be missing**. Polling still catches merges. Install with:
   `gh extension install cli/gh-webhook`.

@@ -1,6 +1,12 @@
 import { state } from './store.js';
 
-export const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+// Escapes quotes too, so escaped text is safe inside double- OR single-quoted attributes.
+export const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+
+// For values embedded in a '…'-quoted JS string INSIDE an inline on* attribute: HTML
+// entities decode before the JS parses, so esc() alone can't stop a quote from ending
+// the JS literal — backslash-escape first, then esc() the result for the attribute.
+export const escJs = s => esc(String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'"));
 
 // Jira ticket link. Base is auto-detected from acli (or a settings override),
 // loaded once at startup into state.jiraBase — never hardcoded.

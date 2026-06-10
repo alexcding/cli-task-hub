@@ -16,7 +16,11 @@ const forwarder = require('./lib/webhook-forwarder');
 const PORT = parseInt(process.env.PORT || '3000', 10);
 
 const app = express();
-app.use(express.json());
+// Only /api/git/discard carries a big body (a patch); everything else keeps the
+// default 100kb cap so one route's needs don't widen the whole API's buffer ceiling.
+const jsonBig = express.json({ limit: '15mb' });
+const jsonStd = express.json();
+app.use((req, res, next) => (req.path === '/api/git/discard' ? jsonBig : jsonStd)(req, res, next));
 // Never cache static assets — this is a localhost tool; a refresh should always
 // show the latest UI (avoids "I edited the file but don't see changes").
 app.use(express.static(path.join(__dirname, 'public'), {
@@ -140,6 +144,37 @@ app.get('/api/worktree', async (req, res) => {
     ? await github.worktreeForJiraKey(String(dir), String(key))
     : await github.worktreeForBranch(String(dir), String(branch));
   res.json({ path: found || '' });
+});
+
+// Uncommitted changes in a checkout (the diff pane). Local git only — same class of
+// on-demand local exec as /api/detect-repo and /api/worktree, not a `gh` call.
+app.get('/api/diff', async (req, res) => {
+  const dir = req.query.path;
+  if (!dir) return res.status(400).json({ error: 'path required' });
+  res.json(await github.gitDiff(String(dir)));
+});
+
+// Commit/push the worktree's changes (the diff pane's commit popover). The renderer
+// always sends a message — blank input is auto-filled client-side before the request.
+app.post('/api/git/commit', async (req, res) => {
+  const { path: dir, message, includeUntracked } = req.body || {};
+  if (!dir) return res.status(400).json({ error: 'path required' });
+  if (!String(message || '').trim()) return res.status(400).json({ error: 'message required' });
+  res.json(await github.gitCommit(String(dir), String(message), includeUntracked !== false));
+});
+
+app.post('/api/git/push', async (req, res) => {
+  const dir = req.body && req.body.path;
+  if (!dir) return res.status(400).json({ error: 'path required' });
+  res.json(await github.gitPush(String(dir)));
+});
+
+// Discard one hunk from the worktree (reverse-apply a single-hunk patch the renderer
+// rebuilt from its parsed diff — see hunkPatch in public/js/diff-parse.mjs).
+app.post('/api/git/discard', async (req, res) => {
+  const { path: dir, patch } = req.body || {};
+  if (!dir || !patch) return res.status(400).json({ error: 'path and patch required' });
+  res.json(await github.gitDiscard(String(dir), String(patch)));
 });
 
 // ── Pull requests (stale-while-revalidate) ──────────────────────────────────────

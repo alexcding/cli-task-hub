@@ -8,6 +8,7 @@ import { renderTabs, renderProjectNav, tabMenu, closeTabMenu, isTabMenuOpen, ini
 import * as viewer from './viewer.js';
 import * as terminal from './terminal.js';
 import * as split from './split.js';
+import { toggleCommitPop, commitAction } from './commit.js';
 import { loadDashboard } from './views/dashboard.js';
 import { loadProjectPage, switchTab, reloadProjectPRs } from './views/project.js';
 import * as jiraView from './views/jira.js';
@@ -20,7 +21,7 @@ function showPage(name, projectId) {
   // The viewer replaces the content, so navigating to a page must hide it and bring
   // <main> back (the open tabs stay listed in the left nav).
   document.getElementById('split').hidden = true;
-  document.body.classList.remove('viewing-tab', 'viewing-term', 'pr-split');
+  document.body.classList.remove('viewing-tab', 'viewing-term', 'pr-split', 'pane-diff');
   state.activeTabId = null; state.activeTermId = null;  // terminals stay alive, just unfocused
   renderTabs();
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
@@ -43,19 +44,13 @@ function showPage(name, projectId) {
       `<button class="btn btn-secondary btn-sm" onclick="openEditProjectModal('${projectId}')">${ICON.edit} Edit</button>`;
     document.querySelectorAll('.nav-btn[data-project]').forEach(b => { if(b.dataset.project===projectId) b.classList.add('active'); });
     loadProjectPage(projectId);
+  } else if (name === 'activity') {
+    document.getElementById('page-title').textContent = 'Activity';
+    loadLogs();
   } else if (name === 'settings') {
     document.getElementById('page-title').textContent = 'Settings';
-    settingsTab('settings'); // default to the Settings tab (Activity is the other)
     loadSettings();
   }
-}
-
-// Settings page sub-tabs: 'settings' | 'activity'.
-function settingsTab(name) {
-  ['settings','activity'].forEach(t =>
-    document.getElementById('settings-tab-' + t)?.classList.toggle('active', t === name));
-  document.querySelectorAll('#settings-tabbar .tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
-  if (name === 'activity') loadLogs();
 }
 
 // ── Keyboard ──────────────────────────────────────────────────────────────────
@@ -75,6 +70,8 @@ function refreshActivePage() {
   const active = document.querySelector('.page.active')?.id;
   if (active === 'page-dashboard') {
     loadDashboard();
+  } else if (active === 'page-activity') {
+    loadLogs();
   } else if (active === 'page-mytickets') {
     jiraView.loadMyTickets();
   } else if (active === 'page-project' && state.activeProjectId) {
@@ -112,13 +109,14 @@ function connectStream() {
 // Everything referenced from inline on* attributes (static markup and JS-built HTML
 // strings) must be a global. One explicit assignment keeps the list auditable.
 Object.assign(window, {
-  showPage, settingsTab, setAppTheme,
+  showPage, setAppTheme,
   // sidebar / tabs
   activateTab: viewer.activateTab, closeTab: viewer.closeTab, tabMenu,
   openPrSplit: viewer.openPrSplit, jiraClick: viewer.jiraClick,
   // viewer toolbar
   splitBack: viewer.splitBack, splitHome: viewer.splitHome,
   togglePrSplit: split.togglePrSplit, clearVisibleTerm: terminal.clearVisibleTerm,
+  setPaneView: split.setPaneView, toggleCommitPop, commitAction,
   // views
   loadMyTickets: jiraView.loadMyTickets, setTicketFilter: jiraView.setTicketFilter,
   loadProjectJira: jiraView.loadProjectJira, setProjJiraFilter: jiraView.setProjJiraFilter,

@@ -57,7 +57,7 @@ export async function loadDashboard() {
 
   // Current Sprint (Jira) renders at the bottom, below the PR sections. It lives in
   // its own node so a status change can re-render just this section.
-  document.getElementById('dashboard-groups').innerHTML = prHtml + `<div id="dashboard-sprint"></div>`;
+  document.getElementById('dashboard-groups').innerHTML = `${prHtml}<div id="dashboard-sprint"></div>`;
   renderDashboardSprint();
 
   // Refresh each open GitHub tab's saved category from the freshly-loaded snapshot, so a

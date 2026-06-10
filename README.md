@@ -31,16 +31,18 @@ hand, TaskHub is the glue layer.
 
 - **CLI-native by design** - TaskHub reads GitHub through `gh` and Jira through
   Atlassian's `acli`, so auth stays in the tools you already use.
-- **Local-first and private** - data lives in local JSON files; the UI reads a
-  lean snapshot instead of calling hosted services on every click.
+- **Local-first and private** - data lives in local SQLite files (via Node's
+  built-in `node:sqlite`, no native deps); the UI reads a lean snapshot instead
+  of calling hosted services on every click.
 - **Built for real review flow** - your authored PRs, requested reviews, draft
   state, labels, linked Jira keys, and CI status are grouped where you need them.
 - **Menu-bar awareness** - a small tray dot tells you when you have work or
   reviews without living in a browser tab.
 - **Merge automation** - when a PR merges, linked Jira tickets can automatically
   move to the project's configured status.
-- **Hackable core** - plain Node, Express, Electron, and a single-file SPA make
-  the project easy to inspect, fork, and extend.
+- **Hackable core** - plain Node, Express, Electron, and a framework-free
+  vanilla-JS SPA (ES modules, no build step) make the project easy to inspect,
+  fork, and extend.
 
 ## What It Does
 
@@ -54,8 +56,9 @@ when linked PRs merge.
   project's JQL query.
 - **Inline CI** uses GitHub's `statusCheckRollup` through `gh`, so each PR gets a
   compact pass, fail, or running signal.
-- **Activity log** records PR lifecycle events, sync errors, Jira transitions,
-  and automation failures.
+- **Activity page** shows a day-grouped timeline of PR lifecycle events, Jira
+  transitions, sync errors, and automation failures, with diagnostic categories
+  (webhook, poller, …) one filter away.
 - **Webhook forwarding** can catch merged PRs quickly through the `gh webhook`
   extension, while the poller remains the fallback.
 - **macOS tray app** forks the local server, shows Tasks and Review items, and
@@ -103,8 +106,9 @@ For hot reload during development:
 npm run dev
 ```
 
-`npm run dev` uses `bun --watch server.js`. If you do not use Bun, `npm start`
-is enough for normal local use.
+`npm run dev` runs `./dev.sh`: it frees the port, watch-runs `server.js` with
+`bun --watch` (falling back to `node --watch` if Bun is absent), and opens the
+browser. `npm start` is enough for normal local use.
 
 ### Menu-Bar App
 
@@ -137,7 +141,7 @@ TaskHub uses a stale-while-revalidate model with a local snapshot as the single
 source of truth for UI reads.
 
 ```text
-gh / acli -> sync loop -> taskhub-snapshot.json -> API + SSE -> dashboard + tray
+gh / acli -> sync loop -> data.db (snapshot cache) -> API + SSE -> dashboard + tray
                          |
                          +-> PR lifecycle events -> Jira merge automation
 ```
@@ -147,7 +151,7 @@ data**. The poller fetches data, writes a lean snapshot, and the UI reads it.
 
 - `lib/poller.js` is the only regular `gh` caller.
 - Each project is fetched roughly once per `poll_interval` seconds.
-- Open PR snapshots are served instantly from `taskhub-snapshot.json`.
+- Open PR snapshots are served instantly from `data.db`.
 - Stale reads trigger background revalidation.
 - `/api/stream` uses Server-Sent Events to refresh open pages after sync.
 - Merge automation extracts Jira keys from PR titles, PR bodies, and manual PR
@@ -163,20 +167,23 @@ This keeps the UI responsive and keeps GitHub CLI/API usage predictable.
 | Sync engine | `lib/poller.js` | Poll projects, write snapshots, detect PR lifecycle changes, run merge automation |
 | GitHub adapter | `lib/github.js` | Wrap `gh`, parse repos, classify PRs, summarize CI |
 | Jira adapter | `lib/jira.js` | Wrap `acli` work item search, view, and transition commands |
-| Storage | `lib/db.js` | JSON config store plus snapshot sidecar |
+| Storage | `lib/db.js`, `lib/configdb.js`, `lib/datadb.js`, `lib/logdb.js` | SQLite via built-in `node:sqlite`: `config.db` (durable app data), `data.db` (volatile CLI snapshot cache), `logs.db` (rolling activity/diagnostic log). `db.js` is the facade callers require |
+| Logging | `lib/logger.js` | electron-log file transports per process; routes existing `console.*` call sites |
 | Webhook forwarder | `lib/webhook-forwarder.js` | Manage `gh webhook forward` child processes per repo |
-| Web UI | `public/index.html` | Single-file dashboard SPA |
-| Tray app | `tray.js` | Electron menu-bar app that forks the server and renders tray state |
+| Web UI | `public/index.html`, `public/js/` | No-build ES-module SPA: `index.html` holds markup + stylesheet; `store.js` holds renderer state; `views/*` render pages from it (see `CLAUDE.md` for the pattern) |
+| Tray app | `tray.js`, `main/` | Electron menu-bar app that forks the server; `main/` splits menu, notifications, terminals (PTYs), window, updater, and server supervision |
 | Build scripts | `scripts/*.js`, `build.sh`, `electron-builder.config.js` | Generate icons, package, sign, and publish the Electron app |
 
 ## Data Model
 
 ```js
-// project in taskhub.json
-{ id, name, color, repo, jql, mergeTransition, created_at }
+// project row in config.db (returned camelCase by the API)
+{ id, name, color, repo, workspace, jiraProjectKey, jql,
+  mergeTransition, forwardWebhooks, created_at }
 
-// snapshot in taskhub-snapshot.json
-{ [projectId]: { prs, lastSynced, error } }
+// snapshot row in data.db, keyed by project UUID
+// (or '@me' / '@sprint' for the global Jira feeds)
+{ prs, lastSynced, error }
 
 // lean PR consumed by UI and tray
 {
@@ -210,13 +217,22 @@ write outside the app bundle.
 | `GET` | `/api/projects/:id` | Get one project |
 | `POST` / `PUT` / `DELETE` | `/api/projects[/:id]` | Create, update, or delete projects |
 | `GET` | `/api/projects/:id/prs?state=open` | Open PRs from snapshot; merged/all are live fetches |
+| `GET` | `/api/projects/:id/jira` | Snapshotted Jira tickets for a project's JQL |
 | `GET` | `/api/prs/tray` | Compact PR list for the tray |
+| `GET` | `/api/jira/mine` / `/api/jira/sprint` | Snapshotted "assigned to me" / current-sprint feeds |
+| `GET` | `/api/jira/site` | Jira base URL (auto-detected from `acli`) |
 | `GET` | `/api/jira/search?jql=` | Jira JQL search through `acli` |
 | `GET` | `/api/jira/:key` | Jira work item details |
 | `POST` | `/api/jira/:key/transition` | Manual Jira transition |
-| `GET` | `/api/events` | Activity log |
+| `GET` | `/api/events` | Recent activity events (dashboard stats) |
+| `GET` / `POST` | `/api/logs[...]` | Activity page: query logs, list categories, clear |
+| `GET` / `PUT` | `/api/settings[/:key]` | UI settings (theme, filters) |
+| `GET` / `PUT` | `/api/tabs` | Persisted viewer tabs |
 | `GET` | `/api/db` | Settings-page DB inspector |
 | `GET` / `POST` | `/api/config` | Runtime config such as poll interval |
+| `GET` | `/api/detect-repo` / `/api/worktree` | Resolve a local checkout's repo / a ticket's worktree |
+| `GET` | `/api/diff` | Read-only `git diff` of a tab's worktree |
+| `POST` | `/api/git/commit` / `push` / `discard` | Commit pane actions on a worktree |
 | `GET` | `/api/stream` | SSE sync and reload events |
 | `POST` | `/webhook/github` | GitHub pull request webhook receiver |
 | `GET` / `POST` | `/api/forwarders[/sync]` | Webhook forwarder status and sync |
@@ -241,11 +257,13 @@ Useful notes:
   `.app`.
 - The app targets arm64 macOS. Local builds are ad-hoc signed; releases are
   Developer ID signed and notarized — see [Releasing](#releasing--auto-update).
-- The JSON store starts as `{config:{},projects:[],links:[],events:[]}`.
+- Storage is three SQLite files via built-in `node:sqlite` (no native module to
+  rebuild): `config.db` is the durable source of truth, `data.db` is a
+  regenerable CLI cache (safe to delete), `logs.db` is a capped rolling log.
 - Project IDs are UUIDs. Quote them in inline HTML handlers:
   `onclick="fn('${id}')"`.
-- `better-sqlite3` is intentionally not used because it is incompatible with the
-  current Electron setup.
+- Renderer code follows a strict view/data split — see `CLAUDE.md` before
+  touching `public/js/`.
 - If `gh webhook` is missing, install the extension with
   `gh extension install cli/gh-webhook`. Polling still catches merges without it.
 

@@ -180,6 +180,105 @@ test('GET /api/db reports counts and snapshots', async () => {
   assert.ok(body.snapshots);
 });
 
+test('GET /api/diff: validation, real repo, non-repo', async () => {
+  assert.equal((await get('/api/diff')).status, 400);
+
+  // Real temp repo: one committed file (then modified) + one untracked file.
+  const { execFileSync } = require('child_process');
+  const fs = require('fs'), path = require('path'), os = require('os');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'taskhub-diff-'));
+  const git = (...args) => execFileSync('git', ['-C', dir, ...args], { stdio: 'pipe' });
+  git('init', '-q');
+  git('config', 'user.email', 't@t'); git('config', 'user.name', 't');
+  git('config', 'commit.gpgsign', 'false'); // the host's signing setup (e.g. 1Password) would block for seconds
+  fs.writeFileSync(path.join(dir, 'a.txt'), 'one\ntwo\n');
+  git('add', '.'); git('commit', '-qm', 'init');
+  fs.writeFileSync(path.join(dir, 'a.txt'), 'one\nTWO\n');
+  fs.writeFileSync(path.join(dir, 'new.txt'), 'hi\n');
+
+  const { status, body } = await get('/api/diff?path=' + encodeURIComponent(dir));
+  assert.equal(status, 200);
+  assert.match(body.diff, /^diff --git a\/a\.txt b\/a\.txt/m);
+  assert.match(body.diff, /\+TWO/);
+  assert.deepEqual(body.untracked, ['new.txt']);
+
+  // A non-repo path reports an error instead of throwing.
+  const plain = fs.mkdtempSync(path.join(os.tmpdir(), 'taskhub-plain-'));
+  const bad = await get('/api/diff?path=' + encodeURIComponent(plain));
+  assert.equal(bad.status, 200);
+  assert.ok(bad.body.error);
+});
+
+test('POST /api/git/commit and /api/git/push', async () => {
+  assert.equal((await send('POST', '/api/git/commit', {})).status, 400);
+  assert.equal((await send('POST', '/api/git/commit', { path: '/tmp', message: ' ' })).status, 400);
+  assert.equal((await send('POST', '/api/git/push', {})).status, 400);
+
+  const { execFileSync } = require('child_process');
+  const fs = require('fs'), path = require('path'), os = require('os');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'taskhub-commit-'));
+  const git = (...args) => execFileSync('git', ['-C', dir, ...args], { stdio: 'pipe' }).toString();
+  git('init', '-q');
+  git('config', 'user.email', 't@t'); git('config', 'user.name', 't');
+  git('config', 'commit.gpgsign', 'false');
+  fs.writeFileSync(path.join(dir, 'a.txt'), 'one\n');
+  git('add', '.'); git('commit', '-qm', 'init');
+  fs.writeFileSync(path.join(dir, 'a.txt'), 'ONE\n');
+  fs.writeFileSync(path.join(dir, 'new.txt'), 'hi\n');
+
+  // includeUntracked:false commits the modification but leaves new.txt untracked.
+  const c1 = await send('POST', '/api/git/commit', { path: dir, message: 'tracked only', includeUntracked: false });
+  assert.equal(c1.status, 200);
+  assert.ok(c1.body.ok, JSON.stringify(c1.body));
+  assert.match(c1.body.hash, /^[0-9a-f]{4,}$/);
+  let d = (await get('/api/diff?path=' + encodeURIComponent(dir))).body;
+  assert.equal(d.diff, '');
+  assert.deepEqual(d.untracked, ['new.txt']);
+  assert.ok(d.branch); // gitMeta rides along on the diff response
+
+  // Nothing tracked left to commit → git's own error comes through.
+  const c2 = await send('POST', '/api/git/commit', { path: dir, message: 'x', includeUntracked: false });
+  assert.ok(c2.body.error);
+
+  // includeUntracked:true sweeps new.txt in.
+  const c3 = await send('POST', '/api/git/commit', { path: dir, message: 'untracked too' });
+  assert.ok(c3.body.ok, JSON.stringify(c3.body));
+  d = (await get('/api/diff?path=' + encodeURIComponent(dir))).body;
+  assert.deepEqual(d.untracked, []);
+  assert.equal(git('log', '--format=%s', '-1').trim(), 'untracked too');
+
+  // No remote configured → push reports an error instead of throwing.
+  const p = await send('POST', '/api/git/push', { path: dir });
+  assert.equal(p.status, 200);
+  assert.ok(p.body.error);
+
+  // Discard: end-to-end through the renderer's own patch reconstruction — modify the
+  // file, parse the served diff, reverse-apply one block, and the change is gone.
+  const { parseDiff, blockPatch } = await import('../public/js/diff-parse.mjs');
+  fs.writeFileSync(path.join(dir, 'a.txt'), 'WRONG\n');
+  const before = (await get('/api/diff?path=' + encodeURIComponent(dir))).body;
+  const [f] = parseDiff(before.diff);
+  const d1 = await send('POST', '/api/git/discard', { path: dir, patch: blockPatch(f, f.hunks[0], 0) });
+  assert.ok(d1.body.ok, JSON.stringify(d1.body));
+  assert.equal(fs.readFileSync(path.join(dir, 'a.txt'), 'utf8'), 'ONE\n'); // back to committed content
+  // Re-sending the same (now stale) patch fails cleanly instead of corrupting the file.
+  const d2 = await send('POST', '/api/git/discard', { path: dir, patch: blockPatch(f, f.hunks[0], 0) });
+  assert.ok(d2.body.error);
+  assert.equal((await send('POST', '/api/git/discard', { path: dir })).status, 400);
+
+  // Two blocks sharing one hunk (edits 5 context lines apart — beyond the merge gap,
+  // within git's hunk-merge distance): discarding block 0 must leave block 1 untouched.
+  fs.writeFileSync(path.join(dir, 'b.txt'), 'one\ntwo\nthree\nfour\nfive\nsix\nseven\neight\n');
+  git('add', '.'); git('commit', '-qm', 'base for blocks');
+  fs.writeFileSync(path.join(dir, 'b.txt'), 'ONE\ntwo\nthree\nfour\nfive\nsix\nSEVEN\neight\n');
+  const multi = (await get('/api/diff?path=' + encodeURIComponent(dir))).body;
+  const bf = parseDiff(multi.diff).find(x => x.newPath === 'b.txt');
+  assert.equal(bf.hunks.length, 1); // sanity: both edits really share one hunk
+  const d3 = await send('POST', '/api/git/discard', { path: dir, patch: blockPatch(bf, bf.hunks[0], 0) });
+  assert.ok(d3.body.ok, JSON.stringify(d3.body));
+  assert.equal(fs.readFileSync(path.join(dir, 'b.txt'), 'utf8'), 'one\ntwo\nthree\nfour\nfive\nsix\nSEVEN\neight\n');
+});
+
 test('webhook ignores non-merge events', async () => {
   const res = await fetch(base + '/webhook/github', {
     method: 'POST',

@@ -143,7 +143,7 @@
     /* Terminal toggle is pinned to the far right of the whole toolbar (a direct child of
        .split-bar, after both segments) so it keeps its position when the split opens.
        It's webview-only, so hide it when a terminal is the sole view. */
-    #split-toggle-term { align-self:center; margin-right:4px; }
+    #split-toggle-term { align-self:center; margin-right:12px; }
     body.viewing-term #split-toggle-term { display:none; }
     .split-btn { background:none; border:none; color:var(--text-2); cursor:pointer; padding:6px; border-radius:6px; flex-shrink:0; display:inline-flex; align-items:center; justify-content:center; }
     .split-btn:hover { background:var(--surface-hover); color:var(--text); }
@@ -191,6 +191,110 @@
     #pr-divider:hover::before { background:var(--border-focus); }
     body.pr-split #pr-divider { display:block; }
     .split-btn.on { color:var(--accent); background:var(--accent-bg); }
+
+    /* Diff pane — read-only `git diff` of the tab's worktree, switchable with the paired
+       terminal (split.js toggles body.pane-diff). Semantic add/remove colors live here
+       (not in the main palette blocks) since only the diff view uses them. */
+    :root, html[data-theme="light"] {
+      --diff-add-bg:#e6ffec; --diff-add-gut:#ccffd8; --diff-add-fg:#1a7f37;
+      --diff-del-bg:#ffebe9; --diff-del-gut:#ffd7d5; --diff-del-fg:#cf222e;
+    }
+    html[data-theme="dark"] {
+      --diff-add-bg:rgba(63,185,80,.13); --diff-add-gut:rgba(63,185,80,.28); --diff-add-fg:#56d364;
+      --diff-del-bg:rgba(248,81,73,.13); --diff-del-gut:rgba(248,81,73,.28); --diff-del-fg:#f85149;
+    }
+    .diff-pane { position:absolute; inset:0; overflow:auto; background:var(--bg); font:12px/1.5 "SF Mono","SFMonoServed",Menlo,Monaco,monospace; }
+    body.pr-split .split-body .diff-pane { left:var(--pr-split, 60%); }
+    /* View switch: a macOS-style segmented control — recessed track, raised neutral
+       thumb on the active segment. Every segment shows icon + label; the thumb alone
+       marks the selection (so nothing moves or resizes when switching). */
+    :root, html[data-theme="light"] { --seg-thumb:#ffffff; --seg-shadow:0 1px 2px rgba(0,0,0,.14), 0 0 0 .5px rgba(0,0,0,.05); }
+    html[data-theme="dark"]         { --seg-thumb:#3d3d3d; --seg-shadow:0 1px 2px rgba(0,0,0,.4); }
+    .pane-switch { display:flex; align-items:center; gap:2px; padding:2px; border-radius:7px; background:var(--surface-hover); flex-shrink:0; }
+    .pane-view { display:inline-flex; align-items:center; gap:5px; padding:3px 8px; border:none; border-radius:5px; background:none; color:var(--text-3); cursor:pointer; transition:color .12s,background .12s; }
+    .pane-view svg { display:block; }
+    .pane-view:hover { color:var(--text); }
+    .pane-view.on { background:var(--seg-thumb); color:var(--text); box-shadow:var(--seg-shadow); cursor:default; }
+    .pane-view .pv-label { font-size:12px; font-weight:600; line-height:1; }
+    /* Toolbar: clear-terminal only makes sense over a terminal, commit only over a diff;
+       the view switch itself is split-mode only (solo terminals have no tab → no diff). */
+    body.pane-diff #term-clear { display:none; }
+    body:not(.pane-diff) #commit-btn { display:none; }
+    body.viewing-term .pane-switch, body.viewing-term #commit-btn { display:none; }
+    #commit-btn { gap:5px; }
+    .cb-label { font-size:12px; font-weight:600; line-height:1; }
+    /* Commit popover — branch + counts, message, then the action list (screenshot-style). */
+    .commit-pop { position:absolute; top:56px; right:12px; width:320px; z-index:40; background:var(--surface); border:1px solid var(--border); border-radius:12px; box-shadow:0 12px 32px rgba(0,0,0,.18), 0 2px 8px rgba(0,0,0,.08); padding:10px; }
+    .cp-loading { padding:14px; color:var(--text-3); font-size:13px; text-align:center; }
+    .cp-head { display:flex; align-items:center; gap:8px; padding:4px 4px 8px; }
+    .cp-branch { display:inline-flex; align-items:center; gap:6px; min-width:0; flex:1; font-size:13px; font-weight:600; color:var(--text); }
+    .cp-branch svg { flex-shrink:0; color:var(--text-3); }
+    .cp-branch span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .cp-counts { display:flex; gap:6px; flex-shrink:0; font:600 12px "SF Mono","SFMonoServed",Menlo,monospace; }
+    #cp-msg { width:100%; box-sizing:border-box; resize:none; border:none; outline:none; background:none; color:var(--text); font:13px/1.5 -apple-system,BlinkMacSystemFont,sans-serif; padding:2px 4px; }
+    #cp-msg::placeholder { color:var(--text-3); }
+    .cp-check { display:flex; align-items:center; gap:7px; padding:6px 4px 10px; font-size:13px; color:var(--text-2); cursor:pointer; user-select:none; border-bottom:1px solid var(--border); margin-bottom:6px; }
+    .cp-check input { accent-color:var(--accent); margin:0; }
+    .cp-check:has(input:disabled) { opacity:.6; cursor:default; }
+    .cp-actions { display:flex; flex-direction:column; }
+    .cp-act { display:flex; align-items:center; gap:9px; width:100%; padding:8px; border:none; background:none; border-radius:7px; color:var(--text); font-size:13px; font-weight:500; cursor:pointer; text-align:left; }
+    .cp-act:hover:not(:disabled) { background:var(--surface-hover); }
+    .cp-act:disabled { opacity:.4; cursor:default; }
+    .cp-act svg { color:var(--text-2); flex-shrink:0; }
+    .cp-act span { flex:1; min-width:0; }
+    .cp-act kbd { font:11px "SF Mono","SFMonoServed",Menlo,monospace; color:var(--text-3); background:var(--surface-hover); border-radius:4px; padding:2px 5px; }
+    .diff-empty { height:100%; display:flex; align-items:center; justify-content:center; padding:20px; text-align:center; color:var(--text-3); font:13px -apple-system,BlinkMacSystemFont,sans-serif; }
+    .diff-root { padding:8px 10px 16px; position:relative; }
+    .diff-root .diff-empty { height:auto; padding:12px; }
+    /* No overflow:hidden on .diff-file — it would break the sticky header (an overflow
+       ancestor becomes the sticky containing block). The current file's header stays
+       pinned at the top until the next file's header pushes it away (each header is
+       sticky within its own card); .diff-body does the rounded-corner clipping instead. */
+    .diff-file { margin-top:8px; border:1px solid var(--border); border-radius:8px; background:var(--surface); }
+    .diff-file-head { display:flex; align-items:center; gap:6px; padding:6px 10px; cursor:pointer; user-select:none; font-weight:600; color:var(--text); position:sticky; top:0; background:var(--surface); z-index:1; border-radius:8px 8px 0 0; }
+    .diff-file-head:last-child, .diff-file.collapsed .diff-file-head { border-radius:8px; }
+    .diff-file-head:hover { background:var(--surface-hover); }
+    .diff-body { overflow:hidden; border-radius:0 0 8px 8px; }
+    .diff-chev { display:inline-flex; color:var(--text-3); transition:transform .12s; transform:rotate(90deg); }
+    .diff-file.collapsed .diff-chev { transform:rotate(0); }
+    .diff-file.collapsed .diff-body { display:none; }
+    .diff-badge { font-size:10px; font-weight:700; padding:0 5px; border-radius:4px; }
+    .diff-badge-added   { color:var(--diff-add-fg); background:var(--diff-add-bg); }
+    .diff-badge-deleted { color:var(--diff-del-fg); background:var(--diff-del-bg); }
+    .diff-badge-renamed { color:var(--text-2); background:var(--surface-hover); }
+    .diff-fpath { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; direction:rtl; text-align:left; }
+    .diff-counts { flex-shrink:0; display:flex; gap:6px; font-weight:600; }
+    .dc-add { color:var(--diff-add-fg); }
+    .dc-del { color:var(--diff-del-fg); }
+    /* separate+0 spacing (not collapse): collapsed rows share paint edges, which lets a
+       row's background slice the hover frame's vertical shadow lines at each row seam. */
+    .diff-table { width:100%; border-collapse:separate; border-spacing:0; border-top:1px solid var(--border); }
+    .diff-table td { padding:0 8px 0 0; border-bottom:none; vertical-align:top; }
+    .dg { width:1%; min-width:34px; text-align:right; color:var(--text-3); user-select:none; padding:0 6px; }
+    .dx { white-space:pre-wrap; word-break:break-all; width:100%; }
+    .dm { display:inline-block; width:1ch; margin-right:4px; user-select:none; opacity:.7; }
+    .diff-hunk .dx { color:var(--text-3); background:var(--surface-hover); padding:2px 8px; }
+    .diff-hunk .dg { background:var(--surface-hover); }
+    /* Discard floats over a change block's first row, revealed by hovering anywhere in
+       that block (each block is its own <tbody>) — the VS Code hover-actions pattern. */
+    .diff-line .dx { position:relative; }
+    .hunk-discard { position:absolute; right:7px; top:5px; opacity:0; pointer-events:none; padding:5px 12px; border:1px solid var(--border); border-radius:6px; background:var(--surface); color:var(--danger); font:600 12px -apple-system,BlinkMacSystemFont,sans-serif; cursor:pointer; z-index:2; box-shadow:0 1px 3px rgba(0,0,0,.12); }
+    /* Frame the hovered block (its rows + bridging context) so the discard scope is
+       visible before clicking — like VS Code's change-block border. An overlay div
+       positioned by diff.js, NOT table borders/shadows: anything drawn by the cells
+       themselves gets sliced at row seams by table background paint order. */
+    .diff-frame { position:absolute; display:none; border:1px solid var(--accent); border-radius:2px; pointer-events:none; z-index:3; }
+    .diff-block:hover .hunk-discard { opacity:1; pointer-events:auto; }
+    .hunk-discard:hover { background:var(--danger-bg); border-color:var(--danger-border); }
+    .hunk-discard:disabled { opacity:.4; cursor:default; }
+    .diff-line.add .dx { background:var(--diff-add-bg); }
+    .diff-line.add .dg { background:var(--diff-add-gut); }
+    .diff-line.del .dx { background:var(--diff-del-bg); }
+    .diff-line.del .dg { background:var(--diff-del-gut); }
+    .diff-stub { padding:10px 12px; color:var(--text-3); border-top:1px solid var(--border); font-size:12px; }
+    .diff-stub code { background:var(--surface-hover); padding:1px 5px; border-radius:4px; }
+    .diff-untracked-head { cursor:default; color:var(--text-2); }
+    .diff-untracked { padding:2px 12px 2px 30px; color:var(--diff-add-fg); border-top:1px solid var(--border); }
     .split-loading { position:absolute; inset:0; z-index:2; display:flex; align-items:center; justify-content:center; background:var(--bg); color:var(--text-3); font-size:13px; gap:8px; }
     .split-loading[hidden] { display:none; }
     /* While dragging the sidebar, disable webview pointer events so a full-width page
@@ -299,8 +403,10 @@
     th { font-size:11.5px;font-weight:600;color:var(--text-3);text-transform:uppercase;letter-spacing:.4px;padding:10px 16px;text-align:left;border-bottom:1px solid var(--border);white-space:nowrap; }
     td { padding:11px 16px;border-bottom:1px solid var(--border);font-size:13.5px;vertical-align:middle; }
     tr:last-child td { border-bottom:none; }
-    tbody tr { transition:background .1s; }
-    tbody tr:hover td { background:var(--surface-hover); }
+    /* Scoped to <main>: these are for the data tables (PRs, logs, …). The diff pane's
+       table lives in #split and must keep its own row tints — no gray hover there. */
+    main tbody tr { transition:background .1s; }
+    main tbody tr:hover td { background:var(--surface-hover); }
 
     /* Forms */
     .form-group { margin-bottom:14px; }
@@ -326,13 +432,18 @@
     a.link { color:var(--accent);text-decoration:none; }
     a.link:hover { text-decoration:underline; }
 
-    /* Events */
-    .event-row { display:flex;gap:12px;align-items:flex-start;padding:12px 20px;border-bottom:1px solid var(--border); }
-    .event-row:last-child { border-bottom:none; }
-    .event-dot { width:8px;height:8px;border-radius:50%;margin-top:5px;flex-shrink:0; }
-    .event-body { flex:1;font-size:13px; }
-    .event-type { font-size:11px;font-weight:600;color:var(--text-3);margin-bottom:1px;text-transform:uppercase;letter-spacing:.3px; }
-    .event-time { font-size:11px;color:var(--text-3);white-space:nowrap; }
+    /* Activity page — day-grouped timeline. Each row: icon bubble, sentence with
+       links (PR / ticket), category badge, exact time on the right. */
+    .act-day { font-size:12px;font-weight:700;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px;margin:20px 2px 8px; }
+    .act-day:first-child { margin-top:4px; }
+    .act-row { display:flex;align-items:flex-start;gap:12px;padding:11px 16px;border-bottom:1px solid var(--border); }
+    .act-row:last-child { border-bottom:none; }
+    .act-icon { width:28px;height:28px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;margin-top:1px; }
+    .act-icon svg { width:15px;height:15px;display:block; }
+    .act-body { flex:1;min-width:0;font-size:13.5px;line-height:1.45; }
+    .act-detail { font-size:12.5px;color:var(--text-3);margin-top:1px;overflow-wrap:break-word; }
+    .act-time { font-size:12px;color:var(--text-3);white-space:nowrap;flex-shrink:0;margin-top:4px;font-variant-numeric:tabular-nums; }
+    .act-cat { font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;padding:1px 6px;border-radius:4px;background:var(--surface-hover);color:var(--text-3);margin-left:6px;vertical-align:1px; }
 
     /* Project settings card */
     .project-settings-card { background:var(--surface);border:1px solid var(--border);border-radius:var(--rl);margin-bottom:12px; }
@@ -387,7 +498,6 @@
     .log-chip.active { background:var(--accent); border-color:var(--accent); color:#fff; }
     .log-errors { display:flex; align-items:center; gap:5px; font-size:12px; color:var(--text-2); cursor:pointer; }
     .log-errors input { width:auto; margin:0; }
-    .log-level { font-size:10.5px; font-weight:600; text-transform:uppercase; letter-spacing:.03em; padding:1px 5px; border-radius:3px; }
     .tab-panel.active { display:block; }
 
     /* Theme picker (Settings → Appearance): a label + description on the left, three labeled
@@ -418,6 +528,7 @@
       <div class="nav-label">Overview</div>
       <button class="nav-btn active" data-page="dashboard" onclick="showPage('dashboard')"><span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></span> Dashboard</button>
       <button class="nav-btn" data-page="mytickets" onclick="showPage('mytickets')"><span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.6 13.4 13.4 20.6a1.9 1.9 0 0 1-2.7 0l-7.3-7.3a2 2 0 0 1-.6-1.4V4.8A1.8 1.8 0 0 1 4.6 3h7.1a2 2 0 0 1 1.4.6l7.5 7.5a1.9 1.9 0 0 1 0 2.3z"/><circle cx="7.7" cy="7.7" r="1.3" fill="currentColor" stroke="none"/></svg></span> JIRA Tickets</button>
+      <button class="nav-btn" data-page="activity" onclick="showPage('activity')"><span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 8L9 4l-3 8H2"/></svg></span> Activity</button>
 
       <div class="nav-label" style="margin-top:4px">Projects</div>
       <div id="project-nav"></div>
@@ -473,14 +584,20 @@
         <div id="project-page-content"></div>
       </div>
 
-      <!-- SETTINGS (with Settings | Activity sub-tabs) -->
-      <div id="page-settings" class="page">
-        <div class="tabs" id="settings-tabbar">
-          <button class="tab-btn active" data-tab="settings" onclick="settingsTab('settings',this)">Settings</button>
-          <button class="tab-btn" data-tab="activity" onclick="settingsTab('activity',this)">Activity</button>
+      <!-- ACTIVITY (timeline of PR / Jira / system events) -->
+      <div id="page-activity" class="page">
+        <div style="max-width:860px">
+          <div class="log-toolbar">
+            <div id="log-cats" class="log-chips"></div>
+            <label class="log-errors"><input type="checkbox" id="log-errors-only" onchange="loadLogs()"> Errors only</label>
+            <button class="btn btn-secondary btn-sm" onclick="clearLogs()">Clear</button>
+          </div>
+          <div id="events-list"></div>
         </div>
+      </div>
 
-        <div class="tab-panel active" id="settings-tab-settings">
+      <!-- SETTINGS -->
+      <div id="page-settings" class="page">
         <div style="max-width:760px;display:flex;flex-direction:column;gap:16px">
 
           <div class="card">
@@ -561,16 +678,6 @@
           </div>
 
         </div>
-        </div><!-- /settings-tab-settings -->
-
-        <div class="tab-panel" id="settings-tab-activity">
-          <div class="log-toolbar">
-            <div id="log-cats" class="log-chips"></div>
-            <label class="log-errors"><input type="checkbox" id="log-errors-only" onchange="loadLogs()"> Errors only</label>
-            <button class="btn btn-secondary btn-sm" onclick="clearLogs()">Clear</button>
-          </div>
-          <div class="card" id="events-list"></div>
-        </div>
       </div>
 
     </div>
@@ -590,26 +697,44 @@
         <!-- Plain page title — no link, so the toolbar band stays draggable. -->
         <span class="split-title" id="split-title"></span>
       </div>
-      <!-- Terminal segment (over the terminal pane in split mode, or full-width when a terminal is the sole view) -->
+      <!-- Terminal segment (over the terminal pane in split mode, or full-width when a terminal is the sole view).
+           The view switch flips the pane between the paired terminal and a read-only
+           `git diff` of the same worktree (split-mode tabs only — hidden in solo terminal view). -->
       <div class="bar-seg bar-term">
+        <div class="pane-switch">
+          <button class="pane-view on" id="pane-view-term" title="Terminal" onclick="setPaneView('term')">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 7l4 5-4 5"/><path d="M12 17h7"/></svg><span class="pv-label">Terminal</span>
+          </button>
+          <button class="pane-view" id="pane-view-diff" title="Changes (git diff)" onclick="setPaneView('diff')">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4.5v6"/><path d="M9 7.5h6"/><path d="M9 16.5h6"/></svg><span class="pv-label">Changes</span>
+          </button>
+        </div>
         <span class="split-title" id="term-title"></span>
-        <button class="split-btn" title="Clear terminal" onclick="clearVisibleTerm()">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/><path d="M6 7l1 13h10l1-13"/></svg>
+        <button class="split-btn" id="term-clear" title="Clear terminal" onclick="clearVisibleTerm()">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19.5 4.5l-7.3 7.3"/><path d="M12.2 11.8c-3.2-.8-6 .6-7.4 3.6L3 19.5l4.6-.9c3.3-.6 5-2.7 4.6-6.8z"/><path d="M7.5 14.5l2 2"/></svg>
+        </button>
+        <button class="split-btn" id="commit-btn" title="Commit changes" onclick="toggleCommitPop()">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.5"/><path d="M2.5 12h6"/><path d="M15.5 12h6"/></svg><span class="cb-label">Commit</span>
         </button>
       </div>
-      <!-- Terminal toggle lives outside both segments so it stays pinned to the far
-           right of the toolbar — its position doesn't shift when the split opens. -->
-      <button class="split-btn" id="split-toggle-term" title="Show/hide the terminal" onclick="togglePrSplit()">
-        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="4.5" width="19" height="15" rx="2.5"/><path d="M7 10l2.5 2L7 14"/><path d="M12.5 14.5H16"/></svg>
+      <!-- Right-panel toggle (terminal/changes pane) lives outside both segments so it
+           stays pinned to the far right of the toolbar — its position doesn't shift
+           when the split opens. -->
+      <button class="split-btn" id="split-toggle-term" title="Show/hide the right panel" onclick="togglePrSplit()">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="4.5" width="19" height="15" rx="2.5"/><path d="M14.5 4.5v15"/></svg>
       </button>
     </div>
     <div class="split-body" id="split-body">
       <div class="split-loading" id="split-loading" hidden><div class="spinner"></div> Loading…</div>
+      <!-- Diff pane: shares the terminal's slot in the split; diff.js renders into it. -->
+      <div class="diff-pane" id="diff-pane" style="display:none"></div>
     </div>
     <!-- Divider is a child of .split (not .split-body) so it spans the FULL height — through
          the toolbar to the very top — matching the sidebar resizer, instead of stopping at
          the toolbar's bottom edge. -->
     <div id="pr-divider" title="Drag to resize"></div>
+    <!-- Commit popover (commit.js renders into it), anchored under the toolbar's Commit button. -->
+    <div id="commit-pop" class="commit-pop" hidden></div>
   </div>
   </div><!-- /workarea -->
 </div>

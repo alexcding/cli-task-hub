@@ -1,15 +1,16 @@
-// Logs / Activity (Settings → Activity tab). One log store (logs.db) with a
-// `category` column. category='event' is the activity feed (rich descriptions);
-// other categories (webhook, poller, …) render generically.
+// Activity page (left nav → Activity). One log store (logs.db) with a `category`
+// column. category='event' is the activity feed (rich, linked descriptions); other
+// categories (webhook, poller, …) render generically. Pure view: data comes from
+// /api/logs, links reuse the app-wide handlers (jiraClick / openPrSplit) so PRs and
+// tickets open in the embedded viewer like everywhere else.
 import { api, apiJson } from '../api.js';
-import { esc, timeAgo } from '../util.js';
-import { ICON } from '../icons.js';
+import { esc, escJs, jiraUrl, timeAgo } from '../util.js';
+import { ICON, TAB_ICON } from '../icons.js';
 import { toastErr } from '../toast.js';
 
 let _logCategory = 'event'; // 'all' | 'event' | 'webhook' | …
 let _logCats = null;        // cached category list (categories change rarely); null → refetch
 let _logChipsKey = null;    // signature of the last-rendered chip set, to avoid rebuilding it
-const LOG_LEVEL_COLOR = { error: 'var(--danger)', warn: 'var(--warning, #f59e0b)', info: 'var(--text-3)' };
 
 export async function loadLogs() {
   const errorsOnly = document.getElementById('log-errors-only')?.checked;
@@ -48,36 +49,108 @@ export async function clearLogs() {
   } catch (e) { toastErr(e.message); }
 }
 
-// Rich descriptions for activity events; other categories fall through to generic.
-function describeEvent(type, p) {
-  if (type === 'pr_opened')              return { desc: `PR #${p.pr?.number} opened in ${p.repo}`,    color: 'var(--accent)' };
-  if (type === 'pr_merged')              return { desc: `PR #${p.pr?.number} in ${p.repo} merged`,    color: 'var(--merged)' };
-  if (type === 'pr_closed')              return { desc: `PR #${p.pr?.number} in ${p.repo} closed`,    color: 'var(--text-3)' };
-  if (type === 'jira_transitioned')      return { desc: `${p.key} → ${p.transition} (${p.trigger})`,  color: 'var(--success)' };
-  if (type === 'jira_transition_failed') return { desc: `Failed: ${p.key} — ${p.error}`,              color: 'var(--danger)' };
-  if (type === 'sync_failed')            return { desc: `Sync failed for ${p.repo}: ${p.error}`,      color: 'var(--danger)' };
-  return null;
+// ── Event presentation ────────────────────────────────────────────────────────
+const shortRepo = repo => esc((repo || '').split('/').pop() || repo || '');
+
+// PR number as a link that opens the embedded PR viewer (same as a PR card click).
+// Webhook-supplied strings go through escJs: inside an on* attribute, HTML entities
+// decode before the JS runs, so esc() alone can't keep a quote from ending the literal.
+function prLink(p) {
+  const pr = p.pr || {};
+  if (!pr.url) return `PR #${esc(pr.number ?? '?')}`;
+  return `<a class="link" href="${esc(pr.url)}" target="_blank"
+    onclick="event.preventDefault();openPrSplit('${escJs(pr.url)}','#${escJs(pr.number)}','${escJs(p.repo || '')}','')">#${esc(pr.number)}</a>`;
 }
+
+// Jira key as a link through the shared jiraClick handler (embedded viewer in Electron).
+function jiraLink(key) {
+  if (!key) return '';
+  return `<a class="link" href="${esc(jiraUrl(key))}" target="_blank" rel="noopener"
+    onclick="jiraClick(event, this.href, '${escJs(key)}')">${esc(key)}</a>`;
+}
+
+// Each known event type → icon, tint, one-line linked sentence, optional detail line.
+function presentEvent(ev, p) {
+  const t = ev.type;
+  if (t === 'pr_opened') return {
+    icon: TAB_ICON.github, tint: 'var(--accent)', bg: 'var(--accent-bg)',
+    html: `Pull request ${prLink(p)} opened in <strong>${shortRepo(p.repo)}</strong>`,
+    detail: p.pr?.title ? esc(p.pr.title) : '',
+  };
+  if (t === 'pr_merged') return {
+    icon: ICON.branch, tint: 'var(--merged)', bg: 'var(--merged-bg)',
+    html: `Pull request ${prLink(p)} merged in <strong>${shortRepo(p.repo)}</strong>`,
+    detail: p.pr?.title ? esc(p.pr.title) : '',
+  };
+  if (t === 'pr_closed') return {
+    icon: ICON.close, tint: 'var(--text-3)', bg: 'var(--surface-hover)',
+    html: `Pull request ${prLink(p)} closed in <strong>${shortRepo(p.repo)}</strong>`,
+    detail: p.pr?.title ? esc(p.pr.title) : '',
+  };
+  if (t === 'jira_transitioned') return {
+    icon: ICON.refresh, tint: 'var(--success)', bg: 'var(--success-bg)',
+    html: `${jiraLink(p.key)} moved to <strong>${esc(p.transition || '?')}</strong>`,
+    detail: p.trigger ? `Triggered by ${esc(p.trigger)}` : '',
+  };
+  if (t === 'jira_transition_failed') return {
+    icon: ICON.warn, tint: 'var(--danger)', bg: 'var(--danger-bg)',
+    html: `Failed to transition ${jiraLink(p.key)}`,
+    detail: esc(p.error || ''),
+  };
+  if (t === 'sync_failed') return {
+    icon: ICON.warn, tint: 'var(--danger)', bg: 'var(--danger-bg)',
+    html: `Sync failed for <strong>${shortRepo(p.repo)}</strong>`,
+    detail: esc(p.error || ''),
+  };
+  // Generic fallback for non-activity categories (webhook, poller, …).
+  const levelTint = ev.level === 'error' ? 'var(--danger)' : ev.level === 'warn' ? 'var(--warn)' : 'var(--text-3)';
+  const levelBg   = ev.level === 'error' ? 'var(--danger-bg)' : ev.level === 'warn' ? 'var(--warn-bg)' : 'var(--surface-hover)';
+  return {
+    icon: ICON.clock, tint: levelTint, bg: levelBg,
+    html: esc((ev.type || '').replace(/_/g, ' ')),
+    detail: esc(p.raw != null ? String(p.raw) : (Object.keys(p).length ? JSON.stringify(p) : '')),
+  };
+}
+
+// Day bucket label for the timeline headers: Today / Yesterday / "Mon, Jun 2".
+function dayLabel(iso) {
+  const d = new Date(iso), now = new Date();
+  const day = x => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const diff = Math.round((day(now) - day(d)) / 86400000);
+  if (diff === 0) return 'Today';
+  if (diff === 1) return 'Yesterday';
+  return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+}
+
+const clockTime = iso => new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
 function renderLogs(logs) {
   const el = document.getElementById('events-list');
-  if (!logs.length) { el.innerHTML = `<div class="empty"><div class="empty-icon">${ICON.clock}</div><p>No logs yet.</p></div>`; return; }
-  el.innerHTML = logs.map(ev => {
-    let p = {}; try { p = ev.payload ? JSON.parse(ev.payload) : {}; } catch { p = { raw: ev.payload }; }
-    const known = describeEvent(ev.type, p);
-    const color = known ? known.color : (LOG_LEVEL_COLOR[ev.level] || 'var(--text-3)');
-    const desc = known ? known.desc : (p.raw != null ? String(p.raw) : JSON.stringify(p));
-    const typeText = esc((ev.type || '').replace(/_/g, ' '));
-    const title = p.pr?.url
-      ? `<a class="link" href="${esc(p.pr.url).replace(/"/g, '&quot;')}" target="_blank">${typeText}</a>`
-      : typeText;
-    // Show category + level badges when viewing across categories or non-activity streams.
-    const badge = (ev.category && ev.category !== 'event')
-      ? `<span class="log-level" style="background:${color}22;color:${color}">${esc(ev.category)}</span> ` : '';
-    return `<div class="event-row">
-      <div class="event-dot" style="background:${color};margin-top:5px;width:8px;height:8px;border-radius:50%;flex-shrink:0"></div>
-      <div class="event-body"><div class="event-type">${badge}${title}</div><div>${esc(desc)}</div></div>
-      <div class="event-time">${timeAgo(ev.created_at)}</div>
-    </div>`;
-  }).join('');
+  if (!logs.length) {
+    el.innerHTML = `<div class="card"><div class="empty"><div class="empty-icon">${ICON.clock}</div><p>No activity yet.</p></div></div>`;
+    return;
+  }
+  // Group into day sections (logs arrive newest-first; keep that order).
+  const days = [];
+  for (const ev of logs) {
+    const label = dayLabel(ev.created_at);
+    if (!days.length || days[days.length - 1].label !== label) days.push({ label, events: [] });
+    days[days.length - 1].events.push(ev);
+  }
+  el.innerHTML = days.map(({ label, events }) => `
+    <div class="act-day">${label}</div>
+    <div class="card">${events.map(ev => {
+      let p = {}; try { p = ev.payload ? JSON.parse(ev.payload) : {}; } catch { p = { raw: ev.payload }; }
+      const v = presentEvent(ev, p);
+      const badge = (ev.category && ev.category !== 'event')
+        ? `<span class="act-cat">${esc(ev.category)}</span>` : '';
+      return `<div class="act-row">
+        <div class="act-icon" style="color:${v.tint};background:${v.bg}">${v.icon}</div>
+        <div class="act-body">
+          <div>${v.html}${badge}</div>
+          ${v.detail ? `<div class="act-detail">${v.detail}</div>` : ''}
+        </div>
+        <div class="act-time" title="${esc(ev.created_at)}">${label === 'Today' ? timeAgo(ev.created_at) : clockTime(ev.created_at)}</div>
+      </div>`;
+    }).join('')}</div>`).join('');
 }
