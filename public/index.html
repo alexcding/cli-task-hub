@@ -33,6 +33,8 @@
       --warn: #d97706; --warn-bg: #fffbeb;
       --danger: #dc2626; --danger-bg: #fef2f2; --danger-border: #fbd5d5; --danger-hover: #fde8e8;
       --merged: #7c3aed; --merged-bg: #f5f3ff;
+      --claude: #d97757; --claude-bg: #f9ece6;   /* Claude brand coral — AI usage widget */
+      --codex: #717af0; --codex-bg: #eef0fe;     /* Codex app-icon periwinkle — Codex tab of the widget */
       --overlay: rgb(0 0 0/.06);
       --shadow: 0 1px 2px rgb(16 24 40/.05);
       --shadow-md: 0 4px 12px -2px rgb(16 24 40/.10),0 2px 6px -2px rgb(16 24 40/.06);
@@ -60,6 +62,8 @@
       --warn: #fbbf24; --warn-bg: #2a2310;
       --danger: #f87171; --danger-bg: #2a1a1a; --danger-border: #4a2a2a; --danger-hover: #382020;
       --merged: #a78bfa; --merged-bg: #241d33;
+      --claude: #e08b6d; --claude-bg: #30201a;
+      --codex: #8d94f5; --codex-bg: #1f2138;
       --overlay: rgb(255 255 255/.09);
       --shadow: 0 1px 2px rgb(0 0 0/.4);
       --shadow-md: 0 6px 16px -3px rgb(0 0 0/.55),0 3px 7px -3px rgb(0 0 0/.4);
@@ -367,11 +371,70 @@
     .card-header { padding:14px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:8px; }
     .card-header h3 { font-size:14px;font-weight:600; }
 
-    /* Stats */
-    .stat-grid { display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px;margin-bottom:24px; }
-    .stat-card { background:var(--surface);border:1px solid var(--border);border-radius:var(--rl);padding:16px 20px; }
-    .stat-val { font-size:28px;font-weight:700;letter-spacing:-1px; }
-    .stat-label { font-size:12px;color:var(--text-3);margin-top:2px;font-weight:500; }
+    /* Dashboard hero — greeting/date block on the left, actionable stat chips on
+       the right (they navigate). The AI usage cards live on their own row below. */
+    .dash-hero { display:flex;align-items:center;justify-content:space-between;gap:24px 40px;flex-wrap:wrap;margin:8px 0 36px; }
+    .dash-date { font-size:11.5px;font-weight:600;color:var(--text-3);text-transform:uppercase;letter-spacing:1px; }
+    .dash-hello { font-size:24px;font-weight:650;letter-spacing:-.4px;margin-top:5px; }
+    .stat-chips { display:flex;align-items:stretch;gap:12px;flex-wrap:wrap; }
+    .stat-chip { display:flex;align-items:center;gap:12px;padding:12px 22px 12px 14px;background:var(--surface);border:1px solid var(--border);border-radius:var(--rl);cursor:pointer;font:inherit;color:inherit;text-align:left;transition:background .12s,border-color .12s; }
+    .stat-chip:hover { background:var(--surface-hover);border-color:var(--border-focus); }
+    .stat-chip-icon { width:34px;height:34px;border-radius:9px;display:flex;align-items:center;justify-content:center;flex-shrink:0; }
+    .stat-chip-icon svg { width:17px;height:17px; }
+    .stat-chip-icon.tint-accent { background:var(--accent-bg);color:var(--accent); }
+    .stat-chip-icon.tint-warn { background:var(--warn-bg);color:var(--warn); }
+    .stat-chip-icon.tint-merged { background:var(--merged-bg);color:var(--merged); }
+    .stat-chip-icon.tint-success { background:var(--success-bg);color:var(--success); }
+    .stat-chip-icon.tint-neutral { background:var(--surface-hover);color:var(--text-2); }
+    .stat-chip-val { font-size:17px;font-weight:700;letter-spacing:-.4px;line-height:1.2; }
+    .stat-chip-label { font-size:11.5px;color:var(--text-3);font-weight:500;white-space:nowrap;margin-top:1px; }
+    /* AI usage widget (views/usage-widget.js): one full-width landscape card with
+       Claude/Codex tabs top-right — plan-limit bars on the left, stat grid + day
+       histogram on the right. Each agent brings its own accent via agent-<key>. */
+    .usage-row { margin-bottom:44px; }
+    .usage-row:empty { display:none; }
+    .usage-card { background:var(--surface);border:1px solid var(--border);border-radius:var(--rl);padding:14px 20px 16px;--agent:var(--claude);--agent-bg:var(--claude-bg); }
+    .usage-card.agent-codex { --agent:var(--codex);--agent-bg:var(--codex-bg); }
+    .usage-card .tint-agent { background:var(--agent-bg);color:var(--agent); }
+    .usage-head { display:flex;align-items:center;gap:11px; }
+    .usage-name { font-size:13.5px;font-weight:600; }
+    .usage-cols { display:flex;flex-wrap:wrap;gap:8px 48px; }
+    .usage-limits, .usage-stats { flex:1 1 0;min-width:280px; }
+    /* Stats column: all four stats on one top row so the histogram below stretches
+       to fill the column's remaining height (matching the limits column). */
+    .usage-stats { display:flex;flex-direction:column; }
+    /* Claude/Codex switcher — segmented control on the card's top right. */
+    .usage-tabs { margin-left:auto;display:flex;gap:2px;background:var(--surface-hover);border-radius:7px;padding:2px; }
+    .usage-tab { border:none;background:none;font:inherit;font-size:12px;font-weight:500;color:var(--text-2);padding:3px 12px;border-radius:5px;cursor:pointer;transition:background .12s,color .12s; }
+    .usage-tab:hover { color:var(--text); }
+    .usage-tab.active { background:var(--surface);color:var(--text);box-shadow:var(--shadow); }
+    /* Plan-limit section: fill = % used, the green tick = on-pace position. */
+    .limit-title { font-size:13.5px;font-weight:650;letter-spacing:-.2px;margin:12px 0 6px; }
+    .limit-bar { position:relative;height:8px;border-radius:4px;background:var(--surface-hover); }
+    .limit-bar i { position:absolute;left:0;top:0;bottom:0;max-width:100%;border-radius:4px;background:var(--agent); }
+    .limit-bar s { position:absolute;top:-2px;bottom:-2px;width:2px;margin-left:-1px;border-radius:1px;background:var(--success); }
+    .limit-rows { margin-top:6px;font-size:12px; }
+    .limit-rows > div { display:flex;justify-content:space-between;gap:10px;margin-top:2px; }
+    .limit-rows b { font-weight:600; }
+    .limit-rows span { color:var(--text-3); }
+    /* Stat row: four cells across the top, muted label over bold value. */
+    .usage-grid { display:grid;grid-template-columns:repeat(4,1fr);gap:10px 20px;margin:12px 0; }
+    .usage-grid label { display:block;font-size:12px;font-weight:500;color:var(--text-3);margin-bottom:1px; }
+    .usage-grid b { font-size:18px;font-weight:700;letter-spacing:-.4px; }
+    /* Day histogram below the stats, stretching to fill the column. Each <i> is a
+       full-height hover column (so short bars are easy to hit); the visible bar is
+       its ::before at --h, the value tooltip its ::after. */
+    .usage-hist { display:flex;gap:4px;flex:1;min-height:56px; }
+    .usage-hist i { flex:1;position:relative; }
+    .usage-hist i::before { content:'';position:absolute;left:0;right:0;bottom:0;height:var(--h,3%);min-height:3px;border-radius:3px;background:var(--agent);opacity:.35; }
+    .usage-hist i.today::before { opacity:1; }
+    .usage-hist i:hover::before { opacity:.65; }
+    .usage-hist i.today:hover::before { opacity:1; }
+    .usage-hist i::after { content:attr(data-tip);position:absolute;bottom:calc(100% + 5px);left:50%;transform:translateX(-50%);background:var(--text);color:var(--bg);font-size:11px;font-weight:500;line-height:1.4;padding:3px 8px;border-radius:5px;white-space:nowrap;opacity:0;pointer-events:none;transition:opacity .1s;z-index:3; }
+    .usage-hist i:hover::after { opacity:1; }
+    /* Keep edge tooltips inside the card so they don't spill past the content edge. */
+    .usage-hist i:nth-child(-n+4)::after { left:0;transform:none; }
+    .usage-hist i:nth-last-child(-n+4)::after { left:auto;right:0;transform:none; }
 
     /* Project group on dashboard */
     .project-group { margin-bottom:32px; }
@@ -606,7 +669,7 @@
 
       <!-- DASHBOARD -->
       <div id="page-dashboard" class="page active">
-        <div class="stat-grid" id="stats"></div>
+        <div id="stats"></div>
         <div id="dashboard-groups">
           <div class="loading-row"><div class="spinner"></div> Loading…</div>
         </div>

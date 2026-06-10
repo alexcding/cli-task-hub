@@ -11,7 +11,7 @@ import * as viewer from './viewer.js';
 import * as terminal from './terminal.js';
 import * as split from './split.js';
 import { toggleCommitPop, commitAction } from './commit.js';
-import { loadDashboard } from './views/dashboard.js';
+import { loadDashboard, scrollDash, setUsageTab } from './views/dashboard.js';
 import { loadProjectPage, switchTab, reloadProjectPRs } from './views/project.js';
 import * as jiraView from './views/jira.js';
 import { loadLogs, setLogCategory, clearLogs } from './views/logs.js';
@@ -176,7 +176,7 @@ Object.assign(window, {
   loadMyTickets: jiraView.loadMyTickets, setTicketFilter: jiraView.setTicketFilter,
   loadProjectJira: jiraView.loadProjectJira, setProjJiraFilter: jiraView.setProjJiraFilter,
   openStatusMenu: jiraView.openStatusMenu,
-  switchTab, reloadProjectPRs,
+  switchTab, reloadProjectPRs, scrollDash, setUsageTab,
   loadLogs, setLogCategory, clearLogs,
   loadSettings, saveConfig, switchSettingsTab,
   // project modal

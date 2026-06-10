@@ -8,14 +8,16 @@ import { prCard } from './cards.js';
 import { jiraRowsHtml, rememberStatuses } from './jira.js';
 import { renderTabs, renderProjectNav } from '../sidebar.js';
 import { saveTabs } from '../viewer.js';
+import { usageWidgetHtml } from './usage-widget.js';
 
 export async function loadDashboard() {
   // Reads the snapshot (instant) — no leading spinner so SSE refreshes are seamless.
-  const [groups, events, mineSnap, sprintSnap] = await Promise.all([
+  const [groups, mineSnap, sprintSnap, usage, whoami] = await Promise.all([
     api('/api/dashboard'),
-    api('/api/events'),
     api('/api/jira/mine').catch(() => ({ items: [] })),
     api('/api/jira/sprint').catch(() => ({ items: [] })),
+    api('/api/usage').catch(() => null),
+    api('/api/whoami').catch(() => null),
   ]);
   state.projects = groups;
   state.mineSnap = mineSnap;
@@ -34,17 +36,45 @@ export async function loadDashboard() {
   const review  = openPRs.filter(p => p.awaitingMyReview ?? (p.category === 'review'));
   const errors  = groups.flatMap(g => (g.prs||[]).filter(p => p.error));
 
-  document.getElementById('stats').innerHTML = `
-    <div class="stat-card"><div class="stat-val">${groups.length}</div><div class="stat-label">Projects</div></div>
-    <div class="stat-card"><div class="stat-val" style="color:var(--accent)">${mine.length}</div><div class="stat-label">My PRs</div></div>
-    <div class="stat-card"><div class="stat-val" style="color:var(--warn)">${review.length}</div><div class="stat-label">To Review</div></div>
-    <div class="stat-card"><div class="stat-val" style="color:var(--warn)">${(sprintSnap.items||[]).length}</div><div class="stat-label">In Sprint</div></div>
-    <div class="stat-card" onclick="showPage('mytickets')" style="cursor:pointer"><div class="stat-val" style="color:var(--accent)">${(mineSnap.items||[]).length}</div><div class="stat-label">JIRA Tickets</div></div>
-    <div class="stat-card"><div class="stat-val" style="color:var(--success)">${events.filter(e=>e.type==='jira_transitioned').length}</div><div class="stat-label">Auto-transitions</div></div>
-  `;
+  // Hero: greeting + date on the left, actionable counts as chips on the right.
+  // Each chip jumps to the section (or page) it counts. No subtitle — the PR and
+  // review sections right below already say what's waiting.
+  const now = new Date();
+  const hour = now.getHours();
+  // First word of git's user.name, capitalized — "alexcding" → "Alexcding".
+  const first = (whoami?.name || '').split(/\s+/)[0];
+  const who = first ? `, ${esc(first[0].toUpperCase() + first.slice(1))}` : '';
+  const hello = (hour < 5 ? 'Up late' : hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening') + who;
+  const dateStr = now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+  const chip = (val, label, icon, tint, onclick) => `
+    <button class="stat-chip" onclick="${onclick}">
+      <span class="stat-chip-icon tint-${tint}">${icon}</span>
+      <span><div class="stat-chip-val">${val}</div><div class="stat-chip-label">${label}</div></span>
+    </button>`;
 
-  const section = (title, prs, emptyMsg) => `
-    <div class="project-group">
+  // AI usage widget (shared builder in usage-widget.js): full-width card below the
+  // hero, compact variant (stat grid + histogram), Claude/Codex tabs top-right.
+  state.usageSnap = usage;
+
+  document.getElementById('stats').innerHTML = `
+    <div class="dash-hero">
+      <div>
+        <div class="dash-date">${dateStr}</div>
+        <div class="dash-hello">${hello}</div>
+      </div>
+      <div class="stat-chips">
+        ${chip(mine.length, 'My PRs', ICON.branch, 'accent', "scrollDash('dash-mine')")}
+        ${chip(review.length, 'To Review', ICON.eye, 'warn', "scrollDash('dash-review')")}
+        ${chip((sprintSnap.items||[]).length, sprintLabel(sprintSnap), ICON.zap, 'merged', "scrollDash('dashboard-sprint')")}
+        ${chip((mineSnap.items||[]).length, 'My Tickets', ICON.checkCircle, 'success', "showPage('mytickets')")}
+      </div>
+    </div>
+    <div id="usage-widget" class="usage-row"></div>
+  `;
+  renderUsageWidget();
+
+  const section = (title, prs, emptyMsg, id) => `
+    <div class="project-group" id="${id}">
       <div class="project-group-header">
         <span class="project-name">${title}</span>
         <span class="project-meta">${prs.length}</span>
@@ -56,8 +86,8 @@ export async function loadDashboard() {
 
   const prHtml = groups.length
     ? errors.map(e=>`<p style="font-size:12px;color:var(--danger);margin-bottom:8px;display:flex;align-items:center;gap:5px">${ICON.warn} ${esc(e.repo)}: ${esc(e.error)}</p>`).join('') +
-      section('GitHub · My Pull Requests', mine, 'No open PRs you authored.') +
-      section('Review Requested', review, 'Nothing awaiting your review.')
+      section('GitHub · My Pull Requests', mine, 'No open PRs you authored.', 'dash-mine') +
+      section('Review Requested', review, 'Nothing awaiting your review.', 'dash-review')
     : `<div class="empty"><div class="empty-icon">${ICON.folder}</div><p>No projects yet. Create one to get started.</p><br><button class="btn btn-primary" onclick="openNewProjectModal()">${ICON.plus} New project</button></div>`;
 
   // Current Sprint (Jira) renders at the bottom, below the PR sections. It lives in
@@ -84,6 +114,32 @@ export async function loadDashboard() {
   renderTabs(); // refresh CI dots on open GitHub tabs now that PR data (with CI) is loaded
 }
 
+// Smooth-scroll to a dashboard section (hero chips). No-op if the section isn't rendered.
+export function scrollDash(id) {
+  document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+// Active tab on the dashboard usage widget (view-local; the widget itself is the
+// shared builder in usage-widget.js). Tab clicks re-render just the widget node.
+let usageTab = 'claude';
+export function setUsageTab(key) {
+  usageTab = key;
+  renderUsageWidget();
+}
+function renderUsageWidget() {
+  const el = document.getElementById('usage-widget');
+  if (el) el.innerHTML = usageWidgetHtml(state.usageSnap, usageTab);
+}
+
+// Chip/section label for the sprint snapshot: the active sprint's name (with days
+// left when it has an end date), falling back to the generic title.
+function sprintLabel(snap) {
+  const s = snap?.sprint;
+  if (!s?.name) return 'In Sprint';
+  const days = s.endDate ? Math.ceil((new Date(s.endDate) - Date.now()) / 86_400_000) : 0;
+  return days > 0 ? `${esc(s.name)} · ${days}d left` : esc(s.name);
+}
+
 // Render the "Current Sprint" section from the cached snapshot (used on load and
 // after a status change). Reuses the shared Jira table so the status menu works here.
 export function renderDashboardSprint() {
@@ -94,7 +150,7 @@ export function renderDashboardSprint() {
   el.innerHTML = `
     <div class="project-group">
       <div class="project-group-header">
-        <span class="project-name">Current Sprint</span>
+        <span class="project-name">${state.sprintSnap.sprint?.name ? esc(state.sprintSnap.sprint.name) : 'Current Sprint'}</span>
         <span class="project-meta">${items.length}</span>
       </div>
       ${items.length

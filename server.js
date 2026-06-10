@@ -11,6 +11,7 @@ const configdb = require('./lib/configdb');
 const github = require('./lib/github');
 const jira = require('./lib/jira');
 const poller = require('./lib/poller');
+const usage = require('./lib/usage');
 const forwarder = require('./lib/webhook-forwarder');
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
@@ -283,11 +284,12 @@ app.get('/api/jira/mine', wrap((req, res) => {
   res.json(snap || { items: [], jql: '', lastSynced: null, error: null });
 }));
 
-// Global "my work in the active sprint(s)" feed (dashboard).
+// Global "my work in the active sprint(s)" feed (dashboard). The active sprint's
+// name/end date lives in poller memory (not the snapshot table), merged in here.
 app.get('/api/jira/sprint', wrap((req, res) => {
   const snap = db.getJiraSnapshot(poller.MY_SPRINT_ID);
   if (jiraStale(snap)) poller.syncJiraSprint();
-  res.json(snap || { items: [], jql: '', lastSynced: null, error: null });
+  res.json({ ...(snap || { items: [], jql: '', lastSynced: null, error: null }), sprint: poller.currentSprint() });
 }));
 
 // Per-project Jira feed (the project's saved JQL).
@@ -326,6 +328,21 @@ app.post('/api/links', (req, res) => {
   res.json({ ok: true });
 });
 app.delete('/api/links/:id', (req, res) => { db.removeLink(req.params.id); res.json({ ok: true }); });
+
+// ── Who am I (dashboard greeting) ───────────────────────────────────────────────
+app.get('/api/whoami', (req, res) => {
+  github.getUserName()
+    .then(name => res.json({ name }))
+    .catch(() => res.json({ name: '' }));
+});
+
+// ── AI token usage (dashboard hero) ─────────────────────────────────────────────
+// Today's Claude Code / Codex usage via ccusage; lib/usage.js caches SWR-style.
+app.get('/api/usage', (req, res) => {
+  usage.getUsage()
+    .then(u => res.json(u))
+    .catch(err => res.status(500).json({ error: err.message }));
+});
 
 // ── Events / Logs ────────────────────────────────────────────────────────────────
 // /api/events is the activity feed (category='event'); /api/logs is the full,
