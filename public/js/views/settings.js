@@ -18,6 +18,45 @@ export async function loadSettings() {
   if (cfg.jira_limit)         document.getElementById('jira-limit').value = cfg.jira_limit;
 
   renderDbInspector(dbinfo);
+  initUsage();
+}
+
+// ── Resource usage ──────────────────────────────────────────────────────────────
+// Live RAM/CPU readout, mirroring what the tray menu used to show. The figures come
+// from the Electron main process (getAppMetrics, ps), reached via window.taskhub — so
+// outside the app (a plain browser) the card is simply hidden. main caches its ps pass
+// for ~3s, so a 3s poll is as fresh as it gets without extra shell-outs. The interval
+// stops itself once Settings is no longer the active page (showPage has no teardown hook).
+let _usageTimer = null;
+
+const fmtKB = kb => { const mb = kb / 1024; return mb >= 1024 ? `${(mb / 1024).toFixed(2)} GB` : `${Math.round(mb)} MB`; };
+
+async function pollUsage() {
+  if (!document.getElementById('page-settings').classList.contains('active')) {
+    clearInterval(_usageTimer); _usageTimer = null; return;
+  }
+  let u; try { u = await window.taskhub.getUsage(); } catch { return; }
+  const rows = u.breakdown.map(b =>
+    `<tr><td>${esc(b.label)}</td><td>${fmtKB(b.kb)}</td><td>${Math.round(b.cpu)}%</td></tr>`).join('');
+  document.getElementById('usage-readout').innerHTML = `
+    <div style="display:flex;gap:18px;flex-wrap:wrap;margin-bottom:14px;font-size:13px;color:var(--text-2)">
+      <span>Memory <b style="color:var(--text)">${fmtKB(u.totalKB)}</b></span>
+      <span>CPU <b style="color:var(--text)">${Math.round(u.totalCPU)}%</b></span>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Component</th><th>Memory</th><th>CPU</th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="3" style="color:var(--text-3)">No data.</td></tr>'}</tbody>
+      </table>
+    </div>`;
+}
+
+function initUsage() {
+  const card = document.getElementById('usage-card');
+  if (!window.taskhub?.getUsage) { card.hidden = true; return; } // plain browser — not available
+  card.hidden = false;
+  pollUsage();
+  if (!_usageTimer) _usageTimer = setInterval(pollUsage, 3000);
 }
 
 function renderDbInspector(d) {

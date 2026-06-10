@@ -95,6 +95,11 @@ function registerIpc() {
   // back to the live github.com/<login>.png URL.
   ipcMain.handle('avatar:fetch', (_e, login) => avatarDataUrl(login));
 
+  // Resource usage (RAM + CPU summed across every TaskHub process) for the Settings page's
+  // live readout. Computed here because getAppMetrics() is main-process only. The require is
+  // deferred to call time to sidestep the window→usage→terminals→window load-time cycle.
+  ipcMain.handle('usage:get', () => require('./usage').computeUsage());
+
   ipcMain.handle('choose-folder', async () => {
     const parent = getWin() || undefined;
     const { canceled, filePaths } = await dialog.showOpenDialog(parent, {

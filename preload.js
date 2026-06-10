@@ -40,6 +40,10 @@ contextBridge.exposeInMainWorld('taskhub', {
   // onto a tab so it survives reloads unchanged; see freezeAvatar in viewer.js.
   fetchAvatar: (login) => ipcRenderer.invoke('avatar:fetch', login),
 
+  // Current resource usage — { totalKB, totalCPU, breakdown:[{label,kb,cpu}] } summed over
+  // every TaskHub process. Main-process only (getAppMetrics); the Settings page polls it.
+  getUsage: () => ipcRenderer.invoke('usage:get'),
+
   // Multiple independent terminals, each an OS pseudo-terminal in the main process.
   term: {
     // Spawn a login shell in `cwd`; opts.paired + opts.pairKey identify a GitHub/Jira split terminal.

@@ -1,12 +1,11 @@
 // Builds the tray context menu. The menu LIST mirrors the app's open tabs (same
 // /api/tabs source as the sidebar), grouped exactly like the sidebar, plus the
-// "Review requested" master list and the resource-usage readout.
+// "Review requested" master list.
 const { Menu } = require('electron');
 const { fetchJSON, postJSON } = require('./server-supervisor');
 const { openWindow, openLinkInApp } = require('./window');
 const { trayIcon, avatarIcon, loadAvatar, jiraIcon } = require('./icons');
 const { detectReviewChanges } = require('./notifications');
-const { computeUsage, fmtKB } = require('./usage');
 
 // Build a labeled section of open-tab menu items. Each item maps 1:1 to a sidebar row
 // and clicking it focuses that exact tab. Titles are the ones saved on the tab
@@ -59,10 +58,9 @@ function prMenuItems(label, prs, refreshMenu) {
 
 // The fetched menu body (tab + review sections) is cached here so the tray can build a
 // menu synchronously when it (re-)arms the context menu: refreshMenuData() renews it on
-// the 60s tick / window blur, while buildMenuNow() recomputes the usage readout fresh on
-// every build — tray.js re-arms on mouse-enter, so the figure the opened menu shows is
-// moments old, not the previous rebuild's. (A menu must stay set via setContextMenu;
-// popping one from a tray 'click' handler doesn't display on macOS — see tray.js.)
+// the 60s tick / window blur, and buildMenuNow() assembles the full menu from it. (A menu
+// must stay set via setContextMenu; popping one from a tray 'click' handler doesn't
+// display on macOS — see tray.js.)
 let _body = null;
 
 // Refresh the cached menu body + tray icon color + review notifications. `tray` is the
@@ -134,23 +132,14 @@ async function refreshMenuData(tray, refreshMenu) {
   _body = body;
 }
 
-// Build the menu to show RIGHT NOW: the cached body plus a usage readout computed at
-// this moment. Total RAM + CPU across every TaskHub process, with a per-component
-// breakdown in the submenu. computeUsage() is synchronous (getAppMetrics + a briefly
-// cached ps pass), so popping the menu stays instant.
+// Assemble the tray menu from the cached body. (The RAM/CPU usage readout moved to the
+// Settings page — see public/js/views/settings.js — so nothing is computed per build.)
 function buildMenuNow() {
-  const usage = computeUsage();
-  const usageItem = {
-    label: `App Usage — CPU ${Math.round(usage.totalCPU)}% · Memory ${fmtKB(usage.totalKB)}`,
-    submenu: usage.breakdown.map(b => ({ label: `${b.label}: ${fmtKB(b.kb)} · ${Math.round(b.cpu)}% CPU`, enabled: false })),
-  };
-
   return Menu.buildFromTemplate([
     { label: 'Open TaskHub', click: () => openWindow() },
     { type: 'separator' },
     ...(_body || [{ label: 'Loading…', enabled: false }]),
     { type: 'separator' },
-    usageItem,
     { label: 'Quit', click: () => require('electron').app.quit() },
   ]);
 }

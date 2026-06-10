@@ -1,7 +1,7 @@
 // TaskHub Electron entry point. App lifecycle + wiring only — the actual work lives
 // in main/: server-supervisor (backend child), terminals (PTYs), window (dashboard
 // BrowserWindow + IPC), menu (tray menu), icons (rasterization), notifications
-// (review alerts), usage (RAM/CPU readout), updater (auto-updates).
+// (review alerts), usage (RAM/CPU readout, surfaced in Settings), updater (auto-updates).
 
 // Cache compiled V8 bytecode to disk for faster cold starts (no-op pre-Node 22.8).
 try { require('node:module').enableCompileCache?.(); } catch {}
@@ -112,14 +112,12 @@ app.whenReady().then(async () => {
   tray = new Tray(trayIcon('idle')); // colored by state in refreshMenuData()
   tray.setToolTip('TaskHub');
 
-  // A context menu must stay SET: calling popUpContextMenu from a tray 'click'
-  // handler returns without displaying anything (verified on macOS 26 / Electron 42),
-  // so build-at-open can't work — clicking showed no menu at all. To keep the usage
-  // readout current despite the pre-built menu, re-arm it on mouse-enter: the cursor
-  // crosses the icon before it can click, so the menu that opens was built moments
-  // earlier (cheap — computeUsage reuses a briefly-cached ps pass). Data refreshes
-  // (60s tick, window blur, item clicks) re-arm it too, in refreshMenu().
-  tray.on('mouse-enter', () => tray.setContextMenu(buildMenuNow()));
+  // A context menu must stay SET: calling popUpContextMenu from a tray 'click' handler
+  // returns without displaying anything (verified on macOS 26 / Electron 42), so the menu
+  // is pre-built and re-armed via setContextMenu on every data refresh — the 60s tick,
+  // window blur, and item clicks, all through refreshMenu(). Its contents no longer change
+  // between those refreshes (the live usage readout moved to Settings), so there's nothing
+  // to recompute when the menu opens.
 
   // Errors here must not abort startup wiring — fall back to an armed menu with
   // whatever body we have ('Loading…' before the first successful refresh).

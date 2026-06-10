@@ -764,6 +764,17 @@
             </div>
           </div>
 
+          <!-- Resource usage: total RAM + CPU across every TaskHub process, with a
+               per-component breakdown. Filled live by settings.js via window.taskhub.getUsage()
+               (main-process getAppMetrics); hidden outside the Electron app, where it's unavailable. -->
+          <div class="card" id="usage-card" hidden>
+            <div class="card-header"><h3>Resource usage</h3></div>
+            <div class="card-pad">
+              <p style="font-size:13px;color:var(--text-2);margin:0 0 14px">Total RAM and CPU across every TaskHub process — the app windows, embedded GitHub/Jira views, the background server, and your terminals. Updates live.</p>
+              <div id="usage-readout"></div>
+            </div>
+          </div>
+
           <div class="card">
             <div class="card-header">
               <h3>Database</h3>
