@@ -58,8 +58,8 @@ separation everything follows:
 
 ## Tests
 
-`npm test` (`node --test 'test/**/*.test.js'`) — API tests boot the real
-server (`test/api.test.js`);
+`npm test` (`node --test --test-force-exit 'test/**/*.test.js'`) — API tests boot the
+real server (`test/api.test.js`);
 pure renderer logic with no DOM (e.g. `diff-parse.mjs`) is tested directly.
 ES modules under `public/js/` that tests import must stay DOM-free or guard
 their DOM access.

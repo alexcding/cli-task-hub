@@ -14,6 +14,8 @@ It watches your GitHub pull requests, review requests, CI state, and Jira work
 items per project, then gives you a local web dashboard plus a tiny macOS
 menu-bar signal.
 
+![TaskHub dashboard](docs/images/dashboard.png)
+
 No hosted backend. No personal access tokens in another app. No SaaS workspace
 to configure. Just authenticated CLI inputs, a local TaskHub core, and surfaces
 that keep your work queue visible.
@@ -52,6 +54,9 @@ when linked PRs merge.
 
 - **Dashboard** shows only your active queue: PRs you authored under Tasks, and
   non-draft PRs requesting your review under Review.
+- **AI usage hero** surfaces your Claude Code / Codex token spend at the top of the
+  dashboard — session and weekly burn, today's cost, 30-day cost/tokens, and a recent
+  trend sparkline — read from `ccusage` (see `lib/usage.js`) and cached SWR-style.
 - **Project pages** show all open PRs for a repo, plus a Jira tab for the
   project's JQL query.
 - **Inline CI** uses GitHub's `statusCheckRollup` through `gh`, so each PR gets a
@@ -189,7 +194,7 @@ This keeps the UI responsive and keeps GitHub CLI/API usage predictable.
 {
   number, title, url, state, repo, headRefName,
   author, createdAt, isDraft, labels, jiraKeys,
-  ci, category
+  ci, category, awaitingMyReview, reviewDecision
 }
 ```
 
@@ -224,6 +229,7 @@ write outside the app bundle.
 | `GET` | `/api/jira/search?jql=` | Jira JQL search through `acli` |
 | `GET` | `/api/jira/:key` | Jira work item details |
 | `POST` | `/api/jira/:key/transition` | Manual Jira transition |
+| `GET` | `/api/usage` | Claude Code / Codex token usage for the dashboard hero (via `ccusage`) |
 | `GET` | `/api/events` | Recent activity events (dashboard stats) |
 | `GET` / `POST` | `/api/logs[...]` | Activity page: query logs, list categories, clear |
 | `GET` / `PUT` | `/api/settings[/:key]` | UI settings (theme, filters) |
@@ -243,7 +249,7 @@ write outside the app bundle.
 ```bash
 npm install
 npm start          # plain local server
-npm run dev        # hot reload (node --watch)
+npm run dev        # hot reload (bun --watch, falls back to node --watch)
 npm run dev:tray   # quick Electron tray run
 ./build.sh         # package and launch the macOS app
 npm run release    # signed + notarized DMG, published to GitHub Releases

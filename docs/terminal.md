@@ -1,7 +1,8 @@
 # TaskHub Terminal — Design & Plan
 
-Status: **planned** (not yet implemented). This is the agreed design for embedding
-interactive terminals in the TaskHub Electron app.
+Status: **implemented** (slice 5 "Polish" pending — see Implementation slices). This is
+the design for embedding interactive terminals in the TaskHub Electron app; it shipped as
+`main/terminals.js` (PTYs) + `public/js/terminal.js` (xterm renderer).
 
 ## Goal
 

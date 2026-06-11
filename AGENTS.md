@@ -29,7 +29,8 @@ If you need fresher data in the UI, fix the sync loop. Do not make endpoints cal
 ```bash
 npm install
 npm run dev            # web dev: frees the port, watch-runs server.js, opens the browser
-npm run build:run      # package + launch the Electron tray app
+npm run dev:app        # web dev but launches the Electron app instead of the browser
+./build.sh             # package + launch the Electron tray app (npm run build for dmg/zip)
 ```
 
 - `npm run dev` → `./dev.sh`: kills any stale server, runs `bun --watch server.js`
@@ -37,21 +38,27 @@ npm run build:run      # package + launch the Electron tray app
   Override the port with `PORT=4000 npm run dev`; skip the browser with `./dev.sh --no-open`.
   Raw watch (no port-free / browser) is still `npm run dev:server`.
 - Web changes: just save; the page auto-reloads (server watches `public/` → SSE `reload`).
-- Tray, `tray.js`, or `server.js` startup changes: rebuild with `npm run build:run`.
-- `build:run` kills any running instance and frees port 3000 first.
+- Tray, `tray.js`, or `server.js` startup changes: rebuild with `./build.sh`.
+- `./build.sh` kills any running instance and frees port 3000 first (`--no-run` to build only).
 
 ## Files
 
 - `server.js` - routes, SSE, webhook, static serving.
 - `lib/db.js` - facade over the SQLite stores: `lib/configdb.js` (`taskhub.db`, durable),
   `lib/datadb.js` (`data.db`, volatile CLI cache), `lib/logdb.js` (`logs.db`, rolling log).
+  `lib/datadir.js` resolves the data dir.
 - `lib/github.js` - `gh` wrapper: `getPRs`, `parseRepo`, `summarizeCI`, `getCurrentUser`.
 - `lib/jira.js` - `acli` wrapper.
+- `lib/usage.js` - `ccusage` wrapper for the dashboard's AI token-usage hero (SWR-cached).
 - `lib/poller.js` - sync engine + merge automation + lifecycle events.
 - `lib/webhook-forwarder.js` - `gh webhook forward` child processes.
 - `public/index.html` - SPA markup + stylesheet; `public/js/` - renderer modules (see `CLAUDE.md`).
-- `tray.js` + `main/` - Electron menu bar (menu, notifications, PTYs, window, updater).
-- `scripts/gen-icon.js`, `scripts/gen-tray-icon.js`, `scripts/build.js` - app/tray icon generation and packaging.
+- `tray.js` + `main/` - Electron menu bar: `menu.js`, `app-menu.js`, `notifications.js`,
+  `terminals.js` (PTYs), `window.js`, `updater.js`, `server-supervisor.js`,
+  `usage.js` (TaskHub RAM/CPU in the tray menu), `usage-image.js` (renders the
+  Claude/Codex token panel as a menu-row image), plus `const.js` and `icons.js`.
+- `scripts/gen-icon.js`, `scripts/gen-tray-icon.js`, `scripts/build.js`, `scripts/afterPack.js` -
+  app/tray icon generation and packaging.
 
 ## Conventions / gotchas
 
