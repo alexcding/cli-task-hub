@@ -5,25 +5,11 @@
 // The window is created once and reused; everything is wrapped so a failure falls back
 // to the plain text menu rows in menu.js (the menu must never break).
 const { BrowserWindow, nativeImage, nativeTheme } = require('electron');
-const fs = require('fs');
-const path = require('path');
 
 const SESSION_MS = 5 * 3600_000, WEEK_MS = 7 * 86_400_000;
 
-// Per-agent display: accent color + label + the real app icon (served from /public/img,
-// inlined as a data URI since the offscreen render loads a data: URL with no origin).
-const AGENTS = {
-  claude: { accent: '#d97757', name: 'Claude Code', img: 'claude.png' },
-  codex:  { accent: '#717af0', name: 'Codex',       img: 'codex.png' },
-};
-const _iconCache = {};
-function iconDataUri(file) {
-  if (!(file in _iconCache)) {
-    try { _iconCache[file] = 'data:image/png;base64,' + fs.readFileSync(path.join(__dirname, '..', 'public', 'img', file)).toString('base64'); }
-    catch { _iconCache[file] = ''; }
-  }
-  return _iconCache[file];
-}
+// Per-agent accent: the bar fill so Claude (coral) and Codex (periwinkle) read distinctly.
+const ACCENT = { claude: '#d97757', codex: '#717af0' };
 
 // "1d 21h" / "1h 33m" / "12m" until an ISO reset time; null once it's passed.
 const fmtUntil = (iso) => {
@@ -58,7 +44,7 @@ function groupHtml(label, win, winMs) {
     </div>`;
 }
 
-function buildHtml(limits, agent) {
+function buildHtml(limits, accent) {
   // Theme-aware: the menu is light or dark, and the captured image is transparent, so
   // text/track/gridmark colors must follow the system appearance. The bar fill uses the
   // agent's accent so Claude (coral) and Codex (periwinkle) read distinctly.
@@ -67,17 +53,14 @@ function buildHtml(limits, agent) {
   const muted = dark ? '#8a8a8a' : '#9298a3';
   const track = dark ? 'rgba(255,255,255,.14)' : 'rgba(0,0,0,.10)';
   const mark = dark ? 'rgba(255,255,255,.20)' : 'rgba(0,0,0,.18)';
-  const icon = iconDataUri(agent.img);
   return `<!doctype html><html><head><meta charset="utf-8"><style>
     *{margin:0;padding:0;box-sizing:border-box;}
     body{background:transparent;font:13px/1.4 -apple-system,BlinkMacSystemFont,'Inter','Segoe UI',sans-serif;color:${text};
       width:310px;padding:0 2px;-webkit-font-smoothing:antialiased;}
-    .hdr{display:flex;align-items:center;margin-bottom:11px;}
-    .hdr img{width:20px;height:20px;border-radius:5px;}
     .grp{margin-bottom:13px;} .grp:last-child{margin-bottom:0;}
-    .title{font-size:13.5px;font-weight:600;margin-bottom:7px;}
+    .title{font-size:13.5px;font-weight:500;margin-bottom:7px;}
     .bar{position:relative;height:6px;border-radius:3px;background:${track};overflow:hidden;}
-    .bar i{position:absolute;left:0;top:0;bottom:0;border-radius:3px;background:${agent.accent};}
+    .bar i{position:absolute;left:0;top:0;bottom:0;border-radius:3px;background:${accent};}
     .bar::after{content:'';position:absolute;inset:0;background:
       linear-gradient(90deg,transparent calc(50% - .5px),${mark} calc(50% - .5px),${mark} calc(50% + .5px),transparent calc(50% + .5px)),
       linear-gradient(90deg,transparent calc(75% - .5px),${mark} calc(75% - .5px),${mark} calc(75% + .5px),transparent calc(75% + .5px));}
@@ -86,7 +69,6 @@ function buildHtml(limits, agent) {
     .data{font-size:12px;margin-top:6px;white-space:nowrap;}
     .muted{color:${muted};}
   </style></head><body>
-    ${icon ? `<div class="hdr"><img src="${icon}" alt=""></div>` : ''}
     ${groupHtml('Session', limits.session, SESSION_MS)}
     ${groupHtml('Weekly', limits.weekly, WEEK_MS)}
   </body></html>`;
@@ -98,7 +80,7 @@ let renderWin = null;
 // limit data / the capture fails. agentKey is 'claude' (OAuth limits) or 'codex'
 // (rollout-file limits) — matching the dashboard widget's selected tab.
 async function renderUsageImage(usage, agentKey = 'claude') {
-  const agent = AGENTS[agentKey] || AGENTS.claude;
+  const accent = ACCENT[agentKey] || ACCENT.claude;
   const limits = agentKey === 'codex' ? usage?.codexLimits : usage?.limits;
   if (!limits || (!limits.session && !limits.weekly)) return null;
   try {
@@ -109,7 +91,7 @@ async function renderUsageImage(usage, agentKey = 'claude') {
         webPreferences: { offscreen: false, sandbox: true, contextIsolation: true, nodeIntegration: false },
       });
     }
-    await renderWin.webContents.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(buildHtml(limits, agent)));
+    await renderWin.webContents.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(buildHtml(limits, accent)));
     // Size the window to the content so the capture has no empty margin, then give the
     // compositor a beat to paint the resized layout before grabbing it.
     const dims = await renderWin.webContents.executeJavaScript(
