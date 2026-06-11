@@ -46,20 +46,21 @@ const limitSec = (title, win, winMs) => {
     <div class="limit-rows"><div><b>${left}% left${reserveTxt ? ` · ${reserveTxt}` : ''}</b><span>${until ? `Resets in ${until}` : ''}</span></div></div>`;
 };
 
-// Session/Weekly sections (Claude only — the OAuth windows). Falls back to the
-// ccusage 5h block as a time-elapsed Session bar when the limits lookup failed.
-const limitsHtml = (usage) => {
-  if (usage.limits) {
-    return limitSec('Session', usage.limits.session, 5 * 3600_000)
-         + limitSec('Weekly', usage.limits.weekly, 7 * 86_400_000);
+// Session/Weekly sections from a {session, weekly} limits object — Claude's come from
+// the OAuth endpoint, Codex's from the local rollout file (same shape). `block` is the
+// ccusage 5h block, used as a Claude-only fallback when the limits lookup failed.
+const limitsHtml = (limits, block) => {
+  if (limits) {
+    return limitSec('Session', limits.session, 5 * 3600_000)
+         + limitSec('Weekly', limits.weekly, 7 * 86_400_000);
   }
-  if (usage.block) {
-    const start = +new Date(usage.block.startTime), end = +new Date(usage.block.endTime);
-    const until = fmtUntil(usage.block.endTime);
+  if (block) {
+    const start = +new Date(block.startTime), end = +new Date(block.endTime);
+    const until = fmtUntil(block.endTime);
     if (until) return `
       <div class="limit-title">Session</div>
       <div class="limit-bar"><i style="width:${Math.min(100, (Date.now() - start) / (end - start) * 100).toFixed(1)}%"></i></div>
-      <div class="limit-rows"><div><b>${fmtCost(usage.block.cost)} · ${fmtTok(usage.block.tokens)} tok</b><span>Resets in ${until}</span></div></div>`;
+      <div class="limit-rows"><div><b>${fmtCost(block.cost)} · ${fmtTok(block.tokens)} tok</b><span>Resets in ${until}</span></div></div>`;
   }
   return '';
 };
@@ -90,9 +91,12 @@ export function usageWidgetHtml(usage, agentKey) {
     : '';
   const latest = agent.key === 'claude' ? usage.block?.tokens : null;
   const cell = (label, val) => `<div><label>${label}</label><b>${val}</b></div>`;
-  // Limits (Claude only) on the left; stats grid + histogram on the right. With no
-  // limits (Codex) the stats column spans the whole card.
-  const limits = agent.key === 'claude' ? limitsHtml(usage) : '';
+  // Session/Weekly bars on the left; stats grid + histogram on the right. Claude's
+  // limits come from the OAuth endpoint (with the ccusage block as fallback), Codex's
+  // from its rollout file. With no limits the stats column spans the whole card.
+  const limits = agent.key === 'claude'
+    ? limitsHtml(usage.limits, usage.block)
+    : limitsHtml(usage.codexLimits, null);
   return `
     <div class="usage-card agent-${agent.key}">
       <div class="usage-head">
