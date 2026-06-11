@@ -35,6 +35,7 @@
       --merged: #7c3aed; --merged-bg: #f5f3ff;
       --claude: #d97757; --claude-bg: #f9ece6;   /* Claude brand coral — AI usage widget */
       --codex: #717af0; --codex-bg: #eef0fe;     /* Codex app-icon periwinkle — Codex tab of the widget */
+      --limit-mark: rgb(0 0 0/.16);              /* 50%/75% gridmarks on the plan-limit bars */
       --overlay: rgb(0 0 0/.06);
       --shadow: 0 1px 2px rgb(16 24 40/.05);
       --shadow-md: 0 4px 12px -2px rgb(16 24 40/.10),0 2px 6px -2px rgb(16 24 40/.06);
@@ -64,6 +65,7 @@
       --merged: #a78bfa; --merged-bg: #241d33;
       --claude: #e08b6d; --claude-bg: #30201a;
       --codex: #8d94f5; --codex-bg: #1f2138;
+      --limit-mark: rgb(255 255 255/.16);
       --overlay: rgb(255 255 255/.09);
       --shadow: 0 1px 2px rgb(0 0 0/.4);
       --shadow-md: 0 6px 16px -3px rgb(0 0 0/.55),0 3px 7px -3px rgb(0 0 0/.4);
@@ -408,11 +410,18 @@
     .usage-tab { border:none;background:none;font:inherit;font-size:12px;font-weight:500;color:var(--text-2);padding:3px 12px;border-radius:5px;cursor:pointer;transition:background .12s,color .12s; }
     .usage-tab:hover { color:var(--text); }
     .usage-tab.active { background:var(--surface);color:var(--text);box-shadow:var(--shadow); }
-    /* Plan-limit section: fill = % used, the green tick = on-pace position. */
+    /* Plan-limit section: the coral fills to what's LEFT; a green pace segment marks
+       the on-pace position; faint gridmarks sit at 50% and 75%. */
     .limit-title { font-size:13.5px;font-weight:650;letter-spacing:-.2px;margin:12px 0 6px; }
-    .limit-bar { position:relative;height:8px;border-radius:4px;background:var(--surface-hover); }
+    .limit-bar { position:relative;height:8px;border-radius:4px;background:var(--surface-hover);overflow:hidden; }
     .limit-bar i { position:absolute;left:0;top:0;bottom:0;max-width:100%;border-radius:4px;background:var(--agent); }
-    .limit-bar s { position:absolute;top:-2px;bottom:-2px;width:2px;margin-left:-1px;border-radius:1px;background:var(--success); }
+    /* 50% and 75% reference gridmarks, painted faint on top of the track/fill. */
+    .limit-bar::after { content:'';position:absolute;inset:0;pointer-events:none;background:
+      linear-gradient(90deg,transparent calc(50% - .5px),var(--limit-mark) calc(50% - .5px),var(--limit-mark) calc(50% + .5px),transparent calc(50% + .5px)),
+      linear-gradient(90deg,transparent calc(75% - .5px),var(--limit-mark) calc(75% - .5px),var(--limit-mark) calc(75% + .5px),transparent calc(75% + .5px)); }
+    /* Green pace marker: a short segment with track-colored gaps either side, so it
+       reads as a distinct notch cut into the bar (not a hairline). */
+    .limit-bar s { position:absolute;top:0;bottom:0;width:9px;margin-left:-4.5px;background:var(--success);border-left:2px solid var(--surface-hover);border-right:2px solid var(--surface-hover);background-clip:padding-box;box-sizing:border-box; }
     .limit-rows { margin-top:6px;font-size:12px; }
     .limit-rows > div { display:flex;justify-content:space-between;gap:10px;margin-top:2px; }
     .limit-rows b { font-weight:600; }

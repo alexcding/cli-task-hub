@@ -72,6 +72,7 @@ export async function loadDashboard() {
     <div id="usage-widget" class="usage-row"></div>
   `;
   renderUsageWidget();
+  startUsageAutoRefresh();
 
   const section = (title, prs, emptyMsg, id) => `
     <div class="project-group" id="${id}">
@@ -129,6 +130,22 @@ export function setUsageTab(key) {
 function renderUsageWidget() {
   const el = document.getElementById('usage-widget');
   if (el) el.innerHTML = usageWidgetHtml(state.usageSnap, usageTab);
+}
+
+// The usage widget has no SSE trigger of its own — `sync` events track PR/Jira
+// snapshots, not token usage — so its limit bars and "resets in…" countdown would
+// freeze at page-load values until some unrelated sync re-ran loadDashboard. Poll
+// /api/usage once a minute while the widget is on screen and re-render just it, so
+// the bars/pace tick/countdown stay live. One timer, started lazily on first load.
+let usageTimer = null;
+async function refreshUsageWidget() {
+  if (!document.getElementById('usage-widget')) return; // not on the dashboard right now
+  const usage = await api('/api/usage').catch(() => null);
+  if (usage) state.usageSnap = usage;
+  renderUsageWidget(); // always re-render so the countdown ticks even from cached data
+}
+function startUsageAutoRefresh() {
+  if (!usageTimer) usageTimer = setInterval(refreshUsageWidget, 60_000);
 }
 
 // Chip/section label for the sprint snapshot: the active sprint's name (with days

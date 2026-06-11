@@ -32,14 +32,18 @@ const limitSec = (title, win, winMs) => {
   if (!win) return '';
   const end = win.resetsAt ? +new Date(win.resetsAt) : null;
   const until = end && fmtUntil(win.resetsAt);
-  const pace = end ? Math.min(100, Math.max(0, 100 - (end - Date.now()) / winMs * 100)) : null;
-  const reserve = pace != null ? Math.round(pace - win.usedPct) : null;
+  // The bar shows what's LEFT (fills to `left`, drains as you use it) so it agrees
+  // with the "X% left" headline. The green tick is the budget that *should* remain
+  // on an even pace (100 − elapsed%); bar end right of the tick = ahead (in reserve).
+  const left = 100 - win.usedPct;
+  const elapsed = end ? Math.min(100, Math.max(0, 100 - (end - Date.now()) / winMs * 100)) : null;
+  const paceLeft = elapsed != null ? 100 - elapsed : null;
+  const reserve = paceLeft != null ? Math.round(left - paceLeft) : null;
   const reserveTxt = reserve == null ? '' : reserve >= 0 ? `${reserve}% in reserve` : `${-reserve}% over pace`;
-  // One row: "left · reserve" on the left, reset countdown on the right.
   return `
     <div class="limit-title">${title}</div>
-    <div class="limit-bar"><i style="width:${win.usedPct}%"></i>${pace != null ? `<s style="left:${pace.toFixed(1)}%"></s>` : ''}</div>
-    <div class="limit-rows"><div><b>${100 - win.usedPct}% left${reserveTxt ? ` · ${reserveTxt}` : ''}</b><span>${until ? `Resets in ${until}` : ''}</span></div></div>`;
+    <div class="limit-bar"><i style="width:${left}%"></i>${paceLeft != null ? `<s style="left:${paceLeft.toFixed(1)}%"></s>` : ''}</div>
+    <div class="limit-rows"><div><b>${left}% left${reserveTxt ? ` · ${reserveTxt}` : ''}</b><span>${until ? `Resets in ${until}` : ''}</span></div></div>`;
 };
 
 // Session/Weekly sections (Claude only — the OAuth windows). Falls back to the

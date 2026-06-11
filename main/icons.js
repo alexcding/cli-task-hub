@@ -17,23 +17,31 @@ function trayIcon(state) {
   return img;
 }
 
+// ── PNG encoder (shared) ─────────────────────────────────────────────────────────
+// nativeImage can't rasterize SVG, so menu graphics are hand-drawn into a width×height
+// RGBA buffer and PNG-encoded here (single IDAT, no row filtering). Used by the CI dot
+// and the usage histogram.
+const _crcTable = []; for (let i = 0; i < 256; i++) { let c = i; for (let j = 0; j < 8; j++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; _crcTable[i] = c >>> 0; }
+function pngEncode(w, h, rgba) {
+  const u32 = n => { const x = Buffer.alloc(4); x.writeUInt32BE(n >>> 0); return x; };
+  const crc = b => { let c = 0xffffffff; for (const v of b) c = _crcTable[(c ^ v) & 0xff] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; };
+  const chunk = (t, d) => { const tt = Buffer.from(t, 'ascii'); return Buffer.concat([u32(d.length), tt, d, u32(crc(Buffer.concat([tt, d])))]); };
+  const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(w, 0); ihdr.writeUInt32BE(h, 4); ihdr[8] = 8; ihdr[9] = 6;
+  const rows = []; for (let y = 0; y < h; y++) { rows.push(Buffer.from([0]), rgba.slice(y * w * 4, (y + 1) * w * 4)); }
+  const idat = zlib.deflateSync(Buffer.concat(rows));
+  return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ihdr), chunk('IDAT', idat), chunk('IEND', Buffer.alloc(0))]);
+}
+
 // ── Small custom CI dot (menu-item icon) ────────────────────────────────────────
 // A tiny drawn circle reads cleaner than the oversized emoji. Built at 2x for retina.
 function pngDot(size, [r, g, b]) {
-  const u32 = n => { const x = Buffer.alloc(4); x.writeUInt32BE(n >>> 0); return x; };
-  const table = []; for (let i = 0; i < 256; i++) { let c = i; for (let j = 0; j < 8; j++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; table[i] = c >>> 0; }
-  const crc = b2 => { let c = 0xffffffff; for (const v of b2) c = table[(c ^ v) & 0xff] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; };
-  const chunk = (t, d) => { const tt = Buffer.from(t, 'ascii'); return Buffer.concat([u32(d.length), tt, d, u32(crc(Buffer.concat([tt, d])))]); };
   const rgba = Buffer.alloc(size * size * 4);
   const c = (size - 1) / 2, rad = size * 0.30;
   for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
     const a = Math.max(0, Math.min(1, rad - Math.hypot(x - c, y - c) + 0.5));
     if (a > 0) { const i = (y * size + x) * 4; rgba[i] = r; rgba[i + 1] = g; rgba[i + 2] = b; rgba[i + 3] = Math.round(a * 255); }
   }
-  const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(size, 0); ihdr.writeUInt32BE(size, 4); ihdr[8] = 8; ihdr[9] = 6;
-  const rows = []; for (let y = 0; y < size; y++) { rows.push(Buffer.from([0]), rgba.slice(y * size * 4, (y + 1) * size * 4)); }
-  const idat = zlib.deflateSync(Buffer.concat(rows));
-  return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ihdr), chunk('IDAT', idat), chunk('IEND', Buffer.alloc(0))]);
+  return pngEncode(size, size, rgba);
 }
 
 const CI_COLORS = {
