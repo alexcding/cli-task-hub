@@ -20,7 +20,7 @@ No hosted backend. No personal access tokens in another app. No SaaS workspace
 to configure. Just authenticated CLI inputs, a local TaskHub core, and surfaces
 that keep your work queue visible.
 
-![TaskHub overview](assets/taskhub-overview.png)
+![TaskHub overview](docs/images/taskhub-overview.png)
 
 High-level flow: CLI inputs feed TaskHub Core, TaskHub Core powers developer
 surfaces, and the same shape can expand to more code hosts, issue trackers,
