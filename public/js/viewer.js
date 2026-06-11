@@ -2,11 +2,14 @@
 // (the main process strips X-Frame-Options/CSP so framing is allowed). Opened links
 // live as tabs in the left nav; activating one shows it full-width here.
 import { state, activeTab, prByUrl, prGroup, prTabTitle, jiraTabTitle, jiraByKey } from './store.js';
-import { api } from './api.js';
+import { api, apiJson } from './api.js';
 import { esc, jiraKeyFromUrl, canSplitTerminal, ghAvatarSrc } from './util.js';
+import { ICON } from './icons.js';
+import { toast, toastErr } from './toast.js';
 import { renderTabs } from './sidebar.js';
+import { openMenu } from './menu.js';
 import { disposeTerm, visibleTerm } from './terminal.js';
-import { ensurePrTerminal, applyPrLayout, clearPrLayout } from './split.js';
+import { ensurePrTerminal, applyPrLayout, clearPrLayout, resolveTabFolder } from './split.js';
 import { hideDiffPane } from './diff.js';
 
 let _tabSeq = 0;
@@ -219,6 +222,127 @@ export function updateTitles() {
     }
   }
   if (tt) tt.textContent = (state.activeTermId && visibleTerm()) ? 'Terminal' : '';
+  updateFolderChip();
+}
+
+// Folder chip (right of the webview segment): shows the active tab's local folder — the
+// project workspace, or its git worktree (worktree glyph + delete menu) — or a "Create
+// worktree" CTA when the branch isn't checked out anywhere yet. Resolution hits
+// /api/worktree (a `git worktree list` server-side), so guards keep it cheap and correct:
+// a (key + short TTL) short-circuit collapses the burst of updateTitles calls an SSE sync
+// triggers, yet still re-resolves within a few seconds so a worktree created/removed OUTSIDE
+// the app (e.g. in a terminal) is picked up; and a request-counter + active-tab check drop a
+// stale async result if the user switches tabs mid-resolve. Pass force=true after an in-app
+// create/remove to refresh immediately.
+const FOLDER_TTL = 5000;
+let _folderReq = 0;
+let _folderKey = null;
+let _folderAt = 0;
+async function updateFolderChip(force = false) {
+  const el = document.getElementById('split-folder');
+  const addBtn = document.getElementById('split-folder-add');
+  if (!el) return;
+  const hideChip = () => { el.hidden = true; el.dataset.path = ''; el.dataset.worktree = ''; el.dataset.workspace = ''; };
+  const hideAdd = () => { if (addBtn) { addBtn.hidden = true; addBtn.dataset.workspace = ''; addBtn.dataset.branch = ''; } };
+  const t = state.activeTermId ? null : activeTab();
+  const branch = t && t.kind === 'github' ? (t.branch || prByUrl(t.url)?.headRefName || '') : '';
+  // The tab + its branch/key decide the folder; skip the resolve when that's unchanged AND
+  // we resolved recently (TTL), so a sync burst doesn't spawn a git process each time while
+  // an external worktree change still surfaces within FOLDER_TTL. create/remove force=true.
+  const key = !t ? '' : `${t.id}|${t.kind}|${t.kind === 'jira' ? (t.jiraKey || jiraKeyFromUrl(t.url) || '') : branch}`;
+  const now = Date.now();
+  if (!force && key === _folderKey && now - _folderAt < FOLDER_TTL) return;
+  _folderAt = now;
+  _folderKey = key;
+
+  if (!t || (t.kind !== 'github' && t.kind !== 'jira')) { hideChip(); hideAdd(); return; }
+  const reqId = ++_folderReq;
+  const tabId = t.id;
+  const info = await resolveTabFolder(t).catch(() => null);
+  if (reqId !== _folderReq || state.activeTabId !== tabId) return; // tab switched mid-resolve
+  if (!info || !info.path) { hideChip(); hideAdd(); return; }
+
+  // Branch not checked out anywhere yet + a known PR branch → encourage a dedicated
+  // worktree with a "Create worktree" CTA. (When it's already in the main checkout we fall
+  // through to the plain folder chip instead of offering a create that git would reject.)
+  if (!info.matched && info.workspace && branch && addBtn) {
+    hideChip();
+    addBtn.dataset.workspace = info.workspace;
+    addBtn.dataset.branch = branch;
+    addBtn.title = `Create a worktree for ${branch}`;
+    addBtn.innerHTML = ICON.worktree + '<span class="fa-label">Create worktree</span>';
+    addBtn.hidden = false;
+    return;
+  }
+
+  // Otherwise show the folder chip: the worktree glyph for a dedicated worktree, or the
+  // plain folder for the main checkout / a tab we can't fork — both reveal in Finder.
+  hideAdd();
+  const isWorktree = !!info.isWorktree;
+  const name = info.path.split('/').filter(Boolean).pop() || info.path;
+  el.dataset.path = info.path;
+  // A worktree carries its workspace so the right-click menu can offer deletion (the main
+  // checkout can't be deleted, so it leaves these blank).
+  el.dataset.worktree = isWorktree ? '1' : '';
+  el.dataset.workspace = isWorktree ? (info.workspace || '') : '';
+  el.title = (isWorktree ? 'Worktree — reveal in Finder (right-click for more) — ' : 'Reveal in Finder — ') + info.path;
+  el.classList.toggle('is-worktree', isWorktree);
+  el.innerHTML = `<span class="fc-ic">${isWorktree ? ICON.worktree : ICON.folder}</span>`
+    + `<span class="fc-text">${esc(name)}</span>`;
+  el.hidden = false;
+}
+
+// Reveal the active tab's resolved folder in the system file manager.
+export function openTabFolder() {
+  const p = document.getElementById('split-folder')?.dataset.path;
+  if (p && window.taskhub?.openPath) window.taskhub.openPath(p);
+}
+
+// Right-click the folder chip → reveal in Finder always, plus "Delete worktree" when the
+// chip is a worktree (not the shared main checkout). Uses the shared context menu.
+export function folderMenu(e) {
+  const el = document.getElementById('split-folder');
+  if (!el || el.hidden) return false;
+  return openMenu(e, [
+    { label: 'Reveal in Finder', onClick: openTabFolder },
+    el.dataset.worktree === '1' && { label: 'Delete worktree…', onClick: removeTabWorktree, danger: true },
+  ]);
+}
+
+// Delete the chip's worktree (after confirming), then re-resolve so the chip falls back
+// to the plain checkout / create CTA. The branch is left intact.
+export async function removeTabWorktree() {
+  const el = document.getElementById('split-folder');
+  const workspace = el?.dataset.workspace, worktree = el?.dataset.path;
+  if (!workspace || !worktree) return;
+  if (!confirm(`Delete this worktree?\n\n${worktree}\n\nThe folder is removed; the branch is kept. Uncommitted changes there will block deletion.`)) return;
+  try {
+    const r = await apiJson('/api/worktree/remove', 'POST', { path: workspace, worktree });
+    if (r.error) { toastErr(r.error); return; }
+    toast('Worktree deleted');
+    updateFolderChip(true);
+  } catch (e) {
+    toastErr('Failed to delete worktree: ' + e.message);
+  }
+}
+
+// Create a git worktree for the active tab's PR branch (sibling of the project workspace),
+// then re-resolve the chip so it flips to the new worktree.
+export async function createTabWorktree() {
+  const btn = document.getElementById('split-folder-add');
+  const workspace = btn?.dataset.workspace, branch = btn?.dataset.branch;
+  if (!workspace || !branch) return;
+  btn.disabled = true;
+  try {
+    const r = await apiJson('/api/worktree', 'POST', { path: workspace, branch });
+    if (r.error) { toastErr(r.error); return; }
+    toast(`Worktree created for ${branch}`);
+    updateFolderChip(true);
+  } catch (e) {
+    toastErr('Failed to create worktree: ' + e.message);
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 // PR card / Jira badge click handlers. repo/branch are passed from the card (so the

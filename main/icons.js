@@ -6,15 +6,64 @@ const { app, nativeImage, nativeTheme, net } = require('electron');
 const path = require('path');
 const zlib = require('zlib');
 
-// Colored menu-bar dot by state: 'review' (bronze) | 'tasks' (blue) | 'idle' (green).
-// NOT a template image, so macOS keeps the color. @2x is auto-loaded if present.
-function trayIcon(state) {
+// Menu-bar icon: always the monochrome checkmark (a template image — macOS tints it
+// black-on-light / white-on-dark to match the menu bar). When `review` is set (you have
+// pending review requests) a bronze dot is drawn below the check to flag it.
+//
+// A template image is a pure alpha mask, so it can't carry the dot's color — the review
+// variant is therefore a NON-template raster painted in the current menu-bar foreground
+// (white on a dark bar, black on light; re-rendered on appearance change via refreshMenu).
+const REVIEW_DOT = [0x98, 0x71, 0x2c]; // bronze
+const TRAY_CHECK = [[0.20, 0.50], [0.42, 0.68], [0.80, 0.28]]; // wider, thinner-stroked menu-bar check
+function trayIcon(review) {
   const dir = app.isPackaged ? process.resourcesPath : path.join(__dirname, '..', 'build');
-  const img = nativeImage.createFromPath(path.join(dir, `tray-icon-${state}.png`));
-  // idle = monochrome template (macOS tints black/white to the menu bar);
-  // tasks/review keep their color.
-  img.setTemplateImage(state === 'idle');
+  if (!review) {
+    const img = nativeImage.createFromPath(path.join(dir, 'tray-icon-idle.png'));
+    img.setTemplateImage(true);
+    return img;
+  }
+  const fg = nativeTheme.shouldUseDarkColors ? [235, 235, 235] : [0, 0, 0];
+  const img = nativeImage.createFromBuffer(renderTray(22, fg), { width: 22, height: 22, scaleFactor: 1 });
+  img.addRepresentation({ scaleFactor: 2, width: 44, height: 44, buffer: renderTray(44, fg) });
+  return img; // non-template: keep the bronze dot's color
+}
+
+// Pressed (menu-open) variant. macOS highlights the clicked menu-bar item with a dark/accent
+// fill and auto-inverts TEMPLATE images to white — but the review icon is non-template, so a
+// light-mode black checkmark would wash out against the highlight. Supply a white-checkmark
+// version for the pressed state. No review → the idle template inverts on its own.
+function trayPressedIcon(review) {
+  if (!review) return trayIcon(false);
+  const fg = [255, 255, 255];
+  const img = nativeImage.createFromBuffer(renderTray(22, fg), { width: 22, height: 22, scaleFactor: 1 });
+  img.addRepresentation({ scaleFactor: 2, width: 44, height: 44, buffer: renderTray(44, fg) });
   return img;
+}
+
+// Rasterize the menu-bar checkmark (in `fg`) lifted into the upper ~80% of the tile, with
+// the bronze review dot centered below it. Returns a PNG buffer.
+function renderTray(size, fg) {
+  const rgba = new Uint8Array(size * size * 4);
+  const set = (x, y, c, a) => {
+    if (x < 0 || x >= size || y < 0 || y >= size || a <= 0) return;
+    const i = (y * size + x) * 4, na = Math.min(255, Math.round(a * 255));
+    if (na <= rgba[i + 3]) return;
+    rgba[i] = c[0]; rgba[i + 1] = c[1]; rgba[i + 2] = c[2]; rgba[i + 3] = na;
+  };
+  const disc = (cx, cy, rad, c) => {
+    for (let y = Math.floor(cy - rad); y <= Math.ceil(cy + rad); y++)
+      for (let x = Math.floor(cx - rad); x <= Math.ceil(cx + rad); x++)
+        set(x, y, c, Math.max(0, Math.min(1, rad - Math.hypot(x - cx, y - cy) + 0.5)));
+  };
+  const P = TRAY_CHECK.map(([px, py]) => [px * size, py * size * 0.82 + size * 0.02]);
+  const rad = size * 0.062;
+  for (let s = 0; s < P.length - 1; s++) {
+    const [x0, y0] = P[s], [x1, y1] = P[s + 1];
+    const steps = Math.ceil(Math.hypot(x1 - x0, y1 - y0) * 2);
+    for (let i = 0; i <= steps; i++) disc(x0 + (x1 - x0) * i / steps, y0 + (y1 - y0) * i / steps, rad, fg);
+  }
+  disc(size * 0.5, size * 0.85, size * 0.115, REVIEW_DOT);
+  return pngEncode(size, size, rgba);
 }
 
 // ── PNG encoder (shared) ─────────────────────────────────────────────────────────
@@ -216,4 +265,4 @@ function jiraIcon() {
   return _jiraIcon;
 }
 
-module.exports = { trayIcon, ciIcon, ciKey, avatarIcon, loadAvatar, avatarDataUrl, jiraIcon };
+module.exports = { trayIcon, trayPressedIcon, ciIcon, ciKey, avatarIcon, loadAvatar, avatarDataUrl, jiraIcon };

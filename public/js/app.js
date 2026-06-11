@@ -6,7 +6,8 @@ import { canSplitTerminal } from './util.js';
 import { ICON } from './icons.js';
 import { initTheme, setAppTheme, syncThemeFromSettings } from './theme.js';
 import { setFontFamily, bumpFontSize, resetFontSize, zoomTarget, syncFontsFromSettings, populateFontMenus } from './fonts.js';
-import { renderTabs, renderProjectNav, tabMenu, closeTabMenu, isTabMenuOpen, initSidebarResize } from './sidebar.js';
+import { renderTabs, renderProjectNav, tabMenu, initSidebarResize } from './sidebar.js';
+import { closeMenu, isMenuOpen } from './menu.js';
 import * as viewer from './viewer.js';
 import * as terminal from './terminal.js';
 import * as split from './split.js';
@@ -15,7 +16,7 @@ import { loadDashboard, scrollDash, setUsageTab } from './views/dashboard.js';
 import { loadProjectPage, switchTab, reloadProjectPRs } from './views/project.js';
 import * as jiraView from './views/jira.js';
 import { loadLogs, setLogCategory, clearLogs } from './views/logs.js';
-import { loadSettings, saveConfig, switchSettingsTab } from './views/settings.js';
+import { loadSettings, saveConfig, switchSettingsTab, setReviewSound, previewReviewSound } from './views/settings.js';
 import * as modal from './views/modal.js';
 
 // ── Navigation ────────────────────────────────────────────────────────────────
@@ -111,7 +112,7 @@ window.__shortcut = handleShortcut; // called by the app menu via executeJavaScr
 
 document.addEventListener('keydown', e => {
   if (e.key !== 'Escape') return;
-  if (isTabMenuOpen()) { closeTabMenu(); return; }   // close the tab menu first
+  if (isMenuOpen()) { closeMenu(); return; }   // close any open context menu first
   modal.closeModal();
   if (!document.getElementById('split').hidden) viewer.closeSplit();
 });
@@ -168,6 +169,8 @@ Object.assign(window, {
   // sidebar / tabs
   activateTab: viewer.activateTab, closeTab: viewer.closeTab, tabMenu,
   openPrSplit: viewer.openPrSplit, jiraClick: viewer.jiraClick,
+  openTabFolder: viewer.openTabFolder, createTabWorktree: viewer.createTabWorktree,
+  folderMenu: viewer.folderMenu, removeTabWorktree: viewer.removeTabWorktree,
   // viewer toolbar
   splitBack: viewer.splitBack, splitHome: viewer.splitHome,
   togglePrSplit: split.togglePrSplit, clearVisibleTerm: terminal.clearVisibleTerm,
@@ -178,7 +181,7 @@ Object.assign(window, {
   openStatusMenu: jiraView.openStatusMenu,
   switchTab, reloadProjectPRs, scrollDash, setUsageTab,
   loadLogs, setLogCategory, clearLogs,
-  loadSettings, saveConfig, switchSettingsTab,
+  loadSettings, saveConfig, switchSettingsTab, setReviewSound, previewReviewSound,
   // project modal
   openNewProjectModal: modal.openNewProjectModal, openEditProjectModal: modal.openEditProjectModal,
   closeModal: modal.closeModal, saveProject: modal.saveProject,

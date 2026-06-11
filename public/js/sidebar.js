@@ -4,6 +4,7 @@ import { state, prByUrl, prGroup, setProjects } from './store.js';
 import { esc, ghAvatarSrc } from './util.js';
 import { ICON, TAB_ICON } from './icons.js';
 import { ciInfo } from './views/cards.js';
+import { openMenu } from './menu.js';
 import { activateTab, closeTab, closeSplit, confirmCloseTabTerminals, closePairedTerm, saveTabs, updateTitles } from './viewer.js';
 
 // Render the open tabs as grouped rows in the left nav, and show the active tab's
@@ -107,28 +108,13 @@ function closeOthers(id) {
   activateTab(id);
 }
 
-// Right-click tab menu (reuses .status-menu styling).
-let _tabMenuEl = null;
-export const isTabMenuOpen = () => !!_tabMenuEl;
-export function closeTabMenu() {
-  if (_tabMenuEl) { _tabMenuEl.remove(); _tabMenuEl = null; }
-  document.removeEventListener('click', closeTabMenu, true);
-}
+// Right-click tab menu (the shared context menu in menu.js).
 export function tabMenu(e, id) {
-  e.preventDefault();
-  closeTabMenu();
-  const m = document.createElement('div');
-  m.className = 'status-menu';
-  const item = (label, fn) => { const b = document.createElement('button'); b.className = 'status-menu-item'; b.textContent = label; b.onclick = () => { closeTabMenu(); fn(); }; m.appendChild(b); };
-  item('Close tab', () => closeTab(id));
-  if (state.tabs.length > 1) item('Close others', () => closeOthers(id));
-  item('Close all', () => closeSplit());
-  document.body.appendChild(m);
-  m.style.top = (window.scrollY + e.clientY) + 'px';
-  m.style.left = Math.min(window.scrollX + e.clientX, window.scrollX + window.innerWidth - m.offsetWidth - 8) + 'px';
-  _tabMenuEl = m;
-  setTimeout(() => document.addEventListener('click', closeTabMenu, true), 0);
-  return false;
+  return openMenu(e, [
+    { label: 'Close tab', onClick: () => closeTab(id) },
+    state.tabs.length > 1 && { label: 'Close others', onClick: () => closeOthers(id) },
+    { label: 'Close all', onClick: () => closeSplit() },
+  ]);
 }
 
 // ── Projects sidebar nav ──────────────────────────────────────────────────────

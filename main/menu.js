@@ -4,7 +4,7 @@
 const { Menu } = require('electron');
 const { fetchJSON, postJSON } = require('./server-supervisor');
 const { openWindow, openLinkInApp, runInApp, quitApp } = require('./window');
-const { trayIcon, avatarIcon, loadAvatar, jiraIcon } = require('./icons');
+const { trayIcon, trayPressedIcon, avatarIcon, loadAvatar, jiraIcon } = require('./icons');
 const { detectReviewChanges } = require('./notifications');
 const { renderUsageImage } = require('./usage-image');
 
@@ -114,7 +114,6 @@ async function refreshMenuData(tray, refreshMenu) {
   // Notifications + icon color track ALL pending reviews from the snapshot, independent
   // of which tabs are open — so a newly-requested review still alerts you even unopened.
   const openPRs = prList.filter(p => !p.error && p.state === 'OPEN');
-  const mine   = openPRs.filter(p => p.category === 'mine');
   const review = openPRs.filter(p => p.category === 'review');
 
   // Pre-load each author avatar we're about to render (unique logins, in parallel) so the
@@ -134,15 +133,19 @@ async function refreshMenuData(tray, refreshMenu) {
   // you've already opened (reviewPending is false once viewed, until a newer request
   // re-surfaces it; computed server-side from persisted viewed_at — see server.js).
   // Clicking opens the PR (focusing its tab if already open).
-  const reviewReqItems = prMenuItems('Review requested', review.filter(pr => pr.reviewPending), refreshMenu);
+  const pendingReview = review.filter(pr => pr.reviewPending);
+  const reviewReqItems = prMenuItems('Review requested', pendingReview, refreshMenu);
 
-  // Notify + play a sound on any newly-requested review.
-  detectReviewChanges(review);
+  // Notify + play a sound on any newly-requested review (sound chosen in Settings).
+  detectReviewChanges(review, settings && settings.reviewSound);
 
-  // Icon color by state: red = review requested, blue = only your tasks, green = clear.
-  const steadyState = review.length ? 'review' : mine.length ? 'tasks' : 'idle';
+  // Menu-bar icon: monochrome checkmark, plus a bronze dot when there are pending reviews
+  // waiting on you (none → just the mono check). The pressed variant keeps it legible while
+  // the tray menu is open (a non-template icon won't auto-invert against the highlight).
   if (tray) {
-    tray.setImage(trayIcon(steadyState));
+    const hasReview = pendingReview.length > 0;
+    tray.setImage(trayIcon(hasReview));
+    tray.setPressedImage(trayPressedIcon(hasReview));
     tray.setTitle('');
   }
 

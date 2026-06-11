@@ -6,7 +6,7 @@
 // Cache compiled V8 bytecode to disk for faster cold starts (no-op pre-Node 22.8).
 try { require('node:module').enableCompileCache?.(); } catch {}
 
-const { app, Tray, session, ipcMain } = require('electron');
+const { app, Tray, session, ipcMain, nativeTheme } = require('electron');
 const path = require('path');
 
 // Show "TaskHub" (not "Electron") in the About panel, Dock, and userData path during dev.
@@ -29,7 +29,7 @@ require('./lib/logger');
 const supervisor = require('./main/server-supervisor');
 const terminals = require('./main/terminals');
 const win = require('./main/window');
-const { trayIcon } = require('./main/icons');
+const { trayIcon, trayPressedIcon } = require('./main/icons');
 const { refreshMenuData, buildMenuNow } = require('./main/menu');
 const { setupAutoUpdates } = require('./main/updater');
 const { BASE_URL } = require('./main/const');
@@ -110,8 +110,13 @@ app.whenReady().then(async () => {
   allowFraming();    // let the dashboard's <webview> embed GitHub/Jira
   win.openWindow();  // show the dashboard window on launch
 
-  tray = new Tray(trayIcon('idle')); // colored by state in refreshMenuData()
+  tray = new Tray(trayIcon(false)); // mono check; refreshMenuData() adds the review dot
+  tray.setPressedImage(trayPressedIcon(false));
   tray.setToolTip('TaskHub');
+  // The review-dot variant is a non-template raster painted in the menu-bar foreground,
+  // so re-render it when the system appearance flips (otherwise it'd lag until the next
+  // 60s tick / blur).
+  nativeTheme.on('updated', () => refreshMenu());
 
   // A context menu must stay SET: calling popUpContextMenu from a tray 'click' handler
   // returns without displaying anything (verified on macOS 26 / Electron 42), so the menu

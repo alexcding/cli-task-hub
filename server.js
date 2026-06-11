@@ -77,6 +77,24 @@ app.post('/api/config', (req, res) => {
   res.json({ ok: true });
 });
 
+// macOS notification sounds the user can pick for review alerts — the same folders
+// System Settings draws from. Each entry is { name, path }; the chosen path is stored
+// as the `reviewSound` setting and played by afplay (see main/notifications.js).
+app.get('/api/sounds', wrap((req, res) => {
+  const fs = require('fs'), os = require('os');
+  const dirs = ['/System/Library/Sounds', path.join(os.homedir(), 'Library', 'Sounds')];
+  const sounds = [];
+  for (const dir of dirs) {
+    let files;
+    try { files = fs.readdirSync(dir); } catch { continue; } // dir absent → skip
+    for (const f of files.sort()) {
+      if (!/\.(aiff?|wav|caf|m4a|mp3)$/i.test(f)) continue;
+      sounds.push({ name: f.replace(/\.[^.]+$/, ''), path: path.join(dir, f) });
+    }
+  }
+  res.json(sounds);
+}));
+
 // ── Settings (taskhub.db key/value — theme + ticket filter prefs) ───────────────
 app.get('/api/settings', wrap((req, res) => res.json(configdb.getAllSettings())));
 app.put('/api/settings/:key', wrap((req, res) => {
@@ -134,17 +152,34 @@ app.get('/api/detect-repo', async (req, res) => {
   res.json({ repo: (await github.gitRemoteRepo(String(dir))) || '' });
 });
 
-// Local worktree path within `path` so a tab's terminal can open in the matching
-// worktree instead of the main checkout. Resolve by exact `branch` (GitHub PR) or by
-// Jira `key` embedded in a branch name (RECORD-1234 → feature/RECORD-1234-foo).
-// { path: '' } when nothing matches (or, for a key, when the match is ambiguous).
+// Where a tab's branch/key is checked out, so the terminal can open there and the titlebar
+// chip can label it. Resolve by exact `branch` (GitHub PR) or by Jira `key` embedded in a
+// branch name (RECORD-1234 → feature/RECORD-1234-foo). Returns:
+//   { path, matched, isWorktree } — matched: a tree has it checked out; isWorktree: that
+//   tree is a dedicated (linked) worktree, not the shared main checkout.
+// { path: '', matched: false } when nothing matches (or, for a key, the match is ambiguous).
 app.get('/api/worktree', async (req, res) => {
   const { path: dir, branch, key } = req.query;
-  if (!dir || (!branch && !key)) return res.json({ path: '' });
+  if (!dir || (!branch && !key)) return res.json({ path: '', matched: false, isWorktree: false });
   const found = key
     ? await github.worktreeForJiraKey(String(dir), String(key))
     : await github.worktreeForBranch(String(dir), String(branch));
-  res.json({ path: found || '' });
+  res.json({ path: found?.path || '', matched: !!found, isWorktree: !!(found && !found.isMain) });
+});
+
+// Create a git worktree for a PR branch as a sibling of the project workspace, so the
+// tab can get its own checkout. Local git only. Returns { path } on success or { error }.
+app.post('/api/worktree', async (req, res) => {
+  const { path: dir, branch } = req.body || {};
+  if (!dir || !branch) return res.status(400).json({ error: 'path and branch required' });
+  res.json(await github.createWorktree(String(dir), String(branch)));
+});
+
+// Remove a worktree (folder + admin entry), run from the project workspace. Local git only.
+app.post('/api/worktree/remove', async (req, res) => {
+  const { path: dir, worktree } = req.body || {};
+  if (!dir || !worktree) return res.status(400).json({ error: 'path and worktree required' });
+  res.json(await github.removeWorktree(String(dir), String(worktree)));
 });
 
 // Uncommitted changes in a checkout (the diff pane). Local git only — same class of

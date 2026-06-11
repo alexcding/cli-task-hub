@@ -21,14 +21,24 @@ const prKey = pr => `${pr.repo}#${pr.number}`;
 // couldn't supply one (still pending, just not re-notified on every cycle).
 const reqMarker = pr => pr.requestedAt || 'pending';
 
-// Play a macOS system sound to announce a newly-requested review (replaces the old
-// menu-bar blink). Best-effort: afplay is macOS-only; fall back to the system beep.
-function playReviewSound() {
-  if (process.platform === 'darwin') {
-    execFile('afplay', ['/System/Library/Sounds/Glass.aiff'], () => {});
-  } else {
-    shell.beep();
-  }
+// The reviewSound setting → a sound file: an absolute path to a chosen sound, or the
+// macOS default Glass chime for null/'system'.
+const soundFile = sound => (sound && sound !== 'system' ? sound : '/System/Library/Sounds/Glass.aiff');
+
+// Play a review sound via afplay (macOS). Resolves when it finishes, REJECTS on failure
+// (missing/moved file, afplay error) — the Settings preview surfaces that to the user so
+// it never fails silently. On non-mac there's no afplay: beep and resolve.
+function previewSound(sound) {
+  return new Promise((resolve, reject) => {
+    if (process.platform !== 'darwin') { shell.beep(); return resolve(); }
+    execFile('afplay', [soundFile(sound)], err => (err ? reject(err) : resolve()));
+  });
+}
+
+// Announce a newly-requested review: fire-and-forget — same playback as the preview, but
+// never throws (falls back to the system beep on any failure: missing/moved file, non-mac).
+function playReviewSound(sound) {
+  previewSound(sound).catch(() => shell.beep());
 }
 
 // Native notification; clicking it opens that PR in the dashboard.
@@ -43,13 +53,13 @@ function notifyReviewRequested(pr) {
 // Notify + play a sound for any PR that is pending review with a request we haven't
 // announced yet. `reviewPRs` is the tray snapshot's review-category PRs (each with
 // reviewPending / requestedAt attached by the server).
-function detectReviewChanges(reviewPRs) {
+function detectReviewChanges(reviewPRs, sound) {
   const pending = reviewPRs.filter(pr => pr.reviewPending);
   const fresh = pending.filter(pr => notifiedAt.get(prKey(pr)) !== reqMarker(pr));
 
   if (reviewSeeded && fresh.length) {
     for (const pr of fresh) notifyReviewRequested(pr);
-    playReviewSound(); // one sound per cycle, even if several reviews arrive at once
+    playReviewSound(sound); // one sound per cycle, even if several reviews arrive at once
   }
 
   // Remember what we've announced for every pending PR; forget PRs no longer pending
@@ -60,4 +70,4 @@ function detectReviewChanges(reviewPRs) {
   reviewSeeded = true;
 }
 
-module.exports = { detectReviewChanges, prKey };
+module.exports = { detectReviewChanges, playReviewSound, previewSound, prKey };

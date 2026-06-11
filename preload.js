@@ -33,6 +33,14 @@ contextBridge.exposeInMainWorld('taskhub', {
   // the dialog was cancelled. Used to set a project's workspace folder.
   chooseFolder: () => ipcRenderer.invoke('choose-folder'),
 
+  // Preview a review-notification sound through main's afplay (pass a sound's path, or
+  // null/'system' for the macOS default). Used by the Settings sound picker.
+  previewSound: (p) => ipcRenderer.invoke('sound:preview', p),
+
+  // Reveal a folder in the system file manager (Finder). Backs the viewer titlebar's
+  // workspace/worktree chip; resolves once the OS hands the open off.
+  openPath: (p) => ipcRenderer.invoke('open-path', p),
+
   // Close the dashboard window — ⌘W's fallback when no tab is in view.
   closeWindow: () => ipcRenderer.send('close-window'),
 

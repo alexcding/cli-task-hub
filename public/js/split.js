@@ -9,31 +9,40 @@ import { createTermView, disposeTerm, fitTerm, visibleTerm } from './terminal.js
 import { renderDiffPane, hideDiffPane } from './diff.js';
 import { saveTabs, updateTitles } from './viewer.js';
 
-// Where a tab's terminal should start. GitHub PR: the worktree at the PR's branch, else
-// the project workspace. Jira ticket: the worktree whose branch embeds the ticket key,
-// else the project workspace. null → main falls back to the app's own repo.
-async function prCwd(tab) {
-  if (tab.kind === 'jira') return jiraCwd(tab);
+// Resolve a tab's local folder: the matching git checkout if its branch/key is checked
+// out, else the project workspace. GitHub PR → the PR's branch. Jira ticket → the worktree
+// whose branch embeds the ticket key (an unambiguous single match only; 0 or >1 falls back
+// to the workspace). Returns { path, workspace, matched, isWorktree }:
+//   - path: the checkout to use (worktree if any, else workspace; null = tab has no project)
+//   - matched: a git tree currently has this branch/key checked out
+//   - isWorktree: that tree is a dedicated (linked) worktree, not the shared main checkout
+// The server decides matched/isWorktree authoritatively (it parses `git worktree list`),
+// so the renderer never infers worktree-ness from a path string compare. Shared by the
+// terminal cwd resolver (prCwd) and the viewer titlebar chip (updateFolderChip).
+export async function resolveTabFolder(tab) {
+  const none = ws => ({ path: ws, workspace: ws, matched: false, isWorktree: false });
+  if (tab.kind === 'jira') {
+    const key = tab.jiraKey || jiraKeyFromUrl(tab.url);
+    const proj = projectByJiraKey(key);
+    const ws = (proj && proj.workspace) || null;
+    if (!ws || !key) return none(ws);
+    try { const r = await api(`/api/worktree?path=${encodeURIComponent(ws)}&key=${encodeURIComponent(key)}`); if (r.path) return { path: r.path, workspace: ws, matched: !!r.matched, isWorktree: !!r.isWorktree }; } catch {}
+    return none(ws);
+  }
   const proj = projectByRepo(tab.repo) || projectByPrUrl(tab.url);
-  const ws = proj && proj.workspace;
-  if (!ws) return null;
+  const ws = (proj && proj.workspace) || null;
+  if (!ws) return { path: null, workspace: null, matched: false, isWorktree: false };
   const branch = tab.branch || (proj.prs || []).find(p => p.url === tab.url)?.headRefName;
   if (branch) {
-    try { const r = await api(`/api/worktree?path=${encodeURIComponent(ws)}&branch=${encodeURIComponent(branch)}`); if (r.path) return r.path; } catch {}
+    try { const r = await api(`/api/worktree?path=${encodeURIComponent(ws)}&branch=${encodeURIComponent(branch)}`); if (r.path) return { path: r.path, workspace: ws, matched: !!r.matched, isWorktree: !!r.isWorktree }; } catch {}
   }
-  return ws;
+  return none(ws);
 }
 
-// Jira ticket → terminal cwd. Find the owning project by key prefix, then ask the
-// server for a worktree whose branch embeds the key. Per design: an unambiguous single
-// match opens there; zero or multiple matches fall back to the project workspace.
-async function jiraCwd(tab) {
-  const key = tab.jiraKey || jiraKeyFromUrl(tab.url);
-  const proj = projectByJiraKey(key);
-  const ws = proj && proj.workspace;
-  if (!ws || !key) return ws || null;
-  try { const r = await api(`/api/worktree?path=${encodeURIComponent(ws)}&key=${encodeURIComponent(key)}`); if (r.path) return r.path; } catch {}
-  return ws;
+// Where a tab's terminal should start (the resolved worktree/workspace folder, or null
+// so main falls back to the app's own repo).
+async function prCwd(tab) {
+  return (await resolveTabFolder(tab)).path;
 }
 
 // Lazily create or resume the tab's paired terminal. A live PTY from a previous window

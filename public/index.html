@@ -168,6 +168,23 @@
     .split-title { flex:1; min-width:0; font-size:13px; font-weight:600; display:flex; align-items:center; gap:7px; overflow:hidden; }
     .split-title .stitle-text { min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
     .split-title img { flex-shrink:0; width:16px; height:16px; border-radius:50%; object-fit:cover; }
+    /* Workspace/worktree folder chip — right end of the webview segment; reveals in Finder. */
+    .folder-chip { flex-shrink:0; max-width:240px; display:inline-flex; align-items:center; gap:5px; margin-left:8px; padding:4px 8px; background:none; border:none; border-radius:6px; color:var(--text-2); font:inherit; font-size:12px; font-weight:500; cursor:pointer; }
+    .folder-chip:hover { background:var(--surface-hover); color:var(--text); }
+    .folder-chip .fc-ic { flex-shrink:0; display:inline-flex; }
+    .folder-chip svg { flex-shrink:0; width:15px; height:15px; }
+    .folder-chip .fc-text { min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    /* Worktree tabs: tint the glyph with the accent so it's distinguishable at a glance. */
+    .folder-chip.is-worktree .fc-ic { color:var(--accent); }
+    /* Create-worktree call-to-action (shown instead of the chip on a plain checkout):
+       worktree glyph + label, accent-toned so it reads as the suggested action. */
+    .folder-add { gap:5px; margin-left:8px; padding:5px 10px; font-size:12px; font-weight:500; color:var(--accent); }
+    .folder-add:hover { background:var(--accent-bg); color:var(--accent); }
+    .folder-add svg { width:16px; height:16px; }
+    .folder-add .fa-label { min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .folder-add:disabled { opacity:.5; cursor:default; }
+    /* display:inline-flex above overrides the UA [hidden] rule, so hiding needs to be explicit. */
+    .folder-chip[hidden], .folder-add[hidden] { display:none; }
     body.viewing-tab main { display:none; }
     .tab-group { display:flex; align-items:center; gap:3px; }
     .tab-group-label { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.4px; color:var(--text-3); padding:0 3px; flex-shrink:0; }
@@ -497,10 +514,17 @@
     .status-btn:hover { border-color:var(--accent); }
     .status-caret { display:inline-flex;opacity:.55;margin-left:1px; }
     .status-caret svg { width:11px;height:11px;display:block; }
-    .status-menu { position:absolute;z-index:2000;background:var(--surface);border:1px solid var(--border);border-radius:var(--r);box-shadow:var(--shadow-md);padding:4px;min-width:170px;max-height:320px;overflow-y:auto; }
-    .status-menu-head { font-size:10.5px;color:var(--text-3);text-transform:uppercase;letter-spacing:.4px;padding:6px 9px 4px; }
-    .status-menu-item { display:block;width:100%;text-align:left;background:none;border:none;color:var(--text);font-size:13px;padding:7px 9px;border-radius:6px;cursor:pointer; }
-    .status-menu-item:hover { background:var(--accent-bg);color:var(--accent); }
+    /* Context menus, macOS-style: hairline-bordered card with a soft drop shadow, tight
+       rows, and a solid accent "highlight" pill (white text) on the hovered item — the
+       signature mac look. Arrow cursor (not pointer), like a native menu. */
+    .status-menu { position:absolute;z-index:2000;background:var(--surface);border:0.5px solid var(--border);border-radius:8px;box-shadow:0 10px 30px -6px rgb(16 24 40/.24),0 2px 8px -3px rgb(16 24 40/.14);padding:5px;min-width:180px;max-height:320px;overflow-y:auto; }
+    .status-menu-head { font-size:11px;color:var(--text-3);padding:5px 10px 3px; }
+    .status-menu-item { display:block;width:100%;text-align:left;background:none;border:none;color:var(--text);font-size:13px;line-height:1.3;padding:5px 10px;border-radius:5px;cursor:default;white-space:nowrap; }
+    .status-menu-item:hover { background:var(--accent);color:#fff; }
+    .status-menu-item.danger { color:var(--danger); }
+    /* Destructive item still highlights with the accent (mac keeps the highlight uniform);
+       the red text only signals at rest. */
+    .status-menu-item.danger:hover { background:var(--accent);color:#fff; }
 
     /* Table */
     .table-wrap { overflow-x:auto; }
@@ -805,6 +829,20 @@
             <div class="card-pad font-preview font-preview-diff">$ git diff --stat
 <span class="fp-del">- const size = settings.fontSize ?? 12;</span>
 <span class="fp-add">+ const { family, size } = state.fonts.diff;</span></div>
+            <div class="card-pad theme-row" style="border-top:1px solid var(--border)">
+              <div>
+                <div class="theme-row-title">Review sound</div>
+                <div class="theme-row-sub">Plays when a PR newly needs your review</div>
+              </div>
+              <div class="font-controls">
+                <select id="review-sound" onchange="setReviewSound(this.value)" aria-label="Review notification sound">
+                  <option value="system">macOS default (Glass)</option>
+                </select>
+                <button class="btn btn-secondary btn-sm" onclick="previewReviewSound()" title="Preview" aria-label="Preview sound">
+                  <svg viewBox="0 0 24 24" fill="currentColor" stroke="none" width="13" height="13"><path d="M8 5v14l11-7z"/></svg>
+                </button>
+              </div>
+            </div>
           </div>
           </div><!-- /appearance -->
 
@@ -901,6 +939,12 @@
         </button>
         <!-- Plain page title — no link, so the toolbar band stays draggable. -->
         <span class="split-title" id="split-title"></span>
+        <!-- Local folder for this tab (project workspace, or its git worktree). Click to
+             reveal in Finder; filled by updateFolderChip in viewer.js. -->
+        <button class="folder-chip" id="split-folder" hidden onclick="openTabFolder()" oncontextmenu="return folderMenu(event)"></button>
+        <!-- Plain repo + known PR branch → create a worktree for it. viewer.js fills the
+             worktree glyph, sets the branch, and toggles visibility. -->
+        <button class="split-btn folder-add" id="split-folder-add" hidden onclick="createTabWorktree()"></button>
       </div>
       <!-- Terminal segment (over the terminal pane in split mode, or full-width when a terminal is the sole view).
            The view switch flips the pane between the paired terminal and a read-only

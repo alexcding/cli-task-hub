@@ -1,19 +1,16 @@
-// Generates the macOS menu-bar checkmark in state colors (same shape as the app icon):
-//   tray-icon-idle.png    — black  : nothing to do (used as a template = auto B/W)
-//   tray-icon-tasks.png   — blue   : you have open tasks (your PRs)
-//   tray-icon-review.png  — bronze : someone requested your review
-// plus @2x retina variants. Only the COLOR changes between states, not the shape.
+// Generates the macOS menu-bar checkmark (same shape as the app icon), plus an @2x retina
+// variant:
+//   tray-icon-idle.png — black, used as a TEMPLATE image (macOS tints it white-on-dark /
+//                        black-on-light). This is the only menu-bar glyph.
+// The "review requested" state is no longer a recolored glyph — main/icons.js draws a
+// bronze dot under this same checkmark at runtime (a template image can't carry color).
 
 const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');
 
 const COLORS = {
-  idle:   [0x00, 0x00, 0x00], // black — used as a TEMPLATE image (macOS tints it
-                              //         white-on-dark / black-on-light); the neutral
-                              //         "nothing to do" state.
-  tasks:  [0x63, 0x66, 0xf1], // blue   — your open PRs
-  review: [0x98, 0x71, 0x2c], // bronze — review requested
+  idle: [0x00, 0x00, 0x00], // black — TEMPLATE image; macOS tints it to the menu bar.
 };
 
 // ── Minimal RGBA PNG writer ──────────────────────────────────────────────────
@@ -45,8 +42,8 @@ function makePNG(size, rgba) {
   return Buffer.concat([sig, chunk('IHDR', ihdr), chunk('IDAT', zlib.deflateSync(Buffer.from(rows))), chunk('IEND', Buffer.alloc(0))]);
 }
 
-// Checkmark — same geometry as the app icon (gen-icon.js), colored per state.
-const CHECK = [[0.27, 0.52], [0.44, 0.69], [0.74, 0.34]];
+// Checkmark geometry: a touch wider and thinner-stroked than the app icon for the menu bar.
+const CHECK = [[0.20, 0.50], [0.42, 0.68], [0.80, 0.28]];
 
 function render(size, [r, g, b]) {
   const rgba = new Uint8Array(size * size * 4); // transparent
@@ -63,7 +60,7 @@ function render(size, [r, g, b]) {
         set(x, y, Math.max(0, Math.min(1, rad - Math.hypot(x - cx, y - cy) + 0.5)));
   };
   const P = CHECK.map(([px, py]) => [px * size, py * size]);
-  const rad = size * 0.078;
+  const rad = size * 0.062;
   for (let s = 0; s < P.length - 1; s++) {
     const [x0, y0] = P[s], [x1, y1] = P[s + 1];
     const steps = Math.ceil(Math.hypot(x1 - x0, y1 - y0) * 2);
@@ -78,4 +75,4 @@ for (const [name, rgb] of Object.entries(COLORS)) {
   fs.writeFileSync(path.join(outDir, `tray-icon-${name}.png`), render(22, rgb));
   fs.writeFileSync(path.join(outDir, `tray-icon-${name}@2x.png`), render(44, rgb));
 }
-console.log('Generated tray-icon-{idle,tasks,review}.png (+ @2x)');
+console.log('Generated tray-icon-idle.png (+ @2x)');

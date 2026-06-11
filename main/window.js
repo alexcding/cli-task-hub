@@ -108,6 +108,10 @@ function registerIpc() {
   // deferred to call time to sidestep the window→usage→terminals→window load-time cycle.
   ipcMain.handle('usage:get', () => require('./usage').computeUsage());
 
+  // Reveal a folder in the system file manager (Finder). Backs the viewer titlebar's
+  // workspace/worktree chip (see updateFolderChip in viewer.js).
+  ipcMain.handle('open-path', (_e, p) => { if (p) shell.openPath(String(p)); });
+
   ipcMain.handle('choose-folder', async () => {
     const parent = getWin() || undefined;
     const { canceled, filePaths } = await dialog.showOpenDialog(parent, {
@@ -116,6 +120,12 @@ function registerIpc() {
     });
     return canceled || !filePaths.length ? null : filePaths[0];
   });
+
+  // Preview a review sound from Settings — same afplay path the live notification uses,
+  // so the macOS system sound (which the sandboxed renderer can't decode/serve) plays
+  // identically. Returns the afplay promise so a failure rejects back to the renderer
+  // (which toasts it). Deferred require: notifications.js → window.js, so top-level cycles.
+  ipcMain.handle('sound:preview', (_e, p) => require('./notifications').previewSound(p || 'system'));
 }
 
 module.exports = { openWindow, getWin, sendToWin, runInApp, openLinkInApp, registerIpc, setOnBlur, setOnClosed, isQuitting, quitApp };

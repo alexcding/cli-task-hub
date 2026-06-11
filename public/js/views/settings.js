@@ -6,7 +6,11 @@ import { toast, toastErr } from '../toast.js';
 import { renderProjectNav } from '../sidebar.js';
 
 export async function loadSettings() {
-  const [cfg, dbinfo] = await Promise.all([api('/api/config'), api('/api/db')]);
+  const [cfg, dbinfo, settings, sounds] = await Promise.all([
+    api('/api/config'), api('/api/db'), api('/api/settings'), api('/api/sounds'),
+  ]);
+
+  populateSoundPicker(sounds, settings?.reviewSound);
 
   if (cfg.poll_interval)      document.getElementById('poll-interval').value = cfg.poll_interval;
   if (cfg.jira_base_url)      document.getElementById('jira-base-url').value = cfg.jira_base_url;
@@ -30,6 +34,37 @@ export function switchSettingsTab(tab, btn) {
   });
   btn.closest('.seg-tabs').querySelectorAll('.seg-tab').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
+}
+
+// ── Review sound ──────────────────────────────────────────────────────────────
+// A dropdown of the macOS notification sounds (from /api/sounds). The chosen sound's
+// path is stored as the `reviewSound` setting ('system' = the default Glass chime);
+// main plays it on a new review request (see main/notifications.js).
+function populateSoundPicker(sounds, current) {
+  const sel = document.getElementById('review-sound');
+  if (!sel) return;
+  const opts = ['<option value="system">macOS default (Glass)</option>'];
+  for (const s of (Array.isArray(sounds) ? sounds : [])) opts.push(`<option value="${esc(s.path)}">${esc(s.name)}</option>`);
+  sel.innerHTML = opts.join('');
+  // Fall back to the default if the saved sound is gone (e.g. a removed user sound).
+  sel.value = current && [...sel.options].some(o => o.value === current) ? current : 'system';
+}
+
+export async function setReviewSound(value) {
+  try {
+    await apiJson('/api/settings/reviewSound', 'PUT', { value });
+    previewReviewSound(); // play the new choice as confirmation
+  } catch (e) { toastErr(e.message); }
+}
+
+// Preview through main (afplay) — the same path the live notification uses, so the
+// macOS sound (which the sandboxed renderer can't decode/serve) plays identically.
+// Plays only in the desktop app; in a plain browser there's no main process to reach,
+// so say so rather than failing silently. Surfaces afplay errors too.
+export function previewReviewSound() {
+  const value = document.getElementById('review-sound')?.value || 'system';
+  if (!window.taskhub?.previewSound) { toastErr('Sound preview is only available in the desktop app'); return; }
+  Promise.resolve(window.taskhub.previewSound(value)).catch(e => toastErr('Preview failed: ' + (e?.message || e)));
 }
 
 // ── Resource usage ──────────────────────────────────────────────────────────────
