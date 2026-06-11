@@ -32,8 +32,8 @@ function setModalRepo(repo) {
   const hint = document.getElementById('modal-repo-hint');
   if (!hint) return;
   hint.innerHTML = repo
-    ? `GitHub repo: <code style="background:var(--surface-hover);padding:1px 4px;border-radius:3px">${esc(repo)}</code>`
-    : `Sets the terminal's working directory; the GitHub repo is auto-detected from its <code style="background:var(--surface-hover);padding:1px 4px;border-radius:3px">git</code> origin.`;
+    ? `GitHub repo: <code class="code-chip">${esc(repo)}</code>`
+    : `Sets the terminal's working directory; the GitHub repo is auto-detected from its <code class="code-chip">git</code> origin.`;
 }
 
 // Native folder picker for the modal's "Local Git Repo" field. Fills the workspace
@@ -57,23 +57,7 @@ function fillProjectModal(proj) {
   document.getElementById('modal-workspace').value = proj.workspace || '';
   setModalRepo(proj.repo || '');
   document.getElementById('modal-jira-key').value  = proj.jiraProjectKey || '';
-  document.getElementById('modal-merge').value     = proj.mergeTransition || '';
   document.getElementById('modal-jql').value       = proj.jql || '';
-  // New projects default to forwarding enabled; existing ones reflect their stored flag.
-  document.getElementById('modal-forward').checked = proj.forwardWebhooks !== false;
-  document.getElementById('modal-forward-status').textContent = '';
-}
-
-// Reflect whether `gh webhook forward` is actually running for this project's repo.
-async function showForwardStatus(repo) {
-  const el = document.getElementById('modal-forward-status');
-  if (!el || !repo) { if (el) el.textContent = ''; return; }
-  try {
-    const fwds = await api('/api/forwarders');
-    const on = fwds.includes(repo);
-    el.textContent = on ? '— forwarding' : '— not running';
-    el.style.color = on ? 'var(--success)' : 'var(--text-3)';
-  } catch { el.textContent = ''; }
 }
 
 export function openNewProjectModal() {
@@ -96,7 +80,6 @@ export function openEditProjectModal(id) {
   buildColorPicker(proj.color);
   document.getElementById('modal').style.display = 'flex';
   document.getElementById('modal-name').focus();
-  showForwardStatus(proj.repo);
 }
 
 export function closeModal() {
@@ -121,9 +104,7 @@ export async function saveProject() {
     workspace:      document.getElementById('modal-workspace').value.trim(),
     repo:           document.getElementById('modal-repo').value.trim(),
     jiraProjectKey: document.getElementById('modal-jira-key').value.trim(),
-    mergeTransition:document.getElementById('modal-merge').value.trim(),
     jql:            document.getElementById('modal-jql').value.trim(),
-    forwardWebhooks:document.getElementById('modal-forward').checked,
   };
   try {
     if (id) {

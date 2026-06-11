@@ -1,9 +1,24 @@
-// Project page: PR list + per-project Jira tab shell.
+// Project page: PR list + per-project Jira + Webhooks tab shells.
 import { state } from '../store.js';
-import { api } from '../api.js';
+import { api, apiJson } from '../api.js';
+import { esc, setActiveSegTab } from '../util.js';
 import { ICON } from '../icons.js';
+import { toast, toastErr } from '../toast.js';
+import { renderProjectNav } from '../sidebar.js';
 import { prListHtml } from './cards.js';
 import { loadProjectJira } from './jira.js';
+
+// Single source of truth for the project page's tabs — drives the seg-tab buttons, the
+// panel active-toggle, and the lazy loader so they can't drift. To add a tab: add an entry
+// here and a matching <div class="tab-panel" id="tab-<id>-${id}"> in the shell below; the
+// button, toggle, and on-switch load all follow. `load` (optional) runs each time the tab
+// is shown. (loadProjectWebhooks is a hoisted function declaration, so referencing it here
+// before its definition is fine.)
+const PROJECT_TABS = [
+  { id: 'prs',      label: 'Pull Requests' },
+  { id: 'jira',     label: 'Jira',     load: loadProjectJira },
+  { id: 'webhooks', label: 'Webhooks', load: loadProjectWebhooks },
+];
 
 export async function loadProjectPage(id) {
   const el = document.getElementById('project-page-content');
@@ -20,17 +35,17 @@ export async function loadProjectPage(id) {
          Jira shows its ticket filters + Refresh. -->
     <div class="proj-tabbar">
       <div class="seg-tabs" role="tablist">
-        <button class="seg-tab active" onclick="switchTab('${id}','prs',this)">Pull Requests</button>
-        <button class="seg-tab" onclick="switchTab('${id}','jira',this)">Jira</button>
+        ${PROJECT_TABS.map((t, i) =>
+          `<button class="seg-tab${i === 0 ? ' active' : ''}" onclick="switchTab('${id}','${t.id}',this)">${t.label}</button>`).join('')}
       </div>
       <div class="proj-tab-controls">
         ${proj.repo ? `
-        <select class="filter-select" id="pr-state-${id}" onchange="reloadProjectPRs('${id}',this.value)">
+        <select class="filter-select" id="pr-state-${id}" data-tab-controls="prs" onchange="reloadProjectPRs('${id}',this.value)">
           <option value="open">Open</option>
           <option value="merged">Merged</option>
           <option value="all">All</option>
         </select>` : ''}
-        <div class="tab-controls" id="jira-controls-${id}" style="display:none;gap:8px;align-items:center">
+        <div class="tab-controls" id="jira-controls-${id}" data-tab-controls="jira" style="display:none">
           <div id="proj-jira-filter-${id}" class="ticket-filter" style="margin-bottom:0"></div>
           <button class="btn btn-secondary btn-sm" onclick="loadProjectJira('${id}')">${ICON.refresh} Refresh</button>
         </div>
@@ -57,6 +72,11 @@ export async function loadProjectPage(id) {
         </div>
       </div>
     </div>
+
+    <!-- Webhooks tab -->
+    <div class="tab-panel" id="tab-webhooks-${id}">
+      <div id="proj-webhooks-${id}"></div>
+    </div>
   `;
 
   // Load PRs into the tab without blocking the shell.
@@ -64,17 +84,107 @@ export async function loadProjectPage(id) {
 }
 
 export function switchTab(projectId, tab, btn) {
-  ['prs','jira'].forEach(t => {
-    document.getElementById(`tab-${t}-${projectId}`)?.classList.toggle('active', t === tab);
+  PROJECT_TABS.forEach(t => {
+    document.getElementById(`tab-${t.id}-${projectId}`)?.classList.toggle('active', t.id === tab);
   });
-  btn.closest('.seg-tabs').querySelectorAll('.seg-tab').forEach(b => b.classList.remove('active'));
-  btn.classList.add('active');
-  // Each tab's controls live on the tab bar; show only the active tab's.
-  const prState = document.getElementById(`pr-state-${projectId}`);
-  if (prState) prState.style.display = tab === 'prs' ? '' : 'none';
-  const jiraCtl = document.getElementById(`jira-controls-${projectId}`);
-  if (jiraCtl) jiraCtl.style.display = tab === 'jira' ? 'flex' : 'none';
-  if (tab === 'jira') loadProjectJira(projectId);
+  setActiveSegTab(btn);
+  // Each tab's controls live on the tab bar tagged with data-tab-controls; show only the
+  // active tab's. A tab with no tagged controls (e.g. Webhooks — it has an in-panel Save)
+  // simply shows none.
+  btn.closest('.proj-tabbar').querySelectorAll('[data-tab-controls]').forEach(c => {
+    c.style.display = c.dataset.tabControls === tab ? '' : 'none';
+  });
+  PROJECT_TABS.find(t => t.id === tab)?.load?.(projectId);
+}
+
+// Webhooks tab — the forwarding toggle + on-merge Jira transition, moved here out of
+// the Edit Project modal and grouped into sections.
+export function loadProjectWebhooks(id) {
+  const el = document.getElementById(`proj-webhooks-${id}`);
+  if (!el) return;
+  const proj = state.projects.find(p => p.id === id);
+  if (!proj) { el.innerHTML = '<div class="empty">Project not found.</div>'; return; }
+
+  // No repo → forwarding can't run; reuse the standard empty-state (matching the PR tab's
+  // no-repo message in cards.js) instead of dead controls.
+  if (!proj.repo) {
+    el.innerHTML = `<div class="empty"><div class="empty-icon">${ICON.branch}</div><p>Webhook forwarding needs a GitHub repo. Add one to this project (Edit, top-right) and it'll show up here.</p></div>`;
+    return;
+  }
+
+  el.innerHTML = `
+    <div class="webhooks-form">
+      <div class="card">
+        <div class="card-header"><h3>Event forwarding</h3></div>
+        <div class="card-pad">
+          <p class="card-intro">Runs <code class="code-chip">gh webhook forward</code> for this repo so pull-request and CI changes show up immediately, instead of waiting for the next poll.</p>
+          <label class="switch-row">
+            <input type="checkbox" id="wh-forward-${id}" ${proj.forwardWebhooks !== false ? 'checked' : ''}>
+            <span class="switch-row-text">
+              <span class="switch-row-title">Forward GitHub webhooks</span>
+              <span class="switch-row-sub" id="wh-forward-status-${id}">Checking…</span>
+            </span>
+          </label>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><h3>On merge</h3></div>
+        <div class="card-pad">
+          <p class="card-intro">When a forwarded PR merges, automatically transition its linked Jira ticket.</p>
+          <div class="form-group" style="margin:0">
+            <label class="form-label" for="wh-merge-${id}">Jira transition</label>
+            <input type="text" id="wh-merge-${id}" placeholder="e.g. In Review" value="${esc(proj.mergeTransition || '')}">
+            <p class="form-hint">Leave blank to take no Jira action on merge. Must match a status the ticket's workflow allows.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="webhooks-actions">
+        <button class="btn btn-primary" onclick="saveProjectWebhooks('${id}')">Save changes</button>
+      </div>
+    </div>`;
+  showForwardStatus(id);
+}
+
+// Reflect whether `gh webhook forward` is actually running for this project's repo, in the
+// toggle's subtitle line. Looks the repo up from the store so callers needn't thread it.
+async function showForwardStatus(id) {
+  const el = document.getElementById(`wh-forward-status-${id}`);
+  if (!el) return;
+  const repo = state.projects.find(p => p.id === id)?.repo;
+  if (!repo) return;
+  try {
+    const fwds = await api('/api/forwarders');
+    const on = Array.isArray(fwds) && fwds.includes(repo);
+    el.textContent = on ? `Active — forwarding ${repo}` : `Not running for ${repo}`;
+    el.style.color = on ? 'var(--success)' : 'var(--text-3)';
+  } catch {
+    el.textContent = 'Status unavailable'; // don't blank the row on a transient fetch error
+    el.style.color = 'var(--text-3)';
+  }
+}
+
+export async function saveProjectWebhooks(id) {
+  const forward = document.getElementById(`wh-forward-${id}`).checked;
+  try {
+    await apiJson(`/api/projects/${id}`, 'PUT', {
+      forwardWebhooks: forward,
+      mergeTransition: document.getElementById(`wh-merge-${id}`).value.trim(),
+    });
+    toast('Webhook settings saved');
+    // Refresh the store/sidebar — the same path the edit modal uses (renderProjectNav →
+    // setProjects). We deliberately do NOT re-read /api/forwarders here: the server
+    // (re)starts the forwarder asynchronously, so an immediate read would race and falsely
+    // show "Not running" right after enabling. Reflect the saved intent instead; the live
+    // status re-syncs the next time the tab is opened.
+    renderProjectNav(await api('/api/projects'));
+    const sub = document.getElementById(`wh-forward-status-${id}`);
+    if (sub) {
+      sub.textContent = forward ? 'Forwarding enabled' : 'Forwarding off';
+      sub.style.color = forward ? 'var(--success)' : 'var(--text-3)';
+    }
+  } catch (e) { toastErr(e.message); }
 }
 
 export async function reloadProjectPRs(id, prState, { silent = false } = {}) {

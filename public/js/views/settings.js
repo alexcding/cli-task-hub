@@ -1,7 +1,7 @@
 // Settings page: config form + DB inspector, grouped into horizontal tabs.
 import { state } from '../store.js';
 import { api, apiJson } from '../api.js';
-import { esc, timeAgo } from '../util.js';
+import { esc, timeAgo, setActiveSegTab } from '../util.js';
 import { toast, toastErr } from '../toast.js';
 import { renderProjectNav } from '../sidebar.js';
 
@@ -32,8 +32,7 @@ export function switchSettingsTab(tab, btn) {
   ['appearance','polling','jira','system'].forEach(t => {
     document.getElementById(`settings-tab-${t}`)?.classList.toggle('active', t === tab);
   });
-  btn.closest('.seg-tabs').querySelectorAll('.seg-tab').forEach(b => b.classList.remove('active'));
-  btn.classList.add('active');
+  setActiveSegTab(btn);
 }
 
 // ── Review sound ──────────────────────────────────────────────────────────────
