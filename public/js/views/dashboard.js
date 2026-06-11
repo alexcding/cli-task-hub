@@ -128,7 +128,11 @@ let usageTabRestored = false;
 export function setUsageTab(key) {
   usageTab = key;
   renderUsageWidget();
-  api(`/api/settings/usageAgent`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ value: key }) }).catch(() => {});
+  // Persist first, THEN ask the tray to rebuild — so its menu re-reads the new agent
+  // rather than racing the save and rendering the previous one.
+  api(`/api/settings/usageAgent`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ value: key }) })
+    .then(() => window.taskhub?.refreshTray?.())
+    .catch(() => {});
 }
 // Restore the saved tab once per session (the in-session selection wins after that).
 async function restoreUsageTab() {

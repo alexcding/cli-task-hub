@@ -6,7 +6,7 @@
 // Cache compiled V8 bytecode to disk for faster cold starts (no-op pre-Node 22.8).
 try { require('node:module').enableCompileCache?.(); } catch {}
 
-const { app, Tray, session } = require('electron');
+const { app, Tray, session, ipcMain } = require('electron');
 const path = require('path');
 
 // Show "TaskHub" (not "Electron") in the About panel, Dock, and userData path during dev.
@@ -86,6 +86,7 @@ app.whenReady().then(async () => {
   win.registerIpc();        // theme mirror + folder picker
   terminals.registerIpc();  // PTY create/write/resize/kill/list/attach
   win.setOnBlur(refreshMenu); // refresh the menu's PR list as focus moves to the menu bar
+  ipcMain.on('tray:refresh', () => refreshMenu()); // renderer asks for an immediate rebuild (e.g. usage-agent switch)
   // PTYs outlive the window so running work survives a reopen — but a bare prompt has
   // nothing to preserve, so reap those on window close (same policy as closing a tab).
   win.setOnClosed(() => terminals.killEmpty());

@@ -72,8 +72,8 @@ function buildHtml(limits, agent) {
     *{margin:0;padding:0;box-sizing:border-box;}
     body{background:transparent;font:13px/1.4 -apple-system,BlinkMacSystemFont,'Inter','Segoe UI',sans-serif;color:${text};
       width:310px;padding:0 2px;-webkit-font-smoothing:antialiased;}
-    .hdr{display:flex;align-items:center;gap:7px;font-size:13px;font-weight:650;letter-spacing:-.2px;margin-bottom:11px;}
-    .hdr img{width:18px;height:18px;border-radius:4px;}
+    .hdr{display:flex;align-items:center;margin-bottom:11px;}
+    .hdr img{width:20px;height:20px;border-radius:5px;}
     .grp{margin-bottom:13px;} .grp:last-child{margin-bottom:0;}
     .title{font-size:14px;font-weight:650;letter-spacing:-.2px;margin-bottom:7px;}
     .bar{position:relative;height:6px;border-radius:3px;background:${track};overflow:hidden;}
@@ -86,7 +86,7 @@ function buildHtml(limits, agent) {
     .data{font-size:12px;margin-top:6px;white-space:nowrap;}
     .muted{color:${muted};}
   </style></head><body>
-    <div class="hdr">${icon ? `<img src="${icon}" alt="">` : ''}${agent.name}</div>
+    ${icon ? `<div class="hdr"><img src="${icon}" alt=""></div>` : ''}
     ${groupHtml('Session', limits.session, SESSION_MS)}
     ${groupHtml('Weekly', limits.weekly, WEEK_MS)}
   </body></html>`;
