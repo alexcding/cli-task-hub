@@ -75,7 +75,7 @@ function buildHtml(limits, agent) {
     .hdr{display:flex;align-items:center;margin-bottom:11px;}
     .hdr img{width:20px;height:20px;border-radius:5px;}
     .grp{margin-bottom:13px;} .grp:last-child{margin-bottom:0;}
-    .title{font-size:14px;font-weight:650;letter-spacing:-.2px;margin-bottom:7px;}
+    .title{font-size:13.5px;font-weight:600;margin-bottom:7px;}
     .bar{position:relative;height:6px;border-radius:3px;background:${track};overflow:hidden;}
     .bar i{position:absolute;left:0;top:0;bottom:0;border-radius:3px;background:${agent.accent};}
     .bar::after{content:'';position:absolute;inset:0;background:
