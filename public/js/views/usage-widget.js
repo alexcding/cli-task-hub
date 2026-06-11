@@ -3,8 +3,8 @@
 // Pure string builder from the /api/usage payload — no fetching, no DOM access.
 //
 // Each agent has its own accent (--claude coral, --codex periwinkle) applied through
-// the card's `agent-<key>` class; bars/icons read the `--agent` custom property.
-import { ICON } from '../icons.js';
+// the card's `agent-<key>` class; bars read the `--agent` custom property. The header
+// shows the real app icon (extracted from /Applications, served from /img).
 
 const fmtTok  = n => n >= 1e9 ? (n/1e9).toFixed(1)+'B' : n >= 1e6 ? (n/1e6).toFixed(1)+'M' : n >= 1e3 ? (n/1e3).toFixed(1)+'K' : String(n);
 const fmtCost = c => '$' + (c >= 100 ? Math.round(c).toLocaleString() : c.toFixed(2));
@@ -16,8 +16,8 @@ const fmtUntil = (iso) => {
 };
 
 const AGENTS = [
-  { key: 'claude', label: 'Claude', name: 'Claude Code', icon: ICON.sparkle },
-  { key: 'codex',  label: 'Codex',  name: 'Codex',       icon: ICON.cpu },
+  { key: 'claude', label: 'Claude', name: 'Claude Code', img: '/img/claude.png' },
+  { key: 'codex',  label: 'Codex',  name: 'Codex',       img: '/img/codex.png' },
 ];
 
 const hasUse = (u) => !!u && (u.tokens > 0 || (u.history || []).some(h => h.tokens > 0));
@@ -100,7 +100,7 @@ export function usageWidgetHtml(usage, agentKey) {
   return `
     <div class="usage-card agent-${agent.key}">
       <div class="usage-head">
-        <span class="stat-chip-icon tint-agent">${agent.icon}</span>
+        <img class="agent-icon" src="${agent.img}" alt="">
         <span class="usage-name">${agent.name}</span>
         ${tabs}
       </div>

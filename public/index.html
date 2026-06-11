@@ -395,10 +395,10 @@
        histogram on the right. Each agent brings its own accent via agent-<key>. */
     .usage-row { margin-bottom:44px; }
     .usage-row:empty { display:none; }
-    .usage-card { background:var(--surface);border:1px solid var(--border);border-radius:var(--rl);padding:14px 20px 16px;--agent:var(--claude);--agent-bg:var(--claude-bg); }
-    .usage-card.agent-codex { --agent:var(--codex);--agent-bg:var(--codex-bg); }
-    .usage-card .tint-agent { background:var(--agent-bg);color:var(--agent); }
-    .usage-head { display:flex;align-items:center;gap:11px; }
+    .usage-card { background:var(--surface);border:1px solid var(--border);border-radius:var(--rl);padding:14px 20px 16px;--agent:var(--claude); }
+    .usage-card.agent-codex { --agent:var(--codex); }
+    .usage-head { display:flex;align-items:center;gap:9px; }
+    .agent-icon { width:22px;height:22px;border-radius:5px;flex-shrink:0; }
     .usage-name { font-size:13.5px;font-weight:600; }
     .usage-cols { display:flex;flex-wrap:wrap;gap:8px 48px; }
     .usage-limits, .usage-stats { flex:1 1 0;min-width:280px; }

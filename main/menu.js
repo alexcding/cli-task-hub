@@ -85,14 +85,17 @@ async function refreshMenuData(tray, refreshMenu) {
   // The PR snapshot (/api/prs/tray) is read alongside the tabs, but only to attach CI
   // dots, fire review notifications, and color the menu-bar icon for ALL pending
   // reviews (not just opened ones). fetchJSON returns [] on error.
-  const [tabData, prs, usage] = await Promise.all([
+  const [tabData, prs, usage, settings] = await Promise.all([
     fetchJSON('/api/tabs'),
     fetchJSON('/api/prs/tray'),
     fetchJSON('/api/usage'),
+    fetchJSON('/api/settings'),
   ]);
   // /api/usage is SWR-cached server-side, so this 60s/blur fetch is cheap. fetchJSON
   // returns [] on error → renderUsageImage sees no .limits and yields null (no section).
-  _usageImg = await renderUsageImage(usage).catch(() => null);
+  // Render the agent the user selected in the dashboard widget (persisted setting).
+  const agentKey = (settings && settings.usageAgent) || 'claude';
+  _usageImg = await renderUsageImage(usage, agentKey).catch(() => null);
   const tabs = (tabData && tabData.tabs) || [];
   const prList = Array.isArray(prs) ? prs : [];
   const prByUrl = {};

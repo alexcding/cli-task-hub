@@ -72,6 +72,7 @@ export async function loadDashboard() {
     <div id="usage-widget" class="usage-row"></div>
   `;
   renderUsageWidget();
+  restoreUsageTab();
   startUsageAutoRefresh();
 
   const section = (title, prs, emptyMsg, id) => `
@@ -120,12 +121,21 @@ export function scrollDash(id) {
   document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
-// Active tab on the dashboard usage widget (view-local; the widget itself is the
-// shared builder in usage-widget.js). Tab clicks re-render just the widget node.
+// Active tab on the dashboard usage widget. Persisted to settings (key `usageAgent`)
+// so it survives reloads AND so the tray menu can render the same selected agent.
 let usageTab = 'claude';
+let usageTabRestored = false;
 export function setUsageTab(key) {
   usageTab = key;
   renderUsageWidget();
+  api(`/api/settings/usageAgent`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ value: key }) }).catch(() => {});
+}
+// Restore the saved tab once per session (the in-session selection wins after that).
+async function restoreUsageTab() {
+  if (usageTabRestored) return;
+  usageTabRestored = true;
+  const settings = await api('/api/settings').catch(() => null);
+  if (settings?.usageAgent && settings.usageAgent !== usageTab) { usageTab = settings.usageAgent; renderUsageWidget(); }
 }
 function renderUsageWidget() {
   const el = document.getElementById('usage-widget');
