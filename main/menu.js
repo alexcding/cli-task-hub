@@ -72,10 +72,11 @@ function prMenuItems(label, prs, refreshMenu) {
 // must stay set via setContextMenu; popping one from a tray 'click' handler doesn't
 // display on macOS — see tray.js.)
 let _body = null;
-// Claude's Session/Weekly plan limits, rendered to one NativeImage (main/usage-image.js)
-// and shown as a single row above Quit. Same data the dashboard usage widget reads
-// (/api/usage → lib/usage.js). null when there's no limit data (e.g. not signed in) or a
-// render fails, in which case the section is simply omitted. Cached for sync rebuilds.
+// The selected agent's Session/Weekly plan limits, rendered to one NativeImage
+// (main/usage-image.js) and shown as a single row above Quit — same data + selected
+// agent as the dashboard usage widget (/api/usage + the usageAgent setting). null when
+// there's no limit data (e.g. not signed in) or a render fails → the section is simply
+// omitted. Cached for sync rebuilds.
 let _usageImg = null;
 
 // Refresh the cached menu body + tray icon color + review notifications. `tray` is the

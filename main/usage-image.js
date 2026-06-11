@@ -2,8 +2,8 @@
 // ONE native menu row — sidestepping the fixed per-row height of NSMenu. A hidden,
 // transparent BrowserWindow draws the HTML (same bar model as the dashboard widget:
 // fill = % left, green on-pace segment, 50%/75% gridmarks) and we capturePage() it.
-// The window is created once and reused; everything is wrapped so a failure falls back
-// to the plain text menu rows in menu.js (the menu must never break).
+// The window is created once and reused; everything is wrapped so a failure returns
+// null and menu.js simply omits the usage section (the menu must never break).
 const { BrowserWindow, nativeImage, nativeTheme } = require('electron');
 
 const SESSION_MS = 5 * 3600_000, WEEK_MS = 7 * 86_400_000;
