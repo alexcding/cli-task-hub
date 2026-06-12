@@ -1,6 +1,7 @@
 // Embedded viewer: the Electron app embeds the real GitHub/Jira page in a <webview>
 // (the main process strips X-Frame-Options/CSP so framing is allowed). Opened links
 // live as tabs in the left nav; activating one shows it full-width here.
+import { ROUTES } from '/shared/routes.mjs';
 import { state, activeTab, prByUrl, prGroup, prTabTitle, jiraTabTitle, jiraByKey } from './store.js';
 import { api, apiJson } from './api.js';
 import { esc, jiraKeyFromUrl, canSplitTerminal, ghAvatarSrc } from './util.js';
@@ -71,7 +72,7 @@ export function saveTabs() {
   // PUT a single-tab list and wipe everything else.
   if (!state.tabsReady) return;
   const active = activeTab();
-  api('/api/tabs', {
+  api(ROUTES.TABS, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -87,7 +88,7 @@ export async function restoreTabs() {
   // (and wipe) tabs we were never able to read. taskhub.db is the source of truth.
   let data = null;
   for (let i = 0; i < 5 && !data; i++) {
-    try { data = await api('/api/tabs'); }
+    try { data = await api(ROUTES.TABS); }
     catch { await new Promise(r => setTimeout(r, 200)); }
   }
   if (!data) return;
@@ -317,7 +318,7 @@ export async function removeTabWorktree() {
   if (!workspace || !worktree) return;
   if (!confirm(`Delete this worktree?\n\n${worktree}\n\nThe folder is removed; the branch is kept. Uncommitted changes there will block deletion.`)) return;
   try {
-    const r = await apiJson('/api/worktree/remove', 'POST', { path: workspace, worktree });
+    const r = await apiJson(ROUTES.WORKTREE_REMOVE, 'POST', { path: workspace, worktree });
     if (r.error) { toastErr(r.error); return; }
     toast('Worktree deleted');
     updateFolderChip(true);
@@ -334,7 +335,7 @@ export async function createTabWorktree() {
   if (!workspace || !branch) return;
   btn.disabled = true;
   try {
-    const r = await apiJson('/api/worktree', 'POST', { path: workspace, branch });
+    const r = await apiJson(ROUTES.WORKTREE, 'POST', { path: workspace, branch });
     if (r.error) { toastErr(r.error); return; }
     toast(`Worktree created for ${branch}`);
     updateFolderChip(true);

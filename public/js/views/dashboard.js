@@ -1,5 +1,6 @@
 // Dashboard (taskboard). Personal view: "Tasks" = PRs you authored, "Review" = PRs
 // awaiting your review. Other people's PRs live under each project, not here.
+import { ROUTES } from '/shared/routes.mjs';
 import { state, prByUrl, prGroup } from '../store.js';
 import { PR_CATEGORY } from '/shared/constants.mjs';
 import { api } from '../api.js';
@@ -14,11 +15,11 @@ import { usageWidgetHtml } from './usage-widget.js';
 export async function loadDashboard() {
   // Reads the snapshot (instant) — no leading spinner so SSE refreshes are seamless.
   const [groups, mineSnap, sprintSnap, usage, whoami] = await Promise.all([
-    api('/api/dashboard'),
-    api('/api/jira/mine').catch(() => ({ items: [] })),
-    api('/api/jira/sprint').catch(() => ({ items: [] })),
-    api('/api/usage').catch(() => null),
-    api('/api/whoami').catch(() => null),
+    api(ROUTES.DASHBOARD),
+    api(ROUTES.JIRA_MINE).catch(() => ({ items: [] })),
+    api(ROUTES.JIRA_SPRINT).catch(() => ({ items: [] })),
+    api(ROUTES.USAGE).catch(() => null),
+    api(ROUTES.WHOAMI).catch(() => null),
   ]);
   state.projects = groups;
   state.mineSnap = mineSnap;
@@ -131,7 +132,7 @@ export function setUsageTab(key) {
   renderUsageWidget();
   // Persist first, THEN ask the tray to rebuild — so its menu re-reads the new agent
   // rather than racing the save and rendering the previous one.
-  api(`/api/settings/usageAgent`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ value: key }) })
+  api(ROUTES.settingsKey('usageAgent'), { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ value: key }) })
     .then(() => window.taskhub?.refreshTray?.())
     .catch(() => {});
 }
@@ -139,7 +140,7 @@ export function setUsageTab(key) {
 async function restoreUsageTab() {
   if (usageTabRestored) return;
   usageTabRestored = true;
-  const settings = await api('/api/settings').catch(() => null);
+  const settings = await api(ROUTES.SETTINGS).catch(() => null);
   if (settings?.usageAgent && settings.usageAgent !== usageTab) { usageTab = settings.usageAgent; renderUsageWidget(); }
 }
 function renderUsageWidget() {
@@ -155,7 +156,7 @@ function renderUsageWidget() {
 let usageTimer = null;
 async function refreshUsageWidget() {
   if (!document.getElementById('usage-widget')) return; // not on the dashboard right now
-  const usage = await api('/api/usage').catch(() => null);
+  const usage = await api(ROUTES.USAGE).catch(() => null);
   if (usage) state.usageSnap = usage;
   renderUsageWidget(); // always re-render so the countdown ticks even from cached data
 }

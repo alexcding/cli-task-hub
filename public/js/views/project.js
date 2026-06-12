@@ -1,4 +1,5 @@
 // Project page: PR list + per-project Jira + Webhooks tab shells.
+import { ROUTES } from '/shared/routes.mjs';
 import { state } from '../store.js';
 import { api, apiJson } from '../api.js';
 import { esc, setActiveSegTab } from '../util.js';
@@ -164,7 +165,7 @@ async function showForwardStatus(id) {
   const repo = state.projects.find(p => p.id === id)?.repo;
   if (!repo) return;
   try {
-    const fwds = await api('/api/forwarders');
+    const fwds = await api(ROUTES.FORWARDERS);
     const on = Array.isArray(fwds) && fwds.includes(repo);
     el.textContent = on ? `Active — forwarding ${repo}` : `Not running for ${repo}`;
     el.style.color = on ? 'var(--success)' : 'var(--text-3)';
@@ -177,7 +178,7 @@ async function showForwardStatus(id) {
 export async function saveProjectWebhooks(id) {
   const forward = document.getElementById(`wh-forward-${id}`).checked;
   try {
-    await apiJson(`/api/projects/${id}`, 'PUT', {
+    await apiJson(ROUTES.project(id), 'PUT', {
       forwardWebhooks: forward,
       mergeTransition: document.getElementById(`wh-merge-${id}`).value.trim(),
     });
@@ -187,7 +188,7 @@ export async function saveProjectWebhooks(id) {
     // (re)starts the forwarder asynchronously, so an immediate read would race and falsely
     // show "Not running" right after enabling. Reflect the saved intent instead; the live
     // status re-syncs the next time the tab is opened.
-    renderProjectNav(await api('/api/projects'));
+    renderProjectNav(await api(ROUTES.PROJECTS));
     const sub = document.getElementById(`wh-forward-status-${id}`);
     if (sub) {
       sub.textContent = forward ? 'Forwarding enabled' : 'Forwarding off';
@@ -200,7 +201,7 @@ export async function reloadProjectPRs(id, prState, { silent = false } = {}) {
   const el = document.getElementById(`proj-prs-${id}`);
   if (!el) return;
   if (!silent) el.innerHTML = '<div class="loading-row"><div class="spinner"></div> Loading…</div>';
-  const prs = await api(`/api/projects/${id}/prs?state=${prState}`);
+  const prs = await api(`${ROUTES.projectPrs(id)}?state=${prState}`);
   const proj = state.projects.find(p => p.id === id);
   const target = document.getElementById(`proj-prs-${id}`); // may have re-rendered; re-query
   if (target) target.innerHTML = prListHtml(prs.filter(p=>!p.error), proj?.repo, prState);

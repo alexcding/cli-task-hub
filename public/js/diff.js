@@ -2,6 +2,7 @@
 // split with the paired terminal (split.js switches between them per tab.paneView).
 // Fetches /api/diff on every show but skips the DOM rebuild when the patch text is
 // unchanged, so flipping back and forth is free while the worktree is quiet.
+import { ROUTES } from '/shared/routes.mjs';
 import { api, apiJson } from './api.js';
 import { esc } from './util.js';
 import { toast, toastErr } from './toast.js';
@@ -88,7 +89,7 @@ export async function renderDiffPane(cwd) {
   // would never be 0 — check for actual rendered content instead.
   if (!p.querySelector('.diff-root, .diff-empty')) p.innerHTML = msg('Loading…');
   let data;
-  try { data = await api('/api/diff?path=' + encodeURIComponent(cwd)); }
+  try { data = await api(ROUTES.DIFF + '?path=' + encodeURIComponent(cwd)); }
   catch (e) { data = { error: e.message }; }
   if (cwd !== _cwd) return; // a later render (other tab / refresh) superseded this one
   if (data.error) { _lastCwd = null; p.innerHTML = msg(esc(data.error)); return; }
@@ -180,7 +181,7 @@ async function discardBlock(btn) {
   if (!(await confirmDiscard(what, diffPath(f)))) return;
   btn.disabled = true;
   try {
-    const r = await apiJson('/api/git/discard', 'POST', { path: _cwd, patch: blockPatch(f, h, +btn.dataset.b) });
+    const r = await apiJson(ROUTES.GIT_DISCARD, 'POST', { path: _cwd, patch: blockPatch(f, h, +btn.dataset.b) });
     if (r.error) toastErr(r.error);
     else toast('Discarded');
   } catch (e) {

@@ -1,5 +1,6 @@
 // Shared Jira UI: snapshot tables, ticket filters, the assigned-to-me feed, the
 // per-project Jira tab, and the status-transition menu.
+import { ROUTES } from '/shared/routes.mjs';
 import { state, setProjects } from '../store.js';
 import { api, apiJson } from '../api.js';
 import { esc, jiraUrl } from '../util.js';
@@ -88,7 +89,7 @@ async function persistFilters(cfgKey, filters) {
   const clean = {};
   for (const f of TICKET_FILTERS) if (filters[f.key]) clean[f.key] = filters[f.key];
   try {
-    await apiJson('/api/settings/' + encodeURIComponent(cfgKey), 'PUT', { value: JSON.stringify(clean) });
+    await apiJson(ROUTES.settingsKey(cfgKey), 'PUT', { value: JSON.stringify(clean) });
   } catch(e) { toastErr(e.message); }
 }
 
@@ -113,7 +114,7 @@ export async function loadMyTickets() {
   try {
     // Projects fetched alongside so the per-project Jira-key scoping is current even if the
     // dashboard hasn't loaded yet this session.
-    const [snap, settings, projects] = await Promise.all([api('/api/jira/mine'), api('/api/settings'), api('/api/projects')]);
+    const [snap, settings, projects] = await Promise.all([api(ROUTES.JIRA_MINE), api(ROUTES.SETTINGS), api(ROUTES.PROJECTS)]);
     setProjects(projects);
     if (state.ticketFilters === null) state.ticketFilters = parseFilters(settings.my_ticket_filters);
     state.mineSnap = snap;
@@ -151,7 +152,7 @@ export async function loadProjectJira(id) {
   const tbody = document.getElementById(`proj-jira-${id}`);
   if (!tbody) return;
   try {
-    const [snap, settings] = await Promise.all([api(`/api/projects/${id}/jira`), api('/api/settings')]);
+    const [snap, settings] = await Promise.all([api(ROUTES.projectJira(id)), api(ROUTES.SETTINGS)]);
     if (state.projJiraFilters[id] === undefined) state.projJiraFilters[id] = parseFilters(settings['ticket_filter_' + id]);
     state.projJiraSnap[id] = snap;
     rememberStatuses(snap.items);
@@ -236,7 +237,7 @@ export function openStatusMenu(btn) {
 
 async function doTransition(key, status) {
   try {
-    await apiJson(`/api/jira/${key}/transition`, 'POST', { transition: status });
+    await apiJson(ROUTES.jiraKeyTransition(key), 'POST', { transition: status });
     toast(`${key} → ${status}`);
     applyStatusLocally(key, status); // optimistic — the next poll confirms
   } catch(e) { toastErr(e.message); }

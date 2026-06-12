@@ -3,6 +3,7 @@
 // where each commit opens a detail pane (meta + message + diff). Branches are read-only; the
 // only worktree write is removing an existing worktree folder (no create — that's done from
 // the terminal tab chip). Reuses the shared git render helpers from git.js.
+import { ROUTES } from '/shared/routes.mjs';
 import { state } from '../store.js';
 import { api, apiJson } from '../api.js';
 import { esc, escJs, fmtDate } from '../util.js';
@@ -45,7 +46,7 @@ export async function loadGitTab(id) {
 // ── Left rail: local branches + worktree folders ─────────────────────────────────────
 async function loadRefs(id) {
   let data;
-  try { data = await api(`/api/git/refs?path=${encodeURIComponent(_t.cwd)}`); }
+  try { data = await api(`${ROUTES.GIT_REFS}?path=${encodeURIComponent(_t.cwd)}`); }
   catch (e) { data = { error: e.message }; }
   if (!_t || _t.id !== id) return;
   _t.refs = data;
@@ -95,7 +96,7 @@ function renderSide(id) {
 // ── Right column: graph/list (and commit detail) ─────────────────────────────────────
 async function loadLog(id) {
   let data;
-  try { data = await api(`/api/git/log?path=${encodeURIComponent(_t.cwd)}&limit=400${_t.ref ? `&ref=${encodeURIComponent(_t.ref)}` : ''}`); }
+  try { data = await api(`${ROUTES.GIT_LOG}?path=${encodeURIComponent(_t.cwd)}&limit=400${_t.ref ? `&ref=${encodeURIComponent(_t.ref)}` : ''}`); }
   catch (e) { data = { error: e.message }; }
   if (!_t || _t.id !== id) return;
   const main = document.getElementById(`gt-main-${id}`);
@@ -145,7 +146,7 @@ export async function gitTabShowCommit(id, sha) {
   const main = document.getElementById(`gt-main-${id}`);
   if (main) main.innerHTML = `<div class="pg-empty"><div class="loading-row"><div class="spinner"></div> Loading commit…</div></div>`;
   let data;
-  try { data = await api(`/api/git/show?path=${encodeURIComponent(_t.cwd)}&sha=${encodeURIComponent(sha)}`); }
+  try { data = await api(`${ROUTES.GIT_SHOW}?path=${encodeURIComponent(_t.cwd)}&sha=${encodeURIComponent(sha)}`); }
   catch (e) { data = { error: e.message }; }
   if (!_t || _t.id !== id || _t.sha !== sha) return; // bail if the project/commit changed mid-flight
   _t.detail = data;
@@ -202,7 +203,7 @@ export async function gitTabRemoveWorktree(id, btn, worktreePath) {
   }
   _busy = true;
   try {
-    const r = await apiJson('/api/worktree/remove', 'POST', { path: _t.cwd, worktree: worktreePath });
+    const r = await apiJson(ROUTES.WORKTREE_REMOVE, 'POST', { path: _t.cwd, worktree: worktreePath });
     if (r.error) toastErr(r.error); else toast('Worktree removed');
   } catch (e) { toastErr(e.message); }
   finally { _busy = false; loadRefs(id); }
@@ -252,7 +253,7 @@ async function loadAvatars(id) {
   const repo = proj(id)?.repo;
   if (!repo) return;
   let map;
-  try { map = await api(`/api/git/commit-avatars?repo=${encodeURIComponent(repo)}&ref=${encodeURIComponent(_t.ref || '')}&limit=400`); }
+  try { map = await api(`${ROUTES.GIT_COMMIT_AVATARS}?repo=${encodeURIComponent(repo)}&ref=${encodeURIComponent(_t.ref || '')}&limit=400`); }
   catch { return; }
   if (!_t || _t.id !== id || !map) return;
   _t.avatars = map;

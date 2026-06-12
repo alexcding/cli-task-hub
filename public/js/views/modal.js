@@ -1,4 +1,5 @@
 // New / Edit Project modal.
+import { ROUTES } from '/shared/routes.mjs';
 import { state } from '../store.js';
 import { api, apiJson } from '../api.js';
 import { esc } from '../util.js';
@@ -45,7 +46,7 @@ export async function chooseModalWorkspace() {
   if (!dir) return;
   document.getElementById('modal-workspace').value = dir;
   try {
-    const { repo } = await api(`/api/detect-repo?path=${encodeURIComponent(dir)}`);
+    const { repo } = await api(`${ROUTES.DETECT_REPO}?path=${encodeURIComponent(dir)}`);
     if (repo) { setModalRepo(repo); toast(`Detected ${repo}`); }
     else toast('No GitHub remote found in that folder');
   } catch {}
@@ -108,14 +109,14 @@ export async function saveProject() {
   };
   try {
     if (id) {
-      await apiJson(`/api/projects/${id}`, 'PUT', payload);
+      await apiJson(ROUTES.project(id), 'PUT', payload);
       toast('Project updated');
     } else {
-      await apiJson('/api/projects', 'POST', payload);
+      await apiJson(ROUTES.PROJECTS, 'POST', payload);
       toast(`Project "${name}" created`);
     }
     closeModal();
-    const projects = await api('/api/projects');
+    const projects = await api(ROUTES.PROJECTS);
     renderProjectNav(projects);
     if (document.getElementById('page-settings').classList.contains('active')) loadSettings();
     else if (document.getElementById('page-dashboard').classList.contains('active')) loadDashboard();

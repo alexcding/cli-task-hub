@@ -1,6 +1,7 @@
 // Commit popover for the diff pane: branch + change counts, a message box, and
 // Commit / Commit-and-push / Push actions running against the tab's worktree.
 // Anchored under the toolbar's Commit button; refreshes the diff after each action.
+import { ROUTES } from '/shared/routes.mjs';
 import { api, apiJson } from './api.js';
 import { esc } from './util.js';
 import { ICON } from './icons.js';
@@ -37,7 +38,7 @@ const PUSH_ICON = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" s
 
 async function fill(cwd) {
   let data;
-  try { data = await api('/api/diff?path=' + encodeURIComponent(cwd)); }
+  try { data = await api(ROUTES.DIFF + '?path=' + encodeURIComponent(cwd)); }
   catch (e) { data = { error: e.message }; }
   if (!_open) return;
   if (data.error) { pop().innerHTML = `<div class="cp-loading">${esc(data.error)}</div>`; return; }
@@ -90,13 +91,13 @@ export async function commitAction(kind) {
     if (kind !== 'push') {
       const message = document.getElementById('cp-msg').value.trim() || autoMessage();
       const includeUntracked = !!document.getElementById('cp-untracked')?.checked;
-      const r = await apiJson('/api/git/commit', 'POST', { path: _meta.cwd, message, includeUntracked });
+      const r = await apiJson(ROUTES.GIT_COMMIT, 'POST', { path: _meta.cwd, message, includeUntracked });
       if (r.error) return toastErr(r.error); // nothing changed on disk — popover state still true
       committed = true;
       if (kind === 'commit') toast(`Committed ${r.hash}`);
     }
     if (kind !== 'commit') {
-      const r = await apiJson('/api/git/push', 'POST', { path: _meta.cwd });
+      const r = await apiJson(ROUTES.GIT_PUSH, 'POST', { path: _meta.cwd });
       if (r.error) {
         toastErr(r.error);
         // 'Commit and push' where the commit landed but the push didn't: the diff pane

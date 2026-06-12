@@ -1,6 +1,7 @@
 // PR ↔ terminal split: each GitHub/Jira tab can show a paired terminal to its right.
 // The on/off choice is PER TAB (stored on the tab as `tab.prSplit`, persisted with the
 // tab) and defaults to OFF — opening a PR doesn't auto-spawn a terminal until toggled.
+import { ROUTES } from '/shared/routes.mjs';
 import { state, activeTab, projectByRepo, projectByPrUrl, projectByJiraKey } from './store.js';
 import { api } from './api.js';
 import { jiraKeyFromUrl, canSplitTerminal } from './util.js';
@@ -26,7 +27,7 @@ export async function resolveTabFolder(tab) {
     const proj = projectByJiraKey(key);
     const ws = (proj && proj.workspace) || null;
     if (!ws || !key) return none(ws);
-    try { const r = await api(`/api/worktree?path=${encodeURIComponent(ws)}&key=${encodeURIComponent(key)}`); if (r.path) return { path: r.path, workspace: ws, matched: !!r.matched, isWorktree: !!r.isWorktree }; } catch {}
+    try { const r = await api(`${ROUTES.WORKTREE}?path=${encodeURIComponent(ws)}&key=${encodeURIComponent(key)}`); if (r.path) return { path: r.path, workspace: ws, matched: !!r.matched, isWorktree: !!r.isWorktree }; } catch {}
     return none(ws);
   }
   const proj = projectByRepo(tab.repo) || projectByPrUrl(tab.url);
@@ -34,7 +35,7 @@ export async function resolveTabFolder(tab) {
   if (!ws) return { path: null, workspace: null, matched: false, isWorktree: false };
   const branch = tab.branch || (proj.prs || []).find(p => p.url === tab.url)?.headRefName;
   if (branch) {
-    try { const r = await api(`/api/worktree?path=${encodeURIComponent(ws)}&branch=${encodeURIComponent(branch)}`); if (r.path) return { path: r.path, workspace: ws, matched: !!r.matched, isWorktree: !!r.isWorktree }; } catch {}
+    try { const r = await api(`${ROUTES.WORKTREE}?path=${encodeURIComponent(ws)}&branch=${encodeURIComponent(branch)}`); if (r.path) return { path: r.path, workspace: ws, matched: !!r.matched, isWorktree: !!r.isWorktree }; } catch {}
   }
   return none(ws);
 }

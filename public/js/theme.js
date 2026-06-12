@@ -1,3 +1,4 @@
+import { ROUTES } from '/shared/routes.mjs';
 import { state } from './store.js';
 import { api } from './api.js';
 import { toastErr } from './toast.js';
@@ -44,7 +45,7 @@ export async function setAppTheme(value) {
   window.taskhub?.setTheme?.(value); // match native chrome appearance (traffic lights/scrollbars) to the theme; no-op in browser
   // Durable home is the taskhub.db settings table; the localStorage copy above is just a
   // pre-paint cache so the window doesn't flash the wrong theme before this read lands.
-  try { await api('/api/settings/theme', { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ value }) }); }
+  try { await api(ROUTES.settingsKey('theme'), { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ value }) }); }
   catch (e) { toastErr(e.message); }
 }
 

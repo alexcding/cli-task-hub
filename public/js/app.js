@@ -1,5 +1,6 @@
 // Entry point: navigation, SSE live updates, init, and the window bridge that keeps
 // the inline on* handlers in markup working (ES modules aren't globals).
+import { ROUTES } from '/shared/routes.mjs';
 import { state, activeTab } from './store.js';
 import { api } from './api.js';
 import { canSplitTerminal } from './util.js';
@@ -148,7 +149,7 @@ function scheduleRefresh() {
 
 function connectStream() {
   let everConnected = false;
-  const es = new EventSource('/api/stream');
+  const es = new EventSource(ROUTES.STREAM);
   es.onopen = () => {
     // Reconnect after a drop = the dev server restarted → reload to pick up changes.
     if (everConnected) location.reload();
@@ -209,7 +210,7 @@ state.tabTermInit = (async () => {
 
 (async () => {
   try {
-    const [site, settings] = await Promise.all([api('/api/jira/site'), api('/api/settings')]);
+    const [site, settings] = await Promise.all([api(ROUTES.JIRA_SITE), api(ROUTES.SETTINGS)]);
     state.jiraBase = site.baseUrl || '';
     // taskhub.db is authoritative (survives a localStorage clear, shared across windows);
     // re-sync the theme from it and re-apply if it differs from the pre-paint guess.

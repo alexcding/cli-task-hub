@@ -3,6 +3,7 @@
 // categories (webhook, poller, …) render generically. Pure view: data comes from
 // /api/logs, links reuse the app-wide handlers (jiraClick / openPrSplit) so PRs and
 // tickets open in the embedded viewer like everywhere else.
+import { ROUTES } from '/shared/routes.mjs';
 import { api, apiJson } from '../api.js';
 import { esc, escJs, jiraUrl, timeAgo } from '../util.js';
 import { ICON, TAB_ICON } from '../icons.js';
@@ -17,8 +18,8 @@ export async function loadLogs() {
   const params = new URLSearchParams();
   if (_logCategory && _logCategory !== 'all') params.set('category', _logCategory);
   if (errorsOnly) params.set('level', 'error');
-  const logsP = api('/api/logs?' + params);          // the only request a filter click needs
-  if (_logCats === null) { try { _logCats = await api('/api/logs/categories'); } catch { _logCats = []; } }
+  const logsP = api(ROUTES.LOGS + '?' + params);          // the only request a filter click needs
+  if (_logCats === null) { try { _logCats = await api(ROUTES.LOGS_CATEGORIES); } catch { _logCats = []; } }
   renderLogChips(_logCats);
   renderLogs(await logsP);
 }
@@ -43,7 +44,7 @@ export async function clearLogs() {
   const scope = _logCategory === 'all' ? 'all logs' : `"${_logCategory}" logs`;
   if (!confirm(`Clear ${scope}?`)) return;
   try {
-    await apiJson('/api/logs/clear', 'POST', { category: _logCategory });
+    await apiJson(ROUTES.LOGS_CLEAR, 'POST', { category: _logCategory });
     _logCats = null; // a cleared category may vanish — refetch the chip set
     loadLogs();
   } catch (e) { toastErr(e.message); }

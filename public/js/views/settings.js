@@ -1,4 +1,5 @@
 // Settings page: config form + DB inspector, grouped into horizontal tabs.
+import { ROUTES } from '/shared/routes.mjs';
 import { state } from '../store.js';
 import { api, apiJson } from '../api.js';
 import { esc, timeAgo, setActiveSegTab } from '../util.js';
@@ -7,7 +8,7 @@ import { renderProjectNav } from '../sidebar.js';
 
 export async function loadSettings() {
   const [cfg, dbinfo, settings, sounds] = await Promise.all([
-    api('/api/config'), api('/api/db'), api('/api/settings'), api('/api/sounds'),
+    api(ROUTES.CONFIG), api(ROUTES.DB), api(ROUTES.SETTINGS), api(ROUTES.SOUNDS),
   ]);
 
   populateSoundPicker(sounds, settings?.reviewSound);
@@ -17,7 +18,7 @@ export async function loadSettings() {
   if (cfg.my_jql)             document.getElementById('my-jql').value = cfg.my_jql;
   if (cfg.sprint_jql)         document.getElementById('sprint-jql').value = cfg.sprint_jql;
   // Show the auto-detected site as the placeholder so it's clear what's in effect.
-  api('/api/jira/site').then(s => { if (s.baseUrl) document.getElementById('jira-base-url').placeholder = `${s.baseUrl} (auto-detected)`; }).catch(()=>{});
+  api(ROUTES.JIRA_SITE).then(s => { if (s.baseUrl) document.getElementById('jira-base-url').placeholder = `${s.baseUrl} (auto-detected)`; }).catch(()=>{});
   if (cfg.jira_poll_interval) document.getElementById('jira-poll-interval').value = cfg.jira_poll_interval;
   if (cfg.jira_limit)         document.getElementById('jira-limit').value = cfg.jira_limit;
 
@@ -51,7 +52,7 @@ function populateSoundPicker(sounds, current) {
 
 export async function setReviewSound(value) {
   try {
-    await apiJson('/api/settings/reviewSound', 'PUT', { value });
+    await apiJson(ROUTES.settingsKey('reviewSound'), 'PUT', { value });
     previewReviewSound(); // play the new choice as confirmation
   } catch (e) { toastErr(e.message); }
 }
@@ -134,9 +135,9 @@ export async function deleteProject(id) {
   const proj = state.projects.find(p=>p.id===id);
   if (!confirm(`Delete project "${proj?.name}"? This also removes its links.`)) return;
   try {
-    await api(`/api/projects/${id}`, {method:'DELETE'});
+    await api(ROUTES.project(id), {method:'DELETE'});
     toast('Project deleted');
-    const projects = await api('/api/projects');
+    const projects = await api(ROUTES.PROJECTS);
     renderProjectNav(projects);
     window.showPage('dashboard');
   } catch(e) { toastErr(e.message); }
@@ -144,7 +145,7 @@ export async function deleteProject(id) {
 
 export async function saveConfig() {
   try {
-    await apiJson('/api/config', 'POST', {
+    await apiJson(ROUTES.CONFIG, 'POST', {
       poll_interval:      document.getElementById('poll-interval').value || '60',
       jira_base_url:      document.getElementById('jira-base-url').value.trim(), // blank = auto-detect
       my_jql:             document.getElementById('my-jql').value.trim() || 'assignee = currentUser() AND statusCategory != Done ORDER BY updated DESC',
@@ -153,7 +154,7 @@ export async function saveConfig() {
       jira_limit:         document.getElementById('jira-limit').value || '100',
     });
     // Ticket links depend on the base URL — refresh it after a save.
-    try { state.jiraBase = (await api('/api/jira/site')).baseUrl || state.jiraBase; } catch {}
+    try { state.jiraBase = (await api(ROUTES.JIRA_SITE)).baseUrl || state.jiraBase; } catch {}
     toast('Settings saved');
   } catch(e) { toastErr(e.message); }
 }

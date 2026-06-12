@@ -3,6 +3,7 @@
 // The diff pane and the settings previews read the values from the --term-font /
 // --diff-font CSS custom properties; open terminals get them pushed into their xterm
 // options and refit. ⌘+ / ⌘− / ⌘0 (main/app-menu.js) bump the pane currently in view.
+import { ROUTES } from '/shared/routes.mjs';
 import { state, FONT_DEFAULTS } from './store.js';
 import { apiJson } from './api.js';
 import { toastErr } from './toast.js';
@@ -102,7 +103,7 @@ function persist(key, value) {
   clearTimeout(_persistTimers.get(key));
   _persistTimers.set(key, setTimeout(() => {
     _persistTimers.delete(key);
-    apiJson(`/api/settings/${key}`, 'PUT', { value: String(value) }).catch(e => toastErr(e.message));
+    apiJson(ROUTES.settingsKey(key), 'PUT', { value: String(value) }).catch(e => toastErr(e.message));
   }, 250));
 }
 
