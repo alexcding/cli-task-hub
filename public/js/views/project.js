@@ -7,6 +7,7 @@ import { toast, toastErr } from '../toast.js';
 import { renderProjectNav } from '../sidebar.js';
 import { prListHtml } from './cards.js';
 import { loadProjectJira } from './jira.js';
+import { loadGitTab } from './git-tab.js';
 
 // Single source of truth for the project page's tabs — drives the seg-tab buttons, the
 // panel active-toggle, and the lazy loader so they can't drift. To add a tab: add an entry
@@ -18,6 +19,7 @@ const PROJECT_TABS = [
   { id: 'prs',      label: 'Pull Requests' },
   { id: 'jira',     label: 'Jira',     load: loadProjectJira },
   { id: 'webhooks', label: 'Webhooks', load: loadProjectWebhooks },
+  { id: 'git',      label: 'Git',      load: loadGitTab },
 ];
 
 export async function loadProjectPage(id) {
@@ -29,6 +31,7 @@ export async function loadProjectPage(id) {
   if (!proj) { el.innerHTML = '<div class="empty">Project not found.</div>'; return; }
 
   el.innerHTML = `
+    <div class="proj-main">
     <!-- Tab bar: the segmented tab widget (same as Settings/Activity) on the left,
          the active tab's controls on the right of the same row — so neither costs a
          filter row above its content. PR state is a dropdown (like the Jira filters);
@@ -77,6 +80,12 @@ export async function loadProjectPage(id) {
     <div class="tab-panel" id="tab-webhooks-${id}">
       <div id="proj-webhooks-${id}"></div>
     </div>
+
+    <!-- Git tab — branch/worktree management + commit graph (views/git-tab.js) -->
+    <div class="tab-panel" id="tab-git-${id}">
+      <div id="proj-gittab-${id}"></div>
+    </div>
+    </div><!-- /.proj-main -->
   `;
 
   // Load PRs into the tab without blocking the shell.

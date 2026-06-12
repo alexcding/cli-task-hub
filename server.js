@@ -205,6 +205,31 @@ app.post('/api/git/push', async (req, res) => {
   res.json(await github.gitPush(String(dir)));
 });
 
+// Commit history for the project History view (graph + list). Read-only local git.
+app.get('/api/git/log', async (req, res) => {
+  const dir = req.query.path;
+  if (!dir) return res.status(400).json({ error: 'path required' });
+  res.json(await github.gitLog(String(dir), { limit: Number(req.query.limit) || 100, skip: Number(req.query.skip) || 0, ref: req.query.ref ? String(req.query.ref) : '' }));
+});
+
+// Local branches + worktree folders + default branch for the Git tab's left rail. Read-only
+// local git. defaultBranch ships here (not just in /log) so the rail can pin it on first paint.
+app.get('/api/git/refs', async (req, res) => {
+  const dir = req.query.path;
+  if (!dir) return res.status(400).json({ error: 'path required' });
+  const [branches, worktrees, defaultBranch] = await Promise.all([
+    github.gitBranches(String(dir)), github.listWorktrees(String(dir)), github.gitDefaultBranch(String(dir)),
+  ]);
+  res.json({ branches, worktrees, defaultBranch });
+});
+
+// One commit's detail (meta + patch) for the History detail pane.
+app.get('/api/git/show', async (req, res) => {
+  const { path: dir, sha } = req.query;
+  if (!dir || !sha) return res.status(400).json({ error: 'path and sha required' });
+  res.json(await github.gitShow(String(dir), String(sha)));
+});
+
 // Discard one hunk from the worktree (reverse-apply a single-hunk patch the renderer
 // rebuilt from its parsed diff — see hunkPatch in public/js/diff-parse.mjs).
 app.post('/api/git/discard', async (req, res) => {

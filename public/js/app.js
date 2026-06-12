@@ -14,6 +14,7 @@ import * as split from './split.js';
 import { toggleCommitPop, commitAction } from './commit.js';
 import { loadDashboard, scrollDash, setUsageTab } from './views/dashboard.js';
 import { loadProjectPage, switchTab, reloadProjectPRs, loadProjectWebhooks, saveProjectWebhooks } from './views/project.js';
+import { loadGitTab, gitTabPick, gitTabShowCommit, gitTabBack, gitTabRemoveWorktree } from './views/git-tab.js';
 import * as jiraView from './views/jira.js';
 import { loadLogs, setLogCategory, clearLogs } from './views/logs.js';
 import { loadSettings, saveConfig, switchSettingsTab, setReviewSound, previewReviewSound } from './views/settings.js';
@@ -180,6 +181,7 @@ Object.assign(window, {
   loadProjectJira: jiraView.loadProjectJira, setProjJiraFilter: jiraView.setProjJiraFilter,
   openStatusMenu: jiraView.openStatusMenu,
   switchTab, reloadProjectPRs, loadProjectWebhooks, saveProjectWebhooks, scrollDash, setUsageTab,
+  loadGitTab, gitTabPick, gitTabShowCommit, gitTabBack, gitTabRemoveWorktree,
   loadLogs, setLogCategory, clearLogs,
   loadSettings, saveConfig, switchSettingsTab, setReviewSound, previewReviewSound,
   // project modal
