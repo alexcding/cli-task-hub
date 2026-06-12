@@ -33,9 +33,6 @@ module.exports = {
     repo: 'cli-task-hub',
   },
   files: [
-    'tray.js',
-    'preload.js',
-    'main/**',
     'src/**',
     'public/**',
     'node_modules/**',

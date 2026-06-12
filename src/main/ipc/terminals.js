@@ -7,8 +7,8 @@ const { app, ipcMain } = require('electron');
 const path = require('path');
 const os = require('os');
 const pty = require('@homebridge/node-pty-prebuilt-multiarch');
-const { sendToWin } = require('./window');
-const { CH } = require('../src/shared/channels');
+const { sendToWin } = require('../windows/window');
+const { CH } = require('../../shared/channels');
 
 const terminals = new Map(); // id -> { pty, cwd, title, paired, pairKey, hasContext, chunks, bufLen, seq }
 let termSeq = 0;
@@ -86,7 +86,7 @@ function killAll() {
 // (hasContext) OR is currently running a child process (e.g. a command auto-started by
 // the shell's dotfiles, which never set hasContext since no key was pressed).
 function killEmpty() {
-  const { hasChildProcess } = require('./usage'); // lazy: usage.js requires this module
+  const { hasChildProcess } = require('../native/usage'); // lazy: usage.js requires this module
   for (const [id, t] of terminals) {
     if (t.hasContext || hasChildProcess(t.pty.pid)) continue;
     killTerm(id);

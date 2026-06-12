@@ -259,7 +259,7 @@ function avatarIcon(login, ci, approved) {
 let _jiraIcon = null;
 function jiraIcon() {
   if (_jiraIcon) return _jiraIcon;
-  const dir = app.isPackaged ? process.resourcesPath : path.join(__dirname, '..', 'build');
+  const dir = app.isPackaged ? process.resourcesPath : path.join(__dirname, '..', '..', '..', 'build');
   const src = nativeImage.createFromPath(path.join(dir, 'tray-jira.png'));
   if (src.isEmpty()) return (_jiraIcon = src);   // asset missing → no icon (cached so we don't retry)
   const bmp = Buffer.from(src.resize({ width: AVATAR_PX, height: AVATAR_PX, quality: 'best' }).toBitmap());

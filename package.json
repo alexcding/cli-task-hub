@@ -3,7 +3,7 @@
   "productName": "TaskHub",
   "version": "1.0.0",
   "description": "Track Jira tickets and GitHub PRs from your Mac menu bar",
-  "main": "tray.js",
+  "main": "src/main/app/main.js",
   "author": "alexcding",
   "license": "ISC",
   "type": "commonjs",

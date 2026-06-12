@@ -2,7 +2,7 @@
 // nodeIntegration is off — the page can't use Node directly). Anything the dashboard
 // needs from the Electron main process is exposed here as window.taskhub.*
 const { contextBridge, ipcRenderer } = require('electron');
-const { CH } = require('./src/shared/channels');
+const { CH } = require('../shared/channels');
 
 // ── Terminal output fan-out ───────────────────────────────────────────────────
 // Main pushes per-terminal events tagged with the terminal id; we dispatch to the

@@ -7,7 +7,7 @@
 // server's viewed_at, clearing reviewPending) stops the alerts.
 const { Notification, shell } = require('electron');
 const { execFile } = require('child_process');
-const { openLinkInApp } = require('./window');
+const { openLinkInApp } = require('../windows/window');
 
 let reviewSeeded = false;           // first sync seeds silently — don't notify for reviews
                                     // already pending when the app launches

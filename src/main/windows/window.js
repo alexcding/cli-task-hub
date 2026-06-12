@@ -1,9 +1,9 @@
 // Owns the dashboard BrowserWindow and the renderer-facing helpers around it.
 const { BrowserWindow, shell, ipcMain, dialog, nativeTheme, session, Menu, clipboard } = require('electron');
 const path = require('path');
-const { BASE_URL } = require('./const');
-const { avatarDataUrl } = require('./icons');
-const { CH } = require('../src/shared/channels');
+const { BASE_URL } = require('../app/const');
+const { avatarDataUrl } = require('../native/icons');
+const { CH } = require('../../shared/channels');
 
 let win = null;
 
@@ -108,7 +108,7 @@ function openWindow() {
     } : {}),
     webPreferences: {
       webviewTag: true, contextIsolation: true, nodeIntegration: false,
-      preload: path.join(__dirname, '..', 'preload.js'), // exposes window.taskhub.* (folder picker, …)
+      preload: path.join(__dirname, '..', '..', 'preload', 'index.js'), // exposes window.taskhub.* (folder picker, …)
     },
   });
   win.loadURL(BASE_URL);
@@ -175,7 +175,7 @@ function registerIpc() {
   // Resource usage (RAM + CPU summed across every TaskHub process) for the Settings page's
   // live readout. Computed here because getAppMetrics() is main-process only. The require is
   // deferred to call time to sidestep the window→usage→terminals→window load-time cycle.
-  ipcMain.handle(CH.USAGE_GET, () => require('./usage').computeUsage());
+  ipcMain.handle(CH.USAGE_GET, () => require('../native/usage').computeUsage());
 
   // Reveal a folder in the system file manager (Finder). Backs the viewer titlebar's
   // workspace/worktree chip (see updateFolderChip in viewer.js).
@@ -194,7 +194,7 @@ function registerIpc() {
   // so the macOS system sound (which the sandboxed renderer can't decode/serve) plays
   // identically. Returns the afplay promise so a failure rejects back to the renderer
   // (which toasts it). Deferred require: notifications.js → window.js, so top-level cycles.
-  ipcMain.handle(CH.SOUND_PREVIEW, (_e, p) => require('./notifications').previewSound(p || 'system'));
+  ipcMain.handle(CH.SOUND_PREVIEW, (_e, p) => require('../native/notifications').previewSound(p || 'system'));
 }
 
 module.exports = { openWindow, getWin, sendToWin, runInApp, openLinkInApp, registerIpc, setOnBlur, setOnClosed, isQuitting, quitApp };

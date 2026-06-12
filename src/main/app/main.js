@@ -8,7 +8,7 @@ try { require('node:module').enableCompileCache?.(); } catch {}
 
 const { app, Tray, session, ipcMain, nativeTheme } = require('electron');
 const path = require('path');
-const { CH } = require('./src/shared/channels');
+const { CH } = require('../../shared/channels');
 
 // Show "TaskHub" (not "Electron") in the About panel, Dock, and userData path during dev.
 // Must run before app is ready. The macOS app-menu label is set separately via an explicit
@@ -25,15 +25,15 @@ app.setName('TaskHub');
 // Initialize logging before any window is created (log.initialize wires the renderer
 // IPC bridge). Routes console.* in this process to <userData>/logs/main.log. Required for
 // its side-effect — the import itself sets up logging.
-require('./src/server/logger');
+require('../../server/logger');
 
-const supervisor = require('./main/server-supervisor');
-const terminals = require('./main/terminals');
-const win = require('./main/window');
-const { trayIcon, trayPressedIcon } = require('./main/icons');
-const { refreshMenuData, buildMenuNow } = require('./main/menu');
-const { setupAutoUpdates } = require('./main/updater');
-const { BASE_URL } = require('./main/const');
+const supervisor = require('../server/supervisor');
+const terminals = require('../ipc/terminals');
+const win = require('../windows/window');
+const { trayIcon, trayPressedIcon } = require('../native/icons');
+const { refreshMenuData, buildMenuNow } = require('../tray/menu');
+const { setupAutoUpdates } = require('../updater/updater');
+const { BASE_URL } = require('./const');
 
 let tray = null;
 
@@ -74,14 +74,14 @@ app.whenReady().then(async () => {
   // in dev — app.setName() can't relabel it. Ours also carries every keyboard
   // shortcut as a menu accelerator (see main/app-menu.js for why).
   if (process.platform === 'darwin') {
-    require('./main/app-menu').setAppMenu();
+    require('../menu/app-menu').setAppMenu();
   }
 
   // Show the app icon in the Dock. Packaged builds pick it up from the bundle's
   // .icns automatically; in dev (`electron .`) set it explicitly so we show the
   // brand icon instead of Electron's default.
   if (app.dock && !app.isPackaged) {
-    app.dock.setIcon(path.join(__dirname, 'build', 'icon.png'));
+    app.dock.setIcon(path.join(__dirname, '..', '..', '..', 'build', 'icon.png'));
   }
 
   win.registerIpc();        // theme mirror + folder picker

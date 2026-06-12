@@ -5,7 +5,7 @@ const { app } = require('electron');
 const { fork, execSync } = require('child_process');
 const path = require('path');
 const http = require('http');
-const { PORT, BASE_URL } = require('./const');
+const { PORT, BASE_URL } = require('../app/const');
 
 let serverProcess = null; // forked backend server; null when using an external one
 let serverStartedAt = 0;  // when the current server child was forked (for the healthy reset)
@@ -23,7 +23,7 @@ function startServer() {
   // Clear the port in case a previous server (e.g. a stale dev run, or a half-dead child) lingers.
   freePort();
   serverStartedAt = Date.now();
-  serverProcess = fork(path.join(__dirname, '..', 'src', 'server', 'app.js'), [], {
+  serverProcess = fork(path.join(__dirname, '..', '..', 'server', 'app.js'), [], {
     // The forked server is plain Node and can't read Electron's app paths, so hand it a
     // writable data dir explicitly (never inside the asar). ELECTRON_RUN_AS_NODE makes the
     // child run as plain Node — without it, fork() reuses the Electron binary (execPath)

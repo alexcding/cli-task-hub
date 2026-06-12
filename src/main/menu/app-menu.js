@@ -5,7 +5,7 @@
 // Each item dispatches an action name to the renderer (handleShortcut in app.js);
 // runInApp opens the window first if it's closed.
 const { app, Menu } = require('electron');
-const { runInApp, getWin } = require('./window');
+const { runInApp, getWin } = require('../windows/window');
 
 const dispatch = action => runInApp(`window.__shortcut && __shortcut(${JSON.stringify(action)})`);
 // Most shortcuts act on whatever is already on screen, so they no-op when the window is

@@ -7,8 +7,8 @@
 // (can exceed 100% across cores — same convention as Activity Monitor and ps %cpu).
 const { app } = require('electron');
 const { execSync } = require('child_process');
-const { getServerPid } = require('./server-supervisor');
-const { getPids } = require('./terminals');
+const { getServerPid } = require('../server/supervisor');
+const { getPids } = require('../ipc/terminals');
 
 const MEM_TYPE_LABELS = { Browser: 'Main', Tab: 'Windows & web views', GPU: 'GPU', Utility: 'Utilities' };
 

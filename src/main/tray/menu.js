@@ -2,11 +2,11 @@
 // /api/tabs source as the sidebar), grouped exactly like the sidebar, plus the
 // "Review requested" master list.
 const { Menu } = require('electron');
-const { fetchJSON, postJSON } = require('./server-supervisor');
-const { openWindow, openLinkInApp, runInApp, quitApp } = require('./window');
-const { trayIcon, trayPressedIcon, avatarIcon, loadAvatar, jiraIcon } = require('./icons');
-const { detectReviewChanges } = require('./notifications');
-const { renderUsageImage } = require('./usage-image');
+const { fetchJSON, postJSON } = require('../server/supervisor');
+const { openWindow, openLinkInApp, runInApp, quitApp } = require('../windows/window');
+const { trayIcon, trayPressedIcon, avatarIcon, loadAvatar, jiraIcon } = require('../native/icons');
+const { detectReviewChanges } = require('../native/notifications');
+const { renderUsageImage } = require('../native/usage-image');
 
 // Build a labeled section of open-tab menu items. Each item maps 1:1 to a sidebar row
 // and clicking it focuses that exact tab. Titles are the ones saved on the tab
