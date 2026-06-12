@@ -2,47 +2,47 @@
 // with CI/approval badges, and the Jira mark. nativeImage can't rasterize SVG or round
 // corners, so avatars are fetched as PNG, circular-masked, and composited by hand on
 // the BGRA bitmap.
-const { app, nativeImage, nativeTheme, net } = require('electron');
+const { app, nativeImage, nativeTheme, net, systemPreferences } = require('electron');
 const path = require('path');
 const zlib = require('zlib');
 
-// Menu-bar icon: always the monochrome checkmark (a template image — macOS tints it
-// black-on-light / white-on-dark to match the menu bar). When `review` is set (you have
-// pending review requests) a bronze dot is drawn below the check to flag it.
-//
-// A template image is a pure alpha mask, so it can't carry the dot's color — the review
-// variant is therefore a NON-template raster painted in the current menu-bar foreground
-// (white on a dark bar, black on light; re-rendered on appearance change via refreshMenu).
-const REVIEW_DOT = [0x98, 0x71, 0x2c]; // bronze
+// True menu-bar appearance. The menu bar and native context menu follow the SYSTEM
+// appearance, NOT the app's theme — which the user can override in Settings (window.js
+// sets nativeTheme.themeSource). So shouldUseDarkColors lies for these surfaces: forcing
+// the app to light while macOS is dark would paint the menu-bar icon black on a dark bar.
+// AppleInterfaceStyle reports the real system value even when themeSource is overridden.
+function menuBarIsDark() {
+  try {
+    if (process.platform === 'darwin')
+      return systemPreferences.getUserDefault('AppleInterfaceStyle', 'string') === 'Dark';
+  } catch {}
+  return nativeTheme.shouldUseDarkColors;
+}
+
+// Menu-bar icon: the checkmark, drawn ALWAYS WHITE. macOS gives no API to read the
+// menu bar's actual (wallpaper-tinted) foreground color, and template tinting can't carry
+// a colored review dot — so rather than detect, we hardcode white to match the white menu-
+// bar icons. Non-template so the white sticks (and so the dot can carry its own color).
+// `review` adds a small bronze dot in the bottom-right corner. (Caveat: the white check
+// would be invisible on a genuinely light menu bar.)
 const TRAY_CHECK = [[0.20, 0.50], [0.42, 0.68], [0.80, 0.28]]; // wider, thinner-stroked menu-bar check
+const TRAY_FG = [255, 255, 255];
+const REVIEW_DOT = [0x98, 0x71, 0x2c]; // bronze
 function trayIcon(review) {
-  const dir = app.isPackaged ? process.resourcesPath : path.join(__dirname, '..', 'build');
-  if (!review) {
-    const img = nativeImage.createFromPath(path.join(dir, 'tray-icon-idle.png'));
-    img.setTemplateImage(true);
-    return img;
-  }
-  const fg = nativeTheme.shouldUseDarkColors ? [235, 235, 235] : [0, 0, 0];
-  const img = nativeImage.createFromBuffer(renderTray(22, fg), { width: 22, height: 22, scaleFactor: 1 });
-  img.addRepresentation({ scaleFactor: 2, width: 44, height: 44, buffer: renderTray(44, fg) });
-  return img; // non-template: keep the bronze dot's color
+  const img = nativeImage.createFromBuffer(renderTray(22, review), { width: 22, height: 22, scaleFactor: 1 });
+  img.addRepresentation({ scaleFactor: 2, width: 44, height: 44, buffer: renderTray(44, review) });
+  return img; // non-template: keep the hardcoded white
 }
 
 // Pressed (menu-open) variant. macOS highlights the clicked menu-bar item with a dark/accent
-// fill and auto-inverts TEMPLATE images to white — but the review icon is non-template, so a
-// light-mode black checkmark would wash out against the highlight. Supply a white-checkmark
-// version for the pressed state. No review → the idle template inverts on its own.
+// fill, against which the white checkmark stays legible — so the same image serves both.
 function trayPressedIcon(review) {
-  if (!review) return trayIcon(false);
-  const fg = [255, 255, 255];
-  const img = nativeImage.createFromBuffer(renderTray(22, fg), { width: 22, height: 22, scaleFactor: 1 });
-  img.addRepresentation({ scaleFactor: 2, width: 44, height: 44, buffer: renderTray(44, fg) });
-  return img;
+  return trayIcon(review);
 }
 
-// Rasterize the menu-bar checkmark (in `fg`) lifted into the upper ~80% of the tile, with
-// the bronze review dot centered below it. Returns a PNG buffer.
-function renderTray(size, fg) {
+// Rasterize the white menu-bar checkmark, plus (when `review`) a bronze dot in the bottom-
+// right corner. Returns a PNG buffer.
+function renderTray(size, review) {
   const rgba = new Uint8Array(size * size * 4);
   const set = (x, y, c, a) => {
     if (x < 0 || x >= size || y < 0 || y >= size || a <= 0) return;
@@ -55,14 +55,16 @@ function renderTray(size, fg) {
       for (let x = Math.floor(cx - rad); x <= Math.ceil(cx + rad); x++)
         set(x, y, c, Math.max(0, Math.min(1, rad - Math.hypot(x - cx, y - cy) + 0.5)));
   };
-  const P = TRAY_CHECK.map(([px, py]) => [px * size, py * size * 0.82 + size * 0.02]);
+  const P = TRAY_CHECK.map(([px, py]) => [px * size, py * size]);
   const rad = size * 0.062;
   for (let s = 0; s < P.length - 1; s++) {
     const [x0, y0] = P[s], [x1, y1] = P[s + 1];
     const steps = Math.ceil(Math.hypot(x1 - x0, y1 - y0) * 2);
-    for (let i = 0; i <= steps; i++) disc(x0 + (x1 - x0) * i / steps, y0 + (y1 - y0) * i / steps, rad, fg);
+    for (let i = 0; i <= steps; i++) disc(x0 + (x1 - x0) * i / steps, y0 + (y1 - y0) * i / steps, rad, TRAY_FG);
   }
-  disc(size * 0.5, size * 0.85, size * 0.115, REVIEW_DOT);
+  // Review dot tucked into the bottom-right corner, inset from the trailing edge so it
+  // doesn't clip.
+  if (review) disc(size * 0.80, size * 0.74, size * 0.10, REVIEW_DOT);
   return pngEncode(size, size, rgba);
 }
 
@@ -214,7 +216,7 @@ function avatarIcon(login, ci, approved) {
   const base = login ? avatarCache.get(login) : null;
   if (!base) return ciIcon(ci);
   const bmp = Buffer.from(base);     // copy so the cached base stays badge-free
-  const ring = nativeTheme.shouldUseDarkColors ? [38, 38, 40] : [255, 255, 255];
+  const ring = menuBarIsDark() ? [38, 38, 40] : [255, 255, 255];
   // A failing build is the actionable signal, so it wins over the approved check: an approved
   // PR with red CI still shows the red dot. Approval (a positive state) only replaces the dot
   // when CI isn't failing.
