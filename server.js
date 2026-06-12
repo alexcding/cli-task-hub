@@ -14,6 +14,7 @@ const poller = require('./lib/poller');
 const usage = require('./lib/usage');
 const forwarder = require('./lib/webhook-forwarder');
 const { PR_CATEGORY } = require('./src/shared/constants.mjs');
+const { ROUTES } = require('./src/shared/routes.mjs');
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
 
@@ -22,7 +23,7 @@ const app = express();
 // default 100kb cap so one route's needs don't widen the whole API's buffer ceiling.
 const jsonBig = express.json({ limit: '15mb' });
 const jsonStd = express.json();
-app.use((req, res, next) => (req.path === '/api/git/discard' ? jsonBig : jsonStd)(req, res, next));
+app.use((req, res, next) => (req.path === ROUTES.GIT_DISCARD ? jsonBig : jsonStd)(req, res, next));
 // Never cache static assets — this is a localhost tool; a refresh should always
 // show the latest UI (avoids "I edited the file but don't see changes").
 app.use(express.static(path.join(__dirname, 'public'), {
@@ -81,8 +82,8 @@ function projectPatch(body) {
 }
 
 // ── Config ────────────────────────────────────────────────────────────────────
-app.get('/api/config', (req, res) => res.json(db.getConfig()));
-app.post('/api/config', (req, res) => {
+app.get(ROUTES.CONFIG, (req, res) => res.json(db.getConfig()));
+app.post(ROUTES.CONFIG, (req, res) => {
   for (const [k, v] of Object.entries(req.body)) db.set(k, v);
   res.json({ ok: true });
 });
@@ -90,7 +91,7 @@ app.post('/api/config', (req, res) => {
 // macOS notification sounds the user can pick for review alerts — the same folders
 // System Settings draws from. Each entry is { name, path }; the chosen path is stored
 // as the `reviewSound` setting and played by afplay (see main/notifications.js).
-app.get('/api/sounds', wrap((req, res) => {
+app.get(ROUTES.SOUNDS, wrap((req, res) => {
   const fs = require('fs'), os = require('os');
   const dirs = ['/System/Library/Sounds', path.join(os.homedir(), 'Library', 'Sounds')];
   const sounds = [];
@@ -106,8 +107,8 @@ app.get('/api/sounds', wrap((req, res) => {
 }));
 
 // ── Settings (taskhub.db key/value — theme + ticket filter prefs) ───────────────
-app.get('/api/settings', wrap((req, res) => res.json(configdb.getAllSettings())));
-app.put('/api/settings/:key', wrap((req, res) => {
+app.get(ROUTES.SETTINGS, wrap((req, res) => res.json(configdb.getAllSettings())));
+app.put(ROUTES.SETTINGS_KEY, wrap((req, res) => {
   configdb.setSetting(req.params.key, req.body.value);
   res.json({ ok: true });
 }));
@@ -115,22 +116,22 @@ app.put('/api/settings/:key', wrap((req, res) => {
 // ── Tabs (taskhub.db — open viewer tabs, persisted across restarts) ─────────────
 // Rows, not a blob: see lib/configdb.js. The renderer PUTs its full ordered set on
 // every change; reads it back on launch to rehydrate the sidebar.
-app.get('/api/tabs', wrap((req, res) => res.json(configdb.getTabs())));
-app.put('/api/tabs', wrap((req, res) => {
+app.get(ROUTES.TABS, wrap((req, res) => res.json(configdb.getTabs())));
+app.put(ROUTES.TABS, wrap((req, res) => {
   configdb.setTabs(Array.isArray(req.body.tabs) ? req.body.tabs : [], req.body.active ?? null);
   res.json({ ok: true });
 }));
 
 // ── Projects ──────────────────────────────────────────────────────────────────
-app.get('/api/projects', (req, res) => res.json(db.getProjects()));
+app.get(ROUTES.PROJECTS, (req, res) => res.json(db.getProjects()));
 
-app.get('/api/projects/:id', (req, res) => {
+app.get(ROUTES.PROJECT, (req, res) => {
   const project = db.getProject(req.params.id);
   if (!project) return res.status(404).json({ error: 'Not found' });
   res.json(project);
 });
 
-app.post('/api/projects', (req, res) => {
+app.post(ROUTES.PROJECTS, (req, res) => {
   const { patch, error } = projectPatch(req.body);
   if (error) return res.status(400).json({ error });
   if (!patch.name) return res.status(400).json({ error: 'name required' });
@@ -139,7 +140,7 @@ app.post('/api/projects', (req, res) => {
   res.json(project);
 });
 
-app.put('/api/projects/:id', (req, res) => {
+app.put(ROUTES.PROJECT, (req, res) => {
   const { patch, error } = projectPatch(req.body);
   if (error) return res.status(400).json({ error });
   const project = db.updateProject(req.params.id, patch);
@@ -148,7 +149,7 @@ app.put('/api/projects/:id', (req, res) => {
   res.json(project);
 });
 
-app.delete('/api/projects/:id', (req, res) => {
+app.delete(ROUTES.PROJECT, (req, res) => {
   db.deleteProject(req.params.id);
   forwarder.sync(PORT);
   res.json({ ok: true });
@@ -156,7 +157,7 @@ app.delete('/api/projects/:id', (req, res) => {
 
 // Resolve the GitHub "owner/repo" for a local checkout, so the UI can auto-fill a
 // project's repo from its workspace folder. Returns { repo: '' } when none is found.
-app.get('/api/detect-repo', async (req, res) => {
+app.get(ROUTES.DETECT_REPO, async (req, res) => {
   const dir = req.query.path;
   if (!dir) return res.status(400).json({ error: 'path required' });
   res.json({ repo: (await github.gitRemoteRepo(String(dir))) || '' });
@@ -168,7 +169,7 @@ app.get('/api/detect-repo', async (req, res) => {
 //   { path, matched, isWorktree } — matched: a tree has it checked out; isWorktree: that
 //   tree is a dedicated (linked) worktree, not the shared main checkout.
 // { path: '', matched: false } when nothing matches (or, for a key, the match is ambiguous).
-app.get('/api/worktree', async (req, res) => {
+app.get(ROUTES.WORKTREE, async (req, res) => {
   const { path: dir, branch, key } = req.query;
   if (!dir || (!branch && !key)) return res.json({ path: '', matched: false, isWorktree: false });
   const found = key
@@ -179,14 +180,14 @@ app.get('/api/worktree', async (req, res) => {
 
 // Create a git worktree for a PR branch as a sibling of the project workspace, so the
 // tab can get its own checkout. Local git only. Returns { path } on success or { error }.
-app.post('/api/worktree', async (req, res) => {
+app.post(ROUTES.WORKTREE, async (req, res) => {
   const { path: dir, branch } = req.body || {};
   if (!dir || !branch) return res.status(400).json({ error: 'path and branch required' });
   res.json(await github.createWorktree(String(dir), String(branch)));
 });
 
 // Remove a worktree (folder + admin entry), run from the project workspace. Local git only.
-app.post('/api/worktree/remove', async (req, res) => {
+app.post(ROUTES.WORKTREE_REMOVE, async (req, res) => {
   const { path: dir, worktree } = req.body || {};
   if (!dir || !worktree) return res.status(400).json({ error: 'path and worktree required' });
   res.json(await github.removeWorktree(String(dir), String(worktree)));
@@ -194,7 +195,7 @@ app.post('/api/worktree/remove', async (req, res) => {
 
 // Uncommitted changes in a checkout (the diff pane). Local git only — same class of
 // on-demand local exec as /api/detect-repo and /api/worktree, not a `gh` call.
-app.get('/api/diff', async (req, res) => {
+app.get(ROUTES.DIFF, async (req, res) => {
   const dir = req.query.path;
   if (!dir) return res.status(400).json({ error: 'path required' });
   res.json(await github.gitDiff(String(dir)));
@@ -202,21 +203,21 @@ app.get('/api/diff', async (req, res) => {
 
 // Commit/push the worktree's changes (the diff pane's commit popover). The renderer
 // always sends a message — blank input is auto-filled client-side before the request.
-app.post('/api/git/commit', async (req, res) => {
+app.post(ROUTES.GIT_COMMIT, async (req, res) => {
   const { path: dir, message, includeUntracked } = req.body || {};
   if (!dir) return res.status(400).json({ error: 'path required' });
   if (!String(message || '').trim()) return res.status(400).json({ error: 'message required' });
   res.json(await github.gitCommit(String(dir), String(message), includeUntracked !== false));
 });
 
-app.post('/api/git/push', async (req, res) => {
+app.post(ROUTES.GIT_PUSH, async (req, res) => {
   const dir = req.body && req.body.path;
   if (!dir) return res.status(400).json({ error: 'path required' });
   res.json(await github.gitPush(String(dir)));
 });
 
 // Commit history for the project History view (graph + list). Read-only local git.
-app.get('/api/git/log', async (req, res) => {
+app.get(ROUTES.GIT_LOG, async (req, res) => {
   const dir = req.query.path;
   if (!dir) return res.status(400).json({ error: 'path required' });
   res.json(await github.gitLog(String(dir), { limit: Number(req.query.limit) || 100, skip: Number(req.query.skip) || 0, ref: req.query.ref ? String(req.query.ref) : '' }));
@@ -224,7 +225,7 @@ app.get('/api/git/log', async (req, res) => {
 
 // Local branches + worktree folders + default branch for the Git tab's left rail. Read-only
 // local git. defaultBranch ships here (not just in /log) so the rail can pin it on first paint.
-app.get('/api/git/refs', async (req, res) => {
+app.get(ROUTES.GIT_REFS, async (req, res) => {
   const dir = req.query.path;
   if (!dir) return res.status(400).json({ error: 'path required' });
   const [branches, worktrees, defaultBranch] = await Promise.all([
@@ -235,13 +236,13 @@ app.get('/api/git/refs', async (req, res) => {
 
 // Real GitHub avatars for commit authors (keyed by SHA) — the Git tab overlays these on its
 // generated initials avatars. `gh`-backed, cached; returns {} when the repo isn't on GitHub.
-app.get('/api/git/commit-avatars', async (req, res) => {
+app.get(ROUTES.GIT_COMMIT_AVATARS, async (req, res) => {
   const { repo, ref, limit } = req.query;
   res.json(await github.commitAvatars(repo ? String(repo) : '', ref ? String(ref) : '', Number(limit) || 100));
 });
 
 // One commit's detail (meta + patch) for the History detail pane.
-app.get('/api/git/show', async (req, res) => {
+app.get(ROUTES.GIT_SHOW, async (req, res) => {
   const { path: dir, sha } = req.query;
   if (!dir || !sha) return res.status(400).json({ error: 'path and sha required' });
   res.json(await github.gitShow(String(dir), String(sha)));
@@ -249,7 +250,7 @@ app.get('/api/git/show', async (req, res) => {
 
 // Discard one hunk from the worktree (reverse-apply a single-hunk patch the renderer
 // rebuilt from its parsed diff — see hunkPatch in public/js/diff-parse.mjs).
-app.post('/api/git/discard', async (req, res) => {
+app.post(ROUTES.GIT_DISCARD, async (req, res) => {
   const { path: dir, patch } = req.body || {};
   if (!dir || !patch) return res.status(400).json({ error: 'path and patch required' });
   res.json(await github.gitDiscard(String(dir), String(patch)));
@@ -274,7 +275,7 @@ function snapshotFor(project) {
 
 // Project-scoped PR list. `open` is served from the snapshot; merged/all is a live
 // fetch (rare, on-demand from the state filter).
-app.get('/api/projects/:id/prs', async (req, res) => {
+app.get(ROUTES.PROJECT_PRS, async (req, res) => {
   const project = db.getProject(req.params.id);
   if (!project) return res.status(404).json({ error: 'Not found' });
   if (!project.repo) return res.json([]);
@@ -294,7 +295,7 @@ app.get('/api/projects/:id/prs', async (req, res) => {
 // review we attach reviewPending: the tray's "Review requested" list shows a PR while its
 // latest request (requestedAt, set by the poller) is newer than when I last opened it
 // (viewedAt). Missing requestedAt → pending (never silently drop a request).
-app.get('/api/prs/tray', (req, res) => {
+app.get(ROUTES.PRS_TRAY, (req, res) => {
   const items = [];
   for (const project of db.getProjects()) {
     const snap = snapshotFor(project);
@@ -314,7 +315,7 @@ app.get('/api/prs/tray', (req, res) => {
 
 // Mark a review request as opened (acknowledged) — clicked from the tray's "Review
 // requested" list. Hides it until a newer request arrives (see /api/prs/tray).
-app.post('/api/prs/viewed', (req, res) => {
+app.post(ROUTES.PRS_VIEWED, (req, res) => {
   const { repo, number } = req.body || {};
   if (!repo || number == null) return res.status(400).json({ error: 'repo and number required' });
   db.setReviewViewed(`${repo}#${number}`, new Date().toISOString());
@@ -322,7 +323,7 @@ app.post('/api/prs/viewed', (req, res) => {
 });
 
 // Dashboard: every project with its snapshotted open PRs + freshness info.
-app.get('/api/dashboard', (req, res) => {
+app.get(ROUTES.DASHBOARD, (req, res) => {
   res.json(db.getProjects().map(project => {
     const snap = snapshotFor(project);
     return { ...project, prs: snap?.prs || [], lastSynced: snap?.lastSynced || null, syncError: snap?.error || null };
@@ -351,11 +352,11 @@ function jiraBaseUrl() {
   } catch { /* not authed yet — UI falls back to no link */ }
   return _jiraBaseCache || '';
 }
-app.get('/api/jira/site', wrap((req, res) => res.json({ baseUrl: jiraBaseUrl() })));
+app.get(ROUTES.JIRA_SITE, wrap((req, res) => res.json({ baseUrl: jiraBaseUrl() })));
 
-// Global "assigned to me" feed. Declared before '/api/jira/:key' so this literal
+// Global "assigned to me" feed. Declared before ROUTES.JIRA_KEY so this literal
 // path wins over the :key param.
-app.get('/api/jira/mine', wrap((req, res) => {
+app.get(ROUTES.JIRA_MINE, wrap((req, res) => {
   const snap = db.getJiraSnapshot(poller.MY_TICKETS_ID);
   if (jiraStale(snap)) poller.syncJiraMine();
   res.json(snap || { items: [], jql: '', lastSynced: null, error: null });
@@ -363,14 +364,14 @@ app.get('/api/jira/mine', wrap((req, res) => {
 
 // Global "my work in the active sprint(s)" feed (dashboard). The active sprint's
 // name/end date lives in poller memory (not the snapshot table), merged in here.
-app.get('/api/jira/sprint', wrap((req, res) => {
+app.get(ROUTES.JIRA_SPRINT, wrap((req, res) => {
   const snap = db.getJiraSnapshot(poller.MY_SPRINT_ID);
   if (jiraStale(snap)) poller.syncJiraSprint();
   res.json({ ...(snap || { items: [], jql: '', lastSynced: null, error: null }), sprint: poller.currentSprint() });
 }));
 
 // Per-project Jira feed (the project's saved JQL).
-app.get('/api/projects/:id/jira', wrap((req, res) => {
+app.get(ROUTES.PROJECT_JIRA, wrap((req, res) => {
   const project = db.getProject(req.params.id);
   if (!project) return res.status(404).json({ error: 'Not found' });
   const snap = db.getJiraSnapshot(project.id);
@@ -383,31 +384,31 @@ app.get('/api/projects/:id/jira', wrap((req, res) => {
 }));
 
 // Ad-hoc live search (e.g. previewing a JQL before saving it).
-app.get('/api/jira/search', wrap((req, res) => {
+app.get(ROUTES.JIRA_SEARCH, wrap((req, res) => {
   const jql = req.query.jql || 'assignee = currentUser() ORDER BY updated DESC';
   res.json(jira.searchWorkItems(jql, 30));
 }));
 
-app.get('/api/jira/:key', wrap((req, res) => res.json(jira.getWorkItem(req.params.key))));
+app.get(ROUTES.JIRA_KEY, wrap((req, res) => res.json(jira.getWorkItem(req.params.key))));
 
-app.post('/api/jira/:key/transition', wrap((req, res) => {
+app.post(ROUTES.JIRA_KEY_TRANSITION, wrap((req, res) => {
   jira.transitionWorkItem(req.params.key, req.body.transition);
   db.addEvent('jira_transitioned', { key: req.params.key, transition: req.body.transition, trigger: 'manual' });
   res.json({ ok: true });
 }));
 
 // ── Links ───────────────────────────────────────────────────────────────────────
-app.get('/api/links', (req, res) => res.json(db.getLinks(req.query.project)));
-app.post('/api/links', (req, res) => {
+app.get(ROUTES.LINKS, (req, res) => res.json(db.getLinks(req.query.project)));
+app.post(ROUTES.LINKS, (req, res) => {
   const { prNumber, prRepo, jiraKey, projectId } = req.body;
   if (!prNumber || !prRepo || !jiraKey) return res.status(400).json({ error: 'prNumber, prRepo, jiraKey required' });
   db.addLink(prNumber, prRepo, jiraKey, projectId);
   res.json({ ok: true });
 });
-app.delete('/api/links/:id', (req, res) => { db.removeLink(req.params.id); res.json({ ok: true }); });
+app.delete(ROUTES.LINK, (req, res) => { db.removeLink(req.params.id); res.json({ ok: true }); });
 
 // ── Who am I (dashboard greeting) ───────────────────────────────────────────────
-app.get('/api/whoami', (req, res) => {
+app.get(ROUTES.WHOAMI, (req, res) => {
   github.getUserName()
     .then(name => res.json({ name }))
     .catch(() => res.json({ name: '' }));
@@ -415,7 +416,7 @@ app.get('/api/whoami', (req, res) => {
 
 // ── AI token usage (dashboard hero) ─────────────────────────────────────────────
 // Today's Claude Code / Codex usage via ccusage; lib/usage.js caches SWR-style.
-app.get('/api/usage', (req, res) => {
+app.get(ROUTES.USAGE, (req, res) => {
   usage.getUsage()
     .then(u => res.json(u))
     .catch(err => res.status(500).json({ error: err.message }));
@@ -424,17 +425,17 @@ app.get('/api/usage', (req, res) => {
 // ── Events / Logs ────────────────────────────────────────────────────────────────
 // /api/events is the activity feed (category='event'); /api/logs is the full,
 // filterable log viewer across all categories.
-app.get('/api/events', (req, res) => res.json(db.getEvents(100)));
-app.get('/api/logs', (req, res) => res.json(db.getLogs({
+app.get(ROUTES.EVENTS, (req, res) => res.json(db.getEvents(100)));
+app.get(ROUTES.LOGS, (req, res) => res.json(db.getLogs({
   category: req.query.category,
   level: req.query.level,
   limit: parseInt(req.query.limit, 10) || 200,
 })));
-app.get('/api/logs/categories', (req, res) => res.json(db.logCategories()));
-app.post('/api/logs/clear', (req, res) => { db.clearLogs(req.body && req.body.category); res.json({ ok: true }); });
+app.get(ROUTES.LOGS_CATEGORIES, (req, res) => res.json(db.logCategories()));
+app.post(ROUTES.LOGS_CLEAR, (req, res) => { db.clearLogs(req.body && req.body.category); res.json({ ok: true }); });
 
 // ── DB inspector (Settings) ─────────────────────────────────────────────────────
-app.get('/api/db', (req, res) => {
+app.get(ROUTES.DB, (req, res) => {
   const snaps = db.getAllSnapshots();
   const jsnaps = db.getAllJiraSnapshots();
   res.json({
@@ -453,7 +454,7 @@ app.get('/api/db', (req, res) => {
 // an event so the open UI re-reads the snapshot (no client-side polling needed).
 const sseClients = new Set();
 
-app.get('/api/stream', (req, res) => {
+app.get(ROUTES.STREAM, (req, res) => {
   res.writeHead(200, {
     'Content-Type': 'text/event-stream',
     'Cache-Control': 'no-cache',
@@ -487,7 +488,7 @@ if (!isPackaged) {
 }
 
 // ── GitHub webhook ──────────────────────────────────────────────────────────────
-app.post('/webhook/github', (req, res) => {
+app.post(ROUTES.WEBHOOK_GITHUB, (req, res) => {
   res.sendStatus(200);
   if (req.headers['x-github-event'] !== 'pull_request') return;
   const { action, pull_request: pr, repository } = req.body;
@@ -499,10 +500,10 @@ app.post('/webhook/github', (req, res) => {
 });
 
 // ── Forwarders ────────────────────────────────────────────────────────────────
-app.get('/api/forwarders', (req, res) => res.json(forwarder.list()));
+app.get(ROUTES.FORWARDERS, (req, res) => res.json(forwarder.list()));
 
 // ── Poll trigger ────────────────────────────────────────────────────────────────
-app.post('/api/poll', async (req, res) => {
+app.post(ROUTES.POLL, async (req, res) => {
   try { await poller.poll(); poller.pollJira(); res.json({ ok: true }); }
   catch (err) { res.status(500).json({ error: err.message }); }
 });
