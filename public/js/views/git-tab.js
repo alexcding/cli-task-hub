@@ -122,6 +122,7 @@ function renderMain(id) {
     <div class="gt-clog" style="--pg-row-h:${ROW_H}px">${_t.commits.map((c, i) => `
       <div class="pg-crow" onclick="gitTabShowCommit('${id}','${c.sha}')" title="${esc(c.subject)}">
         ${graphSvg(_t.graph.rows[i], _t.graph.laneCount, w)}
+        ${avatar(c.author, c.email)}
         <div class="pg-crow-main">
           <div class="pg-crow-subj">${refChips(c.refs)}${esc(c.subject)}</div>
           <div class="pg-crow-meta">${esc(c.author)} · <span title="${esc(c.date)}">${esc(fmtDate(c.date))}</span> · <span class="pg-sha">${esc(c.short)}</span></div>
@@ -209,4 +210,22 @@ export async function gitTabRemoveWorktree(id, btn, worktreePath) {
 function shortPath(p) {
   const parts = String(p || '').split('/').filter(Boolean);
   return parts.length <= 2 ? p : '…/' + parts.slice(-2).join('/');
+}
+
+// A generated initials avatar (no network — hundreds of commits would otherwise mean hundreds
+// of Gravatar/GitHub image fetches). Colour is a stable hash of the author identity; the full
+// <span> string is memoised per author so repeats and re-renders don't recompute it.
+const _avatars = new Map();
+function avatar(name, email) {
+  const key = (email || name || '?').toLowerCase();
+  let html = _avatars.get(key);
+  if (html) return html;
+  const words = String(name || email || '?').trim().split(/\s+/).filter(Boolean);
+  const initials = (words.length >= 2 ? words[0][0] + words[1][0] : (words[0] || '?').slice(0, 1)).toUpperCase();
+  let h = 0;
+  for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) | 0;
+  const hue = ((h % 360) + 360) % 360;
+  html = `<span class="pg-av" style="background:hsl(${hue} 52% 47%)" title="${esc(name || email)}">${esc(initials)}</span>`;
+  _avatars.set(key, html);
+  return html;
 }
