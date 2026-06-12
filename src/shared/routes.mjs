@@ -61,8 +61,7 @@ export const ROUTES = Object.freeze({
 
   // ── Links ──────────────────────────────────────────────────────────────────
   LINKS: '/api/links',
-  LINK: '/api/links/:id',
-  link: id => `/api/links/${id}`,
+  LINK: '/api/links/:id',   // server pattern only — no renderer call site deletes links yet
 
   // ── Misc / system ────────────────────────────────────────────────────────────
   WHOAMI: '/api/whoami',

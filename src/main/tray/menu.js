@@ -7,6 +7,7 @@ const { openWindow, openLinkInApp, runInApp, quitApp } = require('../windows/win
 const { trayIcon, trayPressedIcon, avatarIcon, loadAvatar, jiraIcon } = require('../native/icons');
 const { detectReviewChanges } = require('../native/notifications');
 const { renderUsageImage } = require('../native/usage-image');
+const { PR_CATEGORY, PR_GROUP } = require('../../shared/constants.mjs');
 
 // Build a labeled section of open-tab menu items. Each item maps 1:1 to a sidebar row
 // and clicking it focuses that exact tab. Titles are the ones saved on the tab
@@ -17,14 +18,15 @@ const { renderUsageImage } = require('../native/usage-image');
 // space that would otherwise leave a visible gap before the ellipsis.
 const menuLabel = s => s.length > 40 ? s.slice(0, 40).trimEnd() + '…' : s;
 
-// Sidebar GROUP for a PR — mirrors the renderer's store.prGroup (kept local since main is
-// CommonJS, not ESM). 'review' when it's awaiting my review (falling back to category for
-// snapshots predating awaitingMyReview), else 'mine'. A PR I've only commented on is
-// category:'other' but belongs under Review — grouping on raw category sends it to Mine.
-const prGroup = pr => ((pr?.awaitingMyReview ?? (pr?.category === 'review')) ? 'review' : 'mine');
+// Sidebar GROUP for a PR — mirrors the renderer's store.prGroup. The category/group value
+// strings come from the shared contract (src/shared/constants.mjs); main is CommonJS but can
+// require() the .mjs (Node ≥22.12). 'review' when it's awaiting my review (falling back to
+// category for snapshots predating awaitingMyReview), else 'mine'. A PR I've only commented on
+// is category:'other' but belongs under Review — grouping on raw category sends it to Mine.
+const prGroup = pr => ((pr?.awaitingMyReview ?? (pr?.category === PR_CATEGORY.REVIEW)) ? PR_GROUP.REVIEW : PR_GROUP.MINE);
 // Group an open GitHub tab: prefer the live snapshot PR (source of truth, same as the
 // sidebar); fall back to the group persisted on the tab (renderer backfills it via prGroup).
-const tabGroup = (t, prByUrl) => { const pr = prByUrl[t.url]; return pr ? prGroup(pr) : (t.category === 'review' ? 'review' : 'mine'); };
+const tabGroup = (t, prByUrl) => { const pr = prByUrl[t.url]; return pr ? prGroup(pr) : (t.category === PR_CATEGORY.REVIEW ? PR_GROUP.REVIEW : PR_GROUP.MINE); };
 
 function tabSection(label, tabs, prByUrl) {
   if (!tabs.length) return [];
@@ -107,14 +109,14 @@ async function refreshMenuData(tray, refreshMenu) {
   // off the live snapshot) — NOT raw category, so a PR I only commented on (category 'other')
   // stays under Review instead of falling into Mine. "Review requested" (below) is the
   // broader master list — every PR awaiting review from the snapshot, opened or not.
-  const taskTabs   = github.filter(t => tabGroup(t, prByUrl) !== 'review');
-  const reviewTabs = github.filter(t => tabGroup(t, prByUrl) === 'review');
+  const taskTabs   = github.filter(t => tabGroup(t, prByUrl) !== PR_GROUP.REVIEW);
+  const reviewTabs = github.filter(t => tabGroup(t, prByUrl) === PR_GROUP.REVIEW);
   const jiraTabs   = tabs.filter(t => t.kind === 'jira');
 
   // Notifications + icon color track ALL pending reviews from the snapshot, independent
   // of which tabs are open — so a newly-requested review still alerts you even unopened.
   const openPRs = prList.filter(p => !p.error && p.state === 'OPEN');
-  const review = openPRs.filter(p => p.category === 'review');
+  const review = openPRs.filter(p => p.category === PR_CATEGORY.REVIEW);
 
   // Pre-load each author avatar we're about to render (unique logins, in parallel) so the
   // section builders below can read them synchronously from the cache.

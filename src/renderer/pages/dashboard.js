@@ -2,7 +2,7 @@
 // awaiting your review. Other people's PRs live under each project, not here.
 import { ROUTES } from '/shared/routes.mjs';
 import { state, prByUrl, prGroup } from '../stores/store.js';
-import { PR_CATEGORY } from '/shared/constants.mjs';
+import { PR_CATEGORY, PR_GROUP } from '/shared/constants.mjs';
 import { api } from '../services/api.js';
 import { esc } from '../lib/util.js';
 import { ICON } from '../lib/icons.js';
@@ -35,7 +35,7 @@ export async function loadDashboard() {
   // instead of dropping off when GitHub removes me from reviewRequests). Falls back to
   // category for older snapshots written before awaitingMyReview existed. (Tray/sound still
   // use category.)
-  const review  = openPRs.filter(p => p.awaitingMyReview ?? (p.category === PR_CATEGORY.REVIEW));
+  const review  = openPRs.filter(p => prGroup(p) === PR_GROUP.REVIEW);
   const errors  = groups.flatMap(g => (g.prs||[]).filter(p => p.error));
 
   // Hero: greeting + date on the left, actionable counts as chips on the right.

@@ -1,7 +1,7 @@
 // Centralized logging for both processes, built on electron-log.
 //
-// The app is two processes (see tray.js): the Electron *main* process (tray.js) and
-// a *forked* plain-Node child (server.js). electron-log ships a variant for each —
+// The app is two processes (see src/main/app/main.js): the Electron *main* process and
+// a *forked* plain-Node child (src/server/app.js). electron-log ships a variant for each —
 // `electron-log/main` (wires up renderer IPC) and `electron-log/node` (no Electron) —
 // so we pick by `process.type` ('browser' only inside the Electron main process).
 //

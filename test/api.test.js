@@ -1,6 +1,6 @@
 // API tests over the Express app. Runs against a temp data dir and never starts the
 // pollers/forwarder (we listen on the exported `app` directly, on an ephemeral port),
-// so no `gh`/`acli` calls happen. Snapshots are seeded through lib/db where a route
+// so no `gh`/`acli` calls happen. Snapshots are seeded through src/server/database/db where a route
 // would otherwise kick a live sync.
 process.env.TASKHUB_DATA_DIR = require('fs').mkdtempSync(
   require('path').join(require('os').tmpdir(), 'taskhub-test-'));

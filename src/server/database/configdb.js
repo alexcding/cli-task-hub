@@ -3,7 +3,7 @@
 //   • projects / links / events / config — domain data (was taskhub.json)
 //   • tabs / settings                     — UI prefs (open viewer tabs, theme, filters)
 //   • review_state                        — per-PR review-request tracking
-// The volatile CLI cache (PR + Jira snapshots) lives separately in data.db (lib/datadb.js),
+// The volatile CLI cache (PR + Jira snapshots) lives separately in data.db (src/server/database/datadb.js),
 // so it can be wiped/rebuilt without touching anything here.
 //
 // node:sqlite is bundled with Node 22+ / Electron 24+ (the packaged app runs under

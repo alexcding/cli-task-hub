@@ -1,7 +1,8 @@
 // TaskHub Electron entry point. App lifecycle + wiring only — the actual work lives
-// in main/: server-supervisor (backend child), terminals (PTYs), window (dashboard
-// BrowserWindow + IPC), menu (tray menu), icons (rasterization), notifications
-// (review alerts), usage (RAM/CPU readout, surfaced in Settings), updater (auto-updates).
+// across src/main/: server/supervisor (backend child), ipc/terminals (PTYs),
+// windows/window (dashboard BrowserWindow + IPC), tray/menu (tray menu), native/icons
+// (rasterization), native/notifications (review alerts), native/usage (RAM/CPU readout,
+// surfaced in Settings), updater/updater (auto-updates).
 
 // Cache compiled V8 bytecode to disk for faster cold starts (no-op pre-Node 22.8).
 try { require('node:module').enableCompileCache?.(); } catch {}

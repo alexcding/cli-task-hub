@@ -8,6 +8,7 @@
 const { Notification, shell } = require('electron');
 const { execFile } = require('child_process');
 const { openLinkInApp } = require('../windows/window');
+const { PR_CATEGORY } = require('../../shared/constants.mjs');
 
 let reviewSeeded = false;           // first sync seeds silently — don't notify for reviews
                                     // already pending when the app launches
@@ -46,7 +47,7 @@ function notifyReviewRequested(pr) {
   if (!Notification.isSupported()) return;
   const full = `PR #${pr.number} ${pr.title}`;
   const n = new Notification({ title: 'Review requested', body: full });
-  n.on('click', () => openLinkInApp(pr.url, full, 'github', pr.category || 'review'));
+  n.on('click', () => openLinkInApp(pr.url, full, 'github', pr.category || PR_CATEGORY.REVIEW));
   n.show();
 }
 

@@ -4,10 +4,10 @@
 // into the wrong sidebar group. That's exactly why these belong in one contract.
 //
 // Authored as ESM (.mjs) because the RENDERER imports it (browsers require ESM); it's served
-// to the page at /shared/constants.mjs (see server.js) and `require()`d from disk by Node
+// to the page at /shared/constants.mjs (see src/server/app.js) and `require()`d from disk by Node
 // consumers (Node ≥22.12 supports require() of ESM). See docs/ARCHITECTURE.md.
 
-// How a PR relates to me, as classified server-side by categoryOf() in lib/github.js:
+// How a PR relates to me, as classified server-side by categoryOf() in src/server/repositories/github.js:
 //   mine   — I authored it
 //   review — I'm a requested reviewer on a non-draft PR I didn't author
 //   other  — everyone else's (shown only under its project)

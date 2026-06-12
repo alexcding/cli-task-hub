@@ -24,18 +24,19 @@ const app = express();
 const jsonBig = express.json({ limit: '15mb' });
 const jsonStd = express.json();
 app.use((req, res, next) => (req.path === ROUTES.GIT_DISCARD ? jsonBig : jsonStd)(req, res, next));
-// Never cache static assets — this is a localhost tool; a refresh should always
-// show the latest UI (avoids "I edited the file but don't see changes").
-app.use(express.static(path.join(__dirname, '..', 'renderer'), {
+// Shared cross-process contracts (src/shared/*.mjs) exposed to the renderer at /shared.
+// The page imports e.g. /shared/constants.mjs; Node consumers require() the same files
+// from disk. This surface stays stable regardless of where the renderer's files live.
+// Mounted BEFORE the web-root static so a future src/renderer/shared/ can't shadow it.
+app.use('/shared', express.static(path.join(__dirname, '..', 'shared'), {
   etag: false,
   lastModified: false,
   setHeaders: res => res.setHeader('Cache-Control', 'no-store'),
 }));
 
-// Shared cross-process contracts (src/shared/*.mjs) exposed to the renderer at /shared.
-// The page imports e.g. /shared/constants.mjs; Node consumers require() the same files
-// from disk. This surface stays stable regardless of where the renderer's files live.
-app.use('/shared', express.static(path.join(__dirname, '..', 'shared'), {
+// Never cache static assets — this is a localhost tool; a refresh should always
+// show the latest UI (avoids "I edited the file but don't see changes").
+app.use(express.static(path.join(__dirname, '..', 'renderer'), {
   etag: false,
   lastModified: false,
   setHeaders: res => res.setHeader('Cache-Control', 'no-store'),
@@ -90,7 +91,7 @@ app.post(ROUTES.CONFIG, (req, res) => {
 
 // macOS notification sounds the user can pick for review alerts — the same folders
 // System Settings draws from. Each entry is { name, path }; the chosen path is stored
-// as the `reviewSound` setting and played by afplay (see main/notifications.js).
+// as the `reviewSound` setting and played by afplay (see src/main/native/notifications.js).
 app.get(ROUTES.SOUNDS, wrap((req, res) => {
   const fs = require('fs'), os = require('os');
   const dirs = ['/System/Library/Sounds', path.join(os.homedir(), 'Library', 'Sounds')];
@@ -114,7 +115,7 @@ app.put(ROUTES.SETTINGS_KEY, wrap((req, res) => {
 }));
 
 // ── Tabs (taskhub.db — open viewer tabs, persisted across restarts) ─────────────
-// Rows, not a blob: see lib/configdb.js. The renderer PUTs its full ordered set on
+// Rows, not a blob: see src/server/database/configdb.js. The renderer PUTs its full ordered set on
 // every change; reads it back on launch to rehydrate the sidebar.
 app.get(ROUTES.TABS, wrap((req, res) => res.json(configdb.getTabs())));
 app.put(ROUTES.TABS, wrap((req, res) => {
@@ -415,7 +416,7 @@ app.get(ROUTES.WHOAMI, (req, res) => {
 });
 
 // ── AI token usage (dashboard hero) ─────────────────────────────────────────────
-// Today's Claude Code / Codex usage via ccusage; lib/usage.js caches SWR-style.
+// Today's Claude Code / Codex usage via ccusage; src/server/repositories/usage.js caches SWR-style.
 app.get(ROUTES.USAGE, (req, res) => {
   usage.getUsage()
     .then(u => res.json(u))
@@ -473,17 +474,19 @@ const publishSync = projectId => broadcast({ type: 'sync', projectId });
 const publishJiraSync = id => broadcast({ type: 'jira-sync', id });
 
 // ── Dev live reload ─────────────────────────────────────────────────────────────
-// Watch public/ and tell open pages to reload on change. Disabled in the packaged
-// app (files live inside app.asar, which isn't watchable/editable).
+// Watch the renderer AND the shared contracts (served to the page at /shared) and tell
+// open pages to reload on change. src/shared is a sibling of src/renderer, so it needs
+// its own watch — editing routes.mjs/constants.mjs must reload the page too. Disabled in
+// the packaged app (files live inside app.asar, which isn't watchable/editable).
 const isPackaged = __dirname.includes('app.asar');
 if (!isPackaged) {
   try {
     let t = null;
-    require('fs').watch(path.join(__dirname, '..', 'renderer'), { recursive: true }, () => {
-      clearTimeout(t);
-      t = setTimeout(() => broadcast({ type: 'reload' }), 100);
-    });
-    console.log('[dev] live reload watching public/');
+    const reload = () => { clearTimeout(t); t = setTimeout(() => broadcast({ type: 'reload' }), 100); };
+    for (const dir of ['renderer', 'shared']) {
+      require('fs').watch(path.join(__dirname, '..', dir), { recursive: true }, reload);
+    }
+    console.log('[dev] live reload watching src/renderer + src/shared');
   } catch (err) { console.warn('[dev] live reload unavailable:', err.message); }
 }
 
@@ -509,7 +512,7 @@ app.post(ROUTES.POLL, async (req, res) => {
 });
 
 // ── Start ─────────────────────────────────────────────────────────────────────
-// The HTTP server + poller + webhook forwarder run either standalone (`node server.js`,
+// The HTTP server + poller + webhook forwarder run either standalone (`node src/server/app.js`,
 // dev / tray child process) or through start()/stop() in tests. Nothing listens or
 // schedules at require time.
 let server = null;
@@ -561,8 +564,8 @@ function stop() {
   if (server) { try { server.close(); } catch {} server = null; }
 }
 
-// Standalone (`node server.js`, dev:server) self-starts; when required in-process by
-// tray.js it stays dormant until tray calls start() itself.
+// Standalone (`node src/server/app.js`, dev:server) self-starts; when required in-process by
+// src/main/app/main.js it stays dormant until tray calls start() itself.
 if (require.main === module) {
   start().catch((err) => {
     console.error(`[server] failed to start: ${err.message}`);
