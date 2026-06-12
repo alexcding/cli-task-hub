@@ -13,6 +13,7 @@ const jira = require('./lib/jira');
 const poller = require('./lib/poller');
 const usage = require('./lib/usage');
 const forwarder = require('./lib/webhook-forwarder');
+const { PR_CATEGORY } = require('./src/shared/constants.mjs');
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
 
@@ -25,6 +26,15 @@ app.use((req, res, next) => (req.path === '/api/git/discard' ? jsonBig : jsonStd
 // Never cache static assets — this is a localhost tool; a refresh should always
 // show the latest UI (avoids "I edited the file but don't see changes").
 app.use(express.static(path.join(__dirname, 'public'), {
+  etag: false,
+  lastModified: false,
+  setHeaders: res => res.setHeader('Cache-Control', 'no-store'),
+}));
+
+// Shared cross-process contracts (src/shared/*.mjs) exposed to the renderer at /shared.
+// The page imports e.g. /shared/constants.mjs; Node consumers require() the same files
+// from disk. This surface stays stable regardless of where the renderer's files live.
+app.use('/shared', express.static(path.join(__dirname, 'src', 'shared'), {
   etag: false,
   lastModified: false,
   setHeaders: res => res.setHeader('Cache-Control', 'no-store'),
@@ -290,7 +300,7 @@ app.get('/api/prs/tray', (req, res) => {
     const snap = snapshotFor(project);
     for (const pr of snap?.prs || []) {
       const item = { ...pr, projectId: project.id, projectName: project.name };
-      if (pr.category === 'review') {
+      if (pr.category === PR_CATEGORY.REVIEW) {
         const st = db.getReviewState(`${pr.repo}#${pr.number}`);
         item.viewedAt = st?.viewed_at || null;
         item.requestedAt = pr.requestedAt || st?.requested_at || null;

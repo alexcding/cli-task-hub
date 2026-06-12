@@ -1,6 +1,7 @@
 // Left sidebar: project nav, the grouped open-tab rows, drag-reorder, and the
 // right-click tab menu.
 import { state, prByUrl, prGroup, setProjects } from './store.js';
+import { PR_CATEGORY, PR_GROUP } from '/shared/constants.mjs';
 import { esc, ghAvatarSrc } from './util.js';
 import { ICON, TAB_ICON } from './icons.js';
 import { ciInfo } from './views/cards.js';
@@ -69,14 +70,14 @@ function tabsMarkup() {
   // whose PR has merged and left the snapshot) keeps its group instead of vanishing.
   const ghCat = t => {
     const pr = prByUrl(t.url);
-    return pr ? prGroup(pr) : (t.category === 'review' ? 'review' : 'mine');
+    return pr ? prGroup(pr) : (t.category === PR_CATEGORY.REVIEW ? PR_GROUP.REVIEW : PR_GROUP.MINE);
   };
   const ghGroup = (label, cat) =>
     groupHtml(label, `data-kind="github" data-cat="${cat}"`, state.tabs.filter(t => t.kind === 'github' && ghCat(t) === cat));
   // Only the two categorized GitHub groups render. Tabs that are neither 'mine' nor
   // 'review' (uncategorized / stale / not-yet-loaded PRs) show no row. Each group
   // self-hides when empty, so no bare headers appear.
-  return ghGroup('Mine', 'mine') + ghGroup('Review', 'review')
+  return ghGroup('Mine', PR_GROUP.MINE) + ghGroup('Review', PR_GROUP.REVIEW)
        + group('Jira', 'jira');
 }
 

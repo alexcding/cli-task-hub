@@ -2,6 +2,8 @@
 // and write `state` and call each other's render functions; nothing else holds
 // long-lived data. (Views are functions of this state; see views/*.)
 
+import { PR_CATEGORY, PR_GROUP } from '/shared/constants.mjs';
+
 // Default code-font sizes (px). The single JS source — fonts.js imports these to seed,
 // clamp, and reset. index.html carries a matching CSS copy (--term-font-size /
 // --diff-font-size) for the pre-JS paint only; keep the two in sync if these change.
@@ -72,7 +74,7 @@ export function prByUrl(url) {
 // back to 'other'), else 'mine'. Single source of truth so a PR opened from the dashboard's
 // "Review Requested" section lands under the sidebar's "Review" group, not "Mine". Mirrors
 // the dashboard filter; falls back to category for snapshots predating awaitingMyReview.
-export const prGroup = pr => ((pr?.awaitingMyReview ?? (pr?.category === 'review')) ? 'review' : 'mine');
+export const prGroup = pr => ((pr?.awaitingMyReview ?? (pr?.category === PR_CATEGORY.REVIEW)) ? PR_GROUP.REVIEW : PR_GROUP.MINE);
 
 // A loaded Jira ticket by key, across the cached snapshots (mine, sprint, per-project).
 export function jiraByKey(key) {

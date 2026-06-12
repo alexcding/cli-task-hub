@@ -1,6 +1,7 @@
 // Dashboard (taskboard). Personal view: "Tasks" = PRs you authored, "Review" = PRs
 // awaiting your review. Other people's PRs live under each project, not here.
 import { state, prByUrl, prGroup } from '../store.js';
+import { PR_CATEGORY } from '/shared/constants.mjs';
 import { api } from '../api.js';
 import { esc } from '../util.js';
 import { ICON } from '../icons.js';
@@ -27,13 +28,13 @@ export async function loadDashboard() {
 
   // Flatten open PRs across all projects.
   const openPRs = groups.flatMap(g => (g.prs||[]).filter(p => !p.error && p.state==='OPEN'));
-  const mine    = openPRs.filter(p => p.category === 'mine');
+  const mine    = openPRs.filter(p => p.category === PR_CATEGORY.MINE);
   // "Review Requested" tracks PRs in my review orbit — kept while open if I'm requested OR
   // I've left any review (so a PR I've commented on, or approved but not yet merged, stays
   // instead of dropping off when GitHub removes me from reviewRequests). Falls back to
   // category for older snapshots written before awaitingMyReview existed. (Tray/sound still
   // use category.)
-  const review  = openPRs.filter(p => p.awaitingMyReview ?? (p.category === 'review'));
+  const review  = openPRs.filter(p => p.awaitingMyReview ?? (p.category === PR_CATEGORY.REVIEW));
   const errors  = groups.flatMap(g => (g.prs||[]).filter(p => p.error));
 
   // Hero: greeting + date on the left, actionable counts as chips on the right.
