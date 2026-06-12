@@ -1,5 +1,5 @@
 // Owns the dashboard BrowserWindow and the renderer-facing helpers around it.
-const { BrowserWindow, shell, ipcMain, dialog, nativeTheme, session } = require('electron');
+const { BrowserWindow, shell, ipcMain, dialog, nativeTheme, session, Menu, clipboard } = require('electron');
 const path = require('path');
 const { BASE_URL } = require('./const');
 const { avatarDataUrl } = require('./icons');
@@ -26,6 +26,72 @@ const setOnBlur = fn => { _onBlur = fn; };
 let _onClosed = null;
 const setOnClosed = fn => { _onClosed = fn; };
 
+// Embedded GitHub/Jira pages get no context menu by default (a bare <webview> has none),
+// so a right-click does nothing — no copy, no paste in comment boxes, no "open in browser".
+// Build one natively from the click params: spellcheck fixes and edit roles for inputs,
+// copy/link actions for selections and links, then page navigation. `contents` is the
+// webview's own webContents (from did-attach-webview), so navigation acts on that frame.
+// Only ever hand http(s) URLs to the OS — never a file:/ or custom-scheme link a page
+// could craft, which shell.openExternal would launch in its registered handler. Mirrors
+// the setWindowOpenHandler guard in openWindow().
+const isHttpUrl = url => /^https?:\/\//i.test(url || '');
+const openExternalHttp = url => { if (isHttpUrl(url)) shell.openExternal(url); };
+
+function attachWebviewContextMenu(contents) {
+  contents.on('context-menu', (_e, params) => {
+    const items = [];
+    const sep = () => { if (items.length && items[items.length - 1].type !== 'separator') items.push({ type: 'separator' }); };
+
+    // Spellcheck suggestions for a misspelled word in an editable field.
+    if (params.isEditable && params.misspelledWord) {
+      for (const s of params.dictionarySuggestions) items.push({ label: s, click: () => contents.replaceMisspelling(s) });
+      sep();
+      items.push({ label: 'Add to Dictionary', click: () => contents.session.addWordToSpellCheckerDictionary(params.misspelledWord) });
+      sep();
+    }
+
+    if (params.linkURL) {
+      items.push(
+        { label: 'Open Link in Browser', enabled: isHttpUrl(params.linkURL), click: () => openExternalHttp(params.linkURL) },
+        { label: 'Copy Link', click: () => clipboard.writeText(params.linkURL) },
+      );
+      sep();
+    }
+    if (params.mediaType === 'image' && params.srcURL) {
+      items.push({ label: 'Copy Image Address', click: () => clipboard.writeText(params.srcURL) });
+      sep();
+    }
+
+    const f = params.editFlags;
+    if (params.isEditable) {
+      items.push(
+        { role: 'cut', enabled: f.canCut },
+        { role: 'copy', enabled: f.canCopy },
+        { role: 'paste', enabled: f.canPaste },
+        { role: 'selectAll' },
+      );
+      sep();
+    } else if (params.selectionText) {
+      items.push({ role: 'copy' });
+      sep();
+    }
+
+    const nav = contents.navigationHistory;
+    items.push(
+      { label: 'Back', enabled: nav.canGoBack(), click: () => nav.goBack() },
+      { label: 'Forward', enabled: nav.canGoForward(), click: () => nav.goForward() },
+      { label: 'Reload', click: () => contents.reload() },
+    );
+    sep();
+    items.push(
+      { label: 'Open Page in Browser', enabled: isHttpUrl(contents.getURL()), click: () => openExternalHttp(contents.getURL()) },
+      { label: 'Inspect Element', click: () => contents.inspectElement(params.x, params.y) },
+    );
+
+    Menu.buildFromTemplate(items).popup({ window: getWin() });
+  });
+}
+
 function openWindow() {
   if (win && !win.isDestroyed()) { win.show(); win.focus(); return; }
   const mac = process.platform === 'darwin';
@@ -50,6 +116,8 @@ function openWindow() {
     if (/^https?:/.test(url)) { shell.openExternal(url); return { action: 'deny' }; }
     return { action: 'allow' };
   });
+  // Give each embedded GitHub/Jira <webview> a right-click context menu as it attaches.
+  win.webContents.on('did-attach-webview', (_e, contents) => attachWebviewContextMenu(contents));
   win.on('blur', () => _onBlur && _onBlur());
   win.on('closed', () => { win = null; _onClosed && _onClosed(); });
 }
