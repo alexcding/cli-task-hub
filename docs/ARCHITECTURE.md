@@ -155,9 +155,9 @@ src/
 │       └── favicon.svg / favicon.png
 │
 ├── shared/                     # contracts shared across processes (plain JS, no deps)
-│   ├── routes.js               # HTTP route path constants — no magic strings
-│   ├── channels.js             # IPC channel name constants — no magic strings
-│   └── constants.js            # shared enums (PR categories, log categories, prGroup…)
+│   ├── routes.mjs              # HTTP route paths + param builders — no magic strings
+│   ├── constants.mjs           # shared enums (PR_CATEGORY, PR_GROUP…)
+│   └── channels.js             # IPC channel name constants — no magic strings (Node-only)
 │
 tests/                          # node:test suite (was test/)
 ```
@@ -211,12 +211,28 @@ resolution (`datadir.js`, honoring `TASKHUB_DATA_DIR`).
 ### Server — routes (`src/server/routes`)
 **Does:** the transport boundary — the HTTP equivalent of `ipcMain.handle`. Parse the
 request, validate input, call **one** service, serialize the result. Route *paths* come
-from `shared/routes.js`.
+from `shared/routes.mjs`.
 **Never:** contain business logic. A route is glue, like a thin IPC handler.
 
 ### Shared (`src/shared`)
-Plain-JS contracts imported by more than one process: HTTP route constants, IPC channel
+Plain-JS contracts imported by more than one process: HTTP route paths, IPC channel
 constants, and shared enums. No runtime dependencies; safe to import anywhere.
+
+**Module format — the no-bundler bridge.** The server is CommonJS; the renderer is browser
+ES modules. With no bundler, one file can't natively be both, so the rule is:
+
+- A contract the **renderer** imports is authored as **ESM** (`.mjs`) — the browser requires
+  ESM. Node consumers `require()` it (supported on Node ≥22.12; we're on 26). So far:
+  `routes.mjs`, `constants.mjs`.
+- A contract used **only** by Node processes (the renderer never sees it) stays **CommonJS**
+  (`.js`): `channels.js` — the renderer reaches the host via `window.taskhub.*`, never raw
+  channels, so it never imports it.
+
+**Serving the contract to the renderer.** `src/shared` can't be reached by a relative import
+from the page (it's outside the web root). The server exposes it at **`/shared`**
+(`app.use('/shared', express.static('src/shared'))`), so the renderer imports
+`/shared/routes.mjs` / `/shared/constants.mjs` by absolute URL. That URL is intentionally
+decoupled from disk layout, so it stays valid no matter where the renderer's files move.
 
 ---
 
@@ -234,7 +250,8 @@ main-process-only → IPC.* If a feature could ever make sense in a plain browse
 belongs behind HTTP.
 
 No magic strings on either transport:
-- HTTP paths: `shared/routes.js` (e.g. `ROUTES.PRS = '/api/prs'`).
+- HTTP paths: `shared/routes.mjs` (e.g. `ROUTES.DASHBOARD = '/api/dashboard'`, and
+  builders for parameterized routes: `ROUTES.jiraKey(key)`).
 - IPC channels: `shared/channels.js` (e.g. `CH.TERM_CREATE = 'term:create'`).
 
 ---
