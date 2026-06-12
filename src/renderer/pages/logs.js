@@ -4,10 +4,10 @@
 // /api/logs, links reuse the app-wide handlers (jiraClick / openPrSplit) so PRs and
 // tickets open in the embedded viewer like everywhere else.
 import { ROUTES } from '/shared/routes.mjs';
-import { api, apiJson } from '../api.js';
-import { esc, escJs, jiraUrl, timeAgo } from '../util.js';
-import { ICON, TAB_ICON } from '../icons.js';
-import { toastErr } from '../toast.js';
+import { api, apiJson } from '../services/api.js';
+import { esc, escJs, jiraUrl, timeAgo } from '../lib/util.js';
+import { ICON, TAB_ICON } from '../lib/icons.js';
+import { toastErr } from '../components/toast.js';
 
 let _logCategory = 'event'; // 'all' | 'event' | 'webhook' | …
 let _logCats = null;        // cached category list (categories change rarely); null → refetch

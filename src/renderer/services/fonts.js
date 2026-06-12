@@ -4,11 +4,11 @@
 // --diff-font CSS custom properties; open terminals get them pushed into their xterm
 // options and refit. ⌘+ / ⌘− / ⌘0 (main/app-menu.js) bump the pane currently in view.
 import { ROUTES } from '/shared/routes.mjs';
-import { state, FONT_DEFAULTS } from './store.js';
+import { state, FONT_DEFAULTS } from '../stores/store.js';
 import { apiJson } from './api.js';
-import { toastErr } from './toast.js';
-import { codeFontStack, esc } from './util.js';
-import { fitTerm, visibleTerm } from './terminal.js';
+import { toastErr } from '../components/toast.js';
+import { codeFontStack, esc } from '../lib/util.js';
+import { fitTerm, visibleTerm } from '../components/terminal.js';
 
 export const FONT_MIN = 9, FONT_MAX = 24;
 const KINDS = ['term', 'diff'];

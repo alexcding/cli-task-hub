@@ -1,9 +1,9 @@
 // Terminals (xterm.js, backed by main-process PTYs). Shares the right-side viewer
 // with webview tabs (only one pane shown at a time); each terminal is an xterm view
 // bound to a main-process PTY by id.
-import { state, activeTab } from './store.js';
-import { codeFontStack } from './util.js';
-import { termTheme } from './theme.js';
+import { state, activeTab } from '../stores/store.js';
+import { codeFontStack } from '../lib/util.js';
+import { termTheme } from '../services/theme.js';
 import { renderTabs } from './sidebar.js';
 import { ensurePanelOpen, hideAllPanes, showSplitLoading, updateNavButtons, closeSplit, activateTab as activateWebTab } from './viewer.js';
 import { clearPrLayout } from './split.js';

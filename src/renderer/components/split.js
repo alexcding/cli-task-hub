@@ -2,9 +2,9 @@
 // The on/off choice is PER TAB (stored on the tab as `tab.prSplit`, persisted with the
 // tab) and defaults to OFF — opening a PR doesn't auto-spawn a terminal until toggled.
 import { ROUTES } from '/shared/routes.mjs';
-import { state, activeTab, projectByRepo, projectByPrUrl, projectByJiraKey } from './store.js';
-import { api } from './api.js';
-import { jiraKeyFromUrl, canSplitTerminal } from './util.js';
+import { state, activeTab, projectByRepo, projectByPrUrl, projectByJiraKey } from '../stores/store.js';
+import { api } from '../services/api.js';
+import { jiraKeyFromUrl, canSplitTerminal } from '../lib/util.js';
 import { toastErr } from './toast.js';
 import { createTermView, disposeTerm, fitTerm, visibleTerm } from './terminal.js';
 import { renderDiffPane, hideDiffPane } from './diff.js';

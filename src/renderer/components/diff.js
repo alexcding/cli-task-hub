@@ -3,12 +3,12 @@
 // Fetches /api/diff on every show but skips the DOM rebuild when the patch text is
 // unchanged, so flipping back and forth is free while the worktree is quiet.
 import { ROUTES } from '/shared/routes.mjs';
-import { api, apiJson } from './api.js';
-import { esc } from './util.js';
+import { api, apiJson } from '../services/api.js';
+import { esc } from '../lib/util.js';
 import { toast, toastErr } from './toast.js';
 // .mjs (not .js): the package is type:commonjs, and the extension lets node:test
 // import this parser directly while the browser loads it like any other module.
-import { parseDiff, diffPath, hunkBlocks, blockPatch } from './diff-parse.mjs';
+import { parseDiff, diffPath, hunkBlocks, blockPatch } from '../lib/diff-parse.mjs';
 
 // Render guards (idea borrowed from Codex.app's diff viewer): a lockfile-sized file or
 // a huge patch degrades to a stub instead of freezing the renderer on a million rows.

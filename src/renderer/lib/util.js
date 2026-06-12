@@ -1,4 +1,4 @@
-import { state } from './store.js';
+import { state } from '../stores/store.js';
 
 // Escapes quotes too, so escaped text is safe inside double- OR single-quoted attributes.
 export const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');

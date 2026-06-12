@@ -290,7 +290,7 @@ test('POST /api/git/commit and /api/git/push', async () => {
 
   // Discard: end-to-end through the renderer's own patch reconstruction — modify the
   // file, parse the served diff, reverse-apply one block, and the change is gone.
-  const { parseDiff, blockPatch } = await import('../public/js/diff-parse.mjs');
+  const { parseDiff, blockPatch } = await import('../src/renderer/lib/diff-parse.mjs');
   fs.writeFileSync(path.join(dir, 'a.txt'), 'WRONG\n');
   const before = (await get('/api/diff?path=' + encodeURIComponent(dir))).body;
   const [f] = parseDiff(before.diff);

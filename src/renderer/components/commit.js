@@ -2,11 +2,11 @@
 // Commit / Commit-and-push / Push actions running against the tab's worktree.
 // Anchored under the toolbar's Commit button; refreshes the diff after each action.
 import { ROUTES } from '/shared/routes.mjs';
-import { api, apiJson } from './api.js';
-import { esc } from './util.js';
-import { ICON } from './icons.js';
+import { api, apiJson } from '../services/api.js';
+import { esc } from '../lib/util.js';
+import { ICON } from '../lib/icons.js';
 import { toast, toastErr } from './toast.js';
-import { parseDiff } from './diff-parse.mjs';
+import { parseDiff } from '../lib/diff-parse.mjs';
 import { refreshDiff, diffCwd } from './diff.js';
 
 let _open = false;

@@ -159,7 +159,7 @@ async function refreshMenuData(tray, refreshMenu) {
 }
 
 // Assemble the tray menu from the cached body. (The RAM/CPU usage readout moved to the
-// Settings page — see public/js/views/settings.js — so nothing is computed per build.)
+// Settings page — see src/renderer/pages/settings.js — so nothing is computed per build.)
 function buildMenuNow() {
   // Claude usage (Session/Weekly) sits just above Quit, with its own separator. Clicking
   // it opens the dashboard, where the full usage widget lives. Omitted when there's no

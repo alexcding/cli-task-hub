@@ -253,7 +253,7 @@ function avatarIcon(login, ci, approved) {
 
 // Jira tabs have no author avatar, so without an icon they'd sit flush-left while GitHub
 // rows are inset by their avatar — a ragged column. Use the EXACT same Jira mark the
-// sidebar shows (public/js/icons.js TAB_ICON.jira), pre-rasterized to build/tray-jira.png
+// sidebar shows (src/renderer/lib/icons.js TAB_ICON.jira), pre-rasterized to build/tray-jira.png
 // (64px) since nativeImage can't render SVG. Downscale to an AVATAR_PX bitmap @2x so it
 // renders at the same 16pt size as the avatar column. Cached — it never changes.
 let _jiraIcon = null;

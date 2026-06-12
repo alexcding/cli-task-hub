@@ -1,6 +1,6 @@
 // PR card builders shared by the dashboard and the project page.
-import { esc, jiraUrl, fmtDate, ghAvatarSrc } from '../util.js';
-import { ICON } from '../icons.js';
+import { esc, jiraUrl, fmtDate, ghAvatarSrc } from '../lib/util.js';
+import { ICON } from '../lib/icons.js';
 
 // CI shown as a bare colored dot (with a tooltip for the actual status). Always
 // returns a dot — even with no CI — so the card footer is never empty.

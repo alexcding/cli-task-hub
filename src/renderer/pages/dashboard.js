@@ -1,16 +1,16 @@
 // Dashboard (taskboard). Personal view: "Tasks" = PRs you authored, "Review" = PRs
 // awaiting your review. Other people's PRs live under each project, not here.
 import { ROUTES } from '/shared/routes.mjs';
-import { state, prByUrl, prGroup } from '../store.js';
+import { state, prByUrl, prGroup } from '../stores/store.js';
 import { PR_CATEGORY } from '/shared/constants.mjs';
-import { api } from '../api.js';
-import { esc } from '../util.js';
-import { ICON } from '../icons.js';
-import { prCard } from './cards.js';
+import { api } from '../services/api.js';
+import { esc } from '../lib/util.js';
+import { ICON } from '../lib/icons.js';
+import { prCard } from '../components/cards.js';
 import { jiraRowsHtml, rememberStatuses } from './jira.js';
-import { renderTabs, renderProjectNav } from '../sidebar.js';
-import { saveTabs } from '../viewer.js';
-import { usageWidgetHtml } from './usage-widget.js';
+import { renderTabs, renderProjectNav } from '../components/sidebar.js';
+import { saveTabs } from '../components/viewer.js';
+import { usageWidgetHtml } from '../components/usage-widget.js';
 
 export async function loadDashboard() {
   // Reads the snapshot (instant) — no leading spinner so SSE refreshes are seamless.

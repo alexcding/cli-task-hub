@@ -117,5 +117,5 @@ if $OPEN; then
 fi
 
 # ── Run (foreground; Ctrl+C stops it, --watch restarts on file changes) ───────────
-cyan "Starting TaskHub at $URL  (edit public/ → page auto-reloads)"
+cyan "Starting TaskHub at $URL  (edit src/renderer/ → page auto-reloads)"
 PORT="$PORT" exec "${RUNTIME[@]}"

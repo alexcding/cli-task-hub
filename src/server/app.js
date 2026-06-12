@@ -26,7 +26,7 @@ const jsonStd = express.json();
 app.use((req, res, next) => (req.path === ROUTES.GIT_DISCARD ? jsonBig : jsonStd)(req, res, next));
 // Never cache static assets — this is a localhost tool; a refresh should always
 // show the latest UI (avoids "I edited the file but don't see changes").
-app.use(express.static(path.join(__dirname, '..', '..', 'public'), {
+app.use(express.static(path.join(__dirname, '..', 'renderer'), {
   etag: false,
   lastModified: false,
   setHeaders: res => res.setHeader('Cache-Control', 'no-store'),
@@ -249,7 +249,7 @@ app.get(ROUTES.GIT_SHOW, async (req, res) => {
 });
 
 // Discard one hunk from the worktree (reverse-apply a single-hunk patch the renderer
-// rebuilt from its parsed diff — see hunkPatch in public/js/diff-parse.mjs).
+// rebuilt from its parsed diff — see hunkPatch in src/renderer/lib/diff-parse.mjs).
 app.post(ROUTES.GIT_DISCARD, async (req, res) => {
   const { path: dir, patch } = req.body || {};
   if (!dir || !patch) return res.status(400).json({ error: 'path and patch required' });
@@ -479,7 +479,7 @@ const isPackaged = __dirname.includes('app.asar');
 if (!isPackaged) {
   try {
     let t = null;
-    require('fs').watch(path.join(__dirname, '..', '..', 'public'), { recursive: true }, () => {
+    require('fs').watch(path.join(__dirname, '..', 'renderer'), { recursive: true }, () => {
       clearTimeout(t);
       t = setTimeout(() => broadcast({ type: 'reload' }), 100);
     });

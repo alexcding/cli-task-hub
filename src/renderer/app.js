@@ -1,25 +1,25 @@
 // Entry point: navigation, SSE live updates, init, and the window bridge that keeps
 // the inline on* handlers in markup working (ES modules aren't globals).
 import { ROUTES } from '/shared/routes.mjs';
-import { state, activeTab } from './store.js';
-import { api } from './api.js';
-import { canSplitTerminal } from './util.js';
-import { ICON } from './icons.js';
-import { initTheme, setAppTheme, syncThemeFromSettings } from './theme.js';
-import { setFontFamily, bumpFontSize, resetFontSize, zoomTarget, syncFontsFromSettings, populateFontMenus } from './fonts.js';
-import { renderTabs, renderProjectNav, tabMenu, initSidebarResize } from './sidebar.js';
-import { closeMenu, isMenuOpen } from './menu.js';
-import * as viewer from './viewer.js';
-import * as terminal from './terminal.js';
-import * as split from './split.js';
-import { toggleCommitPop, commitAction } from './commit.js';
-import { loadDashboard, scrollDash, setUsageTab } from './views/dashboard.js';
-import { loadProjectPage, switchTab, reloadProjectPRs, loadProjectWebhooks, saveProjectWebhooks } from './views/project.js';
-import { loadGitTab, gitTabPick, gitTabShowCommit, gitTabBack, gitTabRemoveWorktree } from './views/git-tab.js';
-import * as jiraView from './views/jira.js';
-import { loadLogs, setLogCategory, clearLogs } from './views/logs.js';
-import { loadSettings, saveConfig, switchSettingsTab, setReviewSound, previewReviewSound } from './views/settings.js';
-import * as modal from './views/modal.js';
+import { state, activeTab } from './stores/store.js';
+import { api } from './services/api.js';
+import { canSplitTerminal } from './lib/util.js';
+import { ICON } from './lib/icons.js';
+import { initTheme, setAppTheme, syncThemeFromSettings } from './services/theme.js';
+import { setFontFamily, bumpFontSize, resetFontSize, zoomTarget, syncFontsFromSettings, populateFontMenus } from './services/fonts.js';
+import { renderTabs, renderProjectNav, tabMenu, initSidebarResize } from './components/sidebar.js';
+import { closeMenu, isMenuOpen } from './components/menu.js';
+import * as viewer from './components/viewer.js';
+import * as terminal from './components/terminal.js';
+import * as split from './components/split.js';
+import { toggleCommitPop, commitAction } from './components/commit.js';
+import { loadDashboard, scrollDash, setUsageTab } from './pages/dashboard.js';
+import { loadProjectPage, switchTab, reloadProjectPRs, loadProjectWebhooks, saveProjectWebhooks } from './pages/project.js';
+import { loadGitTab, gitTabPick, gitTabShowCommit, gitTabBack, gitTabRemoveWorktree } from './pages/git-tab.js';
+import * as jiraView from './pages/jira.js';
+import { loadLogs, setLogCategory, clearLogs } from './pages/logs.js';
+import { loadSettings, saveConfig, switchSettingsTab, setReviewSound, previewReviewSound } from './pages/settings.js';
+import * as modal from './components/modal.js';
 
 // ── Navigation ────────────────────────────────────────────────────────────────
 function showPage(name, projectId) {

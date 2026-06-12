@@ -1,10 +1,10 @@
 // Left sidebar: project nav, the grouped open-tab rows, drag-reorder, and the
 // right-click tab menu.
-import { state, prByUrl, prGroup, setProjects } from './store.js';
+import { state, prByUrl, prGroup, setProjects } from '../stores/store.js';
 import { PR_CATEGORY, PR_GROUP } from '/shared/constants.mjs';
-import { esc, ghAvatarSrc } from './util.js';
-import { ICON, TAB_ICON } from './icons.js';
-import { ciInfo } from './views/cards.js';
+import { esc, ghAvatarSrc } from '../lib/util.js';
+import { ICON, TAB_ICON } from '../lib/icons.js';
+import { ciInfo } from './cards.js';
 import { openMenu } from './menu.js';
 import { activateTab, closeTab, closeSplit, confirmCloseTabTerminals, closePairedTerm, saveTabs, updateTitles } from './viewer.js';
 

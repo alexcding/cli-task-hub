@@ -4,7 +4,7 @@ const assert = require('node:assert');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 
-const mod = import(pathToFileURL(path.join(__dirname, '../public/js/git-graph.mjs')));
+const mod = import(pathToFileURL(path.join(__dirname, '../src/renderer/lib/git-graph.mjs')));
 
 // Build a linear / branchy history newest-first. Helper: c(sha, ...parents).
 const c = (sha, ...parents) => ({ sha, parents });

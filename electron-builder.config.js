@@ -34,7 +34,6 @@ module.exports = {
   },
   files: [
     'src/**',
-    'public/**',
     'node_modules/**',
     '!node_modules/.cache/**',
     '!**/*.md',

@@ -2,10 +2,10 @@
 // (the main process strips X-Frame-Options/CSP so framing is allowed). Opened links
 // live as tabs in the left nav; activating one shows it full-width here.
 import { ROUTES } from '/shared/routes.mjs';
-import { state, activeTab, prByUrl, prGroup, prTabTitle, jiraTabTitle, jiraByKey } from './store.js';
-import { api, apiJson } from './api.js';
-import { esc, jiraKeyFromUrl, canSplitTerminal, ghAvatarSrc } from './util.js';
-import { ICON } from './icons.js';
+import { state, activeTab, prByUrl, prGroup, prTabTitle, jiraTabTitle, jiraByKey } from '../stores/store.js';
+import { api, apiJson } from '../services/api.js';
+import { esc, jiraKeyFromUrl, canSplitTerminal, ghAvatarSrc } from '../lib/util.js';
+import { ICON } from '../lib/icons.js';
 import { toast, toastErr } from './toast.js';
 import { renderTabs } from './sidebar.js';
 import { openMenu } from './menu.js';

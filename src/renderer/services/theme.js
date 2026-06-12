@@ -1,7 +1,7 @@
 import { ROUTES } from '/shared/routes.mjs';
-import { state } from './store.js';
+import { state } from '../stores/store.js';
 import { api } from './api.js';
-import { toastErr } from './toast.js';
+import { toastErr } from '../components/toast.js';
 
 // ── Terminal theme ────────────────────────────────────────────────────────────
 // Terminals always match the system light/dark setting — no separate preference.

@@ -4,13 +4,13 @@
 // only worktree write is removing an existing worktree folder (no create — that's done from
 // the terminal tab chip). Reuses the shared git render helpers from git.js.
 import { ROUTES } from '/shared/routes.mjs';
-import { state } from '../store.js';
-import { api, apiJson } from '../api.js';
-import { esc, escJs, fmtDate } from '../util.js';
-import { ICON } from '../icons.js';
-import { toast, toastErr } from '../toast.js';
-import { computeGraph } from '../git-graph.mjs';
-import { ensureDiff2Html, drawDiff, graphSvg, refChips, fmtDateTime, LANE_W, ROW_H } from './git.js';
+import { state } from '../stores/store.js';
+import { api, apiJson } from '../services/api.js';
+import { esc, escJs, fmtDate } from '../lib/util.js';
+import { ICON } from '../lib/icons.js';
+import { toast, toastErr } from '../components/toast.js';
+import { computeGraph } from '../lib/git-graph.mjs';
+import { ensureDiff2Html, drawDiff, graphSvg, refChips, fmtDateTime, LANE_W, ROW_H } from '../components/git.js';
 
 // One project tab is visible at a time → a single module-level snapshot suffices.
 let _t = null;   // { id, cwd, ref, viewing, commits, graph, refs, view:'list'|'commit', sha, detail }

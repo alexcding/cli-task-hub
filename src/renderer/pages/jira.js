@@ -1,11 +1,11 @@
 // Shared Jira UI: snapshot tables, ticket filters, the assigned-to-me feed, the
 // per-project Jira tab, and the status-transition menu.
 import { ROUTES } from '/shared/routes.mjs';
-import { state, setProjects } from '../store.js';
-import { api, apiJson } from '../api.js';
-import { esc, jiraUrl } from '../util.js';
-import { ICON } from '../icons.js';
-import { toast, toastErr } from '../toast.js';
+import { state, setProjects } from '../stores/store.js';
+import { api, apiJson } from '../services/api.js';
+import { esc, jiraUrl } from '../lib/util.js';
+import { ICON } from '../lib/icons.js';
+import { toast, toastErr } from '../components/toast.js';
 import { renderDashboardSprint } from './dashboard.js';
 
 // Shared 5-column row renderer for the snapshot-backed Jira tables (JIRA Tickets +

@@ -1,12 +1,12 @@
 // Project page: PR list + per-project Jira + Webhooks tab shells.
 import { ROUTES } from '/shared/routes.mjs';
-import { state } from '../store.js';
-import { api, apiJson } from '../api.js';
-import { esc, setActiveSegTab } from '../util.js';
-import { ICON } from '../icons.js';
-import { toast, toastErr } from '../toast.js';
-import { renderProjectNav } from '../sidebar.js';
-import { prListHtml } from './cards.js';
+import { state } from '../stores/store.js';
+import { api, apiJson } from '../services/api.js';
+import { esc, setActiveSegTab } from '../lib/util.js';
+import { ICON } from '../lib/icons.js';
+import { toast, toastErr } from '../components/toast.js';
+import { renderProjectNav } from '../components/sidebar.js';
+import { prListHtml } from '../components/cards.js';
 import { loadProjectJira } from './jira.js';
 import { loadGitTab } from './git-tab.js';
 

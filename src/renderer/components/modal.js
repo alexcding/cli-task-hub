@@ -1,14 +1,14 @@
 // New / Edit Project modal.
 import { ROUTES } from '/shared/routes.mjs';
-import { state } from '../store.js';
-import { api, apiJson } from '../api.js';
-import { esc } from '../util.js';
-import { COLORS } from '../icons.js';
-import { toast, toastErr } from '../toast.js';
-import { renderProjectNav } from '../sidebar.js';
-import { loadDashboard } from './dashboard.js';
-import { loadProjectPage } from './project.js';
-import { loadSettings, deleteProject } from './settings.js';
+import { state } from '../stores/store.js';
+import { api, apiJson } from '../services/api.js';
+import { esc } from '../lib/util.js';
+import { COLORS } from '../lib/icons.js';
+import { toast, toastErr } from './toast.js';
+import { renderProjectNav } from './sidebar.js';
+import { loadDashboard } from '../pages/dashboard.js';
+import { loadProjectPage } from '../pages/project.js';
+import { loadSettings, deleteProject } from '../pages/settings.js';
 
 let _selectedColor = COLORS[0];
 

@@ -2,7 +2,7 @@
 // diff2html bundle loader + theme sync, a diff renderer, the commit-graph SVG builder, ref
 // chips, and a date formatter. (TaskHub's older right-hand "glance" panel was removed in
 // favour of the Git tab; these helpers outlived it.)
-import { esc } from '../util.js';
+import { esc } from '../lib/util.js';
 
 // ── Lazy bundle load (mirrors terminal.js's xterm loader) ───────────────────────────
 // The diff2html UI bundle is ~1 MB (it embeds highlight.js), so it loads on first use, never

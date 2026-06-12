@@ -1,10 +1,10 @@
 // Settings page: config form + DB inspector, grouped into horizontal tabs.
 import { ROUTES } from '/shared/routes.mjs';
-import { state } from '../store.js';
-import { api, apiJson } from '../api.js';
-import { esc, timeAgo, setActiveSegTab } from '../util.js';
-import { toast, toastErr } from '../toast.js';
-import { renderProjectNav } from '../sidebar.js';
+import { state } from '../stores/store.js';
+import { api, apiJson } from '../services/api.js';
+import { esc, timeAgo, setActiveSegTab } from '../lib/util.js';
+import { toast, toastErr } from '../components/toast.js';
+import { renderProjectNav } from '../components/sidebar.js';
 
 export async function loadSettings() {
   const [cfg, dbinfo, settings, sounds] = await Promise.all([
