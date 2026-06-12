@@ -675,8 +675,11 @@
        row box can't drift out of sync; 44px is the fallback if the var is ever absent. */
     .pg-crow { display:flex; align-items:stretch; height:var(--pg-row-h, 44px); cursor:pointer; border-bottom:1px solid color-mix(in srgb, var(--border) 55%, transparent); }
     .pg-crow:hover { background:var(--surface-hover); }
-    /* Generated initials avatar (git-tab.js avatar()): no network, colour hashed per author. */
-    .pg-av { flex:none; align-self:center; width:20px; height:20px; margin:0 8px 0 2px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; font-size:9px; font-weight:700; color:#fff; letter-spacing:.3px; }
+    /* Commit avatar (git-tab.js avatar()): an initials badge (colour hashed per author) with the
+       author's real GitHub avatar laid over it when known — if the image is absent/fails, the
+       initials show through. */
+    .pg-av { position:relative; flex:none; align-self:center; width:20px; height:20px; margin:0 8px 0 2px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; font-size:9px; font-weight:700; color:#fff; letter-spacing:.3px; overflow:hidden; }
+    .pg-av-img { position:absolute; inset:0; width:100%; height:100%; border-radius:50%; object-fit:cover; }
     .pg-graph { flex:none; display:block; overflow:visible; }
     .pg-crow-main { min-width:0; flex:1; display:flex; flex-direction:column; justify-content:center; padding:0 10px 0 4px; gap:1px; }
     .pg-crow-subj { font-size:12.5px; color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }

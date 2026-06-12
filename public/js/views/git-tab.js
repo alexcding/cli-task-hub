@@ -108,6 +108,7 @@ async function loadLog(id) {
   _t.graph = computeGraph(data.commits.map(c => ({ sha: c.sha, parents: c.parents })));
   renderSide(id);     // refresh the rail's "viewing" highlight now that we know the branch
   renderMain(id);
+  loadAvatars(id);    // overlay real GitHub avatars once they arrive (non-blocking)
 }
 
 function renderMain(id) {
@@ -122,7 +123,7 @@ function renderMain(id) {
     <div class="gt-clog" style="--pg-row-h:${ROW_H}px">${_t.commits.map((c, i) => `
       <div class="pg-crow" onclick="gitTabShowCommit('${id}','${c.sha}')" title="${esc(c.subject)}">
         ${graphSvg(_t.graph.rows[i], _t.graph.laneCount, w)}
-        ${avatar(c.author, c.email)}
+        ${avatar(c)}
         <div class="pg-crow-main">
           <div class="pg-crow-subj">${refChips(c.refs)}${esc(c.subject)}</div>
           <div class="pg-crow-meta">${esc(c.author)} · <span title="${esc(c.date)}">${esc(fmtDate(c.date))}</span> · <span class="pg-sha">${esc(c.short)}</span></div>
@@ -212,20 +213,56 @@ function shortPath(p) {
   return parts.length <= 2 ? p : '…/' + parts.slice(-2).join('/');
 }
 
-// A generated initials avatar (no network — hundreds of commits would otherwise mean hundreds
-// of Gravatar/GitHub image fetches). Colour is a stable hash of the author identity; the full
-// <span> string is memoised per author so repeats and re-renders don't recompute it.
-const _avatars = new Map();
-function avatar(name, email) {
-  const key = (email || name || '?').toLowerCase();
-  let html = _avatars.get(key);
-  if (html) return html;
+// Commit avatar: a generated initials badge (instant, no network, colour hashed per author) with
+// the author's real GitHub avatar overlaid when known (loadAvatars). The badge is the base, so if
+// the image is missing or fails to load the initials show through — no broken-image flash.
+// Keyed by author NAME (not email) so one person always gets the same initials + colour, even
+// when they commit under several emails.
+const _badges = new Map();
+function authorBadge(name, email) {
+  const key = String(name || email || '?').trim().toLowerCase();
+  let b = _badges.get(key);
+  if (b) return b;
   const words = String(name || email || '?').trim().split(/\s+/).filter(Boolean);
   const initials = (words.length >= 2 ? words[0][0] + words[1][0] : (words[0] || '?').slice(0, 1)).toUpperCase();
   let h = 0;
   for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) | 0;
-  const hue = ((h % 360) + 360) % 360;
-  html = `<span class="pg-av" style="background:hsl(${hue} 52% 47%)" title="${esc(name || email)}">${esc(initials)}</span>`;
-  _avatars.set(key, html);
-  return html;
+  b = { initials, hue: ((h % 360) + 360) % 360 };
+  _badges.set(key, b);
+  return b;
+}
+function avatarImg(url) {
+  return `<img class="pg-av-img" src="${esc(url)}" alt="" loading="lazy" onerror="this.remove()">`;
+}
+// Real avatar for a commit: GitHub's match for this exact SHA, else the photo resolved for any
+// other commit by the same author name (covers the same person's unlinked-email commits).
+function avatarUrl(c) {
+  return _t?.avatars?.[c.sha] || _t?.avatarByName?.[c.author] || '';
+}
+function avatar(c) {
+  const { initials, hue } = authorBadge(c.author, c.email);
+  const url = avatarUrl(c);
+  return `<span class="pg-av" data-sha="${c.sha}" data-name="${esc(c.author || '')}" style="background:hsl(${hue} 52% 47%)" title="${esc(c.author || c.email)}">${esc(initials)}${url ? avatarImg(url) : ''}</span>`;
+}
+
+// Fetch real GitHub avatars for the visible commits (cached server-side per repo|ref) and patch
+// them onto the already-rendered initials badges — kept off the initial render so the graph
+// paints instantly and never blocks on the network. No-op without a GitHub repo.
+async function loadAvatars(id) {
+  const repo = proj(id)?.repo;
+  if (!repo) return;
+  let map;
+  try { map = await api(`/api/git/commit-avatars?repo=${encodeURIComponent(repo)}&ref=${encodeURIComponent(_t.ref || '')}&limit=400`); }
+  catch { return; }
+  if (!_t || _t.id !== id || !map) return;
+  _t.avatars = map;
+  // Build name → photo from the commits GitHub did resolve, so a person's other commits (under
+  // emails GitHub couldn't link) reuse the same avatar instead of dropping to initials.
+  const byName = {};
+  for (const c of _t.commits || []) { const u = map[c.sha]; if (u && c.author && !byName[c.author]) byName[c.author] = u; }
+  _t.avatarByName = byName;
+  document.querySelectorAll(`#gt-main-${id} .pg-av[data-sha]`).forEach(sp => {
+    const url = map[sp.dataset.sha] || byName[sp.dataset.name];
+    if (url && !sp.querySelector('img')) sp.insertAdjacentHTML('beforeend', avatarImg(url));
+  });
 }

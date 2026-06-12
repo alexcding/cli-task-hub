@@ -223,6 +223,13 @@ app.get('/api/git/refs', async (req, res) => {
   res.json({ branches, worktrees, defaultBranch });
 });
 
+// Real GitHub avatars for commit authors (keyed by SHA) — the Git tab overlays these on its
+// generated initials avatars. `gh`-backed, cached; returns {} when the repo isn't on GitHub.
+app.get('/api/git/commit-avatars', async (req, res) => {
+  const { repo, ref, limit } = req.query;
+  res.json(await github.commitAvatars(repo ? String(repo) : '', ref ? String(ref) : '', Number(limit) || 100));
+});
+
 // One commit's detail (meta + patch) for the History detail pane.
 app.get('/api/git/show', async (req, res) => {
   const { path: dir, sha } = req.query;
