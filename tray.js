@@ -8,6 +8,7 @@ try { require('node:module').enableCompileCache?.(); } catch {}
 
 const { app, Tray, session, ipcMain, nativeTheme } = require('electron');
 const path = require('path');
+const { CH } = require('./src/shared/channels');
 
 // Show "TaskHub" (not "Electron") in the About panel, Dock, and userData path during dev.
 // Must run before app is ready. The macOS app-menu label is set separately via an explicit
@@ -86,7 +87,7 @@ app.whenReady().then(async () => {
   win.registerIpc();        // theme mirror + folder picker
   terminals.registerIpc();  // PTY create/write/resize/kill/list/attach
   win.setOnBlur(refreshMenu); // refresh the menu's PR list as focus moves to the menu bar
-  ipcMain.on('tray:refresh', () => refreshMenu()); // renderer asks for an immediate rebuild (e.g. usage-agent switch)
+  ipcMain.on(CH.TRAY_REFRESH, () => refreshMenu()); // renderer asks for an immediate rebuild (e.g. usage-agent switch)
   // PTYs outlive the window so running work survives a reopen — but a bare prompt has
   // nothing to preserve, so reap those on window close (same policy as closing a tab).
   win.setOnClosed(() => terminals.killEmpty());

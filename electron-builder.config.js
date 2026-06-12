@@ -38,6 +38,7 @@ module.exports = {
     'server.js',
     'main/**',
     'lib/**',
+    'src/**',
     'public/**',
     'node_modules/**',
     '!node_modules/.cache/**',

@@ -3,6 +3,7 @@ const { BrowserWindow, shell, ipcMain, dialog, nativeTheme, session, Menu, clipb
 const path = require('path');
 const { BASE_URL } = require('./const');
 const { avatarDataUrl } = require('./icons');
+const { CH } = require('../src/shared/channels');
 
 let win = null;
 
@@ -158,29 +159,29 @@ function registerIpc() {
   session.defaultSession.setPermissionRequestHandler((_wc, _permission, cb) => cb(true));
   session.defaultSession.setPermissionCheckHandler(() => true);
 
-  ipcMain.on('set-native-theme', (_e, value) => {
+  ipcMain.on(CH.SET_NATIVE_THEME, (_e, value) => {
     nativeTheme.themeSource = value === 'light' || value === 'dark' ? value : 'system';
   });
 
   // ⌘W with no tab in view → close the window (the renderer can't close a
   // BrowserWindow it didn't open; see handleShortcut 'tab:close' in app.js).
-  ipcMain.on('close-window', () => getWin()?.close());
+  ipcMain.on(CH.CLOSE_WINDOW, () => getWin()?.close());
 
   // Fetch a PR author's avatar as a data URI so the renderer can freeze it onto a tab
   // (see freezeAvatar in viewer.js). Resolves null on any failure — the tab just falls
   // back to the live github.com/<login>.png URL.
-  ipcMain.handle('avatar:fetch', (_e, login) => avatarDataUrl(login));
+  ipcMain.handle(CH.AVATAR_FETCH, (_e, login) => avatarDataUrl(login));
 
   // Resource usage (RAM + CPU summed across every TaskHub process) for the Settings page's
   // live readout. Computed here because getAppMetrics() is main-process only. The require is
   // deferred to call time to sidestep the window→usage→terminals→window load-time cycle.
-  ipcMain.handle('usage:get', () => require('./usage').computeUsage());
+  ipcMain.handle(CH.USAGE_GET, () => require('./usage').computeUsage());
 
   // Reveal a folder in the system file manager (Finder). Backs the viewer titlebar's
   // workspace/worktree chip (see updateFolderChip in viewer.js).
-  ipcMain.handle('open-path', (_e, p) => { if (p) shell.openPath(String(p)); });
+  ipcMain.handle(CH.OPEN_PATH, (_e, p) => { if (p) shell.openPath(String(p)); });
 
-  ipcMain.handle('choose-folder', async () => {
+  ipcMain.handle(CH.CHOOSE_FOLDER, async () => {
     const parent = getWin() || undefined;
     const { canceled, filePaths } = await dialog.showOpenDialog(parent, {
       title: 'Choose workspace folder',
@@ -193,7 +194,7 @@ function registerIpc() {
   // so the macOS system sound (which the sandboxed renderer can't decode/serve) plays
   // identically. Returns the afplay promise so a failure rejects back to the renderer
   // (which toasts it). Deferred require: notifications.js → window.js, so top-level cycles.
-  ipcMain.handle('sound:preview', (_e, p) => require('./notifications').previewSound(p || 'system'));
+  ipcMain.handle(CH.SOUND_PREVIEW, (_e, p) => require('./notifications').previewSound(p || 'system'));
 }
 
 module.exports = { openWindow, getWin, sendToWin, runInApp, openLinkInApp, registerIpc, setOnBlur, setOnClosed, isQuitting, quitApp };

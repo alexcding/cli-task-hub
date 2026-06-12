@@ -2,6 +2,7 @@
 // nodeIntegration is off — the page can't use Node directly). Anything the dashboard
 // needs from the Electron main process is exposed here as window.taskhub.*
 const { contextBridge, ipcRenderer } = require('electron');
+const { CH } = require('./src/shared/channels');
 
 // ── Terminal output fan-out ───────────────────────────────────────────────────
 // Main pushes per-terminal events tagged with the terminal id; we dispatch to the
@@ -17,8 +18,8 @@ function subscribe(map, id, cb) {
   return () => { set.delete(cb); if (!set.size) map.delete(id); };
 }
 
-ipcRenderer.on('term:data', (_e, { id, chunk, seq }) => { dataListeners.get(id)?.forEach(cb => cb(chunk, seq)); });
-ipcRenderer.on('term:exit', (_e, payload)      => { exitListeners.get(payload.id)?.forEach(cb => cb(payload)); });
+ipcRenderer.on(CH.TERM_DATA, (_e, { id, chunk, seq }) => { dataListeners.get(id)?.forEach(cb => cb(chunk, seq)); });
+ipcRenderer.on(CH.TERM_EXIT, (_e, payload)      => { exitListeners.get(payload.id)?.forEach(cb => cb(payload)); });
 
 contextBridge.exposeInMainWorld('taskhub', {
   // Host platform — the renderer uses this to enable the macOS native chrome (inset
@@ -27,50 +28,50 @@ contextBridge.exposeInMainWorld('taskhub', {
 
   // Mirror the app's light/dark/auto choice to the native appearance so the vibrancy
   // sidebar material matches (see tray.js 'set-native-theme').
-  setTheme: (value) => ipcRenderer.send('set-native-theme', value),
+  setTheme: (value) => ipcRenderer.send(CH.SET_NATIVE_THEME, value),
 
   // Open the native folder picker; resolves to the chosen absolute path, or null if
   // the dialog was cancelled. Used to set a project's workspace folder.
-  chooseFolder: () => ipcRenderer.invoke('choose-folder'),
+  chooseFolder: () => ipcRenderer.invoke(CH.CHOOSE_FOLDER),
 
   // Preview a review-notification sound through main's afplay (pass a sound's path, or
   // null/'system' for the macOS default). Used by the Settings sound picker.
-  previewSound: (p) => ipcRenderer.invoke('sound:preview', p),
+  previewSound: (p) => ipcRenderer.invoke(CH.SOUND_PREVIEW, p),
 
   // Reveal a folder in the system file manager (Finder). Backs the viewer titlebar's
   // workspace/worktree chip; resolves once the OS hands the open off.
-  openPath: (p) => ipcRenderer.invoke('open-path', p),
+  openPath: (p) => ipcRenderer.invoke(CH.OPEN_PATH, p),
 
   // Close the dashboard window — ⌘W's fallback when no tab is in view.
-  closeWindow: () => ipcRenderer.send('close-window'),
+  closeWindow: () => ipcRenderer.send(CH.CLOSE_WINDOW),
 
   // Rebuild the tray menu now (e.g. after switching the usage agent) so its rendered
   // panel updates immediately instead of waiting for the 60s/blur refresh.
-  refreshTray: () => ipcRenderer.send('tray:refresh'),
+  refreshTray: () => ipcRenderer.send(CH.TRAY_REFRESH),
 
   // Fetch a PR author's avatar as a base64 data URI (or null). Used to freeze the image
   // onto a tab so it survives reloads unchanged; see freezeAvatar in viewer.js.
-  fetchAvatar: (login) => ipcRenderer.invoke('avatar:fetch', login),
+  fetchAvatar: (login) => ipcRenderer.invoke(CH.AVATAR_FETCH, login),
 
   // Current resource usage — { totalKB, totalCPU, breakdown:[{label,kb,cpu}] } summed over
   // every TaskHub process. Main-process only (getAppMetrics); the Settings page polls it.
-  getUsage: () => ipcRenderer.invoke('usage:get'),
+  getUsage: () => ipcRenderer.invoke(CH.USAGE_GET),
 
   // Multiple independent terminals, each an OS pseudo-terminal in the main process.
   term: {
     // Spawn a login shell in `cwd`; opts.paired + opts.pairKey identify a GitHub/Jira split terminal.
-    create: (opts = {}) => ipcRenderer.invoke('term:create', opts),
+    create: (opts = {}) => ipcRenderer.invoke(CH.TERM_CREATE, opts),
     // Type raw bytes into a terminal (include '\n'/'\r' for Enter).
-    write:  (id, data) => ipcRenderer.send('term:write', { id, data }),
+    write:  (id, data) => ipcRenderer.send(CH.TERM_WRITE, { id, data }),
     // Keep the PTY size in sync with the xterm view.
-    resize: (id, cols, rows) => ipcRenderer.send('term:resize', { id, cols, rows }),
+    resize: (id, cols, rows) => ipcRenderer.send(CH.TERM_RESIZE, { id, cols, rows }),
     // Terminate a terminal's shell and free the PTY.
-    kill:   (id) => ipcRenderer.invoke('term:kill', { id }),
+    kill:   (id) => ipcRenderer.invoke(CH.TERM_KILL, { id }),
     // Live list of terminals — for rehydrating the UI after a reload.
-    list:   () => ipcRenderer.invoke('term:list'),
+    list:   () => ipcRenderer.invoke(CH.TERM_LIST),
     // Reattach after a window reopen; resolves to { buf, seq }: the buffered backlog to
     // replay plus the seq of its last chunk (so live output can resume without a gap/dup).
-    attach: (id) => ipcRenderer.invoke('term:attach', { id }),
+    attach: (id) => ipcRenderer.invoke(CH.TERM_ATTACH, { id }),
     // Stream a terminal's output; cb(chunk, seq). Returns an unsubscribe function.
     onData: (id, cb) => subscribe(dataListeners, id, cb),
     // Notified when a terminal's shell exits; cb({ exitCode, signal }). Returns unsubscribe.

@@ -8,6 +8,7 @@ const path = require('path');
 const os = require('os');
 const pty = require('@homebridge/node-pty-prebuilt-multiarch');
 const { sendToWin } = require('./window');
+const { CH } = require('../src/shared/channels');
 
 const terminals = new Map(); // id -> { pty, cwd, title, paired, pairKey, hasContext, chunks, bufLen, seq }
 let termSeq = 0;
@@ -16,7 +17,7 @@ const TERM_BUF_MAX = 256 * 1024; // per-terminal output kept for replay when a w
 function registerIpc() {
   // Spawn a login + interactive shell so it sources the user's dotfiles and gets the
   // full environment (PATH, nvm, Homebrew, aliases) — identical to a Terminal.app tab.
-  ipcMain.handle('term:create', (_e, { cwd, shell: sh, paired = false, pairKey = '' } = {}) => {
+  ipcMain.handle(CH.TERM_CREATE, (_e, { cwd, shell: sh, paired = false, pairKey = '' } = {}) => {
     const id = 'pty' + (++termSeq);
     // Fallback when no workspace is given: the app's own repo (dev), else home. In a
     // packaged build getAppPath() points inside app.asar, which isn't a usable cwd.
@@ -44,21 +45,21 @@ function registerIpc() {
         entry.chunks[0] = entry.chunks[0].slice(-TERM_BUF_MAX);
         entry.bufLen = entry.chunks[0].length;
       }
-      sendToWin('term:data', { id, chunk, seq: ++entry.seq }); // live stream always gets the full chunk
+      sendToWin(CH.TERM_DATA, { id, chunk, seq: ++entry.seq }); // live stream always gets the full chunk
     });
-    p.onExit(({ exitCode, signal }) => { terminals.delete(id); sendToWin('term:exit', { id, exitCode, signal }); });
+    p.onExit(({ exitCode, signal }) => { terminals.delete(id); sendToWin(CH.TERM_EXIT, { id, exitCode, signal }); });
     terminals.set(id, entry);
     return { id, cwd: dir, title: path.basename(dir) || dir, paired: entry.paired, pairKey: entry.pairKey, hasContext: entry.hasContext };
   });
 
-  ipcMain.on('term:write',  (_e, { id, data })       => { const t = terminals.get(id); if (t) { t.hasContext = true; t.pty.write(data); } });
-  ipcMain.on('term:resize', (_e, { id, cols, rows }) => { try { terminals.get(id)?.pty.resize(cols, rows); } catch {} });
-  ipcMain.handle('term:kill', (_e, { id }) => { killTerm(id); return true; });
+  ipcMain.on(CH.TERM_WRITE,  (_e, { id, data })       => { const t = terminals.get(id); if (t) { t.hasContext = true; t.pty.write(data); } });
+  ipcMain.on(CH.TERM_RESIZE, (_e, { id, cols, rows }) => { try { terminals.get(id)?.pty.resize(cols, rows); } catch {} });
+  ipcMain.handle(CH.TERM_KILL, (_e, { id }) => { killTerm(id); return true; });
   // Lets the renderer rehydrate its terminal list after a reload (PTYs outlive the page).
-  ipcMain.handle('term:list', () => [...terminals.entries()].map(([id, t]) => ({ id, cwd: t.cwd, title: t.title, paired: !!t.paired, pairKey: t.pairKey || '', hasContext: !!t.hasContext })));
+  ipcMain.handle(CH.TERM_LIST, () => [...terminals.entries()].map(([id, t]) => ({ id, cwd: t.cwd, title: t.title, paired: !!t.paired, pairKey: t.pairKey || '', hasContext: !!t.hasContext })));
   // Reattach to a live PTY after the window was reopened: returns the buffered backlog to
   // replay plus the seq of its last chunk, so the renderer can resume the live stream cleanly.
-  ipcMain.handle('term:attach', (_e, { id }) => {
+  ipcMain.handle(CH.TERM_ATTACH, (_e, { id }) => {
     const t = terminals.get(id);
     return t ? { buf: t.chunks.join(''), seq: t.seq } : { buf: '', seq: 0 };
   });

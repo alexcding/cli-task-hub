@@ -1,0 +1,203 @@
+/* Reusable widgets and dashboard surfaces: buttons, cards, badges, tables, forms,
+   chips, menus, plus the dashboard hero / AI usage widget / PR cards. */
+.page { display:none; }
+.page.active { display:block; }
+
+/* Buttons */
+.btn { display:inline-flex;align-items:center;gap:6px; font-size:13px;font-weight:500;line-height:1; padding:7px 14px; border-radius:var(--rs); border:1px solid transparent; cursor:pointer; transition:background .12s,opacity .12s; white-space:nowrap; }
+.btn-primary { background:var(--accent);color:#fff;border-color:var(--accent); }
+.btn-primary:hover { background:var(--accent-hover); }
+.btn-secondary { background:var(--surface);color:var(--text);border-color:var(--border);box-shadow:var(--shadow); }
+.btn-secondary:hover { background:var(--surface-hover); }
+.btn-ghost { background:none;color:var(--text-2);border-color:transparent; }
+.btn-ghost:hover { background:var(--surface-hover);color:var(--text); }
+.btn-danger { background:var(--danger-bg);color:var(--danger);border-color:var(--danger-border); }
+.btn-danger:hover { background:var(--danger-hover); }
+.btn-sm { padding:4px 10px;font-size:12px; }
+.btn-xs { padding:2px 8px;font-size:11.5px;border-radius:4px; }
+.btn svg { width:14px; height:14px; flex-shrink:0; display:block; }
+
+/* Cards — .card is the default flat container surface (bordered, no shadow).
+   Add .clickable for a flat hover (border/bg change, no elevation). Padding
+   comes from .card-pad / .card-header, or the composing layout class. */
+.card { background:var(--surface);border:1px solid var(--border);border-radius:var(--rl); }
+.card.clickable { cursor:pointer;transition:background .12s,border-color .12s; }
+.card.clickable:hover { background:var(--surface-hover);border-color:var(--border-focus); }
+.card-pad { padding:20px; }
+.card-header { padding:14px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:8px; }
+.card-header h3 { font-size:14px;font-weight:600; }
+
+/* Dashboard hero — greeting/date block on the left, actionable stat chips on
+   the right (they navigate). The AI usage cards live on their own row below. */
+.dash-hero { display:flex;align-items:center;justify-content:space-between;gap:24px 40px;flex-wrap:wrap;margin:8px 0 36px; }
+.dash-date { font-size:11.5px;font-weight:600;color:var(--text-3);text-transform:uppercase;letter-spacing:1px; }
+.dash-hello { font-size:24px;font-weight:650;letter-spacing:-.4px;margin-top:5px; }
+.stat-chips { display:flex;align-items:stretch;gap:12px;flex-wrap:wrap; }
+.stat-chip { display:flex;align-items:center;gap:12px;padding:12px 22px 12px 14px;background:var(--surface);border:1px solid var(--border);border-radius:var(--rl);cursor:pointer;font:inherit;color:inherit;text-align:left;transition:background .12s,border-color .12s; }
+.stat-chip:hover { background:var(--surface-hover);border-color:var(--border-focus); }
+.stat-chip-icon { width:34px;height:34px;border-radius:9px;display:flex;align-items:center;justify-content:center;flex-shrink:0; }
+.stat-chip-icon svg { width:17px;height:17px; }
+.stat-chip-icon.tint-accent { background:var(--accent-bg);color:var(--accent); }
+.stat-chip-icon.tint-warn { background:var(--warn-bg);color:var(--warn); }
+.stat-chip-icon.tint-merged { background:var(--merged-bg);color:var(--merged); }
+.stat-chip-icon.tint-success { background:var(--success-bg);color:var(--success); }
+.stat-chip-icon.tint-neutral { background:var(--surface-hover);color:var(--text-2); }
+.stat-chip-val { font-size:17px;font-weight:700;letter-spacing:-.4px;line-height:1.2; }
+.stat-chip-label { font-size:11.5px;color:var(--text-3);font-weight:500;white-space:nowrap;margin-top:1px; }
+/* AI usage widget (views/usage-widget.js): one full-width landscape card with
+   Claude/Codex tabs top-right — plan-limit bars on the left, stat grid + day
+   histogram on the right. Each agent brings its own accent via agent-<key>. */
+.usage-row { margin-bottom:44px; }
+.usage-row:empty { display:none; }
+.usage-card { background:var(--surface);border:1px solid var(--border);border-radius:var(--rl);padding:14px 20px 16px;--agent:var(--claude); }
+.usage-card.agent-codex { --agent:var(--codex); }
+.usage-head { display:flex;align-items:center;gap:9px; }
+.agent-icon { width:22px;height:22px;border-radius:5px;flex-shrink:0; }
+.usage-name { font-size:13.5px;font-weight:600; }
+.usage-cols { display:flex;flex-wrap:wrap;gap:8px 48px; }
+.usage-limits, .usage-stats { flex:1 1 0;min-width:280px; }
+/* Stats column: all four stats on one top row so the histogram below stretches
+   to fill the column's remaining height (matching the limits column). */
+.usage-stats { display:flex;flex-direction:column; }
+/* Claude/Codex switcher — segmented control on the card's top right. */
+.usage-tabs { margin-left:auto;display:flex;gap:2px;background:var(--surface-hover);border-radius:7px;padding:2px; }
+.usage-tab { border:none;background:none;font:inherit;font-size:12px;font-weight:500;color:var(--text-2);padding:3px 12px;border-radius:5px;cursor:pointer;transition:background .12s,color .12s; }
+.usage-tab:hover { color:var(--text); }
+.usage-tab.active { background:var(--surface);color:var(--text);box-shadow:var(--shadow); }
+/* Plan-limit section: the coral fills to what's LEFT; a green pace segment marks
+   the on-pace position; faint gridmarks sit at 50% and 75%. */
+.limit-title { font-size:13.5px;font-weight:500;margin:12px 0 6px; }
+.limit-bar { position:relative;height:8px;border-radius:4px;background:var(--surface-hover);overflow:hidden; }
+.limit-bar i { position:absolute;left:0;top:0;bottom:0;max-width:100%;border-radius:4px;background:var(--agent); }
+/* 50% and 75% reference gridmarks, painted faint on top of the track/fill. */
+.limit-bar::after { content:'';position:absolute;inset:0;pointer-events:none;background:
+  linear-gradient(90deg,transparent calc(50% - .5px),var(--limit-mark) calc(50% - .5px),var(--limit-mark) calc(50% + .5px),transparent calc(50% + .5px)),
+  linear-gradient(90deg,transparent calc(75% - .5px),var(--limit-mark) calc(75% - .5px),var(--limit-mark) calc(75% + .5px),transparent calc(75% + .5px)); }
+/* Green pace marker: a short segment with track-colored gaps either side, so it
+   reads as a distinct notch cut into the bar (not a hairline). */
+.limit-bar s { position:absolute;top:0;bottom:0;width:9px;margin-left:-4.5px;background:var(--success);border-left:2px solid var(--surface-hover);border-right:2px solid var(--surface-hover);background-clip:padding-box;box-sizing:border-box; }
+.limit-rows { margin-top:6px;font-size:12px; }
+.limit-rows > div { display:flex;justify-content:space-between;gap:10px;margin-top:2px; }
+.limit-rows b { font-weight:600; }
+.limit-rows span { color:var(--text-3); }
+/* Stat row: four cells across the top, muted label over bold value. */
+.usage-grid { display:grid;grid-template-columns:repeat(4,1fr);gap:10px 20px;margin:12px 0; }
+.usage-grid label { display:block;font-size:12px;font-weight:500;color:var(--text-3);margin-bottom:1px; }
+.usage-grid b { font-size:18px;font-weight:700;letter-spacing:-.4px; }
+/* Day histogram below the stats, stretching to fill the column. Each <i> is a
+   full-height hover column (so short bars are easy to hit); the visible bar is
+   its ::before at --h, the value tooltip its ::after. */
+.usage-hist { display:flex;gap:4px;flex:1;min-height:56px; }
+.usage-hist i { flex:1;position:relative; }
+.usage-hist i::before { content:'';position:absolute;left:0;right:0;bottom:0;height:var(--h,3%);min-height:3px;border-radius:3px;background:var(--agent);opacity:.35; }
+.usage-hist i.today::before { opacity:1; }
+.usage-hist i:hover::before { opacity:.65; }
+.usage-hist i.today:hover::before { opacity:1; }
+.usage-hist i::after { content:attr(data-tip);position:absolute;bottom:calc(100% + 5px);left:50%;transform:translateX(-50%);background:var(--text);color:var(--bg);font-size:11px;font-weight:500;line-height:1.4;padding:3px 8px;border-radius:5px;white-space:nowrap;opacity:0;pointer-events:none;transition:opacity .1s;z-index:3; }
+.usage-hist i:hover::after { opacity:1; }
+/* Keep edge tooltips inside the card so they don't spill past the content edge. */
+.usage-hist i:nth-child(-n+4)::after { left:0;transform:none; }
+.usage-hist i:nth-last-child(-n+4)::after { left:auto;right:0;transform:none; }
+
+/* Project group on dashboard */
+.project-group { margin-bottom:32px; }
+.project-group-header { display:flex;align-items:center;gap:10px;margin-bottom:12px; }
+.project-color { width:10px;height:10px;border-radius:50%;flex-shrink:0; }
+.project-name { font-size:16px;font-weight:600; }
+.project-meta { font-size:12px;color:var(--text-3); }
+/* PR cards — header (num + repo on the left, date + CI dot on the right) on top,
+   title fills the middle, footer holds the avatar + optional Jira tag. */
+.pr-grid { display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px; }
+.pr-card { display:flex;flex-direction:column;padding:13px 16px; }
+.pr-head { display:flex;align-items:center;gap:7px;font-size:12px;color:var(--text-3);margin-bottom:9px; }
+.pr-num { font-weight:600;color:var(--text-3);font-variant-numeric:tabular-nums;flex-shrink:0; }
+.pr-repo { color:var(--text-2);font-weight:500;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+.pr-date { flex-shrink:0; }
+.pr-draft { font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.3px;color:var(--text-3);border:1px solid var(--border);border-radius:4px;padding:1px 5px;flex-shrink:0; }
+.pr-body { flex:1;display:flex;align-items:center;min-height:0; }
+.pr-title { font-size:14px;font-weight:500;line-height:1.4;color:var(--text);display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden; }
+.pr-foot { margin-top:11px;display:flex;align-items:center;flex-wrap:wrap;gap:6px; }
+.pr-avatar { width:18px;height:18px;border-radius:50%;flex-shrink:0;object-fit:cover;background:var(--surface-hover); }
+.pr-foot .badge-jira { text-decoration:none;transition:background .1s,color .1s; }
+.pr-foot .badge-jira:hover { background:var(--accent);color:#fff; }
+/* Approved mark pinned to the footer's far (bottom) right. margin-left:auto pushes it
+   to the edge whether or not there's an avatar/Jira tag on the left. */
+.pr-foot-end { margin-left:auto;display:flex;align-items:center;flex-shrink:0; }
+/* CI status dot — reusable across PR cards and the sidebar PR list. */
+.ci-dot { width:9px;height:9px;border-radius:50%;flex-shrink:0; }
+.ci-dot.ci-success { background:var(--success); }
+.ci-dot.ci-failure { background:var(--danger); }
+.ci-dot.ci-running { background:var(--warn);box-shadow:0 0 0 3px var(--warn-bg); }
+.ci-dot.ci-none    { background:var(--border-focus); }
+/* PR approved mark — green circle + white check, pinned bottom-right (see .pr-foot-end). */
+.pr-approved { width:14px;height:14px;flex-shrink:0;display:block;color:var(--success); }
+
+/* Badges */
+.badge { display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:600;padding:2px 8px;border-radius:99px; }
+.badge-open   { background:var(--success-bg);color:var(--success); }
+.badge-merged { background:var(--merged-bg);color:var(--merged); }
+.badge-closed { background:var(--danger-bg);color:var(--danger); }
+.badge-jira   { background:var(--accent-bg);color:var(--accent); }
+.badge-default { background:var(--surface-hover);color:var(--text-2); }
+
+/* Filters bar (JIRA Tickets page + project Jira tab) */
+.ticket-filter { display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:12px; }
+.filter-label { font-size:12px;color:var(--text-3); }
+.filter-select { width:auto;max-width:170px;font-size:13px;padding:5px 28px 5px 10px;border-radius:7px;border:1px solid var(--border);background-color:var(--surface);background-position:right 10px center;color:var(--text);cursor:pointer; }
+.filter-select:hover { border-color:var(--accent); }
+
+/* Status badge button + transition menu */
+.status-btn { font-family:inherit;border:1px solid transparent;cursor:pointer; }
+.status-btn:hover { border-color:var(--accent); }
+.status-caret { display:inline-flex;opacity:.55;margin-left:1px; }
+.status-caret svg { width:11px;height:11px;display:block; }
+/* Context menus, macOS-style: hairline-bordered card with a soft drop shadow, tight
+   rows, and a solid accent "highlight" pill (white text) on the hovered item — the
+   signature mac look. Arrow cursor (not pointer), like a native menu. */
+.status-menu { position:absolute;z-index:2000;background:var(--surface);border:0.5px solid var(--border);border-radius:8px;box-shadow:0 10px 30px -6px rgb(16 24 40/.24),0 2px 8px -3px rgb(16 24 40/.14);padding:5px;min-width:180px;max-height:320px;overflow-y:auto; }
+.status-menu-head { font-size:11px;color:var(--text-3);padding:5px 10px 3px; }
+.status-menu-item { display:block;width:100%;text-align:left;background:none;border:none;color:var(--text);font-size:13px;line-height:1.3;padding:5px 10px;border-radius:5px;cursor:default;white-space:nowrap; }
+.status-menu-item:hover { background:var(--accent);color:#fff; }
+.status-menu-item.danger { color:var(--danger); }
+/* Destructive item still highlights with the accent (mac keeps the highlight uniform);
+   the red text only signals at rest. */
+.status-menu-item.danger:hover { background:var(--accent);color:#fff; }
+
+/* Table */
+.table-wrap { overflow-x:auto; }
+table { width:100%;border-collapse:collapse; }
+th { font-size:11.5px;font-weight:600;color:var(--text-3);text-transform:uppercase;letter-spacing:.4px;padding:10px 16px;text-align:left;border-bottom:1px solid var(--border);white-space:nowrap; }
+td { padding:11px 16px;border-bottom:1px solid var(--border);font-size:13.5px;vertical-align:middle; }
+tr:last-child td { border-bottom:none; }
+/* Scoped to <main>: these are for the data tables (PRs, logs, …). The diff pane's
+   table lives in #split and must keep its own row tints — no gray hover there. */
+main tbody tr { transition:background .1s; }
+main tbody tr:hover td { background:var(--surface-hover); }
+
+/* Forms */
+.form-group { margin-bottom:14px; }
+.form-label { display:block;font-size:12px;font-weight:600;color:var(--text-2);margin-bottom:5px; }
+input[type=text],input[type=number],select,textarea { width:100%;background-color:var(--surface);border:1px solid var(--border);color:var(--text);padding:7px 11px;border-radius:var(--rs);font-size:13.5px;transition:border-color .12s,box-shadow .12s;outline:none;font-family:inherit; }
+/* Custom select chevron so the arrow's gap from the right edge equals the text's
+   left padding (native selects glue the arrow to the edge). Applies to every
+   <select>; .filter-select tunes its own offset to match its tighter padding. */
+select { appearance:none;-webkit-appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='7' viewBox='0 0 12 8' fill='none' stroke='%238a93a3' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M1 1.5 6 6.5l5-5'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 11px center;padding-right:31px; }
+input:focus,select:focus,textarea:focus { border-color:var(--accent);box-shadow:0 0 0 3px rgb(37 99 235/.15); }
+input::placeholder { color:var(--text-3); }
+
+/* Chips */
+.chip-list { display:flex;flex-wrap:wrap;gap:6px; }
+.chip { display:inline-flex;align-items:center;gap:4px;font-size:12.5px;font-weight:500;background:var(--surface-hover);border:1px solid var(--border);border-radius:99px;padding:3px 8px 3px 12px;color:var(--text); }
+.chip-remove { background:none;border:none;cursor:pointer;color:var(--text-3);font-size:14px;line-height:1;padding:0 2px;border-radius:50%;display:flex;align-items:center;transition:color .1s,background .1s; }
+.chip-remove:hover { color:var(--danger);background:var(--danger-bg); }
+
+/* Tag */
+.tag { font-size:11px;background:var(--surface-hover);color:var(--text-2);border:1px solid var(--border);border-radius:4px;padding:1px 6px;white-space:nowrap; }
+
+/* Section header */
+.section-header { display:flex;align-items:center;justify-content:space-between;margin-bottom:16px; }
+.section-title { font-size:16px;font-weight:600; }
+
+/* Link */
+a.link { color:var(--accent);text-decoration:none; }
+a.link:hover { text-decoration:underline; }
