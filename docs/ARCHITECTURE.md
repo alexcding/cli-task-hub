@@ -148,11 +148,12 @@ src/
 │   │   ├── icons.js
 │   │   ├── diff-parse.mjs
 │   │   └── git-graph.mjs
-│   └── assets/
-│       ├── css/                # tokens.css, layout.css, viewer.css, components.css, pages.css
-│       ├── img/
-│       ├── vendor/
-│       └── favicon.svg / favicon.png
+│   │   # Served static assets stay at the renderer web root (not under assets/) so
+│   │   # their absolute URLs survive — JS/HTML reference /css, /vendor, /img, /favicon.
+│   ├── css/                   # tokens.css, layout.css, viewer.css, components.css, pages.css
+│   ├── vendor/                # xterm, diff2html, sortable, highlight.js
+│   ├── img/                   # claude.png, codex.png
+│   └── favicon.svg / favicon.png
 │
 ├── shared/                     # contracts shared across processes (plain JS, no deps)
 │   ├── routes.mjs              # HTTP route paths + param builders — no magic strings
@@ -291,3 +292,30 @@ The server listens on `127.0.0.1` only.
   must stay browser-accessible and crash-isolated.
 - Not a rewrite of behavior. The migration (see `MIGRATION-PLAN.md`) is a **structural
   move + renaming of layers**, not a change to how any feature works.
+
+---
+
+## Architecture summary
+
+The generic Clean-Architecture summary, mapped to TaskHub's reality (it differs in two
+deliberate ways — the backend is a **forked HTTP server**, not the main process, and the
+primary transport is **HTTP**, not IPC):
+
+| Layer | Path | Responsibility |
+|-------|------|----------------|
+| **Renderer** | `src/renderer` | UI only — render state, handle interaction. Never touches the OS. |
+| **Preload** | `src/preload` | Secure bridge only — exposes a thin, named `window.taskhub.*`. No logic. |
+| **Main (host)** | `src/main` | Desktop shell — windows, tray, menus, updater, native IPC. Supervises the server. |
+| **Server (backend)** | `src/server` | The forked CLI backend. Hosts the layers below + the HTTP/SSE API. |
+| **Services** | `src/server/services` | Business logic — orchestration, workflows, the poller/webhook loops. |
+| **Repositories** | `src/server/repositories` | Data access only — `gh`/`acli` CLI + external APIs. No business rules. |
+| **Database** | `src/server/database` | Snapshot persistence + data-dir resolution. |
+| **Shared** | `src/shared` | Contracts — route paths, IPC channels, enums (plain JS; `.mjs` cross-boundary, `.js` Node-only). |
+
+**The one rule that differs from the generic doc:** the renderer never talks directly to
+the operating system. **Data and CLI orchestration flow over HTTP** (`api.js` → `routes` →
+`services` → `repositories` → CLI) into the forked **server**; **native, streaming, and
+main-process-only** concerns flow over **typed IPC contracts** (`window.taskhub.*` →
+`main/ipc`) into the **host**. Generic Clean Architecture routes everything through IPC into
+main because it assumes a DB-backed app; TaskHub is CLI+polling, so the server earns its own
+process (crash isolation, browser-accessible, owns the background loops).
