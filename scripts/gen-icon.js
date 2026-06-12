@@ -1,6 +1,6 @@
 // Generates build/icon.png (1024×1024 RGBA) — the macOS app icon.
-// A brand-indigo checkmark on a white rounded square. The SAME checkmark geometry
-// is used by gen-tray-icon.js so the dock icon and menu-bar icon are consistent.
+// A brand-indigo checkmark on a white rounded square. The menu-bar icon (main/icons.js)
+// uses the same checkmark geometry so the dock icon and tray glyph stay consistent.
 
 const fs = require('fs');
 const path = require('path');

@@ -16,8 +16,7 @@
     "dev:tray": "electron .",
     "build": "node scripts/build.js",
     "release": "node scripts/build.js --publish",
-    "gen-icon": "node scripts/gen-icon.js",
-    "gen-tray-icon": "node scripts/gen-tray-icon.js"
+    "gen-icon": "node scripts/gen-icon.js"
   },
   "dependencies": {
     "@homebridge/node-pty-prebuilt-multiarch": "^0.12.0",

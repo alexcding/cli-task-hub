@@ -38,9 +38,6 @@ if (!fs.existsSync(path.join(ROOT, 'build', 'icon.icns'))) {
   console.log('icon.icns already exists, skipping');
 }
 
-// Tray icon — monochrome template glyph (transparent bg, auto-tinted by macOS)
-run('node scripts/gen-tray-icon.js');
-
 // ── 2. Build ──────────────────────────────────────────────────────────────────
 // Produces a DMG (shareable image) + ZIP (Squirrel.Mac auto-update) + the
 // unpacked .app in dist/mac-arm64/.
