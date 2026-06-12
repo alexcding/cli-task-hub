@@ -25,7 +25,7 @@ app.setName('TaskHub');
 // Initialize logging before any window is created (log.initialize wires the renderer
 // IPC bridge). Routes console.* in this process to <userData>/logs/main.log. Required for
 // its side-effect — the import itself sets up logging.
-require('./lib/logger');
+require('./src/server/logger');
 
 const supervisor = require('./main/server-supervisor');
 const terminals = require('./main/terminals');

@@ -23,7 +23,7 @@ function startServer() {
   // Clear the port in case a previous server (e.g. a stale dev run, or a half-dead child) lingers.
   freePort();
   serverStartedAt = Date.now();
-  serverProcess = fork(path.join(__dirname, '..', 'server.js'), [], {
+  serverProcess = fork(path.join(__dirname, '..', 'src', 'server', 'app.js'), [], {
     // The forked server is plain Node and can't read Electron's app paths, so hand it a
     // writable data dir explicitly (never inside the asar). ELECTRON_RUN_AS_NODE makes the
     // child run as plain Node — without it, fork() reuses the Electron binary (execPath)

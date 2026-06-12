@@ -35,9 +35,7 @@ module.exports = {
   files: [
     'tray.js',
     'preload.js',
-    'server.js',
     'main/**',
-    'lib/**',
     'src/**',
     'public/**',
     'node_modules/**',

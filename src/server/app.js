@@ -2,19 +2,19 @@
 try { require('node:module').enableCompileCache?.(); } catch {}
 
 // Load first so console.* is routed to the log file before any other module logs.
-require('./lib/logger');
+require('./logger');
 
 const express = require('express');
 const path = require('path');
-const db = require('./lib/db');
-const configdb = require('./lib/configdb');
-const github = require('./lib/github');
-const jira = require('./lib/jira');
-const poller = require('./lib/poller');
-const usage = require('./lib/usage');
-const forwarder = require('./lib/webhook-forwarder');
-const { PR_CATEGORY } = require('./src/shared/constants.mjs');
-const { ROUTES } = require('./src/shared/routes.mjs');
+const db = require('./database/db');
+const configdb = require('./database/configdb');
+const github = require('./repositories/github');
+const jira = require('./repositories/jira');
+const poller = require('./services/poller');
+const usage = require('./repositories/usage');
+const forwarder = require('./services/webhook-forwarder');
+const { PR_CATEGORY } = require('../shared/constants.mjs');
+const { ROUTES } = require('../shared/routes.mjs');
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
 
@@ -26,7 +26,7 @@ const jsonStd = express.json();
 app.use((req, res, next) => (req.path === ROUTES.GIT_DISCARD ? jsonBig : jsonStd)(req, res, next));
 // Never cache static assets — this is a localhost tool; a refresh should always
 // show the latest UI (avoids "I edited the file but don't see changes").
-app.use(express.static(path.join(__dirname, 'public'), {
+app.use(express.static(path.join(__dirname, '..', '..', 'public'), {
   etag: false,
   lastModified: false,
   setHeaders: res => res.setHeader('Cache-Control', 'no-store'),
@@ -35,7 +35,7 @@ app.use(express.static(path.join(__dirname, 'public'), {
 // Shared cross-process contracts (src/shared/*.mjs) exposed to the renderer at /shared.
 // The page imports e.g. /shared/constants.mjs; Node consumers require() the same files
 // from disk. This surface stays stable regardless of where the renderer's files live.
-app.use('/shared', express.static(path.join(__dirname, 'src', 'shared'), {
+app.use('/shared', express.static(path.join(__dirname, '..', 'shared'), {
   etag: false,
   lastModified: false,
   setHeaders: res => res.setHeader('Cache-Control', 'no-store'),
@@ -479,7 +479,7 @@ const isPackaged = __dirname.includes('app.asar');
 if (!isPackaged) {
   try {
     let t = null;
-    require('fs').watch(path.join(__dirname, 'public'), { recursive: true }, () => {
+    require('fs').watch(path.join(__dirname, '..', '..', 'public'), { recursive: true }, () => {
       clearTimeout(t);
       t = setTimeout(() => broadcast({ type: 'reload' }), 100);
     });

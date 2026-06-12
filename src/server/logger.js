@@ -13,7 +13,7 @@
 // call site (the [webhook], [jira-sync], [tray]… lines) into the file transport while
 // still printing to stdout — so no call sites need to change.
 const path = require('path');
-const { dataDir } = require('./datadir');
+const { dataDir } = require('./database/datadir');
 
 const isElectronMain = process.type === 'browser';
 const log = require(isElectronMain ? 'electron-log/main' : 'electron-log/node');

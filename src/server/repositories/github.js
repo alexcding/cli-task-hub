@@ -1,7 +1,7 @@
 const { execFile } = require('child_process');
 const { promisify } = require('util');
 const execFileAsync = promisify(execFile);
-const { PR_CATEGORY } = require('../src/shared/constants.mjs');
+const { PR_CATEGORY } = require('../../shared/constants.mjs');
 
 // PR fields. statusCheckRollup gives CI status inline — one call returns PRs + CI,
 // so we never need a separate `gh run list` per PR. author/isDraft/reviewRequests

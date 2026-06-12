@@ -13,7 +13,7 @@ const dataDir = (() => {
     const { app } = require('electron');
     if (app && app.getPath) return app.getPath('userData');
   } catch {}
-  return path.join(__dirname, '..');
+  return path.join(__dirname, '..', '..', '..');
 })();
 
 // Ensure it exists — node:sqlite (DatabaseSync) won't create missing parent dirs, so

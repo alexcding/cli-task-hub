@@ -49,7 +49,7 @@ fi
 # ── Runtime ─────────────────────────────────────────────────────────────────────
 # Must be Node: the server uses node:sqlite (taskhub.db), which bun doesn't implement.
 # Node's built-in --watch gives the same hot-reload bun used to provide here.
-RUNTIME=(node --watch server.js)
+RUNTIME=(node --watch src/server/app.js)
 green "Using node $(node --version)"
 
 # ── Free the port ────────────────────────────────────────────────────────────────

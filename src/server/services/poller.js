@@ -1,7 +1,7 @@
-const db = require('./db');
-const github = require('./github');
-const jira = require('./jira');
-const { PR_CATEGORY } = require('../src/shared/constants.mjs');
+const db = require('../database/db');
+const github = require('../repositories/github');
+const jira = require('../repositories/jira');
+const { PR_CATEGORY } = require('../../shared/constants.mjs');
 
 const DEFAULT_TRANSITION = 'In Review';
 

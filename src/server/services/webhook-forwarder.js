@@ -1,7 +1,7 @@
 // Manages `gh webhook forward` child processes, one per watched repo.
 const { spawn } = require('child_process');
-const db = require('./db');
-const { gh } = require('./github'); // shared `gh` CLI wrapper (binary, maxBuffer, error handling)
+const db = require('../database/db');
+const { gh } = require('../repositories/github'); // shared `gh` CLI wrapper (binary, maxBuffer, error handling)
 
 const processes = new Map();     // repo -> ChildProcess
 const restartTimers = new Map(); // repo -> timeout handle for a pending restart
