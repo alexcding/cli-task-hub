@@ -120,8 +120,11 @@ body.pr-split .split-body .diff-confirm { left:var(--pr-split, 60%); }
    is `.active`, or `.on` for the pane switch's existing JS. No accent. */
 :root, html[data-theme="light"] { --seg-thumb:#ffffff; --seg-shadow:0 1px 2px rgba(0,0,0,.14), 0 0 0 .5px rgba(0,0,0,.05); }
 html[data-theme="dark"]         { --seg-thumb:#3d3d3d; --seg-shadow:0 1px 2px rgba(0,0,0,.4); }
-.seg-tabs { display:inline-flex; align-items:center; gap:2px; padding:2px; border-radius:8px; background:var(--surface-hover); }
-.seg-tab { display:inline-flex; align-items:center; gap:5px; padding:5px 12px; border:none; border-radius:6px; background:none; color:var(--text-3); font-size:13px; font-weight:500; line-height:1; cursor:pointer; transition:color .12s,background .12s; }
+/* Segmented tabs: equal width — every tab in a group sized to the widest one. inline-grid
+   with 1fr columns makes the columns equal; the group shrinks to content so the widest
+   tab's label sets the shared width. .seg-tab centers its content in the now-wider cell. */
+.seg-tabs { display:inline-grid; grid-auto-flow:column; grid-auto-columns:1fr; align-items:center; gap:2px; padding:2px; border-radius:8px; background:var(--surface-hover); }
+.seg-tab { display:inline-flex; align-items:center; justify-content:center; gap:5px; padding:5px 12px; border:none; border-radius:6px; background:none; color:var(--text-3); font-size:13px; font-weight:500; line-height:1; cursor:pointer; transition:color .12s,background .12s; }
 .seg-tab svg { display:block; }
 .seg-tab:hover { color:var(--text); }
 .seg-tab.active, .seg-tab.on { background:var(--seg-thumb); color:var(--text); box-shadow:var(--seg-shadow); cursor:default; }
