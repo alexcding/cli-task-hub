@@ -68,7 +68,8 @@ npm run build          # package the Electron app (.dmg/.zip/.app, ad-hoc signed
 
 **Electron host** (`src/main/`, `src/preload/index.js`): `app/main.js` (entry; forks the
 server) + `app/const.js`; `windows/window.js`; `tray/menu.js`; `menu/app-menu.js`;
-`updater/updater.js`; `server/supervisor.js`; `ipc/terminals.js` (PTYs); `native/`
+`updater/updater.js`; `server/supervisor.js`; `ipc/` (`terminals.js` PTYs, `system.js`
+theme/dialog/avatar/usage/sound — the whole native IPC surface); `native/`
 (`icons.js`, `notifications.js`, `usage.js` = TaskHub RAM/CPU, `usage-image.js` = the
 Claude/Codex token panel as a menu-row image).
 

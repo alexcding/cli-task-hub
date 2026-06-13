@@ -68,7 +68,7 @@ src/
 │   │   ├── main.js             # entry point (package.json "main"); app lifecycle
 │   │   └── const.js            # host-wide constants
 │   ├── windows/
-│   │   └── window.js           # BrowserWindow creation + window-scoped IPC
+│   │   └── window.js           # BrowserWindow creation + lifecycle + session config
 │   ├── tray/
 │   │   └── menu.js             # tray menu model (the Tray itself is created in app/main.js)
 │   ├── menu/
