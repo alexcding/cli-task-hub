@@ -17,7 +17,7 @@ const CH = {
   TERM_DATA:   'term:data',     // send    → { id, chunk, seq }  (main → renderer)
   TERM_EXIT:   'term:exit',     // send    → { id, exitCode, signal } (main → renderer)
 
-  // ── Window / native (src/main/windows/window.js ⇄ preload) ──────────────────────────────
+  // ── Window / native (src/main/ipc/system.js ⇄ preload) ──────────────────────────────
   SET_NATIVE_THEME: 'set-native-theme', // send   ← 'light' | 'dark' | 'auto'
   CLOSE_WINDOW:     'close-window',      // send
   CHOOSE_FOLDER:    'choose-folder',     // invoke → absolute path | null

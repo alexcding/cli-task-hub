@@ -2,7 +2,8 @@
 // window.taskhub.* that isn't a terminal (those live in ipc/terminals.js): theme mirror,
 // window close, avatar fetch, resource usage, folder picker, reveal-in-Finder, review-sound
 // preview. Thin glue — parse → call a native helper → return. Channel names come from the
-// shared CH contract. Together with terminals.js this is the ENTIRE main-process IPC surface.
+// shared CH contract. This + ipc/terminals.js are the renderer-facing IPC; the tray also
+// registers CH.TRAY_REFRESH in app/main.js (it's app-lifecycle wiring, not a taskhub.* call).
 const { ipcMain, shell, dialog, nativeTheme } = require('electron');
 const { getWin } = require('../windows/window');
 const { avatarDataUrl } = require('../native/icons');

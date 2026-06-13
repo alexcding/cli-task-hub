@@ -11,20 +11,26 @@ const PR_FIELDS = 'number,title,state,url,headRefName,baseRefName,mergedAt,autho
 const PR_FIELDS_CI = `${PR_FIELDS},statusCheckRollup`;
 
 const MAX_BUFFER = 10 * 1024 * 1024;
+// gh is a network CLI — bound every invocation so a stalled call (network stall, stuck
+// credential helper, wedged subprocess) rejects instead of hanging forever. Essential now
+// that the poller coalesces on the in-flight promise: an unbounded hang would otherwise pin
+// a project's sync for the whole process lifetime (the snapshot would freeze). 60s matches
+// the deliberate timeout on gitPush below.
+const GH_TIMEOUT = 60_000;
 
-// Lightweight gh-latency metrics — answers "is gh where the time goes?" without a
-// profiler. Surfaced in the Settings DB inspector (/api/db → ghStats). The CLI spawn
-// dominates request/sync latency, so timing here (not per-route) is the honest signal.
+// Lightweight gh metrics — answers "is gh where the time goes?" without a profiler.
+// Surfaced in the Settings DB inspector (/api/db → ghStats). `calls/errors/totalMs/maxMs/
+// slowest` are gh-spawn timing; `inflight/coalesced` are the poller's sync-dedup gauges,
+// bumped through noteInflight/noteCoalesced so the field names stay private to this module.
 const _gh = { calls: 0, errors: 0, totalMs: 0, maxMs: 0, slowest: null, inflight: 0, coalesced: 0 };
-function ghStats() {
-  return { ...(({ slowest, ...rest }) => rest)(_gh), slowest: _gh.slowest,
-           avgMs: _gh.calls ? Math.round(_gh.totalMs / _gh.calls) : 0 };
-}
+const ghStats = () => ({ ..._gh, avgMs: _gh.calls ? Math.round(_gh.totalMs / _gh.calls) : 0 });
+const noteInflight = delta => { _gh.inflight += delta; };
+const noteCoalesced = () => { _gh.coalesced++; };
 
 async function gh(args) {
   const startedAt = Date.now();
   try {
-    const { stdout } = await execFileAsync('gh', args, { maxBuffer: MAX_BUFFER });
+    const { stdout } = await execFileAsync('gh', args, { maxBuffer: MAX_BUFFER, timeout: GH_TIMEOUT });
     return stdout.trim();
   } catch (err) {
     _gh.errors++;
@@ -585,6 +591,6 @@ async function getPRs(repo, state = 'open', limit = 30, { ci = false, fresh = fa
   return value;
 }
 
-// _gh is exported (not just ghStats) so the poller can bump `inflight`/`coalesced`
-// from its sync-dedup layer — keeping all gh-pressure metrics in one object.
-module.exports = { gh, ghStats, _ghMetrics: _gh, getPRs, getCurrentUser, getUserName, reviewRequestedAt, categoryOf, awaitingReview, extractJiraKeys, parseRepo, gitRemoteRepo, worktreeForBranch, worktreeForJiraKey, createWorktree, removeWorktree, gitDiff, gitCommit, gitPush, gitDiscard, gitLog, gitShow, gitBranches, gitDefaultBranch, commitAvatars, listWorktrees, summarizeCI };
+// ghStats reads the metrics; noteInflight/noteCoalesced let the poller's sync-dedup layer
+// bump the gauges without reaching into _gh's field names.
+module.exports = { gh, ghStats, noteInflight, noteCoalesced, getPRs, getCurrentUser, getUserName, reviewRequestedAt, categoryOf, awaitingReview, extractJiraKeys, parseRepo, gitRemoteRepo, worktreeForBranch, worktreeForJiraKey, createWorktree, removeWorktree, gitDiff, gitCommit, gitPush, gitDiscard, gitLog, gitShow, gitBranches, gitDefaultBranch, commitAvatars, listWorktrees, summarizeCI };

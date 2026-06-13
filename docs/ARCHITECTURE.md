@@ -77,9 +77,10 @@ src/
 │   │   └── updater.js          # Squirrel.Mac auto-update
 │   ├── server/
 │   │   └── supervisor.js       # fork + supervise the backend server child
-│   ├── ipc/                    # the ENTIRE native IPC surface lives here, nowhere else
+│   ├── ipc/                    # the renderer-facing IPC handlers (window.taskhub.*)
 │   │   ├── terminals.js        # term:create / write / resize / kill / list / attach
 │   │   └── system.js           # avatar:fetch, usage:get, choose-folder, open-path, theme…
+│   │                           # (app/main.js also registers tray:refresh — lifecycle wiring)
 │   └── native/                 # OS/native helpers (no UI, no IPC wiring)
 │       ├── icons.js
 │       ├── notifications.js

@@ -104,17 +104,21 @@ function handleMerge(repo, pr) {
 // (or rapid reloads / multiple tabs) and otherwise spawn duplicate identical `gh pr
 // list` processes for one repo. Return the in-flight promise instead, so each repo
 // has at most one sync running at a time. (Different projects still run concurrently.)
-const _inFlight = new Map(); // project.id -> Promise
+const _inFlight = new Map(); // project.id -> { repo, promise }
 function syncProject(project) {
   const existing = _inFlight.get(project.id);
-  if (existing) { github._ghMetrics.coalesced++; return existing; }
-  github._ghMetrics.inflight++;
-  const p = syncProjectImpl(project).finally(() => {
-    _inFlight.delete(project.id);
-    github._ghMetrics.inflight--;
+  // Coalesce only when the in-flight sync is for the SAME repo. A repo change (project
+  // edit) must NOT be satisfied by a fetch already running against the old repo — that
+  // would write the old repo's PRs under this id; let the new repo start its own sync.
+  if (existing && existing.repo === (project.repo || '')) { github.noteCoalesced(); return existing.promise; }
+  github.noteInflight(1);
+  const promise = syncProjectImpl(project).finally(() => {
+    // Clear only if still ours — a mismatching newer sync may have replaced the entry.
+    if (_inFlight.get(project.id)?.promise === promise) _inFlight.delete(project.id);
+    github.noteInflight(-1);
   });
-  _inFlight.set(project.id, p);
-  return p;
+  _inFlight.set(project.id, { repo: project.repo || '', promise });
+  return promise;
 }
 
 // Sync ONE project: a single `gh` call serves both the UI snapshot (open PRs)

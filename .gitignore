@@ -33,3 +33,6 @@ build/icon.iconset/
 .env.local
 .DS_Store
 *.log
+
+# Claude Code local worktrees (embedded git repos — never commit)
+.claude/worktrees/

@@ -66,9 +66,11 @@ sse.register(app);
 // Watch the renderer AND the shared contracts (served to the page at /shared) and tell
 // open pages to reload on change. src/shared is a sibling of src/renderer, so it needs
 // its own watch — editing routes.mjs/constants.mjs must reload the page too. Disabled in
-// the packaged app (files live inside app.asar, which isn't watchable/editable).
+// the packaged app (files live inside app.asar, which isn't watchable/editable), and only
+// armed when app.js is the entry point (standalone / dev / forked server) — NOT when this
+// module is merely require()d (e.g. by tests), so it never leaks unclosed FSWatcher handles.
 const isPackaged = __dirname.includes('app.asar');
-if (!isPackaged) {
+if (!isPackaged && require.main === module) {
   try {
     let t = null;
     const reload = () => { clearTimeout(t); t = setTimeout(() => sse.broadcast({ type: 'reload' }), 100); };
