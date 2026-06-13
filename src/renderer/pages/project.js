@@ -200,9 +200,16 @@ export async function saveProjectWebhooks(id) {
 export async function reloadProjectPRs(id, prState, { silent = false } = {}) {
   const el = document.getElementById(`proj-prs-${id}`);
   if (!el) return;
-  if (!silent) el.innerHTML = '<div class="loading-row"><div class="spinner"></div> Loading…</div>';
-  const prs = await api(`${ROUTES.projectPrs(id)}?state=${prState}`);
   const proj = state.projects.find(p => p.id === id);
+  // Cache-first: open PRs are already in the snapshot we loaded (state.projects), so render
+  // them instantly — no spinner. The fetch below revalidates and reconciles, and an SSE `sync`
+  // keeps it live afterward. Merged/all aren't cached (the snapshot holds only open), so they
+  // show the loading state while their live `gh` fetch runs.
+  const cached = prState === 'open' ? proj?.prs : null;
+  if (cached) el.innerHTML = prListHtml(cached.filter(p => !p.error), proj?.repo, 'open');
+  else if (!silent) el.innerHTML = '<div class="loading-row"><div class="spinner"></div> Loading…</div>';
+
+  const prs = await api(`${ROUTES.projectPrs(id)}?state=${prState}`);
   const target = document.getElementById(`proj-prs-${id}`); // may have re-rendered; re-query
   if (target) target.innerHTML = prListHtml(prs.filter(p=>!p.error), proj?.repo, prState);
 }
