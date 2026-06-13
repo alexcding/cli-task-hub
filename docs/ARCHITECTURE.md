@@ -70,8 +70,7 @@ src/
 │   ├── windows/
 │   │   └── window.js           # BrowserWindow creation + window-scoped IPC
 │   ├── tray/
-│   │   ├── tray.js             # tray icon + popover lifecycle
-│   │   └── menu.js             # tray menu model
+│   │   └── menu.js             # tray menu model (the Tray itself is created in app/main.js)
 │   ├── menu/
 │   │   └── app-menu.js         # native application menu
 │   ├── updater/

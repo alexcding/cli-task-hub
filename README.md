@@ -56,7 +56,7 @@ when linked PRs merge.
   non-draft PRs requesting your review under Review.
 - **AI usage hero** surfaces your Claude Code / Codex token spend at the top of the
   dashboard — session and weekly burn, today's cost, 30-day cost/tokens, and a recent
-  trend sparkline — read from `ccusage` (see `lib/usage.js`) and cached SWR-style.
+  trend sparkline — read from `ccusage` (see `src/server/repositories/usage.js`) and cached SWR-style.
 - **Project pages** show all open PRs for a repo, plus a Jira tab for the
   project's JQL query.
 - **Inline CI** uses GitHub's `statusCheckRollup` through `gh`, so each PR gets a
@@ -111,9 +111,9 @@ For hot reload during development:
 npm run dev
 ```
 
-`npm run dev` runs `./dev.sh`: it frees the port, watch-runs `server.js` with
-`bun --watch` (falling back to `node --watch` if Bun is absent), and opens the
-browser. `npm start` is enough for normal local use.
+`npm run dev` runs `./dev.sh`: it frees the port, watch-runs the server
+(`node --watch src/server/app.js`), and opens the browser. `npm start` is enough
+for normal local use.
 
 ### Menu-Bar App
 
@@ -154,7 +154,7 @@ gh / acli -> sync loop -> data.db (snapshot cache) -> API + SSE -> dashboard + t
 The important rule: **request handlers do not call `gh` for normal dashboard
 data**. The poller fetches data, writes a lean snapshot, and the UI reads it.
 
-- `lib/poller.js` is the only regular `gh` caller.
+- `src/server/services/poller.js` is the only regular `gh` caller.
 - Each project is fetched roughly once per `poll_interval` seconds.
 - Open PR snapshots are served instantly from `data.db`.
 - Stale reads trigger background revalidation.
@@ -166,18 +166,23 @@ This keeps the UI responsive and keeps GitHub CLI/API usage predictable.
 
 ## Architecture
 
+The code is organized into a layered `src/` tree (see `docs/ARCHITECTURE.md` for the
+full picture): `src/main` (Electron host) · `src/preload` (secure bridge) · `src/server`
+(forked CLI backend) · `src/renderer` (vanilla UI) · `src/shared` (cross-process contracts).
+
 | Layer | Files | Role |
 | --- | --- | --- |
-| Server | `server.js` | Express routes, SSE, GitHub webhook receiver, static app serving |
-| Sync engine | `lib/poller.js` | Poll projects, write snapshots, detect PR lifecycle changes, run merge automation |
-| GitHub adapter | `lib/github.js` | Wrap `gh`, parse repos, classify PRs, summarize CI |
-| Jira adapter | `lib/jira.js` | Wrap `acli` work item search, view, and transition commands |
-| Storage | `lib/db.js`, `lib/configdb.js`, `lib/datadb.js`, `lib/logdb.js` | SQLite via built-in `node:sqlite`: `taskhub.db` (durable app data), `data.db` (volatile CLI snapshot cache), `logs.db` (rolling activity/diagnostic log). `db.js` is the facade callers require |
-| Logging | `lib/logger.js` | electron-log file transports per process; routes existing `console.*` call sites |
-| Webhook forwarder | `lib/webhook-forwarder.js` | Manage `gh webhook forward` child processes per repo |
-| Web UI | `public/index.html`, `public/js/` | No-build ES-module SPA: `index.html` holds markup + stylesheet; `store.js` holds renderer state; `views/*` render pages from it (see `CLAUDE.md` for the pattern) |
-| Tray app | `tray.js`, `main/` | Electron menu-bar app that forks the server; `main/` splits menu, notifications, terminals (PTYs), window, updater, and server supervision |
-| Build scripts | `scripts/*.js`, `build.sh`, `electron-builder.config.js` | Generate icons, package, sign, and publish the Electron app |
+| Server | `src/server/app.js`, `src/server/routes/*` | Express bootstrap + thin route handlers (parse → service/repository → JSON), SSE, GitHub webhook receiver, static serving |
+| Sync engine | `src/server/services/poller.js`, `services/sync.js` | Poll projects, write snapshots, stale-while-revalidate orchestration, PR lifecycle + merge automation |
+| GitHub adapter | `src/server/repositories/github.js` | Wrap `gh`, parse repos, classify PRs, summarize CI; gh-latency metrics |
+| Jira adapter | `src/server/repositories/jira.js` | Wrap `acli` work item search, view, and transition commands |
+| Storage | `src/server/database/{db,configdb,datadb,logdb,datadir}.js` | SQLite via built-in `node:sqlite`: `taskhub.db` (durable app data), `data.db` (volatile CLI snapshot cache), `logs.db` (rolling activity/diagnostic log). `db.js` is the facade callers require |
+| Logging | `src/server/logger.js` | electron-log file transports per process; routes existing `console.*` call sites |
+| Webhook forwarder | `src/server/services/webhook-forwarder.js` | Manage `gh webhook forward` child processes per repo |
+| Shared contracts | `src/shared/{routes.mjs, channels.js, constants.mjs}` | HTTP route paths, IPC channel names, cross-process enums — one source of truth for both sides (served to the renderer at `/shared`) |
+| Web UI | `src/renderer/` | No-build ES-module SPA: `index.html` + `css/*` (markup + split stylesheet); `stores/store.js` holds renderer state; `pages/*` + `components/*` render from it (see `CLAUDE.md` for the pattern) |
+| Tray app | `src/main/`, `src/preload/index.js` | Electron menu-bar host that forks the server; `src/main/` splits into `app/` (entry), `windows/`, `tray/`, `menu/`, `updater/`, `server/` (supervisor), `ipc/` (PTY terminals), `native/` (icons/notifications/usage) |
+| Build scripts | `scripts/*.js`, `electron-builder.config.js` | Generate icons, package, sign, and publish the Electron app |
 
 ## Data Model
 
@@ -249,7 +254,7 @@ write outside the app bundle.
 ```bash
 npm install
 npm start          # plain local server
-npm run dev        # hot reload (bun --watch, falls back to node --watch)
+npm run dev        # hot reload (node --watch src/server/app.js)
 npm run dev:tray   # quick Electron tray run
 ./build.sh         # package and launch the macOS app
 npm run release    # signed + notarized DMG, published to GitHub Releases
@@ -258,7 +263,7 @@ npm run release    # signed + notarized DMG, published to GitHub Releases
 Useful notes:
 
 - Static assets are served with `Cache-Control: no-store` for fast iteration.
-- Editing `public/*` triggers browser reload through SSE in development.
+- Editing `src/renderer/*` or `src/shared/*` triggers browser reload through SSE in development.
 - Editing tray or packaged-server code requires a rebuild to affect a running
   `.app`.
 - The app targets arm64 macOS. Local builds are ad-hoc signed; releases are
@@ -269,7 +274,7 @@ Useful notes:
 - Project IDs are UUIDs. Quote them in inline HTML handlers:
   `onclick="fn('${id}')"`.
 - Renderer code follows a strict view/data split — see `CLAUDE.md` before
-  touching `public/js/`.
+  touching `src/renderer/`.
 - If `gh webhook` is missing, install the extension with
   `gh extension install cli/gh-webhook`. Polling still catches merges without it.
 
@@ -322,7 +327,7 @@ releases you need, once:
 
 ### How auto-update works
 
-On launch (packaged builds only), `tray.js` calls `electron-updater`, which
+On launch (packaged builds only), `src/main/app/main.js` calls `electron-updater`, which
 reads `latest-mac.yml` from the latest GitHub release, and — if a newer signed
 build exists — downloads it in the background and installs it on the next quit.
 It re-checks every 6 hours, since the tray app rarely quits.

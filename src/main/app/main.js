@@ -30,6 +30,7 @@ require('../../server/logger');
 
 const supervisor = require('../server/supervisor');
 const terminals = require('../ipc/terminals');
+const system = require('../ipc/system');
 const win = require('../windows/window');
 const { trayIcon, trayPressedIcon } = require('../native/icons');
 const { refreshMenuData, buildMenuNow } = require('../tray/menu');
@@ -85,8 +86,9 @@ app.whenReady().then(async () => {
     app.dock.setIcon(path.join(__dirname, '..', '..', '..', 'build', 'icon.png'));
   }
 
-  win.registerIpc();        // theme mirror + folder picker
+  win.registerSession();    // session permission handlers (local-fonts, webview framing)
   terminals.registerIpc();  // PTY create/write/resize/kill/list/attach
+  system.register();        // window/native IPC: theme, close, avatar, usage, folder, sound
   win.setOnBlur(refreshMenu); // refresh the menu's PR list as focus moves to the menu bar
   ipcMain.on(CH.TRAY_REFRESH, () => refreshMenu()); // renderer asks for an immediate rebuild (e.g. usage-agent switch)
   // PTYs outlive the window so running work survives a reopen — but a bare prompt has
