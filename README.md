@@ -1,100 +1,49 @@
 # TaskHub
 
-**A local desktop command center for developers who live in GitHub, Jira, and
-the terminal.**
+**A local dashboard and macOS menu-bar app for developers who live in GitHub,
+Jira, and the terminal.**
 
-[![macOS](https://img.shields.io/badge/platform-macOS-black)](#running-taskhub)
-[![Node.js](https://img.shields.io/badge/runtime-Node.js-339933)](#running-taskhub)
-[![Electron](https://img.shields.io/badge/desktop-Electron-47848f)](#menu-bar-app)
-[![Powered by gh](https://img.shields.io/badge/powered%20by-gh-24292f)](#cli-native-by-design)
+[![macOS](https://img.shields.io/badge/platform-macOS-black)](#quick-start)
+[![Node.js](https://img.shields.io/badge/runtime-Node.js-339933)](#quick-start)
+[![Electron](https://img.shields.io/badge/desktop-Electron-47848f)](#desktop-app)
+[![Powered by gh](https://img.shields.io/badge/powered%20by-gh-24292f)](#cli-native)
 [![License: ISC](https://img.shields.io/badge/license-ISC-blue.svg)](#license)
 
-TaskHub turns the CLIs you already trust into a fast task and flow desktop app.
-It watches your GitHub pull requests, review requests, CI state, and Jira work
-items per project, then gives you a local web dashboard plus a tiny macOS
-menu-bar signal.
+TaskHub turns the CLIs you already trust into a fast local task hub. It watches
+your pull requests, review requests, CI state, Jira tickets, and worktrees, then
+keeps the active queue visible in a web dashboard and a tiny macOS tray signal.
+
+No hosted backend. No new API tokens to paste into another app. Just
+authenticated CLI tools, local SQLite snapshots, and a UI built for the daily
+review loop.
 
 ![TaskHub dashboard](docs/images/dashboard.png)
 
-No hosted backend. No personal access tokens in another app. No SaaS workspace
-to configure. Just authenticated CLI inputs, a local TaskHub core, and surfaces
-that keep your work queue visible.
+## Highlights
 
-![TaskHub overview](docs/images/taskhub-overview.png)
+- **CLI-native** - reads GitHub through `gh`, Jira through Atlassian's `acli`,
+  and local repository state through `git`.
+- **Local-first** - data stays in local SQLite files; the UI reads snapshots
+  instead of calling hosted APIs on every click.
+- **Built for review flow** - groups your authored PRs, review requests, CI
+  state, Jira links, drafts, and approvals.
+- **Project-aware** - each project maps to one GitHub repo, optional Jira JQL,
+  workspace path, color, and merge transition.
+- **Menu-bar signal** - the tray app shows Tasks and Review items without
+  keeping a browser tab front and center.
+- **Developer surfaces** - dashboard, project pages, activity logs, terminals,
+  worktree actions, and Claude/Codex usage at a glance.
 
-High-level flow: CLI inputs feed TaskHub Core, TaskHub Core powers developer
-surfaces, and the same shape can expand to more code hosts, issue trackers,
-chat tools, calendars, and workflow rules.
+## Quick Start
 
-If your day starts with `gh pr list`, checking CI, and nudging Jira tickets by
-hand, TaskHub is the glue layer.
+### Requirements
 
-## Why Developers Use It
+- Node.js `>=22.12` and npm
+- GitHub CLI (`gh`) installed and authenticated
+- Atlassian CLI (`acli`) authenticated if you want Jira features
+- macOS for the desktop tray app
 
-- **CLI-native by design** - TaskHub reads GitHub through `gh` and Jira through
-  Atlassian's `acli`, so auth stays in the tools you already use.
-- **Local-first and private** - data lives in local SQLite files (via Node's
-  built-in `node:sqlite`, no native deps); the UI reads a lean snapshot instead
-  of calling hosted services on every click.
-- **Built for real review flow** - your authored PRs, requested reviews, draft
-  state, labels, linked Jira keys, and CI status are grouped where you need them.
-- **Menu-bar awareness** - a small tray dot tells you when you have work or
-  reviews without living in a browser tab.
-- **Merge automation** - when a PR merges, linked Jira tickets can automatically
-  move to the project's configured status.
-- **Hackable core** - plain Node, Express, Electron, and a framework-free
-  vanilla-JS SPA (ES modules, no build step) make the project easy to inspect,
-  fork, and extend.
-
-## What It Does
-
-TaskHub organizes work around **projects**. Each project has a name, a color, one
-GitHub repo, an optional Jira JQL query, and an optional Jira transition to run
-when linked PRs merge.
-
-- **Dashboard** shows only your active queue: PRs you authored under Tasks, and
-  non-draft PRs requesting your review under Review.
-- **AI usage hero** surfaces your Claude Code / Codex token spend at the top of the
-  dashboard — session and weekly burn, today's cost, 30-day cost/tokens, and a recent
-  trend sparkline — read from `ccusage` (see `src/server/repositories/usage.js`) and cached SWR-style.
-- **Project pages** show all open PRs for a repo, plus a Jira tab for the
-  project's JQL query.
-- **Inline CI** uses GitHub's `statusCheckRollup` through `gh`, so each PR gets a
-  compact pass, fail, or running signal.
-- **Activity page** shows a day-grouped timeline of PR lifecycle events, Jira
-  transitions, sync errors, and automation failures, with diagnostic categories
-  (webhook, poller, …) one filter away.
-- **Webhook forwarding** can catch merged PRs quickly through the `gh webhook`
-  extension, while the poller remains the fallback.
-- **macOS tray app** forks the local server, shows Tasks and Review items, and
-  opens the dashboard on demand.
-
-## CLI-Native By Design
-
-TaskHub intentionally does not ask you to paste GitHub or Jira API tokens into a
-new app.
-
-Instead:
-
-- GitHub data comes from the authenticated `gh` CLI.
-- Jira data comes from the authenticated Atlassian `acli` CLI.
-- The sync loop writes a local snapshot.
-- The web dashboard and tray read that snapshot instantly.
-
-This keeps the app small, local, and compatible with the permission model your
-team already uses in the terminal.
-
-## Running TaskHub
-
-### Prerequisites
-
-- macOS for the menu-bar app. The local web server can run anywhere Node can run.
-- Node.js and npm.
-- GitHub CLI (`gh`) installed and authenticated.
-- Atlassian CLI (`acli`) installed and authenticated for Jira features.
-- Bun is optional, but recommended for hot-reload development.
-
-### Start the Web Dashboard
+### Run the dashboard
 
 ```bash
 npm install
@@ -102,264 +51,128 @@ npm start
 ```
 
 Open [http://localhost:3000](http://localhost:3000), create a project, and add a
-GitHub repo in `owner/repo` format. Add JQL and an on-merge Jira transition if
-you want Jira integration.
+GitHub repo in `owner/repo` format. Add JQL and a merge transition when you want
+Jira integration.
 
-For hot reload during development:
+For hot reload while developing:
 
 ```bash
 npm run dev
 ```
 
-`npm run dev` runs `./dev.sh`: it frees the port, watch-runs the server
-(`node --watch src/server/app.js`), and opens the browser. `npm start` is enough
-for normal local use.
+## Desktop App
 
-### Menu-Bar App
-
-For a quick Electron tray run:
+Run the tray app in development:
 
 ```bash
 npm run dev:tray
 ```
 
-For the packaged arm64 macOS app:
+Build the packaged macOS app:
 
 ```bash
-./build.sh          # build the .app, ad-hoc sign it, and launch
-./build.sh --no-run # build only
+npm run build
 ```
 
-Build output lands at:
-
-```text
-dist/mac-arm64/TaskHub.app
-```
-
-`build.sh` regenerates icons, builds the `.app` (ad-hoc signed, fast), kills any
-old TaskHub instance, frees port 3000, and launches the new build. To produce a
-distributable disk image instead, see [Releasing](#releasing--auto-update).
+The app is arm64-focused today. Packaged builds use Electron, fork the local
+server, and write user data outside the app bundle.
 
 ## How It Works
 
-TaskHub uses a stale-while-revalidate model with a local snapshot as the single
-source of truth for UI reads.
+TaskHub uses stale-while-revalidate over local snapshots:
 
 ```text
-gh / acli -> sync loop -> data.db (snapshot cache) -> API + SSE -> dashboard + tray
-                         |
-                         +-> PR lifecycle events -> Jira merge automation
+gh / acli / git
+      |
+poller + webhook forwarder
+      |
+SQLite snapshots
+      |
+Express API + SSE
+      |
+dashboard + tray + terminals
 ```
 
-The important rule: **request handlers do not call `gh` for normal dashboard
-data**. The poller fetches data, writes a lean snapshot, and the UI reads it.
+The poller owns normal CLI reads and writes lean snapshots. API endpoints serve
+those snapshots instantly, and stale reads trigger background refreshes. Open
+pages update through Server-Sent Events.
 
-- `src/server/services/poller.js` is the only regular `gh` caller.
-- Each project is fetched roughly once per `poll_interval` seconds.
-- Open PR snapshots are served instantly from `data.db`.
-- Stale reads trigger background revalidation.
-- `/api/stream` uses Server-Sent Events to refresh open pages after sync.
-- Merge automation extracts Jira keys from PR titles, PR bodies, and manual PR
-  links, then transitions matching Jira work items.
+The important invariant: normal UI reads should stay snapshot-backed. If data
+needs to be fresher, improve the sync path instead of adding CLI calls to request
+handlers.
 
-This keeps the UI responsive and keeps GitHub CLI/API usage predictable.
+For the deeper process and folder layout, see
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-## Architecture
+## CLI-Native
 
-The code is organized into a layered `src/` tree (see `docs/ARCHITECTURE.md` for the
-full picture): `src/main` (Electron host) · `src/preload` (secure bridge) · `src/server`
-(forked CLI backend) · `src/renderer` (vanilla UI) · `src/shared` (cross-process contracts).
+TaskHub intentionally keeps auth in the tools you already use:
 
-| Layer | Files | Role |
-| --- | --- | --- |
-| Server | `src/server/app.js`, `src/server/routes/*` | Express bootstrap + thin route handlers (parse → service/repository → JSON), SSE, GitHub webhook receiver, static serving |
-| Sync engine | `src/server/services/poller.js`, `services/sync.js` | Poll projects, write snapshots, stale-while-revalidate orchestration, PR lifecycle + merge automation |
-| GitHub adapter | `src/server/repositories/github.js` | Wrap `gh`, parse repos, classify PRs, summarize CI; gh-latency metrics |
-| Jira adapter | `src/server/repositories/jira.js` | Wrap `acli` work item search, view, and transition commands |
-| Storage | `src/server/database/{db,configdb,datadb,logdb,datadir}.js` | SQLite via built-in `node:sqlite`: `taskhub.db` (durable app data), `data.db` (volatile CLI snapshot cache), `logs.db` (rolling activity/diagnostic log). `db.js` is the facade callers require |
-| Logging | `src/server/logger.js` | electron-log file transports per process; routes existing `console.*` call sites |
-| Webhook forwarder | `src/server/services/webhook-forwarder.js` | Manage `gh webhook forward` child processes per repo |
-| Shared contracts | `src/shared/{routes.mjs, channels.js, constants.mjs}` | HTTP route paths, IPC channel names, cross-process enums — one source of truth for both sides (served to the renderer at `/shared`) |
-| Web UI | `src/renderer/` | No-build ES-module SPA: `index.html` + `css/*` (markup + split stylesheet); `stores/store.js` holds renderer state; `pages/*` + `components/*` render from it (see `CLAUDE.md` for the pattern) |
-| Tray app | `src/main/`, `src/preload/index.js` | Electron menu-bar host that forks the server; `src/main/` splits into `app/` (entry), `windows/`, `tray/`, `menu/`, `updater/`, `server/` (supervisor), `ipc/` (PTY terminals), `native/` (icons/notifications/usage) |
-| Build scripts | `scripts/*.js`, `electron-builder.config.js` | Generate icons, package, sign, and publish the Electron app |
+- GitHub data comes from the authenticated `gh` CLI.
+- Jira data comes from the authenticated Atlassian `acli` CLI.
+- Git data comes from local repositories and worktrees.
+- The web dashboard and tray read local snapshots through TaskHub's API.
 
-## Data Model
+This keeps the app small, inspectable, and compatible with your existing
+terminal setup.
 
-```js
-// project row in taskhub.db (returned camelCase by the API)
-{ id, name, color, repo, workspace, jiraProjectKey, jql,
-  mergeTransition, forwardWebhooks, created_at }
+## Project Layout
 
-// snapshot row in data.db, keyed by project UUID
-// (or '@me' / '@sprint' for the global Jira feeds)
-{ prs, lastSynced, error }
-
-// lean PR consumed by UI and tray
-{
-  number, title, url, state, repo, headRefName,
-  author, createdAt, isDraft, labels, jiraKeys,
-  ci, category, awaitingMyReview, reviewDecision
-}
-```
-
-PR category is computed relative to the current `gh` user:
-
-- `mine`: you authored it, shown as Tasks.
-- `review`: review requested from you and not draft, shown as Review.
-- `other`: visible on project pages only.
-
-Data location:
-
-```text
-TASKHUB_DATA_DIR -> Electron userData -> repo root in development
-```
-
-The tray passes `TASKHUB_DATA_DIR` to the forked Node server so packaged builds
-write outside the app bundle.
-
-## HTTP API
-
-| Method | Path | Notes |
-| --- | --- | --- |
-| `GET` | `/api/dashboard` | Projects plus snapshotted open PRs |
-| `GET` | `/api/projects` | List projects |
-| `GET` | `/api/projects/:id` | Get one project |
-| `POST` / `PUT` / `DELETE` | `/api/projects[/:id]` | Create, update, or delete projects |
-| `GET` | `/api/projects/:id/prs?state=open` | Open PRs from snapshot; merged/all are live fetches |
-| `GET` | `/api/projects/:id/jira` | Snapshotted Jira tickets for a project's JQL |
-| `GET` | `/api/prs/tray` | Compact PR list for the tray |
-| `GET` | `/api/jira/mine` / `/api/jira/sprint` | Snapshotted "assigned to me" / current-sprint feeds |
-| `GET` | `/api/jira/site` | Jira base URL (auto-detected from `acli`) |
-| `GET` | `/api/jira/search?jql=` | Jira JQL search through `acli` |
-| `GET` | `/api/jira/:key` | Jira work item details |
-| `POST` | `/api/jira/:key/transition` | Manual Jira transition |
-| `GET` | `/api/usage` | Claude Code / Codex token usage for the dashboard hero (via `ccusage`) |
-| `GET` | `/api/events` | Recent activity events (dashboard stats) |
-| `GET` / `POST` | `/api/logs[...]` | Activity page: query logs, list categories, clear |
-| `GET` / `PUT` | `/api/settings[/:key]` | UI settings (theme, filters) |
-| `GET` / `PUT` | `/api/tabs` | Persisted viewer tabs |
-| `GET` | `/api/db` | Settings-page DB inspector |
-| `GET` / `POST` | `/api/config` | Runtime config such as poll interval |
-| `GET` | `/api/detect-repo` / `/api/worktree` | Resolve a local checkout's repo / a ticket's worktree |
-| `GET` | `/api/diff` | Read-only `git diff` of a tab's worktree |
-| `POST` | `/api/git/commit` / `push` / `discard` | Commit pane actions on a worktree |
-| `GET` | `/api/stream` | SSE sync and reload events |
-| `POST` | `/webhook/github` | GitHub pull request webhook receiver |
-| `GET` / `POST` | `/api/forwarders[/sync]` | Webhook forwarder status and sync |
-| `POST` | `/api/poll` | Force a full sync |
+| Path | Purpose |
+| --- | --- |
+| `src/server` | Express API, poller, repositories, local SQLite stores |
+| `src/renderer` | No-build vanilla ES-module web UI |
+| `src/main` | Electron host, tray, native menus, updater, IPC |
+| `src/preload` | Sandboxed bridge exposed as `window.taskhub` |
+| `src/shared` | HTTP routes, IPC channels, shared constants |
+| `docs` | Architecture notes and project images |
 
 ## Development
 
 ```bash
 npm install
-npm start          # plain local server
-npm run dev        # hot reload (node --watch src/server/app.js)
-npm run dev:tray   # quick Electron tray run
-./build.sh         # package and launch the macOS app
-npm run release    # signed + notarized DMG, published to GitHub Releases
+npm start        # plain local server
+npm run dev      # hot reload server + browser
+npm run dev:tray # Electron tray app
+npm test         # node:test suite
+npm run build    # package the app
 ```
 
 Useful notes:
 
-- Static assets are served with `Cache-Control: no-store` for fast iteration.
-- Editing `src/renderer/*` or `src/shared/*` triggers browser reload through SSE in development.
-- Editing tray or packaged-server code requires a rebuild to affect a running
-  `.app`.
-- The app targets arm64 macOS. Local builds are ad-hoc signed; releases are
-  Developer ID signed and notarized — see [Releasing](#releasing--auto-update).
-- Storage is three SQLite files via built-in `node:sqlite` (no native module to
-  rebuild): `taskhub.db` is the durable source of truth, `data.db` is a
-  regenerable CLI cache (safe to delete), `logs.db` is a capped rolling log.
-- Project IDs are UUIDs. Quote them in inline HTML handlers:
-  `onclick="fn('${id}')"`.
-- Renderer code follows a strict view/data split — see `CLAUDE.md` before
-  touching `src/renderer/`.
-- If `gh webhook` is missing, install the extension with
-  `gh extension install cli/gh-webhook`. Polling still catches merges without it.
+- The renderer is plain HTML/CSS/ES modules; there is no frontend build step.
+- `src/server/services/poller.js` is the normal GitHub sync path.
+- `data.db` and `logs.db` are regenerable caches; `taskhub.db` is durable app
+  config.
+- Set `TASKHUB_DATA_DIR` to choose a custom data directory.
+- If `gh webhook` is missing, polling still catches merges. Install the
+  extension with `gh extension install cli/gh-webhook` for faster webhook-based
+  updates.
 
-## Releasing & Auto-Update
+## Releasing
 
-TaskHub ships as a signed, notarized DMG published to [GitHub Releases](https://github.com/alexcding/cli-task-hub/releases),
-and installed copies update themselves from there via `electron-updater`.
-
-### Build types
-
-| Command | Signing | Targets | Auto-updates? | Use for |
-| --- | --- | --- | --- | --- |
-| `./build.sh` | ad-hoc | `.app` only | no | local dev / quick launch |
-| `npm run build` | ad-hoc | dmg + zip | no | testing the packaged DMG locally |
-| `npm run release` | Developer ID + notarized | dmg + zip | yes | shipping to users |
-
-Build configuration lives in `electron-builder.config.js`. It switches between
-the ad-hoc and signed paths based on the `TASKHUB_RELEASE` env var, which
-`npm run release` sets automatically.
-
-### One-time setup for signed releases
-
-Silent macOS auto-update (Squirrel.Mac) only works between builds signed with
-the same Apple **Developer ID** — ad-hoc builds cannot auto-update. To cut real
-releases you need, once:
-
-1. An **Apple Developer Program** membership, with a **"Developer ID
-   Application"** certificate created and installed in your login keychain.
-2. An **app-specific password** for your Apple ID (appleid.apple.com → Sign-In
-   and Security → App-Specific Passwords), used for notarization.
-
-### Cutting a release
-
-1. Bump `version` in `package.json` (the updater compares versions, so every
-   release must be higher than the last).
-2. Export your Apple credentials and run the release:
-
-   ```bash
-   export APPLE_TEAM_ID=XXXXXXXXXX            # 10-char Developer Team ID
-   export APPLE_ID=you@accedo.tv
-   export APPLE_APP_SPECIFIC_PASSWORD=abcd-efgh-ijkl-mnop
-   npm run release
-   ```
-
-   This signs, notarizes, and uploads `TaskHub-<version>-arm64.dmg`, the update
-   zip, and `latest-mac.yml` to a **draft** GitHub release tagged `v<version>`.
-   The GitHub token is read from `gh auth token` automatically.
-3. Review the draft at the [Releases page](https://github.com/alexcding/cli-task-hub/releases)
-   and publish it. Installed apps pick up the update on their next check.
-
-### How auto-update works
-
-On launch (packaged builds only), `src/main/app/main.js` calls `electron-updater`, which
-reads `latest-mac.yml` from the latest GitHub release, and — if a newer signed
-build exists — downloads it in the background and installs it on the next quit.
-It re-checks every 6 hours, since the tray app rarely quits.
-
-> **First signed release:** auto-update only chains between Developer-ID-signed
-> builds. Any ad-hoc copy already installed must be replaced by manually
-> downloading the first notarized DMG; updates are automatic from then on.
+`npm run build` creates local packaged artifacts. `npm run release` uses the
+release path in `scripts/build.js` and `electron-builder.config.js` to publish
+GitHub release artifacts for signed/notarized builds.
 
 ## Ideas Worth Building
 
-These are good directions for contributors or forks:
-
 - Desktop notifications for failed CI or new review requests.
-- Multi-provider CLI adapters for GitLab, Linear, Azure DevOps, or custom CLIs.
-- Keyboard-first command palette for the dashboard.
-- Per-project rules for labels, branches, and Jira transition policies.
+- Multi-provider adapters for GitLab, Linear, Azure DevOps, or custom CLIs.
+- Keyboard-first command palette.
+- Per-project rules for labels, branches, and Jira transitions.
 - Lightweight plugin hooks for custom task sources.
 - Windows and Linux tray support.
 
 ## Contributing
 
-Contributions are welcome. The best first changes are small and visible:
+Contributions are welcome. Small, visible improvements are the best place to
+start: dashboard ergonomics, parser tests, clearer setup errors, and better docs
+for common workflows.
 
-- Improve dashboard ergonomics.
-- Add tests around parsing, CI summarization, and Jira key extraction.
-- Tighten error states when `gh` or `acli` are missing.
-- Add docs for common setup flows.
-- Extend the project model without breaking the local snapshot contract.
-
-Before changing the data flow, keep the core invariant in mind: normal UI reads
-should stay snapshot-backed. If the app needs fresher data, improve the sync
-path instead of adding `gh` calls to request handlers.
+Before changing data flow, keep the snapshot invariant in mind: request handlers
+should stay thin, and long-running CLI work should live in services or
+repositories.
 
 ## License
 
