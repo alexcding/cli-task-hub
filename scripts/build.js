@@ -90,6 +90,10 @@ if (publish) {
   // Ad-hoc local build — skip identity auto-discovery so it doesn't try to sign
   // with a real cert; scripts/afterPack.js handles the ad-hoc signature.
   process.env.CSC_IDENTITY_AUTO_DISCOVERY = 'false';
+  // --publish never: on CI electron-builder otherwise defaults to trying to
+  // publish (because a publish config exists) and fails demanding a GH_TOKEN.
+  // The ad-hoc build is verification-only and must never upload.
+  buildCmd += ' --publish never';
   step('Building TaskHub DMG (arm64, ad-hoc — no auto-update)');
 }
 
