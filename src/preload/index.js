@@ -50,8 +50,9 @@ contextBridge.exposeInMainWorld('taskhub', {
   // Close the dashboard window — ⌘W's fallback when no tab is in view.
   closeWindow: () => ipcRenderer.send('close-window'),
 
-  // Rebuild the tray menu now (e.g. after switching the usage agent) so its rendered
-  // panel updates immediately instead of waiting for the 60s/blur refresh.
+  // Force a full tray rebuild now (e.g. after switching the usage agent) so its rendered panel
+  // updates immediately instead of waiting for the 60s refresh. Open-tab changes don't need
+  // this — the tray pulls the latest tabs itself as it opens (main's blur handler).
   refreshTray: () => ipcRenderer.send('tray:refresh'),
 
   // Fetch a PR author's avatar as a base64 data URI (or null). Used to freeze the image

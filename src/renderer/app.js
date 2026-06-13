@@ -2,7 +2,7 @@
 // the inline on* handlers in markup working (ES modules aren't globals).
 import { ROUTES } from '/shared/routes.mjs';
 import { state, activeTab } from './stores/store.js';
-import { api } from './services/api.js';
+import { api, forceSync } from './services/api.js';
 import { canSplitTerminal } from './lib/util.js';
 import { ICON } from './lib/icons.js';
 import { initTheme, setAppTheme, syncThemeFromSettings } from './services/theme.js';
@@ -57,7 +57,17 @@ function showPage(name, projectId) {
     loadSettings();
     populateFontMenus(); // a settings visit is a user gesture — a chance to upgrade to the full list if the permission was deferred
   }
+
+  // Native <main> pages (not webview tabs) all read snapshots the poll loop writes, so
+  // navigating to one resyncs on arrival — the page is current when shown rather than stale
+  // until the next poll cycle. Settings is excluded: it's config, not pollable data, and
+  // refreshActivePage doesn't re-render it.
+  if (CONTENT_PAGES.includes(name)) syncOnNav();
 }
+
+// Pages backed by the native <main> that present pollable PR/Jira data — these resync on
+// navigation (see showPage).
+const CONTENT_PAGES = ['dashboard', 'mytickets', 'activity', 'project'];
 
 // ── Keyboard ──────────────────────────────────────────────────────────────────
 // ⌘-shortcuts arrive from the native app menu (main/app-menu.js) as action names,
@@ -147,6 +157,18 @@ function scheduleRefresh() {
   _refreshTimer = setTimeout(refreshActivePage, 400);
 }
 
+// Resync triggered by navigating to a content page (see showPage). forceSync runs a full
+// poll() across every project + Jira, so throttle it: data synced within the window is fresh
+// enough, and this keeps rapid nav clicks (dashboard ⇄ tickets ⇄ project) from hammering
+// gh/acli. The resulting SSE `sync` re-renders the page seamlessly via scheduleRefresh().
+let _lastNavSync = 0;
+function syncOnNav() {
+  const t = Date.now();
+  if (t - _lastNavSync < 10_000) return;
+  _lastNavSync = t;
+  forceSync();
+}
+
 function connectStream() {
   let everConnected = false;
   const es = new EventSource(ROUTES.STREAM);
@@ -158,6 +180,7 @@ function connectStream() {
   es.onmessage = (e) => {
     let d = {}; try { d = JSON.parse(e.data); } catch {}
     if (d.type === 'reload') { location.reload(); return; } // dev: a file changed
+    if (d.type === 'tabs') return; // tab-set changes drive the tray menu; the sidebar already updated locally
     scheduleRefresh();
   };
   es.onerror = () => {}; // EventSource auto-reconnects

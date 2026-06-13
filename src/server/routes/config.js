@@ -3,6 +3,8 @@
 const path = require('path');
 const db = require('../database/db');
 const configdb = require('../database/configdb');
+const poller = require('../services/poller');
+const sse = require('./sse');
 const { wrap } = require('./helpers');
 const { ROUTES } = require('../../shared/routes.mjs');
 
@@ -12,6 +14,16 @@ function register(app) {
   app.post(ROUTES.CONFIG, (req, res) => {
     for (const [k, v] of Object.entries(req.body)) db.set(k, v);
     res.json({ ok: true });
+    // Only the JQL settings feed the global Jira lists — resync them now (so a JQL edit takes
+    // effect immediately; the snapshot write broadcasts jira-sync, which the UIs react to) and
+    // ONLY when a JQL actually changed. Other keys (e.g. poll_interval) must not trigger acli.
+    // Deferred off the response: writeJiraSnapshot shells out to acli synchronously.
+    if ('my_jql' in req.body || 'sprint_jql' in req.body) {
+      setImmediate(() => {
+        try { poller.syncJiraMine(); poller.syncJiraSprint(); }
+        catch (err) { console.error('[config] jira resync failed:', err.message); }
+      });
+    }
   });
 
   // macOS notification sounds the user can pick for review alerts — the same folders
@@ -45,6 +57,7 @@ function register(app) {
   app.get(ROUTES.TABS, wrap((req, res) => res.json(configdb.getTabs())));
   app.put(ROUTES.TABS, wrap((req, res) => {
     configdb.setTabs(Array.isArray(req.body.tabs) ? req.body.tabs : [], req.body.active ?? null);
+    sse.publishTabs(); // notify subscribers (renderer sidebar + tray menu) the tab set changed
     res.json({ ok: true });
   }));
 }

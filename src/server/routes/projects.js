@@ -3,7 +3,20 @@
 const db = require('../database/db');
 const github = require('../repositories/github');
 const forwarder = require('../services/webhook-forwarder');
+const poller = require('../services/poller');
 const { ROUTES } = require('../../shared/routes.mjs');
+
+// A new/changed project has no fresh snapshot yet, so fetch its PRs + Jira now — the snapshot
+// writes broadcast sync/jira-sync, which every subscribed UI (dashboard, tray) reacts to. This
+// is why the renderer no longer pokes /api/poll after a save. Deferred off the response:
+// syncProject awaits gh and syncProjectJira shells out to acli synchronously.
+function kickSync(project) {
+  setImmediate(() => {
+    poller.syncProject(project).catch(err => console.error('[sync] project resync failed:', err.message));
+    try { poller.syncProjectJira(project); }
+    catch (err) { console.error('[jira-sync] project resync failed:', err.message); }
+  });
+}
 
 // Build the validated patch for a project from a request body.
 // Returns { patch } or { error }.
@@ -47,6 +60,7 @@ function register(app, PORT) {
     const project = db.addProject(patch);
     forwarder.sync(PORT);
     res.json(project);
+    kickSync(project);
   });
 
   app.put(ROUTES.PROJECT, (req, res) => {
@@ -56,6 +70,7 @@ function register(app, PORT) {
     if (!project) return res.status(404).json({ error: 'Not found' });
     forwarder.sync(PORT);
     res.json(project);
+    kickSync(project);
   });
 
   app.delete(ROUTES.PROJECT, (req, res) => {

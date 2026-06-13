@@ -118,6 +118,8 @@ export async function saveProject() {
     closeModal();
     const projects = await api(ROUTES.PROJECTS);
     renderProjectNav(projects);
+    // No client-side resync needed: the server kicks a sync for the new/changed project and
+    // broadcasts when it lands, which refreshActivePage picks up (see routes/projects.js).
     if (document.getElementById('page-settings').classList.contains('active')) loadSettings();
     else if (document.getElementById('page-dashboard').classList.contains('active')) loadDashboard();
     else if (id && state.activeProjectId === id && document.getElementById('page-project').classList.contains('active')) {

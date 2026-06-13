@@ -80,6 +80,8 @@ export function saveTabs() {
       active: active ? active.url : null,
     }),
   }).catch(() => {});
+  // Note: we don't push a tray refresh here. The tray pulls the latest saved tabs itself when
+  // it's about to open (main's blur handler → tabs-only refresh), so persisting is enough.
 }
 
 export async function restoreTabs() {

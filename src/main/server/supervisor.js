@@ -96,6 +96,41 @@ function postJSON(path, body) {
   });
 }
 
+// Subscribe to the server's SSE stream (/api/stream) from the tray process — the main-process
+// mirror of the renderer's EventSource. Invokes onEvent(payload) for each parsed message so the
+// menu can react to data changes (tabs, PR/Jira syncs) without polling, window open or closed.
+// Auto-reconnects on drop (e.g. a server respawn); the poller re-broadcasts on its next cycle,
+// so a brief gap self-heals. Best-effort: parse failures and socket errors are swallowed.
+function subscribeStream(onEvent) {
+  let buf = '';
+  let reconnectTimer = null;
+  const reconnect = () => {
+    if (reconnectTimer) return; // 'end' and 'error' can both fire — only schedule once
+    reconnectTimer = setTimeout(() => { reconnectTimer = null; connect(); }, 1000);
+  };
+  const connect = () => {
+    buf = '';
+    const req = http.get(BASE_URL + '/api/stream', (res) => {
+      res.setEncoding('utf8');
+      res.on('data', (chunk) => {
+        buf += chunk;
+        let i;
+        // SSE frames are separated by a blank line; each carries one `data:` line of JSON.
+        while ((i = buf.indexOf('\n\n')) !== -1) {
+          const frame = buf.slice(0, i);
+          buf = buf.slice(i + 2);
+          const line = frame.split('\n').find(l => l.startsWith('data:'));
+          if (line) { try { onEvent(JSON.parse(line.slice(5).trim())); } catch {} }
+        }
+      });
+      res.on('end', reconnect);
+      res.on('error', reconnect);
+    });
+    req.on('error', reconnect);
+  };
+  connect();
+}
+
 const getServerPid = () => serverProcess?.pid || null;
 
 // Deliberate teardown on quit: stop the respawn loop and kill the child.
@@ -109,4 +144,4 @@ function shutdown() {
   }
 }
 
-module.exports = { startServer, freePort, waitForServer, fetchJSON, postJSON, getServerPid, shutdown };
+module.exports = { startServer, freePort, waitForServer, fetchJSON, postJSON, subscribeStream, getServerPid, shutdown };

@@ -155,6 +155,8 @@ export async function saveConfig() {
     });
     // Ticket links depend on the base URL — refresh it after a save.
     try { state.jiraBase = (await api(ROUTES.JIRA_SITE)).baseUrl || state.jiraBase; } catch {}
+    // No client-side resync: the server refreshes the Jira feeds after a config change and
+    // broadcasts jira-sync, which the active page reacts to (see routes/config.js).
     toast('Settings saved');
   } catch(e) { toastErr(e.message); }
 }

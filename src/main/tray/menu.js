@@ -68,12 +68,39 @@ function prMenuItems(label, prs, refreshMenu) {
   return items;
 }
 
+// Lay out the menu body from the open tabs, the PR map (grouping + avatars), and the
+// already-built "Review requested" section. Shared by the full refresh and the tabs-only
+// refresh so the two produce an identical layout. Assumes the tabs' author avatars are
+// already in the cache (the caller preloads them) since tabSection reads them synchronously.
+function composeBody(tabs, prByUrl, reviewReqItems) {
+  const github = tabs.filter(t => t.kind === 'github');
+  const taskTabs   = github.filter(t => tabGroup(t, prByUrl) !== PR_GROUP.REVIEW);
+  const reviewTabs = github.filter(t => tabGroup(t, prByUrl) === PR_GROUP.REVIEW);
+  const jiraTabs   = tabs.filter(t => t.kind === 'jira');
+  const tabItems = [
+    ...tabSection('Mine', taskTabs, prByUrl),
+    ...tabSection('Review', reviewTabs, prByUrl),
+    ...tabSection('Jira', jiraTabs, prByUrl),
+  ];
+  let body = (reviewReqItems.length && tabItems.length)
+    ? [...reviewReqItems, { type: 'separator' }, ...tabItems]
+    : [...reviewReqItems, ...tabItems];
+  if (!body.length) body = [{ label: 'Nothing to review or open', enabled: false }];
+  return body;
+}
+
 // The fetched menu body (tab + review sections) is cached here so the tray can build a
 // menu synchronously when it (re-)arms the context menu: refreshMenuData() renews it on
 // the 60s tick / window blur, and buildMenuNow() assembles the full menu from it. (A menu
 // must stay set via setContextMenu; popping one from a tray 'click' handler doesn't
 // display on macOS — see tray.js.)
 let _body = null;
+// Last full refresh's PR map and "Review requested" section, cached so a tabs-only refresh
+// (a tab switch changes only the open-tab list, not the PR snapshot) can rebuild the tab
+// sections without re-fetching /api/prs/tray, /api/usage, /api/settings. Renewed on every
+// full refreshMenuData(); read by refreshMenuTabs().
+let _prByUrl = {};
+let _reviewReqItems = [];
 // The selected agent's Session/Weekly plan limits, rendered to one NativeImage
 // (main/usage-image.js) and shown as a single row above Quit — same data + selected
 // agent as the dashboard usage widget (/api/usage + the usageAgent setting). null when
@@ -105,13 +132,6 @@ async function refreshMenuData(tray, refreshMenu) {
   for (const p of prList) if (p && p.url) prByUrl[p.url] = p;
 
   const github = tabs.filter(t => t.kind === 'github');
-  // Mine / Review / Jira mirror your OPEN tabs, split by sidebar GROUP (tabGroup → prGroup
-  // off the live snapshot) — NOT raw category, so a PR I only commented on (category 'other')
-  // stays under Review instead of falling into Mine. "Review requested" (below) is the
-  // broader master list — every PR awaiting review from the snapshot, opened or not.
-  const taskTabs   = github.filter(t => tabGroup(t, prByUrl) !== PR_GROUP.REVIEW);
-  const reviewTabs = github.filter(t => tabGroup(t, prByUrl) === PR_GROUP.REVIEW);
-  const jiraTabs   = tabs.filter(t => t.kind === 'jira');
 
   // Notifications + icon color track ALL pending reviews from the snapshot, independent
   // of which tabs are open — so a newly-requested review still alerts you even unopened.
@@ -119,17 +139,11 @@ async function refreshMenuData(tray, refreshMenu) {
   const review = openPRs.filter(p => p.category === PR_CATEGORY.REVIEW);
 
   // Pre-load each author avatar we're about to render (unique logins, in parallel) so the
-  // section builders below can read them synchronously from the cache.
+  // section builders read them synchronously from the cache.
   const logins = new Set();
   for (const pr of review) if (pr.author?.login) logins.add(pr.author.login);
-  for (const t of [...taskTabs, ...reviewTabs]) { const l = prByUrl[t.url]?.author?.login; if (l) logins.add(l); }
+  for (const t of github) { const l = prByUrl[t.url]?.author?.login; if (l) logins.add(l); }
   await Promise.all([...logins].map(loadAvatar));
-
-  const tabItems = [
-    ...tabSection('Mine', taskTabs, prByUrl),
-    ...tabSection('Review', reviewTabs, prByUrl),
-    ...tabSection('Jira', jiraTabs, prByUrl),
-  ];
 
   // "Review requested": every PR awaiting your review, opened or not — MINUS the ones
   // you've already opened (reviewPending is false once viewed, until a newer request
@@ -151,13 +165,27 @@ async function refreshMenuData(tray, refreshMenu) {
     tray.setTitle('');
   }
 
-  // Review requested on top (the priority — others are waiting on you), then your opened
-  // Tasks/Jira tabs. Separator between only when both exist; placeholder when empty.
-  let body = (reviewReqItems.length && tabItems.length)
-    ? [...reviewReqItems, { type: 'separator' }, ...tabItems]
-    : [...reviewReqItems, ...tabItems];
-  if (!body.length) body = [{ label: 'Nothing to review or open', enabled: false }];
-  _body = body;
+  // Cache the PR-derived pieces so a tabs-only refresh can rebuild without re-fetching.
+  _prByUrl = prByUrl;
+  _reviewReqItems = reviewReqItems;
+  _body = composeBody(tabs, prByUrl, reviewReqItems);
+}
+
+// Lightweight refresh for when only the open-tab list changed (a tab switch/open/close):
+// re-read the saved tabs and rebuild the menu body, reusing the cached PR map + "Review
+// requested" section from the last full refresh. Fetches only /api/tabs — no PR snapshot,
+// usage, or settings — and leaves the menu-bar icon and review notifications (which track
+// the PR snapshot, unchanged here) alone. Falls back gracefully before the first full
+// refresh has populated the caches (empty map → tabs group by their persisted category).
+async function refreshMenuTabs() {
+  const tabData = await fetchJSON('/api/tabs');
+  const tabs = (tabData && tabData.tabs) || [];
+  // A tab opened since the last full refresh may have an author not yet in the avatar cache;
+  // preload them so tabSection's synchronous icon lookup resolves (cheap — loadAvatar memoizes).
+  const logins = new Set();
+  for (const t of tabs) if (t.kind === 'github') { const l = _prByUrl[t.url]?.author?.login; if (l) logins.add(l); }
+  await Promise.all([...logins].map(loadAvatar));
+  _body = composeBody(tabs, _prByUrl, _reviewReqItems);
 }
 
 // Assemble the tray menu from the cached body. (The RAM/CPU usage readout moved to the
@@ -180,4 +208,4 @@ function buildMenuNow() {
   ]);
 }
 
-module.exports = { refreshMenuData, buildMenuNow };
+module.exports = { refreshMenuData, refreshMenuTabs, buildMenuNow };

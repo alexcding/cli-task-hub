@@ -25,5 +25,8 @@ function broadcast(payload) {
 }
 const publishSync = projectId => broadcast({ type: 'sync', projectId });
 const publishJiraSync = id => broadcast({ type: 'jira-sync', id });
+// The open-tab set changed (renderer PUT /api/tabs). Subscribers that mirror the tabs — the
+// renderer sidebar and the tray menu — re-read /api/tabs in response. No payload needed.
+const publishTabs = () => broadcast({ type: 'tabs' });
 
-module.exports = { register, broadcast, publishSync, publishJiraSync };
+module.exports = { register, broadcast, publishSync, publishJiraSync, publishTabs };

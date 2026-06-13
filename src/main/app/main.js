@@ -33,7 +33,7 @@ const terminals = require('../ipc/terminals');
 const system = require('../ipc/system');
 const win = require('../windows/window');
 const { trayIcon, trayPressedIcon } = require('../native/icons');
-const { refreshMenuData, buildMenuNow } = require('../tray/menu');
+const { refreshMenuData, refreshMenuTabs, buildMenuNow } = require('../tray/menu');
 const { setupAutoUpdates } = require('../updater/updater');
 const { BASE_URL } = require('./const');
 
@@ -45,6 +45,16 @@ let tray = null;
 async function refreshMenu() {
   if (!tray) return;
   await refreshMenuData(tray, refreshMenu);
+  tray.setContextMenu(buildMenuNow());
+}
+
+// Tabs-only re-arm for when the tray is about to open (window blur — focus moving to the menu
+// bar). The open-tab list is all that needs to be current at that moment; the PR snapshot,
+// review notifications, and icon color ride the 60s full refresh. Reuses the cached PR data and
+// fetches only the saved tabs, so opening the tray is cheap.
+async function refreshMenuTabsOnly() {
+  if (!tray) return;
+  await refreshMenuTabs();
   tray.setContextMenu(buildMenuNow());
 }
 
@@ -89,8 +99,7 @@ app.whenReady().then(async () => {
   win.registerSession();    // session permission handlers (local-fonts, webview framing)
   terminals.registerIpc();  // PTY create/write/resize/kill/list/attach
   system.register();        // window/native IPC: theme, close, avatar, usage, folder, sound
-  win.setOnBlur(refreshMenu); // refresh the menu's PR list as focus moves to the menu bar
-  ipcMain.on(CH.TRAY_REFRESH, () => refreshMenu()); // renderer asks for an immediate rebuild (e.g. usage-agent switch)
+  ipcMain.on(CH.TRAY_REFRESH, () => refreshMenu()); // renderer asks for a full rebuild (e.g. the usage-agent switch needs the usage image re-rendered)
   // PTYs outlive the window so running work survives a reopen — but a bare prompt has
   // nothing to preserve, so reap those on window close (same policy as closing a tab).
   win.setOnClosed(() => terminals.killEmpty());
@@ -136,7 +145,19 @@ app.whenReady().then(async () => {
     tray.setContextMenu(buildMenuNow());
   });
 
-  // Refresh menu every 60 seconds
+  // Reactive updates: subscribe to the server's event stream (the main-process mirror of the
+  // renderer's EventSource) and re-arm the menu on change — a 'tabs' event re-reads the open-tab
+  // list (cheap, tabs-only), a PR/Jira 'sync' triggers a full rebuild. Debounce the full path:
+  // one poll cycle emits a sync event per project, so coalesce the burst into a single rebuild.
+  let _streamFullTimer = null;
+  const scheduleFullRefresh = () => { clearTimeout(_streamFullTimer); _streamFullTimer = setTimeout(refreshMenu, 400); };
+  supervisor.subscribeStream((evt) => {
+    if (evt?.type === 'tabs') refreshMenuTabsOnly();
+    else if (evt?.type === 'sync' || evt?.type === 'jira-sync') scheduleFullRefresh();
+  });
+
+  // Backstop refresh every 60s: covers a silently-stalled stream and keeps the usage readout
+  // current even when no sync events are flowing (e.g. no repos configured).
   setInterval(refreshMenu, 60_000);
 
   setupAutoUpdates();
