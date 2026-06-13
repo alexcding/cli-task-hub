@@ -93,6 +93,8 @@ Express API + SSE
 dashboard + tray + terminals
 ```
 
+![TaskHub overview](docs/images/taskhub-overview.png)
+
 The poller owns normal CLI reads and writes lean snapshots. API endpoints serve
 those snapshots instantly, and stale reads trigger background refreshes. Open
 pages update through Server-Sent Events.
