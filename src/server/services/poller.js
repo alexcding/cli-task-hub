@@ -99,9 +99,27 @@ function handleMerge(repo, pr) {
   if (project) applyMergeAutomation(project, pr);
 }
 
+// Coalesce concurrent syncs of the SAME project: a stale dashboard read fires a
+// fire-and-forget syncProject per stale project, which can race the interval poll()
+// (or rapid reloads / multiple tabs) and otherwise spawn duplicate identical `gh pr
+// list` processes for one repo. Return the in-flight promise instead, so each repo
+// has at most one sync running at a time. (Different projects still run concurrently.)
+const _inFlight = new Map(); // project.id -> Promise
+function syncProject(project) {
+  const existing = _inFlight.get(project.id);
+  if (existing) { github._ghMetrics.coalesced++; return existing; }
+  github._ghMetrics.inflight++;
+  const p = syncProjectImpl(project).finally(() => {
+    _inFlight.delete(project.id);
+    github._ghMetrics.inflight--;
+  });
+  _inFlight.set(project.id, p);
+  return p;
+}
+
 // Sync ONE project: a single `gh` call serves both the UI snapshot (open PRs)
 // and merge detection (newly-merged PRs). This is the only place we hit `gh`.
-async function syncProject(project) {
+async function syncProjectImpl(project) {
   if (!project.repo) {
     db.setSnapshot(project.id, { prs: [], lastSynced: now(), error: null });
     if (onSync) onSync(project.id);
