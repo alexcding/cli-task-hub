@@ -8,12 +8,16 @@
 //
 //   • Release (TASKHUB_RELEASE=1) — real Developer ID signing + notarization +
 //     hardened runtime, the combination macOS requires for silent auto-update.
-//     Driven by `npm run release`. Needs these env vars:
-//        APPLE_TEAM_ID                  10-char Apple Developer Team ID
-//        APPLE_ID                       Apple ID email (for notarytool)
-//        APPLE_APP_SPECIFIC_PASSWORD    app-specific password for that Apple ID
+//     Driven by `npm run release`. Notarization uses an App Store Connect API
+//     key, supplied entirely via env so nothing secret lives in this repo:
+//        APPLE_API_KEY        path to the AuthKey_XXXXXX.p8 (kept on the runner)
+//        APPLE_API_KEY_ID     the key ID
+//        APPLE_API_ISSUER     the issuer UUID
 //     plus a "Developer ID Application" cert in the login keychain (or CSC_LINK
 //     / CSC_KEY_PASSWORD pointing at a .p12).
+//
+//     Falls back to the Apple-ID method (APPLE_TEAM_ID + APPLE_ID +
+//     APPLE_APP_SPECIFIC_PASSWORD) when no API key is present.
 //
 // Squirrel.Mac auto-update requires BOTH dmg and zip targets; latest-mac.yml
 // (the update manifest) is generated from the zip and uploaded by --publish.
@@ -31,6 +35,10 @@ module.exports = {
     provider: 'github',
     owner: 'alexcding',
     repo: 'cli-task-hub',
+    // Publish immediately (not as a draft) so electron-updater clients pick it
+    // up — a draft release is invisible to the auto-updater. The release branch
+    // is the gate; landing on it ships to users.
+    releaseType: 'release',
   },
   files: [
     'src/**',
@@ -58,7 +66,12 @@ module.exports = {
           gatekeeperAssess: false,
           entitlements: 'build/entitlements.mac.plist',
           entitlementsInherit: 'build/entitlements.mac.plist',
-          notarize: { teamId: process.env.APPLE_TEAM_ID },
+          // App Store Connect API key (env-driven) when available; else the
+          // legacy Apple-ID method. Both read their secrets from the env — see
+          // the header comment.
+          notarize: process.env.APPLE_API_KEY_ID
+            ? true
+            : { teamId: process.env.APPLE_TEAM_ID },
         }
       : {
           // Local build: ad-hoc signed by scripts/afterPack.js (identity: null
