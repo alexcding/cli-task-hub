@@ -42,6 +42,7 @@ function register(app) {
       config: db.getConfig(),
       projects: db.getProjects(),
       counts: { projects: db.getProjects().length, links: db.getLinks().length, events: db.getEvents(1000).length },
+      ghStats: github.ghStats(), // gh CLI latency + coalescing metrics (see repositories/github.js)
       snapshots: Object.fromEntries(Object.entries(snaps).map(([id, s]) =>
         [id, { open: s.prs?.length || 0, lastSynced: s.lastSynced, error: s.error || null }])),
       jiraSnapshots: Object.fromEntries(Object.entries(jsnaps).map(([id, s]) =>

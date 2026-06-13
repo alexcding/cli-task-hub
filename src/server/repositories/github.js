@@ -12,12 +12,27 @@ const PR_FIELDS_CI = `${PR_FIELDS},statusCheckRollup`;
 
 const MAX_BUFFER = 10 * 1024 * 1024;
 
+// Lightweight gh-latency metrics — answers "is gh where the time goes?" without a
+// profiler. Surfaced in the Settings DB inspector (/api/db → ghStats). The CLI spawn
+// dominates request/sync latency, so timing here (not per-route) is the honest signal.
+const _gh = { calls: 0, errors: 0, totalMs: 0, maxMs: 0, slowest: null, inflight: 0, coalesced: 0 };
+function ghStats() {
+  return { ...(({ slowest, ...rest }) => rest)(_gh), slowest: _gh.slowest,
+           avgMs: _gh.calls ? Math.round(_gh.totalMs / _gh.calls) : 0 };
+}
+
 async function gh(args) {
+  const startedAt = Date.now();
   try {
     const { stdout } = await execFileAsync('gh', args, { maxBuffer: MAX_BUFFER });
     return stdout.trim();
   } catch (err) {
+    _gh.errors++;
     throw new Error((err.stderr || err.message || 'gh failed').toString().trim());
+  } finally {
+    const ms = Date.now() - startedAt;
+    _gh.calls++; _gh.totalMs += ms;
+    if (ms > _gh.maxMs) { _gh.maxMs = ms; _gh.slowest = args.join(' ').slice(0, 80); }
   }
 }
 
@@ -570,4 +585,6 @@ async function getPRs(repo, state = 'open', limit = 30, { ci = false, fresh = fa
   return value;
 }
 
-module.exports = { gh, getPRs, getCurrentUser, getUserName, reviewRequestedAt, categoryOf, awaitingReview, extractJiraKeys, parseRepo, gitRemoteRepo, worktreeForBranch, worktreeForJiraKey, createWorktree, removeWorktree, gitDiff, gitCommit, gitPush, gitDiscard, gitLog, gitShow, gitBranches, gitDefaultBranch, commitAvatars, listWorktrees, summarizeCI };
+// _gh is exported (not just ghStats) so the poller can bump `inflight`/`coalesced`
+// from its sync-dedup layer — keeping all gh-pressure metrics in one object.
+module.exports = { gh, ghStats, _ghMetrics: _gh, getPRs, getCurrentUser, getUserName, reviewRequestedAt, categoryOf, awaitingReview, extractJiraKeys, parseRepo, gitRemoteRepo, worktreeForBranch, worktreeForJiraKey, createWorktree, removeWorktree, gitDiff, gitCommit, gitPush, gitDiscard, gitLog, gitShow, gitBranches, gitDefaultBranch, commitAvatars, listWorktrees, summarizeCI };
