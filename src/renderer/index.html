@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TaskHub</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="icon" type="image/png" sizes="64x64" href="/favicon.png">
+  <link rel="apple-touch-icon" href="/favicon.png">
+  <!-- Resolve the theme before first paint (from localStorage, mirrored from the config
+       store) so the UI never flashes light before the app script runs. 'auto' follows the OS. -->
+  <script>
+    try {
+      var t = localStorage.getItem('taskhub.theme') || 'auto';
+      var dark = t === 'dark' || (t !== 'light' && window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches);
+      document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+      // macOS native chrome (inset traffic lights / unified toolbar + drag regions). Set
+      // before first paint so the toolbar layout doesn't shift. Browser/non-mac use is plain.
+      if (window.taskhub && window.taskhub.platform === 'darwin') document.documentElement.classList.add('native-mac');
+    } catch (e) {}
+  </script>
+  <link rel="stylesheet" href="/css/tokens.css">
+  <link rel="stylesheet" href="/css/layout.css">
+  <link rel="stylesheet" href="/css/viewer.css">
+  <link rel="stylesheet" href="/css/components.css">
+  <link rel="stylesheet" href="/css/pages.css">
+</head>
+<body>
+<div class="layout">
+
+  <!-- Sidebar -->
+  <aside>
+    <div class="sidebar-logo">
+      <div class="logo-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6.5,12.5 10.6,16.6 17.8,8.2"/></svg></div>
+      <span class="logo-text">TaskHub</span>
+      <button class="nav-add logo-add" title="New project" onclick="openNewProjectModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg></button>
+    </div>
+    <nav>
+      <div class="nav-label">Overview</div>
+      <button class="nav-btn active" data-page="dashboard" onclick="showPage('dashboard')"><span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></span> Dashboard</button>
+      <button class="nav-btn" data-page="mytickets" onclick="showPage('mytickets')"><span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.6 13.4 13.4 20.6a1.9 1.9 0 0 1-2.7 0l-7.3-7.3a2 2 0 0 1-.6-1.4V4.8A1.8 1.8 0 0 1 4.6 3h7.1a2 2 0 0 1 1.4.6l7.5 7.5a1.9 1.9 0 0 1 0 2.3z"/><circle cx="7.7" cy="7.7" r="1.3" fill="currentColor" stroke="none"/></svg></span> JIRA Tickets</button>
+      <button class="nav-btn" data-page="activity" onclick="showPage('activity')"><span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 8L9 4l-3 8H2"/></svg></span> Activity</button>
+
+      <div class="nav-label" style="margin-top:4px">Projects</div>
+      <div id="project-nav"></div>
+
+      <!-- Open links (sidebar mode): grouped GitHub / Jira tabs render here -->
+      <div id="opentabs-nav"></div>
+    </nav>
+    <div class="sidebar-footer">
+      <button class="nav-btn" data-page="settings" onclick="showPage('settings')"><span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span> Settings</button>
+    </div>
+    <div class="sidebar-resizer" id="sidebar-resizer" title="Drag to resize"></div>
+  </aside>
+
+  <!-- Work area: main + viewer are flex siblings; the viewer replaces main when a tab is open -->
+  <div class="workarea" id="workarea">
+  <!-- Main -->
+  <main>
+    <div class="topbar">
+      <span class="topbar-title" id="page-title">Dashboard</span>
+      <div id="topbar-actions"></div>
+    </div>
+    <div class="content">
+
+      <!-- DASHBOARD -->
+      <div id="page-dashboard" class="page active">
+        <div id="stats"></div>
+        <div id="dashboard-groups">
+          <div class="loading-row"><div class="spinner"></div> Loading…</div>
+        </div>
+      </div>
+
+      <!-- MY TICKETS -->
+      <div id="page-mytickets" class="page">
+        <div class="section-header">
+          <span class="section-title">Assigned to me</span>
+          <button class="btn btn-secondary btn-sm" onclick="loadMyTickets()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v5h-5"/></svg> Refresh</button>
+        </div>
+        <div id="mytickets-filter" class="ticket-filter"></div>
+        <div class="card">
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Key</th><th>Summary</th><th>Status</th><th>Type</th><th>Priority</th></tr></thead>
+              <tbody id="mytickets-body">
+                <tr><td colspan="5"><div class="loading-row"><div class="spinner"></div> Loading…</div></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- PROJECT PAGE (dynamic) -->
+      <div id="page-project" class="page">
+        <div id="project-page-content"></div>
+      </div>
+
+      <!-- ACTIVITY (timeline of PR / Jira / system events) -->
+      <div id="page-activity" class="page">
+        <div style="max-width:860px">
+          <div class="log-toolbar">
+            <div id="log-cats" class="seg-tabs"></div>
+            <label class="log-errors"><input type="checkbox" id="log-errors-only" onchange="loadLogs()"> Errors only</label>
+            <button class="btn btn-secondary btn-sm" onclick="clearLogs()">Clear</button>
+          </div>
+          <div id="events-list"></div>
+        </div>
+      </div>
+
+      <!-- SETTINGS -->
+      <div id="page-settings" class="page">
+        <div style="max-width:760px">
+
+          <div class="seg-tabs" role="tablist">
+            <button class="seg-tab active" onclick="switchSettingsTab('appearance',this)">Appearance</button>
+            <button class="seg-tab" onclick="switchSettingsTab('polling',this)">Polling</button>
+            <button class="seg-tab" onclick="switchSettingsTab('jira',this)">Jira</button>
+            <button class="seg-tab" onclick="switchSettingsTab('system',this)">System</button>
+          </div>
+
+          <div class="tab-panel active" id="settings-tab-appearance">
+          <div class="card">
+            <div class="card-pad theme-row">
+              <div>
+                <div class="theme-row-title">Theme</div>
+                <div class="theme-row-sub">Use light, dark, or match your system</div>
+              </div>
+              <div class="theme-toggle" id="theme-toggle" role="group" aria-label="Theme">
+                <button class="theme-opt" data-theme-opt="light" aria-label="Light theme" onclick="setAppTheme('light')">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+                  Light
+                </button>
+                <button class="theme-opt" data-theme-opt="dark" aria-label="Dark theme" onclick="setAppTheme('dark')">
+                  <svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+                  Dark
+                </button>
+                <button class="theme-opt" data-theme-opt="auto" aria-label="Match system theme" onclick="setAppTheme('auto')">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+                  System
+                </button>
+              </div>
+            </div>
+            <!-- Code fonts, one row per pane, each with a live preview. Saved on change
+                 (no Save button, like the theme); ⌘+ / ⌘− / ⌘0 adjust whichever pane
+                 is in view (diff font from a plain page, so the preview reacts). -->
+            <div class="card-pad theme-row" style="border-top:1px solid var(--border)">
+              <div>
+                <div class="theme-row-title">Terminal font</div>
+                <div class="theme-row-sub">⌘+ / ⌘− resize the pane in view, ⌘0 resets</div>
+              </div>
+              <div class="font-controls">
+                <select id="term-font-family" onchange="setFontFamily('term', this.value)" aria-label="Terminal font family">
+                  <option value="">SF Mono (default)</option>
+                  <option value="Menlo">Menlo</option>
+                  <option value="Monaco">Monaco</option>
+                  <option value="JetBrains Mono">JetBrains Mono</option>
+                  <option value="Fira Code">Fira Code</option>
+                  <option value="Source Code Pro">Source Code Pro</option>
+                  <option value="Courier New">Courier New</option>
+                </select>
+                <div class="font-size-ctl" role="group" aria-label="Terminal font size">
+                  <button onclick="bumpFontSize('term', -1)" title="Smaller (⌘−)" aria-label="Smaller">−</button>
+                  <span class="fs-val" id="term-font-size-val">13 px</span>
+                  <button onclick="bumpFontSize('term', 1)" title="Bigger (⌘+)" aria-label="Bigger">+</button>
+                </div>
+              </div>
+            </div>
+            <div class="card-pad font-preview font-preview-term">$ npm test
+✓ 26 tests passed <span class="fp-add">(834ms)</span></div>
+            <div class="card-pad theme-row" style="border-top:1px solid var(--border)">
+              <div>
+                <div class="theme-row-title">Diff font</div>
+                <div class="theme-row-sub">The Changes pane (git diff)</div>
+              </div>
+              <div class="font-controls">
+                <select id="diff-font-family" onchange="setFontFamily('diff', this.value)" aria-label="Diff font family">
+                  <option value="">SF Mono (default)</option>
+                  <option value="Menlo">Menlo</option>
+                  <option value="Monaco">Monaco</option>
+                  <option value="JetBrains Mono">JetBrains Mono</option>
+                  <option value="Fira Code">Fira Code</option>
+                  <option value="Source Code Pro">Source Code Pro</option>
+                  <option value="Courier New">Courier New</option>
+                </select>
+                <div class="font-size-ctl" role="group" aria-label="Diff font size">
+                  <button onclick="bumpFontSize('diff', -1)" title="Smaller (⌘−)" aria-label="Smaller">−</button>
+                  <span class="fs-val" id="diff-font-size-val">12 px</span>
+                  <button onclick="bumpFontSize('diff', 1)" title="Bigger (⌘+)" aria-label="Bigger">+</button>
+                </div>
+              </div>
+            </div>
+            <div class="card-pad font-preview font-preview-diff">$ git diff --stat
+<span class="fp-del">- const size = settings.fontSize ?? 12;</span>
+<span class="fp-add">+ const { family, size } = state.fonts.diff;</span></div>
+            <div class="card-pad theme-row" style="border-top:1px solid var(--border)">
+              <div>
+                <div class="theme-row-title">Review sound</div>
+                <div class="theme-row-sub">Plays when a PR newly needs your review</div>
+              </div>
+              <div class="font-controls">
+                <select id="review-sound" onchange="setReviewSound(this.value)" aria-label="Review notification sound">
+                  <option value="system">macOS default (Glass)</option>
+                </select>
+                <button class="btn btn-secondary btn-sm" onclick="previewReviewSound()" title="Preview" aria-label="Preview sound">
+                  <svg viewBox="0 0 24 24" fill="currentColor" stroke="none" width="13" height="13"><path d="M8 5v14l11-7z"/></svg>
+                </button>
+              </div>
+            </div>
+          </div>
+          </div><!-- /appearance -->
+
+          <div class="tab-panel" id="settings-tab-polling">
+          <div class="card">
+            <div class="card-header"><h3>Polling</h3></div>
+            <div class="card-pad">
+              <p style="font-size:13px;color:var(--text-2);margin:0 0 14px">TaskHub has no live connection to GitHub or Jira, so it checks on a timer instead. These are two independent fetch loops — GitHub PRs change far more often than Jira tickets, and each CLI hits a different rate-limited API — so they have their own intervals.</p>
+              <div class="form-group">
+                <label class="form-label">GitHub Poll Interval (seconds)</label>
+                <input type="number" id="poll-interval" placeholder="60" min="15">
+                <p class="form-hint">How often <code class="code-chip">gh</code> re-checks each project for PR/CI changes, new review requests, and merges. The GitHub API is rate-limited (5,000 requests/hour for an authenticated user), so polling too often across many projects can exhaust your quota. Lower = fresher data but more API calls. Minimum 15s.</p>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Jira Poll Interval (seconds)</label>
+                <input type="number" id="jira-poll-interval" placeholder="120" min="30">
+                <p class="form-hint">How often <code class="code-chip">acli</code> re-runs your Jira queries. Tickets move slower than PRs, so this defaults higher. Minimum 30s.</p>
+              </div>
+              <button class="btn btn-primary" onclick="saveConfig()">Save</button>
+            </div>
+          </div>
+          </div><!-- /polling -->
+
+          <div class="tab-panel" id="settings-tab-jira">
+          <div class="card">
+            <div class="card-header"><h3>JIRA Tickets</h3></div>
+            <div class="card-pad">
+              <div class="form-group">
+                <label class="form-label">Jira site URL</label>
+                <input type="text" id="jira-base-url" placeholder="auto-detected from acli">
+                <p class="form-hint">Used for ticket links. Leave blank to auto-detect from <code class="code-chip">acli jira auth</code>.</p>
+              </div>
+              <div class="form-group">
+                <label class="form-label">“Assigned to me” JQL</label>
+                <input type="text" id="my-jql" placeholder="assignee = currentUser() AND statusCategory != Done ORDER BY updated DESC">
+                <p class="form-hint"><code class="code-chip">currentUser()</code> resolves from your <code class="code-chip">acli jira auth</code> login — no username or token needed.</p>
+              </div>
+              <div class="form-group">
+                <label class="form-label">“Current Sprint” JQL (dashboard)</label>
+                <input type="text" id="sprint-jql" placeholder="assignee = currentUser() AND sprint is not EMPTY AND statusCategory != Done ORDER BY updated DESC">
+                <p class="form-hint"><code class="code-chip">sprint is not EMPTY</code> matches tickets in any sprint (more reliable than <code class="code-chip">openSprints()</code>, which can miss boards). Empty for Kanban projects with no sprint field.</p>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Result Limit</label>
+                <input type="number" id="jira-limit" placeholder="100" min="1">
+              </div>
+              <button class="btn btn-primary" onclick="saveConfig()">Save</button>
+            </div>
+          </div>
+          </div><!-- /jira -->
+
+          <div class="tab-panel" id="settings-tab-system">
+          <div style="display:flex;flex-direction:column;gap:16px">
+
+          <!-- Resource usage: total RAM + CPU across every TaskHub process, with a
+               per-component breakdown. Filled live by settings.js via window.taskhub.getUsage()
+               (main-process getAppMetrics); hidden outside the Electron app, where it's unavailable. -->
+          <div class="card" id="usage-card" hidden>
+            <div class="card-header"><h3>Resource usage</h3></div>
+            <div class="card-pad">
+              <p style="font-size:13px;color:var(--text-2);margin:0 0 14px">Total RAM and CPU across every TaskHub process — the app windows, embedded GitHub/Jira views, the background server, and your terminals. Updates live.</p>
+              <div id="usage-readout"></div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <h3>Database</h3>
+              <button class="btn btn-secondary btn-sm" onclick="loadSettings()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v5h-5"/></svg> Refresh</button>
+            </div>
+            <div class="card-pad">
+              <div id="db-inspector"></div>
+            </div>
+          </div>
+          </div><!-- /system flex -->
+          </div><!-- /system -->
+
+        </div>
+      </div>
+
+    </div>
+  </main>
+
+  <!-- Embedded viewer: shows the active left-nav tab's page in an Electron webview -->
+  <div id="split" class="split" hidden>
+    <div class="split-bar">
+      <!-- Webview segment (over the PR pane in split mode) -->
+      <div class="bar-seg bar-wv">
+        <button class="split-btn" id="split-back" title="Back (⌘[)" onclick="splitBack()">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+        </button>
+        <button class="split-btn" title="Home (default page)" onclick="splitHome()">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9.5 12 3l9 6.5"/><path d="M5 9v11h14V9"/><path d="M9.5 20v-6h5v6"/></svg>
+        </button>
+        <!-- Plain page title — no link, so the toolbar band stays draggable. -->
+        <span class="split-title" id="split-title"></span>
+        <!-- Local folder for this tab (project workspace, or its git worktree). Click to
+             reveal in Finder; filled by updateFolderChip in viewer.js. -->
+        <button class="folder-chip" id="split-folder" hidden onclick="openTabFolder()" oncontextmenu="return folderMenu(event)"></button>
+        <!-- Plain repo + known PR branch → create a worktree for it. viewer.js fills the
+             worktree glyph, sets the branch, and toggles visibility. -->
+        <button class="split-btn folder-add" id="split-folder-add" hidden onclick="createTabWorktree()"></button>
+      </div>
+      <!-- Terminal segment (over the terminal pane in split mode, or full-width when a terminal is the sole view).
+           The view switch flips the pane between the paired terminal and a read-only
+           `git diff` of the same worktree (split-mode tabs only — hidden in solo terminal view). -->
+      <div class="bar-seg bar-term">
+        <div class="seg-tabs pane-switch">
+          <button class="seg-tab on" id="pane-view-term" title="Terminal (⇧⌘D)" onclick="setPaneView('term')">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 7l4 5-4 5"/><path d="M12 17h7"/></svg><span class="pv-label">Terminal</span>
+          </button>
+          <button class="seg-tab" id="pane-view-diff" title="Changes — git diff (⇧⌘D)" onclick="setPaneView('diff')">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4.5v6"/><path d="M9 7.5h6"/><path d="M9 16.5h6"/></svg><span class="pv-label">Changes</span>
+          </button>
+        </div>
+        <span class="split-title" id="term-title"></span>
+        <button class="split-btn" id="term-clear" title="Clear terminal (⌘K)" onclick="clearVisibleTerm()">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19.5 4.5l-7.3 7.3"/><path d="M12.2 11.8c-3.2-.8-6 .6-7.4 3.6L3 19.5l4.6-.9c3.3-.6 5-2.7 4.6-6.8z"/><path d="M7.5 14.5l2 2"/></svg>
+        </button>
+        <button class="split-btn" id="commit-btn" title="Commit changes" onclick="toggleCommitPop()">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.5"/><path d="M2.5 12h6"/><path d="M15.5 12h6"/></svg><span class="cb-label">Commit</span>
+        </button>
+      </div>
+      <!-- Right-panel toggle (terminal/changes pane) lives outside both segments so it
+           stays pinned to the far right of the toolbar — its position doesn't shift
+           when the split opens. -->
+      <button class="split-btn" id="split-toggle-term" title="Show/hide the right panel (⌘J)" onclick="togglePrSplit()">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="4.5" width="19" height="15" rx="2.5"/><path d="M14.5 4.5v15"/></svg>
+      </button>
+    </div>
+    <div class="split-body" id="split-body">
+      <div class="split-loading" id="split-loading" hidden><div class="spinner"></div> Loading…</div>
+      <!-- Diff pane: shares the terminal's slot in the split; diff.js renders into it. -->
+      <div class="diff-pane" id="diff-pane" style="display:none"></div>
+      <!-- Discard confirmation: an overlay scoped to the diff pane's region (not a
+           window-blocking native confirm). diff.js fills + toggles it. -->
+      <div class="diff-confirm" id="diff-confirm" hidden></div>
+    </div>
+    <!-- Divider is a child of .split (not .split-body) so it spans the FULL height — through
+         the toolbar to the very top — matching the sidebar resizer, instead of stopping at
+         the toolbar's bottom edge. -->
+    <div id="pr-divider" title="Drag to resize"></div>
+    <!-- Commit popover (commit.js renders into it), anchored under the toolbar's Commit button. -->
+    <div id="commit-pop" class="commit-pop" hidden></div>
+  </div>
+  </div><!-- /workarea -->
+</div>
+
+<!-- New / Edit Project Modal -->
+<div id="modal" class="modal-backdrop" style="display:none" onclick="if(event.target===this)closeModal()">
+  <div class="modal">
+    <h2 id="modal-title">New Project</h2>
+    <input type="hidden" id="modal-project-id">
+    <div class="form-group">
+      <label class="form-label">Project Name</label>
+      <input type="text" id="modal-name" placeholder="e.g. Record iOS">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Color</label>
+      <div class="color-options" id="color-options"></div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Local Git Repo</label>
+      <div style="display:flex;gap:8px">
+        <input type="text" id="modal-workspace" placeholder="/path/to/local/checkout" style="flex:1">
+        <button type="button" class="btn btn-secondary btn-sm" onclick="chooseModalWorkspace()">Choose…</button>
+      </div>
+      <input type="hidden" id="modal-repo">
+      <p id="modal-repo-hint" class="form-hint"></p>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Jira Project Key</label>
+      <input type="text" id="modal-jira-key" placeholder="e.g. RECORD" style="text-transform:uppercase">
+      <p class="form-hint">Scopes the <strong>JIRA Tickets</strong> feed: tickets are filtered to the projects you've added here.</p>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Jira JQL</label>
+      <input type="text" id="modal-jql" placeholder='project = "REC" ORDER BY updated DESC'>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-danger" id="modal-delete" style="display:none;margin-right:auto" onclick="deleteProjectFromModal()">Delete</button>
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveProject()">Save</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script src="/vendor/sortable.min.js"></script>
+<script type="module" src="/app.js"></script>
+</body>
+</html>

@@ -3,16 +3,19 @@
   "productName": "TaskHub",
   "version": "1.0.0",
   "description": "Track Jira tickets and GitHub PRs from your Mac menu bar",
-  "main": "tray.js",
+  "main": "src/main/app/main.js",
   "author": "alexcding",
   "license": "ISC",
   "type": "commonjs",
+  "engines": {
+    "node": ">=22.12"
+  },
   "scripts": {
-    "start": "node server.js",
+    "start": "node src/server/app.js",
     "test": "node --test --test-force-exit 'test/**/*.test.js'",
     "dev": "./dev.sh",
     "dev:app": "./dev.sh --app",
-    "dev:server": "node --watch server.js",
+    "dev:server": "node --watch src/server/app.js",
     "dev:tray": "electron .",
     "build": "node scripts/build.js",
     "release": "node scripts/build.js --publish",

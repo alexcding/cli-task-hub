@@ -1,0 +1,208 @@
+/* Page-specific styles: Activity timeline, project tab bar + Git tab, webhooks,
+   and Settings (theme picker, code-font controls). */
+/* Activity page — day-grouped timeline. Each row: icon bubble, sentence with
+   links (PR / ticket), category badge, exact time on the right. */
+.act-day { font-size:12px;font-weight:700;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px;margin:20px 2px 8px; }
+.act-day:first-child { margin-top:4px; }
+.act-row { display:flex;align-items:flex-start;gap:12px;padding:11px 16px;border-bottom:1px solid var(--border); }
+.act-row:last-child { border-bottom:none; }
+.act-icon { width:28px;height:28px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;margin-top:1px; }
+.act-icon svg { width:15px;height:15px;display:block; }
+.act-body { flex:1;min-width:0;font-size:13.5px;line-height:1.45; }
+.act-detail { font-size:12.5px;color:var(--text-3);margin-top:1px;overflow-wrap:break-word; }
+.act-time { font-size:12px;color:var(--text-3);white-space:nowrap;flex-shrink:0;margin-top:4px;font-variant-numeric:tabular-nums; }
+.act-cat { font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;padding:1px 6px;border-radius:4px;background:var(--surface-hover);color:var(--text-3);margin-left:6px;vertical-align:1px; }
+
+/* Project settings card */
+.project-settings-card { background:var(--surface);border:1px solid var(--border);border-radius:var(--rl);margin-bottom:12px; }
+.project-settings-header { padding:14px 16px;display:flex;align-items:center;gap:10px;cursor:pointer;user-select:none; }
+.project-settings-header:hover { background:var(--surface-hover);border-radius:var(--rl); }
+.project-color-swatch { width:12px;height:12px;border-radius:50%;flex-shrink:0; }
+.project-settings-name { font-size:14px;font-weight:600;flex:1; }
+
+/* Empty */
+.empty { text-align:center;padding:40px 24px;color:var(--text-3); }
+.empty-icon { margin-bottom:10px;display:flex;justify-content:center; }
+.empty-icon svg { width:30px;height:30px;display:block;opacity:.7; }
+
+/* Loading */
+.spinner { width:15px;height:15px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .7s linear infinite;display:inline-block; }
+@keyframes spin { to { transform:rotate(360deg); } }
+.loading-row { display:flex;align-items:center;gap:8px;color:var(--text-3);padding:24px;font-size:13px; }
+
+/* Modal */
+.modal-backdrop { position:fixed;inset:0;background:rgb(0 0 0/.4);z-index:50;display:flex;align-items:center;justify-content:center;padding:16px; }
+.modal { background:var(--surface);border-radius:var(--rl);box-shadow:0 20px 60px rgb(0 0 0/.2);width:100%;max-width:440px;padding:24px;max-height:calc(100vh - 32px);overflow-y:auto; }
+.modal h2 { font-size:16px;font-weight:600;margin-bottom:16px; }
+.modal-actions { display:flex;justify-content:flex-end;gap:8px;margin-top:20px; }
+
+/* Color picker row */
+.color-options { display:flex;gap:6px;flex-wrap:wrap; }
+.color-opt { width:24px;height:24px;border-radius:50%;cursor:pointer;border:2px solid transparent;transition:transform .1s; }
+.color-opt:hover { transform:scale(1.15); }
+.color-opt.selected { border-color:var(--text);box-shadow:0 0 0 2px var(--surface),0 0 0 4px var(--text); }
+
+/* Toast */
+#toast { position:fixed;bottom:20px;right:20px;z-index:200;background:var(--text);color:var(--bg);font-size:13px;font-weight:500;padding:10px 16px;border-radius:var(--r);box-shadow:var(--shadow-md);opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;transform:translateY(6px); }
+#toast.show { opacity:1;transform:translateY(0); }
+#toast.error { background:var(--danger);color:#fff; }
+
+/* Inline form */
+.inline-form { display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end; }
+.inline-form .form-group { margin:0; }
+
+/* fw status */
+
+/* Tabs */
+.tabs { display:flex; gap:0; border-bottom:1px solid var(--border); margin-bottom:20px; }
+.tab-btn { background:none; border:none; border-bottom:2px solid transparent; padding:10px 16px; font-size:13.5px; font-weight:500; color:var(--text-3); cursor:pointer; margin-bottom:-1px; transition:color .12s,border-color .12s; }
+.tab-btn:hover { color:var(--text); }
+.tab-btn.active { color:var(--accent); border-bottom-color:var(--accent); }
+.tab-panel { display:none; }
+/* Project tab bar: the segmented tab widget on the left, the active tab's controls
+   on the right (PR state dropdown / Jira ticket filters + Refresh). */
+.proj-tabbar { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:20px; }
+.proj-tab-controls { display:flex; align-items:center; gap:8px; }
+.proj-tab-controls .tab-controls { display:flex; gap:8px; align-items:center; flex-wrap:nowrap; }
+#page-settings .seg-tabs { margin-bottom:20px; }   /* tabs sit above the active panel */
+
+/* Webhooks tab (project page): a width-capped column of grouped cards + a trailing
+   Save row, mirroring the Settings panels so forms don't stretch full-width. */
+.webhooks-form { max-width:680px; display:flex; flex-direction:column; gap:16px; }
+.webhooks-actions { display:flex; justify-content:flex-end; }
+.card-intro { font-size:13px; color:var(--text-2); margin:0 0 16px; line-height:1.5; }
+.form-hint { font-size:12px; color:var(--text-3); margin-top:6px; line-height:1.5; }
+.code-chip { background:var(--surface-hover); padding:1px 4px; border-radius:3px; font-size:12px; }
+/* A boolean setting as a tappable row: checkbox + stacked title/subtitle. */
+.switch-row { display:flex; align-items:flex-start; gap:10px; cursor:pointer; }
+.switch-row input { width:auto; margin:2px 0 0; flex-shrink:0; }
+.switch-row-text { display:flex; flex-direction:column; gap:2px; }
+.switch-row-title { font-size:13px; font-weight:500; color:var(--text); }
+.switch-row-sub { font-size:12px; color:var(--text-3); }
+
+.log-toolbar { display:flex; align-items:center; gap:12px; margin-bottom:12px; flex-wrap:wrap; }
+.log-errors { display:flex; align-items:center; gap:5px; margin-left:auto; font-size:12px; color:var(--text-2); cursor:pointer; }
+.log-errors input { width:auto; margin:0; }
+.tab-panel.active { display:block; }
+
+/* Project detail: the tab shell. The Git tab (.gt-layout) is the full git surface. */
+.proj-main { min-width:0; }
+.pg-refresh { background:none; border:none; color:var(--text-3); cursor:pointer; padding:4px; border-radius:5px; display:inline-flex; margin-left:auto; }
+.pg-refresh:hover { background:var(--surface-hover); color:var(--text); }
+.pg-refresh svg { width:15px; height:15px; }
+.pg-empty { padding:24px 16px; text-align:center; color:var(--text-3); font-size:13px; }
+/* Fit diff2html into the Git tab's commit detail: app text color, smaller monospace, no chrome. */
+.gt-layout .d2h-wrapper { color:var(--text); font-family:var(--diff-font,ui-monospace,SFMono-Regular,monospace); font-size:12px; }
+.gt-layout .d2h-file-header { padding:6px 10px; }
+.gt-layout .d2h-file-name { color:var(--text); font-size:12px; }
+/* The app's global `td` rule above (padding:11px 16px; border-bottom; font-size:13.5px) bleeds
+   into diff2html's <td> cells — inflating every row to ~43px and squeezing the line-number
+   column so its old/new numbers wrap and stack. Reset the diff table to diff2html's own sizing. */
+.gt-layout .d2h-diff-table td { padding:0; border-bottom:0; font-size:12px; vertical-align:top; }
+/* diff2html line numbers ship position:absolute with no relative ancestor; flow them so they
+   stay in the scroll, and drop the 8em side padding the absolute layout reserved for them. */
+.gt-layout .d2h-code-linenumber { position:static; }
+.gt-layout .d2h-code-line, .gt-layout .d2h-code-side-line { padding:0 0 0 .5em; width:auto; }
+.gt-layout .d2h-file-wrapper { border-left:0; border-right:0; border-top:0; border-radius:0; margin:0; }
+
+/* ── Commit list rows + branch graph (shared by the Git tab) ── */
+/* height is driven by --pg-row-h, set from ROW_H in git.js so the SVG row geometry and the
+   row box can't drift out of sync; 44px is the fallback if the var is ever absent. */
+.pg-crow { display:flex; align-items:stretch; height:var(--pg-row-h, 44px); cursor:pointer; border-bottom:1px solid color-mix(in srgb, var(--border) 55%, transparent); }
+.pg-crow:hover { background:var(--surface-hover); }
+/* Commit avatar (git-tab.js avatar()): an initials badge (colour hashed per author) with the
+   author's real GitHub avatar laid over it when known — if the image is absent/fails, the
+   initials show through. */
+.pg-av { position:relative; flex:none; align-self:center; width:20px; height:20px; margin:0 8px 0 2px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; font-size:9px; font-weight:700; color:#fff; letter-spacing:.3px; overflow:hidden; }
+.pg-av-img { position:absolute; inset:0; width:100%; height:100%; border-radius:50%; object-fit:cover; }
+.pg-graph { flex:none; display:block; overflow:visible; }
+.pg-crow-main { min-width:0; flex:1; display:flex; flex-direction:column; justify-content:center; padding:0 10px 0 4px; gap:1px; }
+.pg-crow-subj { font-size:12.5px; color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.pg-crow-meta { font-size:11px; color:var(--text-3); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.pg-sha { font-family:var(--diff-font,ui-monospace,SFMono-Regular,monospace); }
+/* Ref decorations (branch/tag/remote) as small inline chips before the subject. */
+.pg-ref { display:inline-block; font-size:10px; font-weight:600; line-height:1.4; padding:0 5px; margin-right:5px; border-radius:4px; vertical-align:1px; white-space:nowrap; }
+.pg-ref-head { background:var(--accent-bg); color:var(--accent); }
+.pg-ref-branch { background:color-mix(in srgb, var(--success) 16%, transparent); color:var(--success); }
+.pg-ref-remote { background:var(--surface-hover); color:var(--text-3); }
+.pg-ref-tag { background:color-mix(in srgb, #d29922 20%, transparent); color:#b07d18; }
+.pg-ref-head-detached { background:var(--surface-hover); color:var(--text-2); }
+
+/* ── Commit detail pane (shared by the Git tab) ── */
+.pg-back { display:inline-flex; align-items:center; gap:3px; background:none; border:none; color:var(--text-2); font:inherit; font-size:12px; font-weight:600; cursor:pointer; padding:3px 5px; border-radius:5px; }
+.pg-back:hover { background:var(--surface-hover); color:var(--text); }
+.pg-back svg { width:14px; height:14px; transform:rotate(90deg); }
+.pg-cd-subject { font-size:13.5px; font-weight:600; color:var(--text); padding:12px 12px 8px; line-height:1.35; }
+.pg-cd-fields { padding:0 12px 10px; display:flex; flex-direction:column; gap:3px; }
+.pg-cd-row { display:flex; gap:8px; font-size:12px; }
+.pg-cd-k { flex:none; width:62px; color:var(--text-3); }
+.pg-cd-v { min-width:0; color:var(--text-2); overflow:hidden; text-overflow:ellipsis; }
+.pg-cd-email { color:var(--text-3); }
+.pg-cd-date { color:var(--text-3); }
+.pg-parent { color:var(--accent); cursor:pointer; }
+.pg-parent:hover { text-decoration:underline; }
+.pg-cd-message { margin:0 12px 12px; padding:10px; background:var(--bg); border:1px solid var(--border); border-radius:6px; font-family:var(--diff-font,ui-monospace,SFMono-Regular,monospace); font-size:11.5px; color:var(--text-2); white-space:pre-wrap; word-break:break-word; }
+.pg-cd-diff { border-top:1px solid var(--border); }
+
+/* ── Full-width Git tab: branches/worktrees rail + graph/detail ── */
+.gt-layout { display:flex; height:calc(100vh - 150px); min-height:420px; border:1px solid var(--border); border-radius:10px; overflow:hidden; background:var(--surface);
+  /* same diff2html → token mapping as the side panel, so commit diffs match the theme */
+  --d2h-bg-color:var(--surface); --d2h-border-color:var(--border);
+  --d2h-file-header-bg-color:var(--surface-hover); --d2h-file-header-border-color:var(--border);
+  --d2h-line-border-color:var(--border); --d2h-dim-color:var(--text-3);
+  --d2h-ins-bg-color:var(--diff-add-bg); --d2h-ins-border-color:transparent;
+  --d2h-ins-highlight-bg-color:var(--diff-add-gut); --d2h-ins-label-color:var(--diff-add-fg);
+  --d2h-del-bg-color:var(--diff-del-bg); --d2h-del-border-color:transparent;
+  --d2h-del-highlight-bg-color:var(--diff-del-gut); --d2h-del-label-color:var(--diff-del-fg);
+  --d2h-info-bg-color:var(--surface); --d2h-info-border-color:var(--border);
+  --g0:#3b82f6; --g1:#10b981; --g2:#f59e0b; --g3:#a855f7; --g4:#ef4444; --g5:#14b8a6; --g6:#ec4899; --g7:#84cc16; }
+.gt-side { flex:none; width:260px; border-right:1px solid var(--border); overflow:auto; padding:6px; }
+.gt-main { flex:1; min-width:0; display:flex; flex-direction:column; overflow:hidden; }
+.gt-sec { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.5px; color:var(--text-3); padding:10px 8px 4px; display:flex; align-items:center; gap:6px; }
+.gt-count { font-size:10px; font-weight:600; color:var(--text-3); background:var(--surface-hover); border-radius:8px; padding:0 6px; }
+.gt-list { display:flex; flex-direction:column; gap:1px; }
+.gt-none { padding:2px 8px 6px; font-size:12px; color:var(--text-3); }
+.gt-row { display:flex; align-items:center; gap:6px; width:100%; background:none; border:none; font:inherit; text-align:left; cursor:pointer; padding:5px 7px; border-radius:6px; color:var(--text-2); }
+.gt-row:hover { background:var(--surface-hover); }
+.gt-row.viewing { background:var(--accent-bg); }
+.gt-row-ic { flex:none; width:15px; display:inline-flex; color:var(--text-3); }
+.gt-row-ic svg { width:14px; height:14px; }
+.gt-row.viewing .gt-row-ic { color:var(--accent); }
+.gt-row-name { flex:0 1 auto; min-width:0; font-size:12.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.gt-row-name.current { color:var(--text); font-weight:600; }
+.gt-wt-path { flex:1; min-width:0; text-align:right; font-size:10.5px; color:var(--text-3); font-family:var(--diff-font,ui-monospace,SFMono-Regular,monospace); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.gt-row-act { flex:none; font-size:10.5px; font-weight:600; color:var(--text-3); padding:1px 6px; border-radius:5px; opacity:0; }
+.gt-row:hover .gt-row-act { opacity:1; }
+.gt-row-rm:hover { background:var(--diff-del-bg); color:var(--diff-del-fg); }
+.gt-row-rm.armed { opacity:1; color:#fff; background:var(--diff-del-fg); }
+.gt-main-head { display:flex; align-items:center; gap:7px; flex-shrink:0; padding:9px 12px; border-bottom:1px solid var(--border); font-size:12.5px; font-weight:600; color:var(--text-2); }
+.gt-main-head svg { width:14px; height:14px; }
+.gt-clog { flex:1; overflow:auto; }
+.gt-cd-bar { flex-shrink:0; padding:6px 8px; border-bottom:1px solid var(--border); }
+.gt-cd-scroll { flex:1; overflow:auto; min-height:0; }
+
+/* Theme picker (Settings → Appearance): a label + description on the left, three labeled
+   options (Light / Dark / System) on the right. The selected option wears a rounded
+   outline; the rest are quiet icon+text. Inactive options keep a transparent border so
+   selecting one never shifts the row. */
+.theme-row { display:flex;align-items:center;justify-content:space-between;gap:24px; }
+.theme-row-title { font-size:14px;font-weight:600; }
+.theme-row-sub { font-size:13px;color:var(--text-3);margin-top:3px; }
+.theme-toggle { display:inline-flex;align-items:center;gap:4px;flex-shrink:0; }
+.theme-opt { display:inline-flex;align-items:center;gap:7px;padding:6px 13px;border:1px solid transparent;background:none;color:var(--text-3);font-size:13.5px;font-weight:500;border-radius:8px;cursor:pointer;transition:color .12s,border-color .12s; }
+.theme-opt:hover { color:var(--text); }
+.theme-opt.active { color:var(--text);border-color:var(--border); }
+.theme-opt svg { width:16px;height:16px;display:block; }
+/* Code font rows (Settings → Appearance): family select + size stepper per pane,
+   each with a live preview driven by the same --term-font/--diff-font tokens. */
+.font-controls { display:flex;align-items:center;gap:10px;flex-shrink:0; }
+.font-controls select { width:180px; }
+.font-size-ctl { display:inline-flex;align-items:center;border:1px solid var(--border);border-radius:var(--rs);overflow:hidden; }
+.font-size-ctl button { width:28px;height:32px;border:none;background:none;color:var(--text-2);font-size:15px;line-height:1;cursor:pointer;transition:color .12s,background .12s; }
+.font-size-ctl button:hover { color:var(--text);background:var(--surface-hover); }
+.font-size-ctl .fs-val { min-width:48px;text-align:center;font-size:12.5px;color:var(--text-2);font-variant-numeric:tabular-nums;user-select:none; }
+.font-preview { color:var(--text-2);white-space:pre;overflow-x:auto;border-top:1px solid var(--border); }
+.font-preview-term { font:var(--term-font-size)/1.6 var(--term-font); }
+.font-preview-diff { font:var(--diff-font-size)/1.6 var(--diff-font); }
+.font-preview .fp-del { color:var(--danger); }
+.font-preview .fp-add { color:var(--success); }

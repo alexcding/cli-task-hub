@@ -1,6 +1,6 @@
 // API tests over the Express app. Runs against a temp data dir and never starts the
 // pollers/forwarder (we listen on the exported `app` directly, on an ephemeral port),
-// so no `gh`/`acli` calls happen. Snapshots are seeded through lib/db where a route
+// so no `gh`/`acli` calls happen. Snapshots are seeded through src/server/database/db where a route
 // would otherwise kick a live sync.
 process.env.TASKHUB_DATA_DIR = require('fs').mkdtempSync(
   require('path').join(require('os').tmpdir(), 'taskhub-test-'));
@@ -8,8 +8,8 @@ process.env.TASKHUB_DATA_DIR = require('fs').mkdtempSync(
 const { test, before, after } = require('node:test');
 const assert = require('node:assert');
 
-const { app } = require('../server');
-const db = require('../lib/db');
+const { app } = require('../src/server/app');
+const db = require('../src/server/database/db');
 
 let base = '';
 let server = null;
@@ -182,7 +182,7 @@ test('POST /api/prs/viewed validates its body', async () => {
 });
 
 test('jira feeds serve a seeded fresh snapshot without acli', async () => {
-  const poller = require('../lib/poller');
+  const poller = require('../src/server/services/poller');
   const item = { key: 'REC-9', summary: 'S', status: 'To Do', type: 'Task', priority: 'High' };
   db.setJiraSnapshot(poller.MY_TICKETS_ID, { items: [item], jql: 'x', lastSynced: new Date().toISOString(), error: null });
   const { body } = await get('/api/jira/mine');
@@ -290,7 +290,7 @@ test('POST /api/git/commit and /api/git/push', async () => {
 
   // Discard: end-to-end through the renderer's own patch reconstruction — modify the
   // file, parse the served diff, reverse-apply one block, and the change is gone.
-  const { parseDiff, blockPatch } = await import('../public/js/diff-parse.mjs');
+  const { parseDiff, blockPatch } = await import('../src/renderer/lib/diff-parse.mjs');
   fs.writeFileSync(path.join(dir, 'a.txt'), 'WRONG\n');
   const before = (await get('/api/diff?path=' + encodeURIComponent(dir))).body;
   const [f] = parseDiff(before.diff);

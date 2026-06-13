@@ -3,7 +3,7 @@
 // from reviewRequests, while staying independent of categoryOf (which drives the tray).
 const { test } = require('node:test');
 const assert = require('node:assert');
-const { awaitingReview, categoryOf } = require('../lib/github');
+const { awaitingReview, categoryOf } = require('../src/server/repositories/github');
 
 const ME = 'alexcding';
 const base = { author: { login: 'someoneElse' }, isDraft: false, reviewRequests: [], latestReviews: [] };

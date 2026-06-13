@@ -1,8 +1,8 @@
-// Parser tests for public/js/diff-parse.mjs (an ES module — loaded via dynamic import).
+// Parser tests for src/renderer/lib/diff-parse.mjs (an ES module — loaded via dynamic import).
 const { test } = require('node:test');
 const assert = require('node:assert');
 
-const mod = import('../public/js/diff-parse.mjs');
+const mod = import('../src/renderer/lib/diff-parse.mjs');
 
 const MODIFIED = `diff --git a/lib/foo.js b/lib/foo.js
 index 1111111..2222222 100644
