@@ -51,29 +51,35 @@ const publish = process.argv.includes('--publish');
 let buildCmd = 'npx electron-builder --mac --arm64';
 
 if (publish) {
-  // Real signing/notarization needs Apple credentials. Fail early with a clear
-  // message rather than deep inside electron-builder.
-  const required = ['APPLE_TEAM_ID', 'APPLE_ID', 'APPLE_APP_SPECIFIC_PASSWORD'];
-  const missing = required.filter((k) => !process.env[k]);
-  if (missing.length) {
-    console.error(`\n\x1b[31m✗ Missing env for a signed release: ${missing.join(', ')}\x1b[0m`);
-    console.error('  Set them (plus a "Developer ID Application" cert in your keychain) and retry.');
-    console.error('  See electron-builder.config.js for the full list.');
+  // Real signing/notarization needs Apple credentials. Accept either auth
+  // method and fail early with a clear message rather than deep inside
+  // electron-builder. (Signing also needs a Developer ID cert in the keychain.)
+  const haveApiKey = ['APPLE_API_KEY', 'APPLE_API_KEY_ID', 'APPLE_API_ISSUER'].every((k) => process.env[k]);
+  const havePassword = ['APPLE_TEAM_ID', 'APPLE_ID', 'APPLE_APP_SPECIFIC_PASSWORD'].every((k) => process.env[k]);
+  if (!haveApiKey && !havePassword) {
+    console.error('\n\x1b[31m✗ Missing Apple credentials for a signed release.\x1b[0m');
+    console.error('  Provide ONE of these sets via the environment:');
+    console.error('    • API key:  APPLE_API_KEY (path to .p8), APPLE_API_KEY_ID, APPLE_API_ISSUER');
+    console.error('    • Apple ID: APPLE_TEAM_ID, APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD');
+    console.error('  Plus a "Developer ID Application" cert in the keychain. See electron-builder.config.js.');
     process.exit(1);
   }
 
-  // electron-builder reads GH_TOKEN to push to GitHub Releases. Pull a token
-  // from the gh CLI so we don't depend on a separately-exported env var.
-  step('Resolving GitHub token from gh CLI');
-  let token;
-  try {
-    token = execSync('gh auth token', { cwd: ROOT }).toString().trim();
-  } catch {
-    console.error('\n\x1b[31m✗ Could not get a token from `gh auth token`.\x1b[0m');
-    console.error('  Run `gh auth login` (or set GH_TOKEN) and retry.');
-    process.exit(1);
+  // electron-builder reads GH_TOKEN to push to GitHub Releases. In CI the token
+  // is provided directly (GH_TOKEN / GITHUB_TOKEN); locally, fall back to the
+  // gh CLI so we don't depend on a separately-exported env var.
+  let token = process.env.GH_TOKEN || process.env.GITHUB_TOKEN;
+  if (!token) {
+    step('Resolving GitHub token from gh CLI');
+    try {
+      token = execSync('gh auth token', { cwd: ROOT }).toString().trim();
+    } catch {
+      console.error('\n\x1b[31m✗ Could not get a token from `gh auth token`.\x1b[0m');
+      console.error('  Run `gh auth login` (or set GH_TOKEN) and retry.');
+      process.exit(1);
+    }
   }
-  process.env.GH_TOKEN = process.env.GH_TOKEN || token;
+  process.env.GH_TOKEN = token;
   // Switches electron-builder.config.js to the signed/notarized/hardened path.
   process.env.TASKHUB_RELEASE = '1';
   // --publish always → upload artifacts (incl. latest-mac.yml); electron-builder
@@ -98,6 +104,6 @@ console.log(`  ${path.relative(ROOT, appDir)}`);
 const dmgName = `${pkg.productName}-${pkg.version}-arm64.dmg`;
 console.log(`  ${path.join('dist', dmgName)}`);
 if (publish) {
-  console.log('\n  Published as a DRAFT GitHub release. Review and publish it at:');
+  console.log(`\n  Published GitHub release v${pkg.version} — auto-updater clients will pick it up:`);
   console.log('  https://github.com/alexcding/cli-task-hub/releases');
 }
