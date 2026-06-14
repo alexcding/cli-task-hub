@@ -16,9 +16,6 @@ nav { padding:8px; flex:1; overflow-y:auto; }
 .nav-btn .icon { width:20px; height:20px; display:flex; align-items:center; justify-content:center; flex-shrink:0; color:var(--text-3); }
 .nav-btn:hover .icon, .nav-btn.active .icon { color:var(--text-2); }
 .nav-btn .icon svg { width:20px; height:20px; display:block; stroke-width:1.5; }
-.nav-dot { width:8px;height:8px;border-radius:50%;flex-shrink:0; }
-/* Project rows use a color dot; center it in the same 20px icon slot so labels line up. */
-.nav-btn .nav-dot { margin:0 6px; }
 .nav-add { background:none;border:none;color:var(--text-3);cursor:pointer;padding:2px;line-height:0;border-radius:4px;transition:color .12s,background .12s;display:inline-flex; }
 .nav-add:hover { color:var(--text);background:var(--surface-hover); }
 .nav-add svg { width:14px;height:14px;display:block; }

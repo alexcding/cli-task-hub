@@ -26,7 +26,6 @@ function projectPatch(body) {
     if (!String(body.name).trim()) return { error: 'name required' };
     patch.name = String(body.name).trim();
   }
-  if (body.color !== undefined) patch.color = body.color;
   if (body.jql   !== undefined) patch.jql   = String(body.jql).trim();
   if (body.workspace !== undefined) patch.workspace = String(body.workspace).trim();
   if (body.jiraProjectKey !== undefined) patch.jiraProjectKey = String(body.jiraProjectKey).trim().toUpperCase();

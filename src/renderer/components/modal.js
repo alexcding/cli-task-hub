@@ -3,28 +3,11 @@ import { ROUTES } from '/shared/routes.mjs';
 import { state } from '../stores/store.js';
 import { api, apiJson } from '../services/api.js';
 import { esc } from '../lib/util.js';
-import { COLORS } from '../lib/icons.js';
 import { toast, toastErr } from './toast.js';
 import { renderProjectNav } from './sidebar.js';
 import { loadDashboard } from '../pages/dashboard.js';
 import { loadProjectPage } from '../pages/project.js';
 import { loadSettings, deleteProject } from '../pages/settings.js';
-
-let _selectedColor = COLORS[0];
-
-function buildColorPicker(selected) {
-  _selectedColor = selected || COLORS[0];
-  document.getElementById('color-options').innerHTML = COLORS.map(c =>
-    `<span class="color-opt${c===_selectedColor?' selected':''}" style="background:${c}" onclick="selectColor('${c}')"></span>`
-  ).join('');
-}
-
-export function selectColor(c) {
-  _selectedColor = c;
-  document.querySelectorAll('.color-opt').forEach(el => {
-    el.classList.toggle('selected', el.style.background===c||el.style.backgroundColor===c);
-  });
-}
 
 // Store the (auto-detected) GitHub repo in the hidden field and reflect it as a footer
 // hint under the Local Git Repo input — it's derived from git, not entered by hand.
@@ -66,7 +49,6 @@ export function openNewProjectModal() {
   document.getElementById('modal-project-id').value = '';
   fillProjectModal({});
   document.getElementById('modal-delete').style.display = 'none';
-  buildColorPicker(COLORS[0]);
   document.getElementById('modal').style.display = 'flex';
   document.getElementById('modal-name').focus();
 }
@@ -78,7 +60,6 @@ export function openEditProjectModal(id) {
   document.getElementById('modal-project-id').value = id;
   fillProjectModal(proj);
   document.getElementById('modal-delete').style.display = ''; // existing project → can delete
-  buildColorPicker(proj.color);
   document.getElementById('modal').style.display = 'flex';
   document.getElementById('modal-name').focus();
 }
@@ -101,7 +82,6 @@ export async function saveProject() {
   if (!name) { toastErr('Name required'); return; }
   const payload = {
     name,
-    color:          _selectedColor,
     workspace:      document.getElementById('modal-workspace').value.trim(),
     repo:           document.getElementById('modal-repo').value.trim(),
     jiraProjectKey: document.getElementById('modal-jira-key').value.trim(),

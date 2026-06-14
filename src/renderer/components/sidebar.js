@@ -123,7 +123,7 @@ export function renderProjectNav(projects) {
   setProjects(projects);
   const list = projects.map(p => `
     <button class="nav-btn" data-page="project" data-project="${p.id}" onclick="showPage('project','${p.id}')">
-      <span class="nav-dot" style="background:${p.color}"></span>
+      <span class="icon">${ICON.folder}</span>
       <span style="overflow:hidden;text-overflow:ellipsis">${esc(p.name)}</span>
     </button>`).join('');
   // No projects yet → show a prominent CTA; otherwise the "+" on the section title is enough.

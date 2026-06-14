@@ -59,7 +59,7 @@ test('jira site uses the config override (no acli)', async () => {
 });
 
 test('projects: create, read, update, delete', async () => {
-  const created = await send('POST', '/api/projects', { name: '  Demo  ', color: '#0ea5e9' });
+  const created = await send('POST', '/api/projects', { name: '  Demo  ' });
   assert.equal(created.status, 200);
   assert.equal(created.body.name, 'Demo'); // trimmed
   const id = created.body.id;

@@ -192,7 +192,7 @@ Object.assign(window, {
   // project modal
   openNewProjectModal: modal.openNewProjectModal, openEditProjectModal: modal.openEditProjectModal,
   closeModal: modal.closeModal, saveProject: modal.saveProject,
-  deleteProjectFromModal: modal.deleteProjectFromModal, selectColor: modal.selectColor,
+  deleteProjectFromModal: modal.deleteProjectFromModal,
   chooseModalWorkspace: modal.chooseModalWorkspace,
 });
 

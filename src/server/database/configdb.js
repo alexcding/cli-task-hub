@@ -42,7 +42,6 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS projects (
     id               TEXT PRIMARY KEY,
     name             TEXT NOT NULL DEFAULT '',
-    color            TEXT NOT NULL DEFAULT '#6366f1',
     repo             TEXT NOT NULL DEFAULT '',
     workspace        TEXT NOT NULL DEFAULT '',
     jira_project_key TEXT NOT NULL DEFAULT '',
@@ -101,7 +100,10 @@ for (const stmt of [
   `ALTER TABLE tabs ADD COLUMN login TEXT NOT NULL DEFAULT ''`,
   `ALTER TABLE tabs ADD COLUMN avatar TEXT NOT NULL DEFAULT ''`,
   `ALTER TABLE projects ADD COLUMN forward_webhooks INTEGER NOT NULL DEFAULT 1`,
-]) { try { db.exec(stmt); } catch { /* column already exists */ } }
+  // Project color was dropped — projects show an icon, not a swatch. Drop the column
+  // from installs that still have it (throws "no such column" on fresh DBs, ignored).
+  `ALTER TABLE projects DROP COLUMN color`,
+]) { try { db.exec(stmt); } catch { /* column already exists / already gone */ } }
 
 const uuid = () => crypto.randomUUID();
 const now = () => new Date().toISOString();
@@ -113,13 +115,13 @@ const configAll = () => Object.fromEntries(db.prepare('SELECT key, value FROM co
 
 // ── Projects ──────────────────────────────────────────────────────────────────
 // Object shape (camelCase) matches the old JSON store; columns are snake_case.
-const PROJECT_FIELDS = ['name', 'color', 'repo', 'workspace', 'jiraProjectKey', 'jql', 'mergeTransition', 'forwardWebhooks'];
-const COL = { name: 'name', color: 'color', repo: 'repo', workspace: 'workspace', jiraProjectKey: 'jira_project_key', jql: 'jql', mergeTransition: 'merge_transition', forwardWebhooks: 'forward_webhooks' };
+const PROJECT_FIELDS = ['name', 'repo', 'workspace', 'jiraProjectKey', 'jql', 'mergeTransition', 'forwardWebhooks'];
+const COL = { name: 'name', repo: 'repo', workspace: 'workspace', jiraProjectKey: 'jira_project_key', jql: 'jql', mergeTransition: 'merge_transition', forwardWebhooks: 'forward_webhooks' };
 // Fields stored as 0/1 INTEGER (SQLite has no bool type). One place to coerce on write.
 const BOOL_FIELDS = new Set(['forwardWebhooks']);
 const toColValue = (field, value) => BOOL_FIELDS.has(field) ? (value ? 1 : 0) : value;
 const _project = r => r && {
-  id: r.id, name: r.name, color: r.color, repo: r.repo, workspace: r.workspace,
+  id: r.id, name: r.name, repo: r.repo, workspace: r.workspace,
   jiraProjectKey: r.jira_project_key, jql: r.jql, mergeTransition: r.merge_transition,
   forwardWebhooks: !!r.forward_webhooks, created_at: r.created_at,
 };
@@ -129,16 +131,16 @@ const getProject  = id => _project(db.prepare('SELECT * FROM projects WHERE id =
 
 const addProject = (fields = {}) => {
   const p = {
-    id: uuid(), name: fields.name || '', color: fields.color || '#6366f1',
+    id: uuid(), name: fields.name || '',
     repo: fields.repo || '', workspace: fields.workspace || '',
     jiraProjectKey: fields.jiraProjectKey || '', jql: fields.jql || '',
     mergeTransition: fields.mergeTransition || '',
     forwardWebhooks: fields.forwardWebhooks === undefined ? true : !!fields.forwardWebhooks,
     created_at: fields.created_at || now(),
   };
-  db.prepare(`INSERT INTO projects (id, name, color, repo, workspace, jira_project_key, jql, merge_transition, forward_webhooks, created_at)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-    .run(p.id, p.name, p.color, p.repo, p.workspace, p.jiraProjectKey, p.jql, p.mergeTransition, toColValue('forwardWebhooks', p.forwardWebhooks), p.created_at);
+  db.prepare(`INSERT INTO projects (id, name, repo, workspace, jira_project_key, jql, merge_transition, forward_webhooks, created_at)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    .run(p.id, p.name, p.repo, p.workspace, p.jiraProjectKey, p.jql, p.mergeTransition, toColValue('forwardWebhooks', p.forwardWebhooks), p.created_at);
   return p;
 };
 

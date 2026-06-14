@@ -109,7 +109,7 @@ function renderDbInspector(d) {
   const rows = d.projects.map(p => {
     const snap = d.snapshots[p.id] || {};
     return `<tr>
-      <td><span class="nav-dot" style="background:${p.color};display:inline-block;margin-right:6px"></span>${esc(p.name)}</td>
+      <td>${esc(p.name)}</td>
       <td>${p.repo ? esc(p.repo) : '<span style="color:var(--text-3)">—</span>'}</td>
       <td>${esc(p.mergeTransition || '—')}</td>
       <td>${snap.open ?? 0}</td>
