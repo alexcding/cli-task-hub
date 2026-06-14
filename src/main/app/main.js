@@ -156,9 +156,10 @@ app.whenReady().then(async () => {
     else if (evt?.type === 'sync' || evt?.type === 'jira-sync') scheduleFullRefresh();
   });
 
-  // Backstop refresh every 60s: covers a silently-stalled stream and keeps the usage readout
-  // current even when no sync events are flowing (e.g. no repos configured).
-  setInterval(refreshMenu, 60_000);
+  // Sparse backstop: the stream already drives a full rebuild on every sync (~once per poll
+  // cycle), so this only guards a silently-stalled connection and keeps the usage readout from
+  // going stale if no sync events flow. 5 min, not 60s, to avoid doubling the SSE-driven rebuilds.
+  setInterval(refreshMenu, 5 * 60_000);
 
   setupAutoUpdates();
 });

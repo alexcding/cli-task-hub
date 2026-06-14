@@ -210,6 +210,10 @@ export async function reloadProjectPRs(id, prState, { silent = false } = {}) {
   else if (!silent) el.innerHTML = '<div class="loading-row"><div class="spinner"></div> Loading…</div>';
 
   const prs = await api(`${ROUTES.projectPrs(id)}?state=${prState}`);
+  // Reconcile the render cache to the DB so the next open-view render is cache-first from
+  // current data, not a copy that only refreshes on a dashboard visit. Open only — merged/all
+  // aren't snapshotted, so they must not overwrite the cached open set.
+  if (prState === 'open' && proj) proj.prs = prs;
   const target = document.getElementById(`proj-prs-${id}`); // may have re-rendered; re-query
   if (target) target.innerHTML = prListHtml(prs.filter(p=>!p.error), proj?.repo, prState);
 }
