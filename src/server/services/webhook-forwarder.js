@@ -9,6 +9,15 @@ const failures = new Map();      // repo -> consecutive failure count (drives ba
 const starting = new Set();      // repos mid-(re)start — guards against double spawn
 const stuckConflict = new Set(); // repos stuck on a 422 we can't self-heal — error logged once
 let stopped = false;             // set by stopAll() (app quitting) so an in-flight start() bails
+let cleanStaleOnStart = false;   // dev only: wipe pre-existing relay hooks before spawning (below)
+
+// Dev builds get hard-killed (Ctrl-C / restart) far more than the packaged app, which exits
+// cleanly via the tray. A hard kill skips `gh webhook forward`'s own hook teardown, leaking the
+// relay hook and 422-ing ("hook already exists") the next run. When on, start() deletes ALL
+// pre-existing relay hooks for a repo first, so each dev launch gets a clean slate. Deliberately
+// OFF by default: in a shared/packaged setup this would delete another machine's ACTIVE forwarder
+// hook, not just a leak — only the conservative tracked-hook self-heal is safe there.
+const setCleanStaleHooks = (on) => { cleanStaleOnStart = !!on; };
 
 // Restart backoff: a forwarder that dies unexpectedly is re-spawned, with the delay
 // growing on repeated quick failures so a persistently broken repo doesn't hot-loop.
@@ -73,6 +82,17 @@ const cleanupTrackedHook = async (repo) => {
   return true;
 };
 
+// Delete every relay hook on a repo (dev-start cleanup). Clears leaks from a prior hard kill so
+// the fresh forwarder can create its own without a 422. Untrack whatever we'd recorded — it's gone.
+const deleteRelayHooks = async (repo) => {
+  const hooks = await relayHooks(repo);
+  for (const h of hooks) {
+    const ok = await ghRun(['api', '-X', 'DELETE', `repos/${repo}/hooks/${h.id}`]);
+    if (ok) db.addLog({ category: 'webhook', level: 'info', type: 'stale_hook_removed', payload: { repo, hookId: h.id, reason: 'dev-start cleanup' } });
+  }
+  if (hooks.length) setTrackedHook(repo, null);
+};
+
 const clearRestart = (repo) => {
   const t = restartTimers.get(repo);
   if (t) { clearTimeout(t); restartTimers.delete(repo); }
@@ -82,6 +102,9 @@ const start = async (repo, port) => {
   if (stopped || processes.has(repo) || starting.has(repo)) return;
   starting.add(repo);
   clearRestart(repo); // starting now supersedes any pending retry
+
+  // Dev: clear leaked relay hooks first so a prior hard-kill's hook can't 422 this launch.
+  if (cleanStaleOnStart) { try { await deleteRelayHooks(repo); } catch { /* best-effort */ } }
 
   let beforeHookIds = [];
   try { beforeHookIds = (await relayHooks(repo)).map(h => h.id); } catch { /* best-effort */ }
@@ -217,4 +240,4 @@ const sync = (port) => {
 
 const list = () => [...processes.keys()];
 
-module.exports = { start, stop, stopAll, sync, list };
+module.exports = { start, stop, stopAll, sync, list, setCleanStaleHooks };
