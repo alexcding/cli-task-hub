@@ -21,9 +21,20 @@ export async function loadSettings() {
   api(ROUTES.JIRA_SITE).then(s => { if (s.baseUrl) document.getElementById('jira-base-url').placeholder = `${s.baseUrl} (auto-detected)`; }).catch(()=>{});
   if (cfg.jira_poll_interval) document.getElementById('jira-poll-interval').value = cfg.jira_poll_interval;
   if (cfg.jira_limit)         document.getElementById('jira-limit').value = cfg.jira_limit;
+  if (cfg.jira_api_token)     document.getElementById('jira-api-token').value = cfg.jira_api_token;
 
   renderDbInspector(dbinfo);
   initUsage();
+}
+
+// Reveal/hide a password field — the eye button inside an .input-reveal wrapper toggles
+// its sibling input between password and text.
+export function toggleSecret(btn) {
+  const input = btn.closest('.input-reveal')?.querySelector('input');
+  if (!input) return;
+  const reveal = input.type === 'password';
+  input.type = reveal ? 'text' : 'password';
+  btn.classList.toggle('on', reveal);
 }
 
 // Horizontal tab picker for the Settings panels. Panels live in
@@ -152,6 +163,7 @@ export async function saveConfig() {
       sprint_jql:         document.getElementById('sprint-jql').value.trim() || 'assignee = currentUser() AND sprint is not EMPTY AND statusCategory != Done ORDER BY updated DESC',
       jira_poll_interval: document.getElementById('jira-poll-interval').value || '120',
       jira_limit:         document.getElementById('jira-limit').value || '100',
+      jira_api_token:     document.getElementById('jira-api-token').value.trim(),
     });
     // Ticket links depend on the base URL — refresh it after a save.
     try { state.jiraBase = (await api(ROUTES.JIRA_SITE)).baseUrl || state.jiraBase; } catch {}

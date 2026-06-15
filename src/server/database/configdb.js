@@ -100,6 +100,12 @@ for (const stmt of [
   `ALTER TABLE tabs ADD COLUMN login TEXT NOT NULL DEFAULT ''`,
   `ALTER TABLE tabs ADD COLUMN avatar TEXT NOT NULL DEFAULT ''`,
   `ALTER TABLE projects ADD COLUMN forward_webhooks INTEGER NOT NULL DEFAULT 1`,
+  // On-merge "set Fix Version" automation (gated by fix_version_enabled): a platform prefix
+  // (e.g. "ios-") + a JS script that returns the number part ("0.0.0"); the final version is
+  // prefix+number. The Jira API token to write it is a global config key, not per-project.
+  `ALTER TABLE projects ADD COLUMN fix_version_enabled INTEGER NOT NULL DEFAULT 0`,
+  `ALTER TABLE projects ADD COLUMN fix_version_prefix TEXT NOT NULL DEFAULT ''`,
+  `ALTER TABLE projects ADD COLUMN fix_version_script TEXT NOT NULL DEFAULT ''`,
   // Project color was dropped — projects show an icon, not a swatch. Drop the column
   // from installs that still have it (throws "no such column" on fresh DBs, ignored).
   `ALTER TABLE projects DROP COLUMN color`,
@@ -115,15 +121,16 @@ const configAll = () => Object.fromEntries(db.prepare('SELECT key, value FROM co
 
 // ── Projects ──────────────────────────────────────────────────────────────────
 // Object shape (camelCase) matches the old JSON store; columns are snake_case.
-const PROJECT_FIELDS = ['name', 'repo', 'workspace', 'jiraProjectKey', 'jql', 'mergeTransition', 'forwardWebhooks'];
-const COL = { name: 'name', repo: 'repo', workspace: 'workspace', jiraProjectKey: 'jira_project_key', jql: 'jql', mergeTransition: 'merge_transition', forwardWebhooks: 'forward_webhooks' };
+const PROJECT_FIELDS = ['name', 'repo', 'workspace', 'jiraProjectKey', 'jql', 'mergeTransition', 'forwardWebhooks', 'fixVersionEnabled', 'fixVersionPrefix', 'fixVersionScript'];
+const COL = { name: 'name', repo: 'repo', workspace: 'workspace', jiraProjectKey: 'jira_project_key', jql: 'jql', mergeTransition: 'merge_transition', forwardWebhooks: 'forward_webhooks', fixVersionEnabled: 'fix_version_enabled', fixVersionPrefix: 'fix_version_prefix', fixVersionScript: 'fix_version_script' };
 // Fields stored as 0/1 INTEGER (SQLite has no bool type). One place to coerce on write.
-const BOOL_FIELDS = new Set(['forwardWebhooks']);
+const BOOL_FIELDS = new Set(['forwardWebhooks', 'fixVersionEnabled']);
 const toColValue = (field, value) => BOOL_FIELDS.has(field) ? (value ? 1 : 0) : value;
 const _project = r => r && {
   id: r.id, name: r.name, repo: r.repo, workspace: r.workspace,
   jiraProjectKey: r.jira_project_key, jql: r.jql, mergeTransition: r.merge_transition,
   forwardWebhooks: !!r.forward_webhooks, created_at: r.created_at,
+  fixVersionEnabled: !!r.fix_version_enabled, fixVersionPrefix: r.fix_version_prefix || '', fixVersionScript: r.fix_version_script || '',
 };
 
 const getProjects = () => db.prepare('SELECT * FROM projects ORDER BY created_at ASC').all().map(_project);
@@ -136,11 +143,17 @@ const addProject = (fields = {}) => {
     jiraProjectKey: fields.jiraProjectKey || '', jql: fields.jql || '',
     mergeTransition: fields.mergeTransition || '',
     forwardWebhooks: fields.forwardWebhooks === undefined ? true : !!fields.forwardWebhooks,
+    fixVersionEnabled: !!fields.fixVersionEnabled,
+    fixVersionPrefix: fields.fixVersionPrefix || '', fixVersionScript: fields.fixVersionScript || '',
     created_at: fields.created_at || now(),
   };
-  db.prepare(`INSERT INTO projects (id, name, repo, workspace, jira_project_key, jql, merge_transition, forward_webhooks, created_at)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-    .run(p.id, p.name, p.repo, p.workspace, p.jiraProjectKey, p.jql, p.mergeTransition, toColValue('forwardWebhooks', p.forwardWebhooks), p.created_at);
+  db.prepare(`INSERT INTO projects (id, name, repo, workspace, jira_project_key, jql, merge_transition, forward_webhooks,
+                                    fix_version_enabled, fix_version_prefix, fix_version_script, created_at)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    .run(p.id, p.name, p.repo, p.workspace, p.jiraProjectKey, p.jql, p.mergeTransition,
+         toColValue('forwardWebhooks', p.forwardWebhooks),
+         toColValue('fixVersionEnabled', p.fixVersionEnabled), p.fixVersionPrefix, p.fixVersionScript,
+         p.created_at);
   return p;
 };
 

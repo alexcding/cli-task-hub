@@ -2,9 +2,25 @@
 // forwarder so new/changed repos start (or stop) forwarding immediately.
 const db = require('../database/db');
 const github = require('../repositories/github');
+const jira = require('../repositories/jira');
 const forwarder = require('../services/webhook-forwarder');
 const poller = require('../services/poller');
+const versionScript = require('../services/version-script');
 const { ROUTES } = require('../../shared/routes.mjs');
+
+// Short-lived cache of a project's Jira version names, keyed by project id. The fix-version
+// preview re-fetches these on every debounced keystroke; the list barely moves during an edit,
+// so a few seconds of caching collapses a typing burst's worth of `acli` spawns into one.
+const _previewVersions = new Map(); // id -> { at, names }
+const PREVIEW_VERSIONS_TTL = 15000;
+function previewVersions(project) {
+  const hit = _previewVersions.get(project.id);
+  if (hit && Date.now() - hit.at < PREVIEW_VERSIONS_TTL) return hit.names;
+  let names = [];
+  try { names = jira.listVersions(project.jiraProjectKey).map(v => v.name); } catch { /* ignore */ }
+  _previewVersions.set(project.id, { at: Date.now(), names });
+  return names;
+}
 
 // A new/changed project has no fresh snapshot yet, so fetch its PRs + Jira now — the snapshot
 // writes broadcast sync/jira-sync, which every subscribed UI (dashboard, tray) reacts to. This
@@ -31,6 +47,11 @@ function projectPatch(body) {
   if (body.jiraProjectKey !== undefined) patch.jiraProjectKey = String(body.jiraProjectKey).trim().toUpperCase();
   if (body.mergeTransition !== undefined) patch.mergeTransition = String(body.mergeTransition).trim();
   if (body.forwardWebhooks !== undefined) patch.forwardWebhooks = !!body.forwardWebhooks;
+  // On-merge "set Fix Version" automation: a toggle, a platform prefix, and a JS script that
+  // returns the number part. The Jira API token to write it is a global setting (Settings → Jira).
+  if (body.fixVersionEnabled !== undefined) patch.fixVersionEnabled = !!body.fixVersionEnabled;
+  if (body.fixVersionPrefix !== undefined) patch.fixVersionPrefix = String(body.fixVersionPrefix).trim();
+  if (body.fixVersionScript !== undefined) patch.fixVersionScript = String(body.fixVersionScript);
   if (body.repo  !== undefined) {
     const raw = String(body.repo).trim();
     if (raw === '') { patch.repo = ''; }
@@ -76,6 +97,25 @@ function register(app, PORT) {
     db.deleteProject(req.params.id);
     forwarder.sync(PORT);
     res.json({ ok: true });
+  });
+
+  // Live preview for the Automation tab: evaluate the (unsaved) prefix + script and return the
+  // assembled version name. The script's `versions` input is the project's real Jira versions.
+  app.post(ROUTES.PROJECT_FIXVERSION_PREVIEW, (req, res) => {
+    const project = db.getProject(req.params.id);
+    if (!project) return res.status(404).json({ error: 'project not found' });
+    // Existing versions feed the script's `versions` input + the "exists?" badge. They rarely
+    // change mid-edit, so cache them briefly per project — otherwise every debounced keystroke
+    // spawns an `acli project view` subprocess that blocks the event loop. A Jira/acli hiccup
+    // shouldn't break the script preview either — fall back to an empty list.
+    const versions = previewVersions(project);
+    try {
+      const pr = { number: 0, title: 'Sample PR', body: '' };
+      const { version, number } = versionScript.buildVersion(
+        String(req.body.prefix || ''), String(req.body.script || ''),
+        { now: new Date(), pr, versions });
+      res.json({ version, number, exists: versions.includes(version) });
+    } catch (e) { res.status(400).json({ error: e.message }); }
   });
 
   // Resolve the GitHub "owner/repo" for a local checkout, so the UI can auto-fill a

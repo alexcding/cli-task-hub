@@ -1,19 +1,43 @@
-// Project page: a paged "digest" — an overview hero (clickable repo/Jira/forwarding tags +
-// live stat chips) over the shared segmented control (.seg-tabs), which pages between four
-// sections shown one at a time: Pull Requests, Jira, Git (the full git-tab.js surface), and
-// Settings (webhook forwarding). The hero + picker stay fixed; only the section body
-// (.pd-body) scrolls. PRs and Jira load on open (Jira hidden, to feed its chip); Git and
-// Settings lazy-load the first time their page is shown (projShowSection → lazyOnce).
+// Project page: a paged "digest" — a header (project name + gear-to-edit, plus clickable
+// repo/Jira/forwarding tags) over the shared segmented control (.seg-tabs), which pages between
+// four sections shown one at a time: Pull Requests, Jira, Git (the full git-tab.js surface), and
+// Automation (webhook forwarding + on-merge Jira). The header + picker stay fixed; only the
+// section body (.pd-body) scrolls. PRs and Jira load on open; Git and Automation lazy-load the
+// first time their page is shown (projShowSection → lazyOnce).
 import { ROUTES } from '/shared/routes.mjs';
-import { state, prGroup, projectById as proj } from '../stores/store.js';
+import { state, projectById as proj } from '../stores/store.js';
 import { api, apiJson } from '../services/api.js';
 import { esc, escJs, jiraUrl, setActiveSegTab } from '../lib/util.js';
 import { ICON, TAB_ICON } from '../lib/icons.js';
 import { toast, toastErr } from '../components/toast.js';
 import { renderProjectNav } from '../components/sidebar.js';
 import { prListHtml } from '../components/cards.js';
-import { loadProjectJira, renderProjJira, itemsMatching } from './jira.js';
+import { loadProjectJira, renderProjJira } from './jira.js';
 import { loadGitTab } from './git-tab.js';
+
+// Forwarding tag (header): refresh icon + a state dot, "Live" when webhooks are actually being
+// forwarded, "Polled" otherwise. Inner content is factored so paintForwardTag can swap it in place.
+const FWD_TITLE = {
+  live: 'Live — webhook updates are forwarded in real time',
+  off:  'Polled — updates arrive on the next poll',
+  idle: 'Forwarding is enabled but not running yet — updates arrive on the next poll',
+};
+const fwdTagInner = live => `${ICON.refresh}<span class="pd-dot${live ? ' on' : ''}"></span>${live ? 'Live' : 'Polled'}`;
+
+// Reconcile the header's forwarding tag with reality: when forwarding is enabled, probe the live
+// forwarder list (same source as the Automation section's status line) and downgrade to "Polled"
+// if it isn't actually running. Forwarding off → the initial "Polled" is already correct.
+async function paintForwardTag(id) {
+  const el = document.getElementById(`pd-fwd-${id}`);
+  const p = proj(id);
+  if (!el || !p?.repo || p.forwardWebhooks === false) return;
+  try {
+    const fwds = await api(ROUTES.FORWARDERS);
+    const running = Array.isArray(fwds) && fwds.includes(p.repo);
+    el.innerHTML = fwdTagInner(running);
+    el.title = running ? FWD_TITLE.live : FWD_TITLE.idle;
+  } catch { /* transient — leave the optimistic "Live" rather than flapping the header */ }
+}
 
 export async function loadProjectPage(id) {
   const el = document.getElementById('project-page-content');
@@ -32,8 +56,13 @@ export async function loadProjectPage(id) {
     : state.jiraBase
       ? `<button class="pd-tag pd-tag-btn" onclick="openExternal('${escJs(jiraUrl(p.jiraProjectKey))}')" title="Open ${esc(p.jiraProjectKey)} in Jira">${TAB_ICON.jira}${esc(p.jiraProjectKey)}</button>`
       : `<span class="pd-tag">${TAB_ICON.jira}${esc(p.jiraProjectKey)}</span>`;
+  // Live = webhooks forwarded in real time; Polled = updates arrive on the next poll. The initial
+  // paint shows the saved intent; paintForwardTag (below) then probes the live forwarder list and
+  // downgrades to "Polled" if forwarding is enabled but not actually running — so the header can't
+  // claim real-time delivery that isn't happening (the Automation section shows the same truth).
+  const fwdOn = p.forwardWebhooks !== false;
   const fwdTag = p.repo
-    ? `<span class="pd-tag"><span class="pd-dot${p.forwardWebhooks !== false ? ' on' : ''}"></span>${p.forwardWebhooks !== false ? 'Forwarding on' : 'Forwarding off'}</span>`
+    ? `<span class="pd-tag" id="pd-fwd-${id}" title="${fwdOn ? FWD_TITLE.live : FWD_TITLE.off}">${fwdTagInner(fwdOn)}</span>`
     : '';
 
   // The shared segmented control (.seg-tabs, same as Settings/Activity) pages between sections.
@@ -42,21 +71,23 @@ export async function loadProjectPage(id) {
 
   el.innerHTML = `
     <div class="proj-digest">
-      <!-- Overview hero: project name + tags on the left, live stat chips on the right. -->
+      <!-- Header block: title (left) ↔ tags (right) on top, then the section picker
+           directly beneath. -->
       <div class="pd-hero">
-        <div class="pd-headline">
-          <h1 class="pd-title">${esc(p.name || 'Project')}</h1>
+        <div class="pd-hero-row">
+          <div class="pd-titlewrap">
+            <h1 class="pd-title">${esc(p.name || 'Project')}</h1>
+            <button class="pd-edit" onclick="openEditProjectModal('${id}')" title="Edit project" aria-label="Edit project">${ICON.gear}</button>
+          </div>
           <div class="pd-tags">${repoTag}${jiraTag}${fwdTag}</div>
         </div>
-        <div class="stat-chips" id="pd-stats-${id}"></div>
+        <!-- Section picker: each tab shows one section at a time (paged, not scrolled). -->
+        <div class="seg-tabs pd-segs" role="tablist">
+          ${seg('prs', 'Pull Requests')}${seg('jira', 'Jira')}${seg('git', 'Git')}${seg('settings', 'Automation')}
+        </div>
       </div>
 
-      <!-- Section picker: each tab shows one section at a time (paged, not scrolled). -->
-      <div class="seg-tabs pd-segs" role="tablist" id="pd-jump-${id}">
-        ${seg('prs', 'Pull Requests')}${seg('jira', 'Jira')}${seg('git', 'Git')}${seg('settings', 'Settings')}
-      </div>
-
-      <!-- Scroll body: only the active section scrolls — the hero + picker above stay put. -->
+      <!-- Scroll body: only the active section scrolls — the header above stays put. -->
       <div class="pd-body">
       <!-- Pull Requests (the default page) -->
       <section class="pd-sec" id="pd-prs-${id}" data-sec="prs">
@@ -108,63 +139,29 @@ export async function loadProjectPage(id) {
       <!-- Settings: webhook forwarding, lazy-loaded the first time its page is shown -->
       <section class="pd-sec" id="pd-settings-${id}" data-sec="settings" hidden>
         <div class="pd-sec-head">
-          <h2 class="pd-sec-title"><span class="pd-sec-ic tint-neutral">${ICON.zap}</span>Settings</h2>
+          <h2 class="pd-sec-title"><span class="pd-sec-ic tint-neutral">${ICON.zap}</span>Automation</h2>
         </div>
         <div id="proj-webhooks-${id}"></div>
       </section>
       </div><!-- /.pd-body -->
     </div>`;
 
-  // Feed the hero chips from each section's data as it lands (no eager stale paint):
-  //  • PRs: reloadProjectPRs re-renders the chips when the open set loads.
-  //  • Jira: load only when configured (a project key or saved JQL) — it feeds the hidden
-  //    table + the 'Open Tickets' chip; otherwise just render the section's empty state (no fetch).
-  // Git and Settings lazy-load the first time their page is shown (projShowSection).
-  if (p.repo) reloadProjectPRs(id, 'open');                                 // calls renderOverview on completion
-  if (p.jiraProjectKey || p.jql) loadProjectJira(id).then(() => renderOverview(id));
+  // Load the default PR page now. Jira loads only when configured (a project key or saved
+  // JQL); otherwise render the section's empty state without a fetch. Git and Settings
+  // lazy-load the first time their page is shown (projShowSection).
+  if (p.repo) { reloadProjectPRs(id, 'open'); paintForwardTag(id); }
+  if (p.jiraProjectKey || p.jql) loadProjectJira(id);
   else renderProjJira(id);
-  if (!p.repo) renderOverview(id);   // no PR loader to paint the chips → render once (also collapses an empty row)
 }
 
-// Overview stat chips — live counts in the same idiom as the dashboard hero. Computed from
-// the renderer's cached state (open PRs in the project snapshot, awaiting-review via the
-// shared prGroup, the project's Jira snapshot), so re-running it after a loader refreshes it.
-function renderOverview(id) {
-  const host = document.getElementById(`pd-stats-${id}`);
-  if (!host) return;
-  const p = proj(id);
-  const prs = (p?.prs || []).filter(pr => !pr.error);
-  const review = prs.filter(pr => prGroup(pr) === 'review').length;
-  // Count tickets the SAME way the Jira section does — through the saved per-project filter —
-  // so the chip and the list it links to agree. A fetch error leaves no count to show.
-  const snap = state.projJiraSnap[id];
-  const tickets = itemsMatching(snap?.items || [], state.projJiraFilters[id] || {}, null).length;
-  const chip = (val, label, icon, tint, sec) => `
-    <button class="stat-chip" onclick="projShowSection('${id}','${sec}')">
-      <span class="stat-chip-icon tint-${tint}">${icon}</span>
-      <span><div class="stat-chip-val">${val}</div><div class="stat-chip-label">${label}</div></span>
-    </button>`;
-  const chips = [];
-  if (p?.repo) {
-    chips.push(chip(prs.length, 'Open PRs', ICON.branch, 'accent', 'prs'));
-    chips.push(chip(review, 'To Review', ICON.eye, 'warn', 'prs'));
-  }
-  // Skip the tickets chip when the Jira fetch errored — a '0' would be indistinguishable from
-  // a real zero, and the section already surfaces the error.
-  if (!snap?.error && (p?.jiraProjectKey || p?.jql || tickets)) chips.push(chip(tickets, 'Open Tickets', ICON.checkCircle, 'success', 'jira'));
-  host.innerHTML = chips.join('');
-  host.style.display = chips.length ? '' : 'none';
-}
-
-// ── Paging: the segmented tabs (and stat chips) swap which section is shown ───────────
+// ── Paging: the segmented tabs swap which section is shown ────────────────────────────
 // One section is visible at a time. Git and Settings lazy-load the first time their page
 // is shown; PRs and Jira are already loaded by loadProjectPage. The scroller resets to the
-// top so each page starts at its heading. `btn` is the clicked tab; stat chips pass none,
-// so we locate the matching tab to keep the segmented control's active state in sync.
+// top so each page starts at its heading. `btn` is always the clicked seg-tab (every caller is
+// an inline onclick passing `this`).
 const SECTIONS = ['prs', 'jira', 'git', 'settings'];
 export function projShowSection(id, sec, btn) {
-  const tab = btn || document.querySelector(`#pd-jump-${id} .seg-tab[data-sec="${sec}"]`);
-  if (tab) setActiveSegTab(tab);
+  if (btn) setActiveSegTab(btn);
   SECTIONS.forEach(s => { const el = document.getElementById(`pd-${s}-${id}`); if (el) el.hidden = s !== sec; });
   if (sec === 'git') lazyOnce(`proj-gittab-${id}`, () => loadGitTab(id));
   if (sec === 'settings') {
@@ -200,7 +197,7 @@ export function loadProjectWebhooks(id) {
 
   // No repo → forwarding can't run; reuse the standard empty-state instead of dead controls.
   if (!p.repo) {
-    el.innerHTML = `<div class="empty"><div class="empty-icon">${ICON.branch}</div><p>Webhook forwarding needs a GitHub repo. Add one to this project (Edit, top-right) and it'll show up here.</p></div>`;
+    el.innerHTML = `<div class="empty"><div class="empty-icon">${ICON.branch}</div><p>Webhook forwarding needs a GitHub repo. Add one to this project (the gear beside the project name) and it'll show up here.</p></div>`;
     return;
   }
 
@@ -221,13 +218,38 @@ export function loadProjectWebhooks(id) {
       </div>
 
       <div class="card">
-        <div class="card-header"><h3>On merge</h3></div>
+        <div class="card-header"><h3>Fix Version on merge</h3></div>
         <div class="card-pad">
-          <p class="card-intro">When a forwarded PR merges, automatically transition its linked Jira ticket.</p>
+          <p class="card-intro">On merge, build a version name from the prefix + script, create it in Jira if it doesn't exist, and set it as the ticket's Fix Version. Needs a Jira API token (Settings → Jira).</p>
+          <label class="switch-row">
+            <input type="checkbox" id="wh-fixver-enabled-${id}" ${p.fixVersionEnabled ? 'checked' : ''} onchange="document.getElementById('wh-fixver-body-${id}').hidden = !this.checked">
+            <span class="switch-row-text">
+              <span class="switch-row-title">Set Fix Version on merge</span>
+              <span class="switch-row-sub">Off → merge only transitions the ticket.</span>
+            </span>
+          </label>
+          <div id="wh-fixver-body-${id}" ${p.fixVersionEnabled ? '' : 'hidden'} style="margin-top:14px">
+            <div class="form-group">
+              <label class="form-label" for="wh-fixver-prefix-${id}">Platform prefix</label>
+              <input type="text" id="wh-fixver-prefix-${id}" placeholder="e.g. ios-" value="${esc(p.fixVersionPrefix || '')}" oninput="previewFixVersion('${id}')">
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="wh-fixver-script-${id}">Version script (JS)</label>
+              <textarea id="wh-fixver-script-${id}" rows="3" spellcheck="false" placeholder="\`0.\${now.getUTCMonth()+1}.\${now.getUTCDate()}\`" oninput="previewFixVersion('${id}')">${esc(p.fixVersionScript || '')}</textarea>
+              <p class="form-hint">A JS expression that evaluates to the <strong>number</strong> part (e.g. <code class="code-chip">\`0.\${isoWeek(now)}\`</code>) — no <code class="code-chip">return</code> needed, though a multi-line body with <code class="code-chip">return</code> also works. Inputs: <code class="code-chip">now</code>, <code class="code-chip">pr</code>, <code class="code-chip">versions</code>, helpers <code class="code-chip">isoWeek()</code>/<code class="code-chip">pad()</code>. Final version = prefix + number.</p>
+            </div>
+            <div class="fixver-preview" id="wh-fixver-preview-${id}"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><h3>On merge transition</h3></div>
+        <div class="card-pad">
           <div class="form-group" style="margin:0">
             <label class="form-label" for="wh-merge-${id}">Jira transition</label>
-            <input type="text" id="wh-merge-${id}" placeholder="e.g. In Review" value="${esc(p.mergeTransition || '')}">
-            <p class="form-hint">Leave blank to take no Jira action on merge. Must match a status the ticket's workflow allows.</p>
+            <input type="text" id="wh-merge-${id}" placeholder="e.g. Ready for QA" value="${esc(p.mergeTransition || '')}">
+            <p class="form-hint">After the Fix Version step, move the ticket to this status. Leave blank to take no transition. Must match a status the ticket's workflow allows.</p>
           </div>
         </div>
       </div>
@@ -237,6 +259,31 @@ export function loadProjectWebhooks(id) {
       </div>
     </div>`;
   showForwardStatus(id);
+  previewFixVersion(id);   // paint the initial preview from the saved script
+}
+
+// Live preview for the Fix Version automation: evaluate the (unsaved) prefix + script on the
+// server (same sandbox the merge uses) and show the assembled name, debounced as the user types.
+const _fixverTimers = {};
+export function previewFixVersion(id) {
+  clearTimeout(_fixverTimers[id]);
+  _fixverTimers[id] = setTimeout(async () => {
+    const el = document.getElementById(`wh-fixver-preview-${id}`);
+    if (!el) return;
+    const script = document.getElementById(`wh-fixver-script-${id}`)?.value || '';
+    if (!script.trim()) { el.className = 'fixver-preview'; el.innerHTML = ''; return; }
+    const prefix = document.getElementById(`wh-fixver-prefix-${id}`)?.value || '';
+    try {
+      const r = await apiJson(ROUTES.projectFixversionPreview(id), 'POST', { prefix, script });
+      el.className = 'fixver-preview ok';
+      el.innerHTML = `Preview: <strong>${esc(r.version)}</strong> ${r.exists
+        ? '<span class="fixver-tag">already exists</span>'
+        : '<span class="fixver-tag new">will be created</span>'}`;
+    } catch (e) {
+      el.className = 'fixver-preview err';
+      el.textContent = `Script error: ${e.message}`;
+    }
+  }, 250);
 }
 
 // Reflect whether `gh webhook forward` is actually running for this project's repo, in the
@@ -263,6 +310,9 @@ export async function saveProjectWebhooks(id) {
     await apiJson(ROUTES.project(id), 'PUT', {
       forwardWebhooks: forward,
       mergeTransition: document.getElementById(`wh-merge-${id}`).value.trim(),
+      fixVersionEnabled: document.getElementById(`wh-fixver-enabled-${id}`).checked,
+      fixVersionPrefix: document.getElementById(`wh-fixver-prefix-${id}`).value.trim(),
+      fixVersionScript: document.getElementById(`wh-fixver-script-${id}`).value,
     });
     toast('Webhook settings saved');
     // Refresh the store/sidebar — the same path the edit modal uses (renderProjectNav →
@@ -298,17 +348,4 @@ export async function reloadProjectPRs(id, prState, { silent = false } = {}) {
   if (prState === 'open' && p) p.prs = prs;
   const target = document.getElementById(`proj-prs-${id}`); // may have re-rendered; re-query
   if (target) target.innerHTML = prListHtml(prs.filter(pr => !pr.error), p?.repo, prState);
-  if (prState === 'open') renderOverview(id); // open set drives the chip counts; merged/all don't
-}
-
-// Refresh just the open-PR snapshot + hero chips, WITHOUT touching the visible PR list. Used
-// on sync when the list is showing merged/all (which never updates the open set), so the
-// 'Open PRs'/'To Review' chips don't freeze at their last open-view counts.
-export async function refreshProjectStats(id) {
-  const p = proj(id);
-  if (!p?.repo) return;
-  try {
-    p.prs = await api(`${ROUTES.projectPrs(id)}?state=open`);
-    renderOverview(id);
-  } catch { /* transient — keep the last counts rather than clobbering them */ }
 }

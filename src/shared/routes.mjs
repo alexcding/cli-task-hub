@@ -30,6 +30,9 @@ export const ROUTES = Object.freeze({
   projectPrs: id => `/api/projects/${id}/prs`,
   PROJECT_JIRA: '/api/projects/:id/jira',
   projectJira: id => `/api/projects/${id}/jira`,
+  // Evaluate an (unsaved) fix-version script + prefix and return the assembled preview.
+  PROJECT_FIXVERSION_PREVIEW: '/api/projects/:id/fixversion-preview',
+  projectFixversionPreview: id => `/api/projects/${id}/fixversion-preview`,
 
   // ── Repo / worktree / git ──────────────────────────────────────────────────
   DETECT_REPO: '/api/detect-repo',

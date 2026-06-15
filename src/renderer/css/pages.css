@@ -55,21 +55,25 @@
 #page-settings .seg-tabs { margin-bottom:20px; }   /* tabs sit above the active panel */
 
 /* ── Project detail: paged digest ────────────────────────────────────────────────
-   An overview hero (project tags + live stat chips, same idiom as the dashboard) over
-   the shared segmented control, which pages between sections (one shown at a time).
-   The page owns its own scroll: the hero + picker stay fixed, only .pd-body scrolls. */
+   A header (project name + clickable repo/Jira/forwarding tags) over the shared segmented
+   control, which pages between sections (one shown at a time). The page owns its own scroll:
+   the header + picker stay fixed, only .pd-body scrolls. */
 #page-project.active, #project-page-content { height:100%; }
 .proj-digest { display:flex; flex-direction:column; height:100%; min-height:0; }
 .pd-body { flex:1; min-height:0; overflow-y:auto; overscroll-behavior:contain; }
 
-/* Hero: project name + tags on the left, live stat chips on the right, anchored by a
-   hairline divider. */
-.pd-hero { display:flex; align-items:center; justify-content:space-between; gap:16px 28px;
-  flex-wrap:wrap; margin:2px 0 22px; padding-bottom:22px; border-bottom:1px solid var(--border); }
-.pd-hero .stat-chips { margin-left:auto; }   /* pin the stat chips to the right */
-.pd-headline { display:flex; flex-direction:column; gap:9px; min-width:0; }
-.pd-title { font-size:23px; font-weight:700; letter-spacing:-.5px; line-height:1.1; }
-.pd-tags { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+/* Header block: project name (left) ↔ tags (right) on top, the section picker directly
+   beneath — one fixed unit. */
+.pd-hero { display:flex; flex-direction:column; gap:12px; margin:2px 0 22px; }
+.pd-hero-row { display:flex; align-items:center; justify-content:space-between; gap:12px 28px; flex-wrap:wrap; }
+.pd-titlewrap { display:flex; align-items:center; gap:6px; min-width:0; margin-left:4px; }
+.pd-title { font-size:23px; font-weight:700; letter-spacing:-.5px; line-height:1.1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+/* Gear = edit project (replaces the old toolbar Edit button). */
+.pd-edit { display:inline-flex; align-items:center; justify-content:center; flex-shrink:0; width:28px; height:28px;
+  border:none; background:none; color:var(--text-3); cursor:pointer; border-radius:7px; transition:color .12s, background .12s; }
+.pd-edit svg { width:16px; height:16px; }
+.pd-edit:hover { color:var(--text); background:var(--surface-hover); }
+.pd-tags { display:flex; align-items:center; gap:8px; flex-wrap:wrap; justify-content:flex-end; margin-left:auto; }
 .pd-tag { display:inline-flex; align-items:center; gap:6px; font-size:12px; font-weight:500; color:var(--text-2);
   background:var(--surface); border:1px solid var(--border); border-radius:99px; padding:4px 11px; }
 .pd-tag svg { width:12px; height:12px; flex-shrink:0; }
@@ -82,8 +86,10 @@
 .pd-dot { width:7px; height:7px; border-radius:50%; background:var(--text-3); display:inline-block; }
 .pd-dot.on { background:var(--success); }
 
-/* Section picker — the shared segmented control (.seg-tabs), as in Settings/Activity. */
-.pd-segs { margin-bottom:26px; }
+/* Section picker — the shared segmented control (.seg-tabs), as in Settings/Activity.
+   align-self stops the header's flex column from stretching it full-width: it stays sized
+   to its tabs, like everywhere else .seg-tabs is used. */
+.pd-segs { align-self:flex-start; }
 
 .pd-sec { margin-bottom:38px; }
 .pd-sec:last-child { margin-bottom:0; }
@@ -93,7 +99,7 @@
 .pd-git-host .gt-layout { flex:1; height:auto; }
 .pd-sec-head { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:15px; min-height:32px; }
 .pd-sec-title { font-size:15.5px; font-weight:650; letter-spacing:-.2px; display:flex; align-items:center; gap:10px; }
-/* Tinted section icon badge — reuses the dashboard stat-chip tint palette at a smaller size. */
+/* Tinted section icon badge — the same tint palette the dashboard uses, at a smaller size. */
 .pd-sec-ic { width:25px; height:25px; border-radius:7px; display:inline-flex; align-items:center; justify-content:center; flex-shrink:0; }
 .pd-sec-ic svg { width:15px; height:15px; }
 .pd-sec-ic.tint-accent  { background:var(--accent-bg);color:var(--accent); }
@@ -115,6 +121,15 @@
 .switch-row-text { display:flex; flex-direction:column; gap:2px; }
 .switch-row-title { font-size:13px; font-weight:500; color:var(--text); }
 .switch-row-sub { font-size:12px; color:var(--text-3); }
+
+/* Fix-version automation: the script textarea is code, the preview echoes the assembled name. */
+.webhooks-form textarea { font-family:var(--diff-font,ui-monospace,SFMono-Regular,monospace); font-size:12.5px; line-height:1.5; resize:vertical; min-height:64px; }
+.fixver-preview { font-size:12.5px; padding:8px 11px; border-radius:var(--rs); background:var(--surface-hover); color:var(--text-2); min-height:34px; display:flex; align-items:center; }
+.fixver-preview:empty { display:none; }
+.fixver-preview.err { background:var(--danger-bg); color:var(--danger); font-family:var(--diff-font,ui-monospace,SFMono-Regular,monospace); }
+.fixver-preview strong { color:var(--text); font-family:var(--diff-font,ui-monospace,SFMono-Regular,monospace); margin:0 4px; }
+.fixver-tag { font-size:11px; color:var(--text-3); }
+.fixver-tag.new { color:var(--success); }
 
 .log-toolbar { display:flex; align-items:center; gap:12px; margin-bottom:12px; flex-wrap:wrap; }
 .log-errors { display:flex; align-items:center; gap:5px; margin-left:auto; font-size:12px; color:var(--text-2); cursor:pointer; }

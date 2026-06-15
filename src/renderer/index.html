@@ -252,6 +252,14 @@
                 <label class="form-label">Result Limit</label>
                 <input type="number" id="jira-limit" placeholder="100" min="1">
               </div>
+              <div class="form-group">
+                <label class="form-label">API token</label>
+                <div class="input-reveal">
+                  <input type="password" id="jira-api-token" placeholder="••••••••••••" autocomplete="off">
+                  <button type="button" class="reveal-btn" onclick="toggleSecret(this)" aria-label="Show or hide token"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/></svg></button>
+                </div>
+                <p class="form-hint">Only needed for writes <code class="code-chip">acli</code> can't do — e.g. setting a Fix Version on merge. Reads/transitions use your <code class="code-chip">acli</code> login. Generate one at <a class="link" href="#" onclick="openExternal('https://id.atlassian.com/manage-profile/security/api-tokens'); return false;">id.atlassian.com → Security → API tokens</a>. Stored locally.</p>
+              </div>
               <button class="btn btn-primary" onclick="saveConfig()">Save</button>
             </div>
           </div>

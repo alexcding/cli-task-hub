@@ -176,7 +176,14 @@ main tbody tr:hover td { background:var(--surface-hover); }
 /* Forms */
 .form-group { margin-bottom:14px; }
 .form-label { display:block;font-size:12px;font-weight:600;color:var(--text-2);margin-bottom:5px; }
-input[type=text],input[type=number],select,textarea { width:100%;background-color:var(--surface);border:1px solid var(--border);color:var(--text);padding:7px 11px;border-radius:var(--rs);font-size:13.5px;transition:border-color .12s,box-shadow .12s;outline:none;font-family:inherit; }
+input[type=text],input[type=number],input[type=password],select,textarea { width:100%;background-color:var(--surface);border:1px solid var(--border);color:var(--text);padding:7px 11px;border-radius:var(--rs);font-size:13.5px;transition:border-color .12s,box-shadow .12s;outline:none;font-family:inherit; }
+/* Password field with a reveal (eye) toggle pinned inside the right edge. */
+.input-reveal { position:relative; }
+.input-reveal input { padding-right:36px; }
+.reveal-btn { position:absolute;top:50%;right:5px;transform:translateY(-50%);display:inline-flex;align-items:center;justify-content:center;padding:5px;background:none;border:none;border-radius:var(--rs);color:var(--text-3);cursor:pointer;transition:color .12s,background .12s; }
+.reveal-btn:hover { color:var(--text);background:var(--surface-hover); }
+.reveal-btn.on { color:var(--accent); }
+.reveal-btn svg { width:15px;height:15px;display:block; }
 /* Custom select chevron so the arrow's gap from the right edge equals the text's
    left padding (native selects glue the arrow to the edge). Applies to every
    <select>; .filter-select tunes its own offset to match its tighter padding. */

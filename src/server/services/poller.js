@@ -1,9 +1,9 @@
 const db = require('../database/db');
 const github = require('../repositories/github');
 const jira = require('../repositories/jira');
+const jiraRest = require('../repositories/jira-rest');
+const versionScript = require('./version-script');
 const { PR_CATEGORY } = require('../../shared/constants.mjs');
-
-const DEFAULT_TRANSITION = 'In Review';
 
 // Snapshot ids for the global feeds (vs. project UUIDs).
 const MY_TICKETS_ID = '@me';     // everything assigned to me
@@ -71,32 +71,74 @@ function lean(pr, repo) {
   };
 }
 
-// Transition every Jira ticket linked to a merged PR. Returns the keys handled.
-function applyMergeAutomation(project, pr) {
+// Run the on-merge Jira automation for a merged PR's linked tickets: first the optional Fix
+// Version step, then the optional transition. Returns the keys handled. Never rejects — every
+// external call is wrapped so one failure can't break the sync loop.
+async function applyMergeAutomation(project, pr) {
   const repo = project.repo;
-  const transition = project.mergeTransition || DEFAULT_TRANSITION;
   const links    = db.getLinksByPR(pr.number, repo).map(l => l.jira_key);
   const autoKeys = github.extractJiraKeys(`${pr.title} ${pr.body || ''}`);
   const keys     = [...new Set([...links, ...autoKeys])];
+  if (!keys.length) return keys;
 
-  for (const key of keys) {
+  // 1. Fix Version (opt-in): build the version name, create it in Jira if absent, and stamp it on
+  //    each linked ticket. These are REST writes acli can't do, so they need a Jira API token.
+  if (project.fixVersionEnabled && project.jiraProjectKey) {
     try {
-      jira.transitionWorkItem(key, transition);
-      db.addEvent('jira_transitioned', { key, transition, trigger: `PR #${pr.number} merged` });
-      console.log(`[automation] ${key} → ${transition} (PR #${pr.number} ${repo})`);
+      await applyFixVersion(project, pr, keys);
     } catch (err) {
-      db.addEvent('jira_transition_failed', { key, transition, error: err.message });
-      console.error(`[automation] failed ${key} → ${transition}:`, err.message);
+      // Setup failure (no token, script error, version create) — the per-ticket writes never ran.
+      db.addEvent('jira_fixversion_failed', { error: err.message, trigger: `PR #${pr.number} merged` });
+      console.error(`[automation] fix version failed (PR #${pr.number} ${repo}):`, err.message);
+    }
+  }
+
+  // 2. Transition (opt-in): move each linked ticket. Blank = no transition, as the Automation UI
+  //    promises ("Leave blank to take no transition").
+  const transition = project.mergeTransition;
+  if (transition) {
+    for (const key of keys) {
+      try {
+        jira.transitionWorkItem(key, transition);
+        db.addEvent('jira_transitioned', { key, transition, trigger: `PR #${pr.number} merged` });
+        console.log(`[automation] ${key} → ${transition} (PR #${pr.number} ${repo})`);
+      } catch (err) {
+        db.addEvent('jira_transition_failed', { key, transition, error: err.message });
+        console.error(`[automation] failed ${key} → ${transition}:`, err.message);
+      }
     }
   }
   return keys;
 }
 
-// Webhook entry point — record + automate a single merge.
+// Build the Fix Version name (same sandbox the Automation preview uses) and apply it to each
+// linked ticket. Throws on setup failures (script error, version create) so the caller logs once;
+// per-ticket writes are caught individually so one bad key doesn't block the others.
+async function applyFixVersion(project, pr, keys) {
+  const versions = jira.listVersions(project.jiraProjectKey).map(v => v.name);
+  const { version } = versionScript.buildVersion(
+    project.fixVersionPrefix, project.fixVersionScript,
+    { now: new Date(), pr: { number: pr.number, title: pr.title, body: pr.body || '' }, versions });
+  if (await jiraRest.ensureVersion(project.jiraProjectKey, version, versions))
+    db.addEvent('jira_version_created', { version, project: project.jiraProjectKey, trigger: `PR #${pr.number} merged` });
+  for (const key of keys) {
+    try {
+      await jiraRest.setFixVersion(key, version);
+      db.addEvent('jira_fixversion_set', { key, version, trigger: `PR #${pr.number} merged` });
+      console.log(`[automation] ${key} fixVersion=${version} (PR #${pr.number} ${project.repo})`);
+    } catch (err) {
+      db.addEvent('jira_fixversion_failed', { key, version, error: err.message });
+      console.error(`[automation] fixVersion ${key}=${version} failed:`, err.message);
+    }
+  }
+}
+
+// Webhook entry point — record + automate a single merge. Fire-and-forget: the automation never
+// rejects, so a dangling .catch is just belt-and-braces for an unexpected sync throw.
 function handleMerge(repo, pr) {
   const project = db.projectForRepo(repo);
   db.addEvent('pr_merged', { repo, pr: { number: pr.number, title: pr.title, url: pr.url } });
-  if (project) applyMergeAutomation(project, pr);
+  if (project) applyMergeAutomation(project, pr).catch(err => console.error('[automation]', err.message));
 }
 
 // Coalesce concurrent syncs of the SAME project: a stale dashboard read fires a
@@ -155,7 +197,7 @@ async function syncProjectImpl(project) {
       } else if (pr.state === 'MERGED' && prev !== 'MERGED') {
         console.log(`[sync] PR #${pr.number} in ${project.repo} merged`);
         db.addEvent('pr_merged', meta);
-        applyMergeAutomation(project, pr);
+        await applyMergeAutomation(project, pr);
       } else if (pr.state === 'CLOSED' && prev !== 'CLOSED') {
         db.addEvent('pr_closed', meta);
       }
@@ -295,5 +337,5 @@ module.exports = {
   syncProject, syncProjectJira, syncJiraMine, syncJiraSprint, projectJql, currentSprint,
   handleMerge, applyMergeAutomation,
   setPublisher, setJiraPublisher,
-  DEFAULT_TRANSITION, MY_TICKETS_ID, MY_SPRINT_ID, JIRA_DEFAULTS,
+  MY_TICKETS_ID, MY_SPRINT_ID, JIRA_DEFAULTS,
 };

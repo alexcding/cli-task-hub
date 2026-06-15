@@ -1,10 +1,9 @@
 // Entry point: navigation, SSE live updates, init, and the window bridge that keeps
 // the inline on* handlers in markup working (ES modules aren't globals).
 import { ROUTES } from '/shared/routes.mjs';
-import { state, activeTab } from './stores/store.js';
+import { state, activeTab, projectById } from './stores/store.js';
 import { api } from './services/api.js';
 import { canSplitTerminal } from './lib/util.js';
-import { ICON } from './lib/icons.js';
 import { initTheme, setAppTheme, syncThemeFromSettings } from './services/theme.js';
 import { setFontFamily, bumpFontSize, resetFontSize, zoomTarget, syncFontsFromSettings, populateFontMenus } from './services/fonts.js';
 import { renderTabs, renderProjectNav, tabMenu, initSidebarResize } from './components/sidebar.js';
@@ -14,11 +13,11 @@ import * as terminal from './components/terminal.js';
 import * as split from './components/split.js';
 import { toggleCommitPop, commitAction } from './components/commit.js';
 import { loadDashboard, scrollDash, setUsageTab } from './pages/dashboard.js';
-import { loadProjectPage, projShowSection, reloadProjectPRs, refreshProjectStats, loadProjectWebhooks, saveProjectWebhooks } from './pages/project.js';
+import { loadProjectPage, projShowSection, reloadProjectPRs, loadProjectWebhooks, saveProjectWebhooks, previewFixVersion } from './pages/project.js';
 import { loadGitTab, gitTabPick, gitTabShowCommit, gitTabBack, gitTabRemoveWorktree } from './pages/git-tab.js';
 import * as jiraView from './pages/jira.js';
 import { loadLogs, setLogCategory, clearLogs } from './pages/logs.js';
-import { loadSettings, saveConfig, switchSettingsTab, setReviewSound, previewReviewSound } from './pages/settings.js';
+import { loadSettings, saveConfig, switchSettingsTab, setReviewSound, previewReviewSound, toggleSecret } from './pages/settings.js';
 import * as modal from './components/modal.js';
 
 // ── Navigation ────────────────────────────────────────────────────────────────
@@ -43,10 +42,9 @@ function showPage(name, projectId) {
     jiraView.loadMyTickets();
   } else if (name === 'project' && projectId) {
     state.activeProjectId = projectId;
-    const proj = state.projects.find(p=>p.id===projectId);
+    const proj = projectById(projectId);
     document.getElementById('page-title').textContent = proj?.name || 'Project';
-    document.getElementById('topbar-actions').innerHTML =
-      `<button class="btn btn-secondary btn-sm" onclick="openEditProjectModal('${projectId}')">${ICON.edit} Edit</button>`;
+    // Edit lives on the page now — the gear button beside the project title (project.js).
     document.querySelectorAll('.nav-btn[data-project]').forEach(b => { if(b.dataset.project===projectId) b.classList.add('active'); });
     loadProjectPage(projectId);
   } else if (name === 'activity') {
@@ -136,15 +134,12 @@ function refreshActivePage() {
   } else if (active === 'page-mytickets') {
     jiraView.loadMyTickets();
   } else if (active === 'page-project' && state.activeProjectId) {
-    // The digest shows PRs and Jira at once — refresh both. PRs keep the chosen state filter;
-    // when that's merged/all, also refresh the open snapshot so the hero chips stay live.
+    // The digest shows PRs and Jira at once — refresh both. PRs keep the chosen state filter.
     const id = state.activeProjectId;
     const sel = document.getElementById(`pr-state-${id}`);
-    const view = sel?.value || 'open';
-    if (sel) reloadProjectPRs(id, view, { silent: true });
-    if (view !== 'open') refreshProjectStats(id);
+    if (sel) reloadProjectPRs(id, sel.value || 'open', { silent: true });
     // Only refetch Jira for projects that actually have it configured (a key or saved JQL).
-    const p = state.projects.find(x => x.id === id);
+    const p = projectById(id);
     if ((p?.jiraProjectKey || p?.jql) && document.getElementById(`proj-jira-${id}`)) jiraView.loadProjectJira(id);
   }
 }
@@ -188,10 +183,10 @@ Object.assign(window, {
   loadMyTickets: jiraView.loadMyTickets, setTicketFilter: jiraView.setTicketFilter,
   loadProjectJira: jiraView.loadProjectJira, setProjJiraFilter: jiraView.setProjJiraFilter,
   openStatusMenu: jiraView.openStatusMenu,
-  projShowSection, reloadProjectPRs, loadProjectWebhooks, saveProjectWebhooks, scrollDash, setUsageTab,
+  projShowSection, reloadProjectPRs, loadProjectWebhooks, saveProjectWebhooks, previewFixVersion, scrollDash, setUsageTab,
   loadGitTab, gitTabPick, gitTabShowCommit, gitTabBack, gitTabRemoveWorktree,
   loadLogs, setLogCategory, clearLogs,
-  loadSettings, saveConfig, switchSettingsTab, setReviewSound, previewReviewSound,
+  loadSettings, saveConfig, switchSettingsTab, setReviewSound, previewReviewSound, toggleSecret,
   // project modal
   openNewProjectModal: modal.openNewProjectModal, openEditProjectModal: modal.openEditProjectModal,
   closeModal: modal.closeModal, saveProject: modal.saveProject,

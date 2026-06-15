@@ -10,13 +10,19 @@ const run = (args) => {
 const getWorkItem = (key) =>
   JSON.parse(run(['workitem', 'view', key, '--json']));
 
-// The authenticated Jira site host, parsed from `acli jira auth status`
-// (e.g. "accedobroadband.jira.com"). Used to build ticket links without hardcoding.
-const getSite = () => {
+// The authenticated Jira account, parsed from `acli jira auth status` (e.g. site
+// "accedobroadband.jira.com", email "you@org.com"). The email + a user API token authenticate
+// the REST writes acli can't do (see repositories/jira-rest.js); the site builds ticket links.
+const getAuth = () => {
   const out = run(['auth', 'status']);
-  const m = out.match(/Site:\s*(\S+)/i);
-  return m ? m[1] : null;
+  return {
+    site:  (out.match(/Site:\s*(\S+)/i)  || [])[1] || null,
+    email: (out.match(/Email:\s*(\S+)/i) || [])[1] || null,
+  };
 };
+
+// Just the site host — used to build ticket links without hardcoding.
+const getSite = () => getAuth().site;
 
 const searchWorkItems = (jql, limit = 50) =>
   JSON.parse(run(['workitem', 'search', '--jql', jql, '--limit', String(limit), '--json']));
@@ -58,6 +64,14 @@ const transitionWorkItem = (key, status) => {
   return parsed;
 };
 
+// Existing release versions for a Jira project, as [{ id, name, released, archived }].
+// Backs the fix-version automation (the "does it exist yet?" check + the script's `versions`).
+const listVersions = (projectKey) => {
+  if (!projectKey) return [];
+  const out = JSON.parse(run(['project', 'view', '--key', projectKey, '--json']));
+  return (out.versions || []).map(v => ({ id: v.id, name: v.name, released: !!v.released, archived: !!v.archived }));
+};
+
 // The active sprint for a project: first scrum board for the key → first active
 // sprint on it. acli's workitem search never returns the sprint custom field, so
 // this two-call chain is the only way to get the sprint's name/dates.
@@ -70,4 +84,4 @@ const activeSprint = (projectKey) => {
   return s ? { name: s.name, endDate: s.endDate || null } : null;
 };
 
-module.exports = { getWorkItem, getSite, searchWorkItems, searchLean, transitionWorkItem, activeSprint };
+module.exports = { getWorkItem, getSite, getAuth, searchWorkItems, searchLean, transitionWorkItem, activeSprint, listVersions };
