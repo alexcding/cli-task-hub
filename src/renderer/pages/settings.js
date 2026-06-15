@@ -26,7 +26,7 @@ export async function loadSettings() {
   initUsage();
 }
 
-// Horizontal tab picker — mirrors switchTab() in project.js. Panels live in
+// Horizontal tab picker for the Settings panels. Panels live in
 // index.html (#settings-tab-<name>); all fields stay in the DOM regardless of the
 // active tab, so loadSettings() can populate them whether or not a panel is shown.
 export function switchSettingsTab(tab, btn) {

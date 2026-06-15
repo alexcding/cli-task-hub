@@ -19,9 +19,9 @@ export const jiraKeyFromUrl = url => (String(url || '').match(/\/browse\/([A-Z][
 // A webview tab (GitHub PR or Jira ticket) can pair a terminal beside it.
 export const canSplitTerminal = t => !!t && (t.kind === 'github' || t.kind === 'jira');
 
-// Mark the clicked segmented-tab button active and clear its siblings. Shared by the
-// project page (switchTab) and Settings (switchSettingsTab) so the active-state swap has
-// one definition; DOM is touched only when called, so importers stay test-safe.
+// Mark the clicked segmented-tab button active and clear its siblings. Used by Settings
+// (switchSettingsTab) so the active-state swap has one definition; DOM is touched only
+// when called, so importers stay test-safe.
 export const setActiveSegTab = btn => {
   btn.closest('.seg-tabs').querySelectorAll('.seg-tab').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');

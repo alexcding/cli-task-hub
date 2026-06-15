@@ -87,6 +87,9 @@ export function jiraByKey(key) {
   return null;
 }
 
+// Project by id — the page-level lookup shared by the project page and the Git tab.
+export const projectById = id => state.projects.find(p => p.id === id) || null;
+
 // The project that owns a PR (by url), so we can root its terminal in that project's
 // local workspace; null cwd → main falls back to the app's own repo.
 export const projectByPrUrl = url => state.projects.find(g => (g.prs || []).some(p => p.url === url)) || null;

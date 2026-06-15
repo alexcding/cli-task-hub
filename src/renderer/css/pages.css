@@ -52,12 +52,55 @@
 .tab-btn:hover { color:var(--text); }
 .tab-btn.active { color:var(--accent); border-bottom-color:var(--accent); }
 .tab-panel { display:none; }
-/* Project tab bar: the segmented tab widget on the left, the active tab's controls
-   on the right (PR state dropdown / Jira ticket filters + Refresh). */
-.proj-tabbar { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:20px; }
-.proj-tab-controls { display:flex; align-items:center; gap:8px; }
-.proj-tab-controls .tab-controls { display:flex; gap:8px; align-items:center; flex-wrap:nowrap; }
 #page-settings .seg-tabs { margin-bottom:20px; }   /* tabs sit above the active panel */
+
+/* ── Project detail: paged digest ────────────────────────────────────────────────
+   An overview hero (project tags + live stat chips, same idiom as the dashboard) over
+   the shared segmented control, which pages between sections (one shown at a time).
+   The page owns its own scroll: the hero + picker stay fixed, only .pd-body scrolls. */
+#page-project.active, #project-page-content { height:100%; }
+.proj-digest { display:flex; flex-direction:column; height:100%; min-height:0; }
+.pd-body { flex:1; min-height:0; overflow-y:auto; overscroll-behavior:contain; }
+
+/* Hero: project name + tags on the left, live stat chips on the right, anchored by a
+   hairline divider. */
+.pd-hero { display:flex; align-items:center; justify-content:space-between; gap:16px 28px;
+  flex-wrap:wrap; margin:2px 0 22px; padding-bottom:22px; border-bottom:1px solid var(--border); }
+.pd-hero .stat-chips { margin-left:auto; }   /* pin the stat chips to the right */
+.pd-headline { display:flex; flex-direction:column; gap:9px; min-width:0; }
+.pd-title { font-size:23px; font-weight:700; letter-spacing:-.5px; line-height:1.1; }
+.pd-tags { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.pd-tag { display:inline-flex; align-items:center; gap:6px; font-size:12px; font-weight:500; color:var(--text-2);
+  background:var(--surface); border:1px solid var(--border); border-radius:99px; padding:4px 11px; }
+.pd-tag svg { width:12px; height:12px; flex-shrink:0; }
+.pd-tag-mono { font-family:var(--diff-font,ui-monospace,SFMono-Regular,monospace); }
+/* Clickable tags — the repo (button → GitHub) and Jira (anchor → viewer): match the tag
+   look, add affordance. */
+.pd-tag-btn { font-family:inherit; cursor:pointer; text-decoration:none; transition:color .12s,border-color .12s; }
+.pd-tag-btn.pd-tag-mono { font-family:var(--diff-font,ui-monospace,SFMono-Regular,monospace); }
+.pd-tag-btn:hover { color:var(--accent); border-color:var(--accent); }
+.pd-dot { width:7px; height:7px; border-radius:50%; background:var(--text-3); display:inline-block; }
+.pd-dot.on { background:var(--success); }
+
+/* Section picker — the shared segmented control (.seg-tabs), as in Settings/Activity. */
+.pd-segs { margin-bottom:26px; }
+
+.pd-sec { margin-bottom:38px; }
+.pd-sec:last-child { margin-bottom:0; }
+/* Git page fills the scroll body (instead of a viewport calc) so it doesn't double-scroll. */
+.pd-body .pd-sec[data-sec="git"]:not([hidden]) { display:flex; flex-direction:column; height:100%; margin-bottom:0; }
+.pd-git-host { flex:1; min-height:0; display:flex; }
+.pd-git-host .gt-layout { flex:1; height:auto; }
+.pd-sec-head { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:15px; min-height:32px; }
+.pd-sec-title { font-size:15.5px; font-weight:650; letter-spacing:-.2px; display:flex; align-items:center; gap:10px; }
+/* Tinted section icon badge — reuses the dashboard stat-chip tint palette at a smaller size. */
+.pd-sec-ic { width:25px; height:25px; border-radius:7px; display:inline-flex; align-items:center; justify-content:center; flex-shrink:0; }
+.pd-sec-ic svg { width:15px; height:15px; }
+.pd-sec-ic.tint-accent  { background:var(--accent-bg);color:var(--accent); }
+.pd-sec-ic.tint-success { background:var(--success-bg);color:var(--success); }
+.pd-sec-ic.tint-warn    { background:var(--warn-bg);color:var(--warn); }
+.pd-sec-ic.tint-neutral { background:var(--surface-hover);color:var(--text-2); }
+.pd-sec-ctl { display:flex; align-items:center; gap:8px; flex-wrap:wrap; justify-content:flex-end; }
 
 /* Webhooks tab (project page): a width-capped column of grouped cards + a trailing
    Save row, mirroring the Settings panels so forms don't stretch full-width. */
@@ -78,8 +121,8 @@
 .log-errors input { width:auto; margin:0; }
 .tab-panel.active { display:block; }
 
-/* Project detail: the tab shell. The Git tab (.gt-layout) is the full git surface. */
-.proj-main { min-width:0; }
+/* Project detail Git section: the full surface (.gt-layout) opened in place from the
+   compact summary. */
 .pg-refresh { background:none; border:none; color:var(--text-3); cursor:pointer; padding:4px; border-radius:5px; display:inline-flex; margin-left:auto; }
 .pg-refresh:hover { background:var(--surface-hover); color:var(--text); }
 .pg-refresh svg { width:15px; height:15px; }

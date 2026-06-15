@@ -47,6 +47,10 @@ contextBridge.exposeInMainWorld('taskhub', {
   // workspace/worktree chip; resolves once the OS hands the open off.
   openPath: (p) => ipcRenderer.invoke('open-path', p),
 
+  // Open an http(s) URL in the default browser (main guards the scheme). Backs the project
+  // page's repo/Jira tags.
+  openExternal: (url) => ipcRenderer.invoke('open-external', url),
+
   // Close the dashboard window — ⌘W's fallback when no tab is in view.
   closeWindow: () => ipcRenderer.send('close-window'),
 

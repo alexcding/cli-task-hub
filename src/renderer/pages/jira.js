@@ -152,13 +152,22 @@ export async function loadProjectJira(id) {
   const tbody = document.getElementById(`proj-jira-${id}`);
   if (!tbody) return;
   try {
-    const [snap, settings] = await Promise.all([api(ROUTES.projectJira(id)), api(ROUTES.SETTINGS)]);
-    if (state.projJiraFilters[id] === undefined) state.projJiraFilters[id] = parseFilters(settings['ticket_filter_' + id]);
+    // The per-project filter is seeded once from settings, then lives in memory — so only read
+    // settings the first time. loadProjectJira runs on every open AND every sync; refetching
+    // settings each time would be pure waste on the hot path.
+    const needSettings = state.projJiraFilters[id] === undefined;
+    const [snap, settings] = await Promise.all([api(ROUTES.projectJira(id)), needSettings ? api(ROUTES.SETTINGS) : null]);
+    if (needSettings) state.projJiraFilters[id] = parseFilters(settings['ticket_filter_' + id]);
     state.projJiraSnap[id] = snap;
     rememberStatuses(snap.items);
     renderProjJiraFilter(id);
     renderProjJira(id);
-  } catch(e) { tbody.innerHTML = jiraRow(esc(e.message), 'var(--danger)'); }
+  } catch(e) {
+    // Record the error so the snapshot's state is consistent (the hero chip suppresses its
+    // count on error instead of showing a misleading 0).
+    state.projJiraSnap[id] = { items: [], error: e.message };
+    tbody.innerHTML = jiraRow(esc(e.message), 'var(--danger)');
+  }
 }
 
 export function renderProjJiraFilter(id) {
@@ -253,5 +262,5 @@ function applyStatusLocally(key, status) {
   Object.values(state.projJiraSnap).forEach(patch);
   if (document.getElementById('page-dashboard')?.classList.contains('active')) renderDashboardSprint();
   if (document.getElementById('page-mytickets')?.classList.contains('active')) { renderMyTicketsFilter(); renderMyTickets(); }
-  if (state.activeProjectId && document.getElementById(`tab-jira-${state.activeProjectId}`)?.classList.contains('active')) { renderProjJiraFilter(state.activeProjectId); renderProjJira(state.activeProjectId); }
+  if (state.activeProjectId && document.getElementById(`proj-jira-${state.activeProjectId}`)) { renderProjJiraFilter(state.activeProjectId); renderProjJira(state.activeProjectId); }
 }

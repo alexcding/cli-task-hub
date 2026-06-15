@@ -23,6 +23,7 @@ const CH = {
   CHOOSE_FOLDER:    'choose-folder',     // invoke → absolute path | null
   SOUND_PREVIEW:    'sound:preview',     // invoke ← path | null | 'system'
   OPEN_PATH:        'open-path',         // invoke ← path
+  OPEN_EXTERNAL:    'open-external',     // invoke ← http(s) url (opened in the default browser)
   AVATAR_FETCH:     'avatar:fetch',      // invoke ← login → data URI | null
   USAGE_GET:        'usage:get',         // invoke → { totalKB, totalCPU, breakdown }
 

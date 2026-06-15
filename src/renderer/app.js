@@ -14,7 +14,7 @@ import * as terminal from './components/terminal.js';
 import * as split from './components/split.js';
 import { toggleCommitPop, commitAction } from './components/commit.js';
 import { loadDashboard, scrollDash, setUsageTab } from './pages/dashboard.js';
-import { loadProjectPage, switchTab, reloadProjectPRs, loadProjectWebhooks, saveProjectWebhooks } from './pages/project.js';
+import { loadProjectPage, projShowSection, reloadProjectPRs, refreshProjectStats, loadProjectWebhooks, saveProjectWebhooks } from './pages/project.js';
 import { loadGitTab, gitTabPick, gitTabShowCommit, gitTabBack, gitTabRemoveWorktree } from './pages/git-tab.js';
 import * as jiraView from './pages/jira.js';
 import { loadLogs, setLogCategory, clearLogs } from './pages/logs.js';
@@ -136,13 +136,16 @@ function refreshActivePage() {
   } else if (active === 'page-mytickets') {
     jiraView.loadMyTickets();
   } else if (active === 'page-project' && state.activeProjectId) {
-    const prPanel = document.getElementById(`tab-prs-${state.activeProjectId}`);
-    if (prPanel?.classList.contains('active')) {
-      const sel = document.getElementById(`pr-state-${state.activeProjectId}`);
-      reloadProjectPRs(state.activeProjectId, sel?.value || 'open', { silent: true });
-    }
-    const jiraPanel = document.getElementById(`tab-jira-${state.activeProjectId}`);
-    if (jiraPanel?.classList.contains('active')) jiraView.loadProjectJira(state.activeProjectId);
+    // The digest shows PRs and Jira at once — refresh both. PRs keep the chosen state filter;
+    // when that's merged/all, also refresh the open snapshot so the hero chips stay live.
+    const id = state.activeProjectId;
+    const sel = document.getElementById(`pr-state-${id}`);
+    const view = sel?.value || 'open';
+    if (sel) reloadProjectPRs(id, view, { silent: true });
+    if (view !== 'open') refreshProjectStats(id);
+    // Only refetch Jira for projects that actually have it configured (a key or saved JQL).
+    const p = state.projects.find(x => x.id === id);
+    if ((p?.jiraProjectKey || p?.jql) && document.getElementById(`proj-jira-${id}`)) jiraView.loadProjectJira(id);
   }
 }
 function scheduleRefresh() {
@@ -174,7 +177,7 @@ Object.assign(window, {
   showPage, setAppTheme, setFontFamily, bumpFontSize,
   // sidebar / tabs
   activateTab: viewer.activateTab, closeTab: viewer.closeTab, tabMenu,
-  openPrSplit: viewer.openPrSplit, jiraClick: viewer.jiraClick,
+  openPrSplit: viewer.openPrSplit, openRepo: viewer.openRepo, openExternal: viewer.openExternal, jiraClick: viewer.jiraClick,
   openTabFolder: viewer.openTabFolder, createTabWorktree: viewer.createTabWorktree,
   folderMenu: viewer.folderMenu, removeTabWorktree: viewer.removeTabWorktree,
   // viewer toolbar
@@ -185,7 +188,7 @@ Object.assign(window, {
   loadMyTickets: jiraView.loadMyTickets, setTicketFilter: jiraView.setTicketFilter,
   loadProjectJira: jiraView.loadProjectJira, setProjJiraFilter: jiraView.setProjJiraFilter,
   openStatusMenu: jiraView.openStatusMenu,
-  switchTab, reloadProjectPRs, loadProjectWebhooks, saveProjectWebhooks, scrollDash, setUsageTab,
+  projShowSection, reloadProjectPRs, loadProjectWebhooks, saveProjectWebhooks, scrollDash, setUsageTab,
   loadGitTab, gitTabPick, gitTabShowCommit, gitTabBack, gitTabRemoveWorktree,
   loadLogs, setLogCategory, clearLogs,
   loadSettings, saveConfig, switchSettingsTab, setReviewSound, previewReviewSound,

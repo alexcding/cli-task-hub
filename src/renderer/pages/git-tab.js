@@ -4,7 +4,7 @@
 // only worktree write is removing an existing worktree folder (no create — that's done from
 // the terminal tab chip). Reuses the shared git render helpers from git.js.
 import { ROUTES } from '/shared/routes.mjs';
-import { state } from '../stores/store.js';
+import { state, projectById as proj } from '../stores/store.js';
 import { api, apiJson } from '../services/api.js';
 import { esc, escJs, fmtDate } from '../lib/util.js';
 import { ICON } from '../lib/icons.js';
@@ -15,7 +15,6 @@ import { ensureDiff2Html, drawDiff, graphSvg, refChips, fmtDateTime, LANE_W, ROW
 // One project tab is visible at a time → a single module-level snapshot suffices.
 let _t = null;   // { id, cwd, ref, viewing, commits, graph, refs, view:'list'|'commit', sha, detail }
 let _busy = false;
-const proj = id => state.projects.find(p => p.id === id);
 
 // ── Entry: render the tab shell, then load refs + log in parallel ────────────────────
 export async function loadGitTab(id) {

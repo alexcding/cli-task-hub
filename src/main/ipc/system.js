@@ -34,6 +34,18 @@ function register() {
   // workspace/worktree chip (see updateFolderChip in viewer.js).
   ipcMain.handle(CH.OPEN_PATH, (_e, p) => { if (p) shell.openPath(String(p)); });
 
+  // Open an http(s) URL in the user's default browser. Backs the project page's repo/Jira
+  // tags. Parse + protocol-check (not a prefix match) and reject control chars, so a
+  // non-http(s) scheme (file:, javascript:) or an embedded CRLF can't reach shell.openExternal.
+  ipcMain.handle(CH.OPEN_EXTERNAL, (_e, url) => {
+    const s = String(url || '');
+    if (/[\u0000-\u001F\u007F]/.test(s)) return;   // no control chars / CR / LF
+    try {
+      const u = new URL(s);
+      if (u.protocol === 'http:' || u.protocol === 'https:') shell.openExternal(s);
+    } catch { /* not a valid URL — ignore */ }
+  });
+
   // Native folder picker for choosing a project's workspace folder.
   ipcMain.handle(CH.CHOOSE_FOLDER, async () => {
     const parent = getWin() || undefined;

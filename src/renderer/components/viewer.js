@@ -348,6 +348,16 @@ export async function createTabWorktree() {
   }
 }
 
+// Open an http(s) URL in the user's default browser (main guards the scheme).
+export function openExternal(url) {
+  if (url) window.taskhub?.openExternal?.(url);
+}
+
+// Open a repo's GitHub home page in the default browser. `repo` is "owner/name".
+export function openRepo(repo) {
+  if (repo) openExternal(`https://github.com/${repo}`);
+}
+
 // PR card / Jira badge click handlers. repo/branch are passed from the card (so the
 // terminal can map to the project workspace + worktree even when projects lost their PRs).
 export function openPrSplit(url, num, repo, branch) {
