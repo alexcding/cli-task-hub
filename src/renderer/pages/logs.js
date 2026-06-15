@@ -90,12 +90,30 @@ function presentEvent(ev, p) {
   };
   if (t === 'jira_transitioned') return {
     icon: ICON.refresh, tint: 'var(--success)', bg: 'var(--success-bg)',
-    html: `${jiraLink(p.key)} moved to <strong>${esc(p.transition || '?')}</strong>`,
+    // When the merge also set a Fix Version, show it inline so the one entry tells the whole story.
+    html: `${jiraLink(p.key)} moved to <strong>${esc(p.transition || '?')}</strong>${p.version ? ` · Fix Version <strong>${esc(p.version)}</strong>` : ''}`,
     detail: p.trigger ? `Triggered by ${esc(p.trigger)}` : '',
   };
   if (t === 'jira_transition_failed') return {
     icon: ICON.warn, tint: 'var(--danger)', bg: 'var(--danger-bg)',
     html: `Failed to transition ${jiraLink(p.key)}`,
+    detail: esc(p.error || ''),
+  };
+  if (t === 'jira_version_created') return {
+    icon: ICON.plus, tint: 'var(--accent)', bg: 'var(--accent-bg)',
+    html: `Fix Version <strong>${esc(p.version || '?')}</strong> created in <strong>${esc(p.project || '?')}</strong>`,
+    detail: p.trigger ? `Triggered by ${esc(p.trigger)}` : '',
+  };
+  // Standalone "Fix Version set" entry — emitted only when no transition follows (otherwise the
+  // version rides on the jira_transitioned entry above).
+  if (t === 'jira_fixversion_set') return {
+    icon: ICON.checkCircle, tint: 'var(--success)', bg: 'var(--success-bg)',
+    html: `Fix Version <strong>${esc(p.version || '?')}</strong> set on ${jiraLink(p.key)}`,
+    detail: p.trigger ? `Triggered by ${esc(p.trigger)}` : '',
+  };
+  if (t === 'jira_fixversion_failed') return {
+    icon: ICON.warn, tint: 'var(--danger)', bg: 'var(--danger-bg)',
+    html: `Failed to set Fix Version${p.key ? ` on ${jiraLink(p.key)}` : ''}`,
     detail: esc(p.error || ''),
   };
   if (t === 'sync_failed') return {

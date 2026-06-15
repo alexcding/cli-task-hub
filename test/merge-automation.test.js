@@ -22,7 +22,11 @@ const jiraRest = require('../src/server/repositories/jira-rest');
 function harness(t, { versions = [], created = true } = {}) {
   const calls = [];
   mock.method(db, 'getLinksByPR', () => [{ jira_key: 'ABC-1' }]);
-  mock.method(db, 'addEvent', (type) => { calls.push(`event:${type}`); });
+  // Tag the events that carry a version so tests can assert where the version surfaces.
+  mock.method(db, 'addEvent', (type, payload = {}) => {
+    const v = (type === 'jira_transitioned' || type === 'jira_fixversion_set') && payload.version ? `:${payload.version}` : '';
+    calls.push(`event:${type}${v}`);
+  });
   mock.method(github, 'extractJiraKeys', () => ['ABC-2']);
   mock.method(jira, 'listVersions', () => versions.map(name => ({ name })));
   mock.method(jira, 'transitionWorkItem', (key, status) => { calls.push(`transition:${key}:${status}`); });
@@ -76,6 +80,29 @@ test('merge automation: the Fix Version step is skipped when the feature is off'
 
   assert.ok(!calls.some(c => /^(ensureVersion|setFixVersion):/.test(c)), 'no version writes when disabled');
   assert.ok(calls.includes('transition:ABC-1:Ready for QA'), 'the transition still runs on its own');
+});
+
+test('merge automation: the Fix Version rides on the transition entry, not a separate one', async (t) => {
+  const calls = harness(t);
+  await poller.applyMergeAutomation({
+    repo: 'octo/repo', jiraProjectKey: 'ABC',
+    fixVersionEnabled: true, fixVersionPrefix: 'ios-', fixVersionScript: '`1.0`',
+    mergeTransition: 'Ready for QA',
+  }, PR);
+
+  assert.ok(calls.includes('event:jira_transitioned:ios-1.0'), 'the transition entry carries the version');
+  assert.ok(!calls.some(c => c.startsWith('event:jira_fixversion_set')), 'no separate "set" entry when a transition follows');
+});
+
+test('merge automation: with no transition, the Fix Version gets its own entry', async (t) => {
+  const calls = harness(t);
+  await poller.applyMergeAutomation({
+    repo: 'octo/repo', jiraProjectKey: 'ABC',
+    fixVersionEnabled: true, fixVersionPrefix: 'ios-', fixVersionScript: '`1.0`',
+    mergeTransition: '',
+  }, PR);
+
+  assert.ok(calls.includes('event:jira_fixversion_set:ios-1.0'), 'standalone set entry records the version when nothing else does');
 });
 
 test('merge automation: an already-existing version is reused, not re-created', async (t) => {

@@ -81,27 +81,33 @@ async function applyMergeAutomation(project, pr) {
   const keys     = [...new Set([...links, ...autoKeys])];
   if (!keys.length) return keys;
 
+  const transition = project.mergeTransition;
+
   // 1. Fix Version (opt-in): build the version name, create it in Jira if absent, and stamp it on
-  //    each linked ticket. These are REST writes acli can't do, so they need a Jira API token.
+  //    each linked ticket (REST writes acli can't do → needs a Jira API token). When a transition
+  //    will also run, the version rides on THAT activity entry ("moved to X · Fix Version Y" — one
+  //    line per ticket); with no transition it gets its own entry. `version` = the applied name,
+  //    null if the step is off or fails.
+  let version = null;
   if (project.fixVersionEnabled && project.jiraProjectKey) {
     try {
-      await applyFixVersion(project, pr, keys);
+      version = await applyFixVersion(project, pr, keys, !transition);
     } catch (err) {
       // Setup failure (no token, script error, version create) — the per-ticket writes never ran.
+      version = null;
       db.addEvent('jira_fixversion_failed', { error: err.message, trigger: `PR #${pr.number} merged` });
       console.error(`[automation] fix version failed (PR #${pr.number} ${repo}):`, err.message);
     }
   }
 
   // 2. Transition (opt-in): move each linked ticket. Blank = no transition, as the Automation UI
-  //    promises ("Leave blank to take no transition").
-  const transition = project.mergeTransition;
+  //    promises ("Leave blank to take no transition"). The applied Fix Version rides along.
   if (transition) {
     for (const key of keys) {
       try {
         jira.transitionWorkItem(key, transition);
-        db.addEvent('jira_transitioned', { key, transition, trigger: `PR #${pr.number} merged` });
-        console.log(`[automation] ${key} → ${transition} (PR #${pr.number} ${repo})`);
+        db.addEvent('jira_transitioned', { key, transition, version: version || undefined, trigger: `PR #${pr.number} merged` });
+        console.log(`[automation] ${key} → ${transition}${version ? ` (fixVersion ${version})` : ''} (PR #${pr.number} ${repo})`);
       } catch (err) {
         db.addEvent('jira_transition_failed', { key, transition, error: err.message });
         console.error(`[automation] failed ${key} → ${transition}:`, err.message);
@@ -111,10 +117,12 @@ async function applyMergeAutomation(project, pr) {
   return keys;
 }
 
-// Build the Fix Version name (same sandbox the Automation preview uses) and apply it to each
-// linked ticket. Throws on setup failures (script error, version create) so the caller logs once;
-// per-ticket writes are caught individually so one bad key doesn't block the others.
-async function applyFixVersion(project, pr, keys) {
+// Build the Fix Version name (same sandbox the Automation preview uses) and apply it to each linked
+// ticket; returns the built name. Throws on setup failures (script error, version create) so the
+// caller logs once; per-ticket writes are caught individually so one bad key doesn't block the
+// others. `recordSet` emits a per-ticket "Fix Version set" activity entry on success — suppressed
+// when a transition will also run (the version rides on the transition entry instead).
+async function applyFixVersion(project, pr, keys, recordSet) {
   const versions = jira.listVersions(project.jiraProjectKey).map(v => v.name);
   const { version } = versionScript.buildVersion(
     project.fixVersionPrefix, project.fixVersionScript,
@@ -124,13 +132,14 @@ async function applyFixVersion(project, pr, keys) {
   for (const key of keys) {
     try {
       await jiraRest.setFixVersion(key, version);
-      db.addEvent('jira_fixversion_set', { key, version, trigger: `PR #${pr.number} merged` });
+      if (recordSet) db.addEvent('jira_fixversion_set', { key, version, trigger: `PR #${pr.number} merged` });
       console.log(`[automation] ${key} fixVersion=${version} (PR #${pr.number} ${project.repo})`);
     } catch (err) {
       db.addEvent('jira_fixversion_failed', { key, version, error: err.message });
       console.error(`[automation] fixVersion ${key}=${version} failed:`, err.message);
     }
   }
+  return version;
 }
 
 // Webhook entry point — record + automate a single merge. Fire-and-forget: the automation never
