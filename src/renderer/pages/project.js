@@ -188,7 +188,8 @@ function lazyOnce(bodyId, load) {
   return true;
 }
 
-// Webhooks form — the forwarding toggle + on-merge Jira transition, grouped into sections.
+// Automation form — event forwarding (its own card) + the on-merge action series (set Fix
+// Version → transition), shown as ordered steps since they run in sequence on each linked ticket.
 export function loadProjectWebhooks(id) {
   const el = document.getElementById(`proj-webhooks-${id}`);
   if (!el) return;
@@ -217,39 +218,46 @@ export function loadProjectWebhooks(id) {
         </div>
       </div>
 
+      <!-- On GitHub PR merge: a series of actions run, in order, against each linked Jira ticket. -->
       <div class="card">
-        <div class="card-header"><h3>Fix Version on merge</h3></div>
+        <div class="card-header"><h3>On GitHub PR merge</h3></div>
         <div class="card-pad">
-          <p class="card-intro">On merge, build a version name from the prefix + script, create it in Jira if it doesn't exist, and set it as the ticket's Fix Version. Needs a Jira API token (Settings → Jira).</p>
-          <label class="switch-row">
-            <input type="checkbox" id="wh-fixver-enabled-${id}" ${p.fixVersionEnabled ? 'checked' : ''} onchange="document.getElementById('wh-fixver-body-${id}').hidden = !this.checked">
-            <span class="switch-row-text">
-              <span class="switch-row-title">Set Fix Version on merge</span>
-              <span class="switch-row-sub">Off → merge only transitions the ticket.</span>
-            </span>
-          </label>
-          <div id="wh-fixver-body-${id}" ${p.fixVersionEnabled ? '' : 'hidden'} style="margin-top:14px">
-            <div class="form-group">
-              <label class="form-label" for="wh-fixver-prefix-${id}">Platform prefix</label>
-              <input type="text" id="wh-fixver-prefix-${id}" placeholder="e.g. ios-" value="${esc(p.fixVersionPrefix || '')}" oninput="previewFixVersion('${id}')">
-            </div>
-            <div class="form-group">
-              <label class="form-label" for="wh-fixver-script-${id}">Version script (JS)</label>
-              <textarea id="wh-fixver-script-${id}" rows="3" spellcheck="false" placeholder="\`0.\${now.getUTCMonth()+1}.\${now.getUTCDate()}\`" oninput="previewFixVersion('${id}')">${esc(p.fixVersionScript || '')}</textarea>
-              <p class="form-hint">A JS expression that evaluates to the <strong>number</strong> part (e.g. <code class="code-chip">\`0.\${isoWeek(now)}\`</code>) — no <code class="code-chip">return</code> needed, though a multi-line body with <code class="code-chip">return</code> also works. Inputs: <code class="code-chip">now</code>, <code class="code-chip">pr</code>, <code class="code-chip">versions</code>, helpers <code class="code-chip">isoWeek()</code>/<code class="code-chip">pad()</code>. Final version = prefix + number.</p>
-            </div>
-            <div class="fixver-preview" id="wh-fixver-preview-${id}"></div>
-          </div>
-        </div>
-      </div>
+          <p class="card-intro">When a forwarded PR merges, these steps run in order on every linked Jira ticket. Each is optional.</p>
 
-      <div class="card">
-        <div class="card-header"><h3>On merge transition</h3></div>
-        <div class="card-pad">
-          <div class="form-group" style="margin:0">
-            <label class="form-label" for="wh-merge-${id}">Jira transition</label>
-            <input type="text" id="wh-merge-${id}" placeholder="e.g. Ready for QA" value="${esc(p.mergeTransition || '')}">
-            <p class="form-hint">After the Fix Version step, move the ticket to this status. Leave blank to take no transition. Must match a status the ticket's workflow allows.</p>
+          <div class="merge-step">
+            <span class="merge-step-n">1</span>
+            <div class="merge-step-body">
+              <label class="switch-row">
+                <input type="checkbox" id="wh-fixver-enabled-${id}" ${p.fixVersionEnabled ? 'checked' : ''} onchange="document.getElementById('wh-fixver-body-${id}').hidden = !this.checked">
+                <span class="switch-row-text">
+                  <span class="switch-row-title">Set Fix Version</span>
+                  <span class="switch-row-sub">Build a version name, create it in Jira if missing, and stamp it on the ticket. Needs a Jira API token (Settings → Jira).</span>
+                </span>
+              </label>
+              <div id="wh-fixver-body-${id}" ${p.fixVersionEnabled ? '' : 'hidden'} style="margin-top:14px">
+                <div class="form-group">
+                  <label class="form-label" for="wh-fixver-prefix-${id}">Platform prefix</label>
+                  <input type="text" id="wh-fixver-prefix-${id}" placeholder="e.g. ios-" value="${esc(p.fixVersionPrefix || '')}" oninput="previewFixVersion('${id}')">
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="wh-fixver-script-${id}">Version script (JS)</label>
+                  <textarea id="wh-fixver-script-${id}" rows="3" spellcheck="false" placeholder="\`0.\${now.getUTCMonth()+1}.\${now.getUTCDate()}\`" oninput="previewFixVersion('${id}')">${esc(p.fixVersionScript || '')}</textarea>
+                  <p class="form-hint">A JS expression that evaluates to the <strong>number</strong> part (e.g. <code class="code-chip">\`0.\${isoWeek(now)}\`</code>) — no <code class="code-chip">return</code> needed, though a multi-line body with <code class="code-chip">return</code> also works. Inputs: <code class="code-chip">now</code>, <code class="code-chip">pr</code>, <code class="code-chip">versions</code>, helpers <code class="code-chip">isoWeek()</code>/<code class="code-chip">pad()</code>. Final version = prefix + number.</p>
+                </div>
+                <div class="fixver-preview" id="wh-fixver-preview-${id}"></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="merge-step">
+            <span class="merge-step-n">2</span>
+            <div class="merge-step-body">
+              <div class="form-group" style="margin:0">
+                <label class="form-label" for="wh-merge-${id}">Transition the ticket</label>
+                <input type="text" id="wh-merge-${id}" placeholder="e.g. Ready for QA" value="${esc(p.mergeTransition || '')}">
+                <p class="form-hint">Move the ticket to this status. Leave blank to take no transition. Must match a status the ticket's workflow allows.</p>
+              </div>
+            </div>
           </div>
         </div>
       </div>

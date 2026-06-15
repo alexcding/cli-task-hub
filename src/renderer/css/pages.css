@@ -122,6 +122,14 @@
 .switch-row-title { font-size:13px; font-weight:500; color:var(--text); }
 .switch-row-sub { font-size:12px; color:var(--text-3); }
 
+/* On-merge series: numbered steps run in order on each linked ticket. A number badge on the left,
+   the control on the right; a hairline between steps reads them as a sequence, not siblings. */
+.merge-step { display:flex; gap:12px; }
+.merge-step + .merge-step { margin-top:18px; padding-top:18px; border-top:1px solid var(--border); }
+.merge-step-n { flex-shrink:0; width:22px; height:22px; border-radius:50%; background:var(--accent-bg); color:var(--accent);
+  font-size:12px; font-weight:650; display:inline-flex; align-items:center; justify-content:center; margin-top:1px; }
+.merge-step-body { flex:1; min-width:0; }
+
 /* Fix-version automation: the script textarea is code, the preview echoes the assembled name. */
 .webhooks-form textarea { font-family:var(--diff-font,ui-monospace,SFMono-Regular,monospace); font-size:12.5px; line-height:1.5; resize:vertical; min-height:64px; }
 .fixver-preview { font-size:12.5px; padding:8px 11px; border-radius:var(--rs); background:var(--surface-hover); color:var(--text-2); min-height:34px; display:flex; align-items:center; }
