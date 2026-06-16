@@ -19,7 +19,7 @@ function register(app) {
     if (state === 'open') return res.json(snapshotFor(project)?.prs || []);
 
     try {
-      const prs = await github.getPRs(project.repo, state, 30, { ci: true });
+      const prs = await github.getPRs(project.repo, state, 30, { ci: true, jiraProjectKey: project.jiraProjectKey });
       res.json(prs.map(p => ({ ...p, repo: project.repo })));
     } catch (err) {
       res.json([{ repo: project.repo, error: err.message }]);

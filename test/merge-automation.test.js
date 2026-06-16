@@ -27,7 +27,7 @@ function harness(t, { versions = [], created = true } = {}) {
     const v = (type === 'jira_transitioned' || type === 'jira_fixversion_set') && payload.version ? `:${payload.version}` : '';
     calls.push(`event:${type}${v}`);
   });
-  mock.method(github, 'extractJiraKeys', () => ['ABC-2']);
+  // ABC-2 is auto-linked from a real browse URL in the PR body (see PR below); no mock needed.
   mock.method(jira, 'listVersions', () => versions.map(name => ({ name })));
   mock.method(jira, 'transitionWorkItem', (key, status) => { calls.push(`transition:${key}:${status}`); });
   // ensureVersion's return models "did I create one?" — true unless the version already existed.
@@ -37,7 +37,7 @@ function harness(t, { versions = [], created = true } = {}) {
   return calls;
 }
 
-const PR = { number: 7, title: 'Fix ABC-2', body: '' };
+const PR = { number: 7, title: 'Fix ABC-2', body: '### Issue Id\nhttps://acme.jira.com/browse/ABC-2' };
 const writes = calls => calls.filter(c => /^(ensureVersion|setFixVersion|transition):/.test(c));
 
 test('merge automation: Fix Version is created + stamped on every linked ticket, THEN transition runs', async (t) => {

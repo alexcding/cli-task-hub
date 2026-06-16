@@ -2,6 +2,7 @@ const { execFile } = require('child_process');
 const { promisify } = require('util');
 const execFileAsync = promisify(execFile);
 const { PR_CATEGORY } = require('../../shared/constants.mjs');
+const { prJiraKeys } = require('../../shared/jira-keys.mjs'); // Jira-key scraping policy (pure, shared)
 
 // PR fields. statusCheckRollup gives CI status inline — one call returns PRs + CI,
 // so we never need a separate `gh run list` per PR. author/isDraft/reviewRequests
@@ -41,19 +42,6 @@ async function gh(args) {
     if (ms > _gh.maxMs) { _gh.maxMs = ms; _gh.slowest = args.join(' ').slice(0, 80); }
   }
 }
-
-// Pull Jira keys out of a PR's title/body. We deliberately strip fenced code blocks
-// (``` … ``` or ~~~ … ~~~) and inline code spans (`…`) first: those carry example output,
-// changelog samples and command snippets whose keys aren't tickets this PR touches. Counting
-// them would mislink the dashboard card AND drive the on-merge Fix Version / transition
-// automation against unrelated tickets (see services/poller.js).
-const extractJiraKeys = (text) => {
-  const prose = (text || '')
-    .replace(/```[\s\S]*?```|~~~[\s\S]*?~~~/g, ' ')
-    .replace(/`[^`]*`/g, ' ');
-  const matches = prose.match(/\b[A-Z][A-Z0-9]+-\d+\b/g);
-  return matches ? [...new Set(matches)] : [];
-};
 
 // Current GitHub login — memoized for the process lifetime (it never changes).
 let _me;
@@ -573,8 +561,10 @@ function summarizeCI(rollup) {
 const PR_TTL_MS = 20_000;
 const prCache = new Map(); // key -> { at, value }
 
-async function getPRs(repo, state = 'open', limit = 30, { ci = false, fresh = false } = {}) {
-  const key = `${repo}|${state}|${limit}|${ci}`;
+async function getPRs(repo, state = 'open', limit = 30, { ci = false, fresh = false, jiraProjectKey = '' } = {}) {
+  // jiraProjectKey scopes Jira-key extraction (see prJiraKeys), so it's part of the cache identity —
+  // two projects sharing a repo but different keys must not read each other's cached jiraKeys.
+  const key = `${repo}|${state}|${limit}|${ci}|${jiraProjectKey}`;
   if (!fresh) {
     const hit = prCache.get(key);
     if (hit && Date.now() - hit.at < PR_TTL_MS) return hit.value;
@@ -586,7 +576,7 @@ async function getPRs(repo, state = 'open', limit = 30, { ci = false, fresh = fa
   const value = JSON.parse(out).map(pr => {
     const enriched = {
       ...pr,
-      jiraKeys: extractJiraKeys(`${pr.title} ${pr.body || ''}`),
+      jiraKeys: prJiraKeys(pr, jiraProjectKey),
       category: categoryOf(pr, me),
       awaitingMyReview: awaitingReview(pr, me),
     };
@@ -601,4 +591,4 @@ async function getPRs(repo, state = 'open', limit = 30, { ci = false, fresh = fa
 
 // ghStats reads the metrics; noteInflight/noteCoalesced let the poller's sync-dedup layer
 // bump the gauges without reaching into _gh's field names.
-module.exports = { gh, ghStats, noteInflight, noteCoalesced, getPRs, getCurrentUser, getUserName, reviewRequestedAt, categoryOf, awaitingReview, extractJiraKeys, parseRepo, gitRemoteRepo, worktreeForBranch, worktreeForJiraKey, createWorktree, removeWorktree, gitDiff, gitCommit, gitPush, gitDiscard, gitLog, gitShow, gitBranches, gitDefaultBranch, commitAvatars, listWorktrees, summarizeCI };
+module.exports = { gh, ghStats, noteInflight, noteCoalesced, getPRs, getCurrentUser, getUserName, reviewRequestedAt, categoryOf, awaitingReview, parseRepo, gitRemoteRepo, worktreeForBranch, worktreeForJiraKey, createWorktree, removeWorktree, gitDiff, gitCommit, gitPush, gitDiscard, gitLog, gitShow, gitBranches, gitDefaultBranch, commitAvatars, listWorktrees, summarizeCI };

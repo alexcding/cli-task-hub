@@ -4,6 +4,7 @@ const jira = require('../repositories/jira');
 const jiraRest = require('../repositories/jira-rest');
 const versionScript = require('./version-script');
 const { PR_CATEGORY } = require('../../shared/constants.mjs');
+const { prJiraKeys } = require('../../shared/jira-keys.mjs');
 
 // Snapshot ids for the global feeds (vs. project UUIDs).
 const MY_TICKETS_ID = '@me';     // everything assigned to me
@@ -77,7 +78,7 @@ function lean(pr, repo) {
 async function applyMergeAutomation(project, pr) {
   const repo = project.repo;
   const links    = db.getLinksByPR(pr.number, repo).map(l => l.jira_key);
-  const autoKeys = github.extractJiraKeys(`${pr.title} ${pr.body || ''}`);
+  const autoKeys = prJiraKeys(pr, project.jiraProjectKey); // description links (or title fallback), scoped to our key
   const keys     = [...new Set([...links, ...autoKeys])];
   if (!keys.length) return keys;
 
@@ -186,7 +187,7 @@ async function syncProjectImpl(project) {
 
   let prs;
   try {
-    prs = await github.getPRs(project.repo, 'all', 60, { ci: true, fresh: true });
+    prs = await github.getPRs(project.repo, 'all', 60, { ci: true, fresh: true, jiraProjectKey: project.jiraProjectKey });
   } catch (err) {
     const prev = db.getSnapshot(project.id);
     // Only log a sync failure when the error is new (don't spam every cycle).
