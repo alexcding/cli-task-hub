@@ -67,7 +67,7 @@ function register(app) {
 
   // ── Poll trigger ────────────────────────────────────────────────────────────────
   app.post(ROUTES.POLL, async (req, res) => {
-    try { await poller.poll(); poller.pollJira(); res.json({ ok: true }); }
+    try { await Promise.all([poller.poll(), poller.pollJira()]); res.json({ ok: true }); }
     catch (err) { res.status(500).json({ error: err.message }); }
   });
 }

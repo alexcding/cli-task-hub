@@ -25,9 +25,10 @@ export const state = {
   tabTermInit: null,   // promise: tabs restored + PTYs rehydrated (awaited by ensurePrTerminal)
 
   // Jira snapshots + filters
-  mineSnap: { items: [] },
-  sprintSnap: { items: [] },
-  ticketFilters: null,  // {project,status,...}; null = not loaded yet
+  sprintSnap: { items: [] },   // assigned to me, in an active sprint — the dashboard's "Current Sprint"
+  boardSnap: { items: [] },   // the active project's sprint board (all assignees) — Scrumboard page
+  boardProjectId: '',         // which project's board the Scrumboard is showing
+  boardFilters: {},           // projectId -> assignee filter ('' = all, '__unassigned__', or accountId)
   projJiraSnap: {},     // projectId -> last snapshot
   projJiraFilters: {},  // projectId -> filters object
 
@@ -78,7 +79,7 @@ export const prGroup = pr => ((pr?.awaitingMyReview ?? (pr?.category === PR_CATE
 
 // A loaded Jira ticket by key, across the cached snapshots (mine, sprint, per-project).
 export function jiraByKey(key) {
-  const pools = [state.mineSnap?.items, state.sprintSnap?.items,
+  const pools = [state.sprintSnap?.items, state.boardSnap?.items,
                  ...Object.values(state.projJiraSnap || {}).map(s => s && s.items)];
   for (const items of pools) {
     const it = (items || []).find(x => x.key === key);

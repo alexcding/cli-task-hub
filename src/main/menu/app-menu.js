@@ -61,7 +61,7 @@ function setAppMenu() {
     ]},
     { label: 'Go', submenu: [
       { label: 'Dashboard', accelerator: 'Cmd+1', click: sendOpen('nav:dashboard') },
-      { label: 'JIRA Tickets', accelerator: 'Cmd+2', click: sendOpen('nav:mytickets') },
+      { label: 'Scrumboard', accelerator: 'Cmd+2', click: sendOpen('nav:scrumboard') },
       { label: 'Activity', accelerator: 'Cmd+3', click: sendOpen('nav:activity') },
       { type: 'separator' },
       { label: 'Back', accelerator: 'Cmd+[', click: send('nav:back') },

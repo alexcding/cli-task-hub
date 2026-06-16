@@ -16,6 +16,7 @@ import { loadDashboard, scrollDash, setUsageTab } from './pages/dashboard.js';
 import { loadProjectPage, projShowSection, reloadProjectPRs, loadProjectWebhooks, saveProjectWebhooks, previewFixVersion } from './pages/project.js';
 import { loadGitTab, gitTabPick, gitTabShowCommit, gitTabBack, gitTabRemoveWorktree } from './pages/git-tab.js';
 import * as jiraView from './pages/jira.js';
+import { loadScrumboard, setBoardProject, setBoardFilter, setBoardQuery, applyBoardQuery } from './pages/scrumboard.js';
 import { loadLogs, setLogCategory, clearLogs } from './pages/logs.js';
 import { loadSettings, saveConfig, switchSettingsTab, setReviewSound, previewReviewSound, setActivityNotify, toggleSecret } from './pages/settings.js';
 import { showActivityToast } from './components/activity-toast.js';
@@ -44,9 +45,9 @@ function showPage(name, projectId) {
   if (name === 'dashboard') {
     document.getElementById('page-title').textContent = 'Dashboard';
     loadDashboard();
-  } else if (name === 'mytickets') {
-    document.getElementById('page-title').textContent = 'JIRA Tickets';
-    jiraView.loadMyTickets();
+  } else if (name === 'scrumboard') {
+    document.getElementById('page-title').textContent = 'Scrumboard';
+    loadScrumboard();
   } else if (name === 'project' && projectId) {
     state.activeProjectId = projectId;
     const proj = projectById(projectId);
@@ -94,7 +95,7 @@ function handleShortcut(action) {
   const tab = activeTab(); // non-null only while a tab is the active view
   switch (action) {
     case 'nav:dashboard': showPage('dashboard'); break;
-    case 'nav:mytickets': showPage('mytickets'); break;
+    case 'nav:scrumboard': showPage('scrumboard'); break;
     case 'nav:activity':  showPage('activity'); break;
     case 'nav:settings':  showPage('settings'); break;
     case 'project:new':   modal.openNewProjectModal(); break;
@@ -150,8 +151,8 @@ function refreshActivePage() {
     loadDashboard();
   } else if (active === 'page-activity') {
     loadLogs();
-  } else if (active === 'page-mytickets') {
-    jiraView.loadMyTickets();
+  } else if (active === 'page-scrumboard') {
+    loadScrumboard();
   } else if (active === 'page-project' && state.activeProjectId) {
     // The digest shows PRs and Jira at once — refresh both. PRs keep the chosen state filter.
     const id = state.activeProjectId;
@@ -202,9 +203,9 @@ Object.assign(window, {
   togglePrSplit: split.togglePrSplit, clearVisibleTerm: terminal.clearVisibleTerm,
   setPaneView: split.setPaneView, toggleCommitPop, commitAction,
   // views
-  loadMyTickets: jiraView.loadMyTickets, setTicketFilter: jiraView.setTicketFilter,
+  loadScrumboard, setBoardProject, setBoardFilter, setBoardQuery, applyBoardQuery,
   loadProjectJira: jiraView.loadProjectJira, setProjJiraFilter: jiraView.setProjJiraFilter,
-  openStatusMenu: jiraView.openStatusMenu,
+  openStatusMenu: jiraView.openStatusMenu, openAssignMenu: jiraView.openAssignMenu,
   projShowSection, reloadProjectPRs, loadProjectWebhooks, saveProjectWebhooks, previewFixVersion, scrollDash, setUsageTab,
   loadGitTab, gitTabPick, gitTabShowCommit, gitTabBack, gitTabRemoveWorktree,
   loadLogs, setLogCategory, clearLogs,

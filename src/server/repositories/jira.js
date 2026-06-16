@@ -36,9 +36,19 @@ const leanItem = (it) => {
     key:      it.key,
     summary:  f.summary || '',
     status:   f.status?.name || '',
+    // The status' workflow category ('new' | 'indeterminate' | 'done') — nested in the
+    // status field acli already returns. Drives the board's left→right column order so
+    // To Do columns sit left of In Progress, In Progress left of Done.
+    statusCategory: f.status?.statusCategory?.key || '',
+    // Status id maps a ticket to its board COLUMN (the board config groups status ids
+    // into ordered columns) so the Scrumboard can mirror the web board's column order.
+    statusId: f.status?.id || '',
     type:     f.issuetype?.name || '',
     priority: f.priority?.name || '',
     assignee: f.assignee?.displayName || f.assignee?.emailAddress || '',
+    // accountId lets the UI reassign to a known person (acli assign needs an id/email,
+    // not a display name) and builds the board's "who's on this sprint" roster.
+    assigneeId: f.assignee?.accountId || '',
   };
 };
 
@@ -64,6 +74,23 @@ const transitionWorkItem = (key, status) => {
   return parsed;
 };
 
+// Assign a work item to someone (account id, email, or '@me'), or unassign when the
+// assignee is blank. Like transitionWorkItem, acli can exit 0 while reporting a per-item
+// failure, so request --json and surface a real error when nothing was assigned.
+const assignWorkItem = (key, assignee) => {
+  const args = ['workitem', 'assign', '--key', key, '--yes', '--json'];
+  if (assignee) args.push('--assignee', assignee);
+  else args.push('--remove-assignee');
+  const out = run(args);
+  let parsed;
+  try { parsed = JSON.parse(out); } catch { return out; } // older acli without --json
+  const failed = (parsed.results || []).filter(r => r.status !== 'SUCCESS');
+  if (failed.length || parsed.successCount === 0) {
+    throw new Error(failed[0]?.message || `Could not assign ${key}`);
+  }
+  return parsed;
+};
+
 // Existing release versions for a Jira project, as [{ id, name, released, archived }].
 // Backs the fix-version automation (the "does it exist yet?" check + the script's `versions`).
 const listVersions = (projectKey) => {
@@ -74,14 +101,15 @@ const listVersions = (projectKey) => {
 
 // The active sprint for a project: first scrum board for the key → first active
 // sprint on it. acli's workitem search never returns the sprint custom field, so
-// this two-call chain is the only way to get the sprint's name/dates.
+// this two-call chain is the only way to get the sprint's id/name/dates. The id lets
+// the board feed query `sprint = <id>` (the exact active sprint, all assignees).
 const activeSprint = (projectKey) => {
   const boards = JSON.parse(run(['board', 'search', '--project', projectKey, '--json', '--limit', '50']));
   const board = (boards.values || []).find(b => b.type === 'scrum');
   if (!board) return null;
   const out = JSON.parse(run(['board', 'list-sprints', '--id', String(board.id), '--state', 'active', '--json']));
   const s = (out.sprints || [])[0];
-  return s ? { name: s.name, endDate: s.endDate || null } : null;
+  return s ? { id: s.id, name: s.name, endDate: s.endDate || null, boardId: board.id } : null;
 };
 
-module.exports = { getWorkItem, getSite, getAuth, searchWorkItems, searchLean, transitionWorkItem, activeSprint, listVersions };
+module.exports = { getWorkItem, getSite, getAuth, searchWorkItems, searchLean, transitionWorkItem, assignWorkItem, activeSprint, listVersions };

@@ -16,7 +16,6 @@ export async function loadSettings() {
 
   if (cfg.poll_interval)      document.getElementById('poll-interval').value = cfg.poll_interval;
   if (cfg.jira_base_url)      document.getElementById('jira-base-url').value = cfg.jira_base_url;
-  if (cfg.my_jql)             document.getElementById('my-jql').value = cfg.my_jql;
   if (cfg.sprint_jql)         document.getElementById('sprint-jql').value = cfg.sprint_jql;
   // Show the auto-detected site as the placeholder so it's clear what's in effect.
   api(ROUTES.JIRA_SITE).then(s => { if (s.baseUrl) document.getElementById('jira-base-url').placeholder = `${s.baseUrl} (auto-detected)`; }).catch(()=>{});
@@ -178,7 +177,6 @@ export async function saveConfig() {
     await apiJson(ROUTES.CONFIG, 'POST', {
       poll_interval:      document.getElementById('poll-interval').value || '60',
       jira_base_url:      document.getElementById('jira-base-url').value.trim(), // blank = auto-detect
-      my_jql:             document.getElementById('my-jql').value.trim() || 'assignee = currentUser() AND statusCategory != Done ORDER BY updated DESC',
       sprint_jql:         document.getElementById('sprint-jql').value.trim() || 'assignee = currentUser() AND sprint is not EMPTY AND statusCategory != Done ORDER BY updated DESC',
       jira_poll_interval: document.getElementById('jira-poll-interval').value || '120',
       jira_limit:         document.getElementById('jira-limit').value || '100',

@@ -41,7 +41,6 @@ function fillProjectModal(proj) {
   document.getElementById('modal-workspace').value = proj.workspace || '';
   setModalRepo(proj.repo || '');
   document.getElementById('modal-jira-key').value  = proj.jiraProjectKey || '';
-  document.getElementById('modal-jql').value       = proj.jql || '';
 }
 
 export function openNewProjectModal() {
@@ -85,7 +84,6 @@ export async function saveProject() {
     workspace:      document.getElementById('modal-workspace').value.trim(),
     repo:           document.getElementById('modal-repo').value.trim(),
     jiraProjectKey: document.getElementById('modal-jira-key').value.trim(),
-    jql:            document.getElementById('modal-jql').value.trim(),
   };
   try {
     if (id) {

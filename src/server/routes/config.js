@@ -14,13 +14,13 @@ function register(app) {
   app.post(ROUTES.CONFIG, (req, res) => {
     for (const [k, v] of Object.entries(req.body)) db.set(k, v);
     res.json({ ok: true });
-    // Only the JQL settings feed the global Jira lists — resync them now (so a JQL edit takes
-    // effect immediately; the snapshot write broadcasts jira-sync, which the UIs react to) and
-    // ONLY when a JQL actually changed. Other keys (e.g. poll_interval) must not trigger acli.
-    // Deferred off the response: writeJiraSnapshot shells out to acli synchronously.
-    if ('my_jql' in req.body || 'sprint_jql' in req.body) {
+    // The sprint JQL feeds the dashboard's "Current Sprint" list — resync it now (so a JQL
+    // edit takes effect immediately; the snapshot write broadcasts jira-sync, which the UI
+    // reacts to) and ONLY when it actually changed. Other keys (e.g. poll_interval) must not
+    // trigger acli. Deferred off the response: writeJiraSnapshot shells out to acli synchronously.
+    if ('sprint_jql' in req.body) {
       setImmediate(() => {
-        try { poller.syncJiraMine(); poller.syncJiraSprint(); }
+        try { poller.syncJiraSprint(); }
         catch (err) { console.error('[config] jira resync failed:', err.message); }
       });
     }

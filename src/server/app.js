@@ -52,7 +52,8 @@ try { const dir = SF_MONO_DIRS.find(d => require('fs').existsSync(d)); if (dir) 
 
 // ── Routes ──────────────────────────────────────────────────────────────────────
 // One module per domain; registration order mirrors the pre-split file. The only
-// order-sensitive pair (JIRA_MINE before JIRA_KEY) lives inside routes/jira.js.
+// order-sensitive case (the literal /api/jira/* routes before JIRA_KEY's :key) lives
+// inside routes/jira.js.
 require('./routes/config').register(app);
 require('./routes/projects').register(app, PORT);
 require('./routes/git').register(app);

@@ -6,15 +6,13 @@ const versionScript = require('./version-script');
 const { PR_CATEGORY } = require('../../shared/constants.mjs');
 const { prJiraKeys } = require('../../shared/jira-keys.mjs');
 
-// Snapshot ids for the global feeds (vs. project UUIDs).
-const MY_TICKETS_ID = '@me';     // everything assigned to me
-const MY_SPRINT_ID  = '@sprint'; // assigned to me, in an active sprint
+// Snapshot id for the global dashboard feed (project boards/tabs use the project UUID).
+const MY_SPRINT_ID = '@sprint'; // assigned to me, in an active sprint — the dashboard's "Current Sprint"
 
 // Defaults for the Jira sync loop — overridable via the config store (Settings UI).
 // `currentUser()` resolves server-side from `acli jira auth`, so no username/token
 // is ever stored — same reason merge-transitions already work.
 const JIRA_DEFAULTS = {
-  my_jql:             'assignee = currentUser() AND statusCategory != Done ORDER BY updated DESC',
   // `sprint is not EMPTY` (any sprint, not just openSprints()): on some Jira sites
   // openSprints() only resolves a subset of boards, leaving active work off the
   // dashboard. Filtering to statusCategory != Done keeps it to in-flight tickets.
@@ -22,17 +20,22 @@ const JIRA_DEFAULTS = {
   jira_poll_interval: '120',  // seconds — tickets change less often than PR CI
   jira_limit:         '100',  // high enough to hold the full assigned list so the
                               // client-side project filter + counts stay accurate
+  board_limit:        '200',  // a project board holds the WHOLE sprint (every assignee),
+                              // so it needs more headroom than the mine feed
 };
-const myJql        = () => db.get('my_jql') || JIRA_DEFAULTS.my_jql;
 const sprintJql    = () => db.get('sprint_jql') || JIRA_DEFAULTS.sprint_jql;
 
 // A project's effective JQL: its explicit query if set, else — when only a Jira
 // project key is configured — a sensible default scoped to that key (in-flight
 // tickets, newest first). This is why a project's Jira tab populates from just a
 // key, with no JQL to hand-write.
-const projectJql = (p) => (p && p.jql) ||
-  (p && p.jiraProjectKey ? `project = ${p.jiraProjectKey} AND statusCategory != Done ORDER BY updated DESC` : '');
+const projectJql = (p) => {
+  if (p && p.jql) return p.jql;
+  if (!p || !p.jiraProjectKey) return '';
+  return `project = ${p.jiraProjectKey} AND statusCategory != Done ORDER BY updated DESC`;
+};
 const jiraLimit    = () => Math.max(1, parseInt(db.get('jira_limit') || JIRA_DEFAULTS.jira_limit, 10));
+const boardLimit   = () => Math.max(1, parseInt(db.get('board_limit') || JIRA_DEFAULTS.board_limit, 10));
 const jiraInterval = () => Math.max(30, parseInt(db.get('jira_poll_interval') || JIRA_DEFAULTS.jira_poll_interval, 10));
 
 // prKey ("repo#number") -> last seen state, so we only act on real changes.
@@ -258,65 +261,113 @@ async function poll() {
 // ── Jira sync ───────────────────────────────────────────────────────────────────
 // Mirrors the PR sync: run a JQL through `acli`, write a lean snapshot, publish.
 // On failure keep the last good items so the UI doesn't blank out (like PR sync).
-function writeJiraSnapshot(id, jql) {
+function writeJiraSnapshot(id, jql, limit = jiraLimit(), meta = null) {
   if (!jql) {
-    db.setJiraSnapshot(id, { items: [], jql: '', lastSynced: now(), error: null });
+    db.setJiraSnapshot(id, { items: [], jql: '', lastSynced: now(), error: null, meta });
     if (onJiraSync) onJiraSync(id);
     return;
   }
   try {
-    const items = jira.searchLean(jql, jiraLimit());
-    db.setJiraSnapshot(id, { items, jql, lastSynced: now(), error: null });
+    const items = jira.searchLean(jql, limit);
+    db.setJiraSnapshot(id, { items, jql, lastSynced: now(), error: null, meta });
   } catch (err) {
     const prev = db.getJiraSnapshot(id);
     if (prev?.error !== err.message) db.addEvent('jira_sync_failed', { id, jql, error: err.message });
-    db.setJiraSnapshot(id, { items: prev?.items || [], jql, lastSynced: now(), error: err.message });
+    db.setJiraSnapshot(id, { items: prev?.items || [], jql, lastSynced: now(), error: err.message, meta });
   }
   if (onJiraSync) onJiraSync(id);
 }
 
-// Active sprint ({name, endDate}) for the dominant project key among the sprint
-// items. Held in memory, not the snapshot — setJiraSnapshot only persists its fixed
-// columns, and the value re-resolves within one poll after a restart. The lookup is
-// two extra acli calls (board search + list-sprints), so cache for 15 min — the
-// answer changes once per sprint, not per poll.
-let _sprintCache = { key: null, value: null, at: 0 };
-function refreshActiveSprint(items) {
-  const counts = {};
-  for (const it of items) {
-    const k = (it.key || '').split('-')[0];
-    if (k) counts[k] = (counts[k] || 0) + 1;
-  }
-  const key = Object.keys(counts).sort((a, b) => counts[b] - counts[a])[0];
-  if (!key) { _sprintCache = { key: null, value: null, at: Date.now() }; return; }
-  if (_sprintCache.key !== key || Date.now() - _sprintCache.at > 15 * 60_000) {
-    let value = null;
-    try { value = jira.activeSprint(key); }
-    catch (err) { console.error('[jira-sync] active sprint lookup failed:', err.message); }
-    _sprintCache = { key, value, at: Date.now() };
-  }
+// Active sprint ({id,name,endDate}) for a project key, cached 15 min per key — the
+// lookup is two extra acli calls (board search + list-sprints) and the answer changes
+// once per sprint, not per poll. Held in memory (snapshots persist only fixed columns);
+// it re-resolves within one poll after a restart.
+const _sprintCache = new Map(); // KEY -> { value, at }
+function activeSprintFor(key) {
+  key = (key || '').toUpperCase();
+  if (!key) return null;
+  const c = _sprintCache.get(key);
+  if (c && Date.now() - c.at < 15 * 60_000) return c.value;
+  let value = null;
+  try { value = jira.activeSprint(key); }
+  catch (err) { console.error('[jira-sync] active sprint lookup failed:', err.message); }
+  _sprintCache.set(key, { value, at: Date.now() });
+  return value;
 }
-const currentSprint = () => _sprintCache.value;
 
-// Global "assigned to me" feed.
-const syncJiraMine = () => { writeJiraSnapshot(MY_TICKETS_ID, myJql()); };
-// Global "my work in the active sprint(s)" feed (dashboard). Also refreshes the
-// active sprint's name/end date so the UI can title the section/chip.
+// The dashboard "Current Sprint" section titles itself with the active sprint of the
+// dominant project key among my sprint items (noted by syncJiraSprint).
+let _dashSprintKey = null;
+const dominantKey = (items) => {
+  const counts = {};
+  for (const it of items) { const k = (it.key || '').split('-')[0]; if (k) counts[k] = (counts[k] || 0) + 1; }
+  return Object.keys(counts).sort((a, b) => counts[b] - counts[a])[0] || null;
+};
+const currentSprint = () => activeSprintFor(_dashSprintKey);
+
+// The board's ordered columns ({name, statusIds}) for a board, so the Scrumboard mirrors
+// the web board's column order. Comes from the Agile board-configuration REST endpoint
+// (needs the Jira API token), cached 15 min per board — config changes rarely, so we
+// don't refetch it every poll. Returns null (uncached) when there's no token / it's not
+// permitted, so the next poll retries and the view simply category-sorts meanwhile.
+const _colsCache = new Map(); // boardId -> { value, at }
+async function boardColumnsFor(boardId) {
+  if (!boardId) return null;
+  const c = _colsCache.get(boardId);
+  if (c && Date.now() - c.at < 15 * 60_000) return c.value;
+  try {
+    const value = await jiraRest.boardConfig(boardId);
+    _colsCache.set(boardId, { value, at: Date.now() });
+    return value;
+  } catch { return null; }
+}
+
+// Global "my work in the active sprint(s)" feed (dashboard). Notes the dominant project
+// key so currentSprint() can title the section.
 const syncJiraSprint = () => {
   writeJiraSnapshot(MY_SPRINT_ID, sprintJql());
-  refreshActiveSprint(db.getJiraSnapshot(MY_SPRINT_ID)?.items || []);
+  _dashSprintKey = dominantKey(db.getJiraSnapshot(MY_SPRINT_ID)?.items || []);
 };
-// A single project's saved JQL.
+// A single project's saved JQL (its Jira tab).
 const syncProjectJira = (project) => { writeJiraSnapshot(project.id, projectJql(project)); };
 
-// Refresh the global feeds + every project's Jira snapshot.
-function pollJira() {
-  syncJiraMine();
-  syncJiraSprint();
-  for (const p of db.getProjects()) {
-    try { syncProjectJira(p); }
-    catch (err) { console.error(`[jira-sync] ${p.name}:`, err.message); }
+// A single project's Scrumboard: the WHOLE active sprint for the project's Jira board
+// (every assignee, including Done so the Done column fills), optionally scoped to the
+// project's component (e.g. iOS). Querying by the resolved sprint id is exact. acli can
+// only filter components in JQL (not as a returned field), hence the AND clause.
+const boardSnapId = (project) => 'board:' + project.id;
+// Aggregate the board into ONE snapshot: tickets (acli) + the sprint (acli) + the
+// component + the column order (REST). The route just returns this row, so the view
+// never knows the data came from two sources. `columns` is null when there's no API
+// token — the tickets still render, the view just category-sorts the columns.
+async function syncProjectBoard(project) {
+  const id = boardSnapId(project);
+  // A free-form JQL clause the user types on the board (e.g. `component = iOS`), saved per
+  // project and ANDed into the sprint query. Generic — works for any field. No default:
+  // unset = the whole sprint.
+  const clause = (db.get(`board_query_${project.id}`) || '').trim();
+  const sprint = project.jiraProjectKey ? activeSprintFor(project.jiraProjectKey) : null;
+  if (!sprint?.id) {
+    db.setJiraSnapshot(id, { items: [], jql: '', lastSynced: now(), error: null, meta: { sprint: null, query: clause, columns: null } });
+    if (onJiraSync) onJiraSync(id);
+    return;
   }
+  const columns = await boardColumnsFor(sprint.boardId);
+  const jql = `sprint = ${sprint.id}` +
+    (clause ? ` AND (${clause})` : '') +
+    ` ORDER BY priority DESC, key ASC`;
+  writeJiraSnapshot(id, jql, boardLimit(), { sprint, query: clause, columns });
+}
+
+// Refresh the global feeds + every project's Jira tab + Scrumboard. Async because the
+// board aggregation fetches the column order over REST; project boards refresh in
+// parallel.
+async function pollJira() {
+  syncJiraSprint();
+  await Promise.all(db.getProjects().map(async (p) => {
+    try { syncProjectJira(p); await syncProjectBoard(p); }
+    catch (err) { console.error(`[jira-sync] ${p.name}:`, err.message); }
+  }));
 }
 
 let timer = null;
@@ -334,8 +385,8 @@ function startJira(publisher) {
   if (publisher) setJiraPublisher(publisher);
   const interval = jiraInterval() * 1000;
   console.log(`[jira-sync] starting, every ${interval / 1000}s`);
-  try { pollJira(); } catch (err) { console.error('[jira-sync] first run failed:', err.message); }
-  jiraTimer = setInterval(() => { try { pollJira(); } catch (err) { console.error('[jira-sync]', err.message); } }, interval);
+  pollJira().catch(err => console.error('[jira-sync] first run failed:', err.message));
+  jiraTimer = setInterval(() => pollJira().catch(err => console.error('[jira-sync]', err.message)), interval);
 }
 
 function stop() {
@@ -347,8 +398,9 @@ function stop() {
 
 module.exports = {
   start, startJira, stop, poll, pollJira,
-  syncProject, syncProjectJira, syncJiraMine, syncJiraSprint, projectJql, currentSprint,
+  syncProject, syncProjectJira, syncProjectBoard, syncJiraSprint, projectJql, currentSprint,
+  activeSprintFor, boardSnapId,
   handleMerge, applyMergeAutomation,
   setPublisher, setJiraPublisher,
-  MY_TICKETS_ID, MY_SPRINT_ID, JIRA_DEFAULTS,
+  MY_SPRINT_ID, JIRA_DEFAULTS,
 };

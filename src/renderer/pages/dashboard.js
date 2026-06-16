@@ -14,15 +14,13 @@ import { usageWidgetHtml } from '../components/usage-widget.js';
 
 export async function loadDashboard() {
   // Reads the snapshot (instant) — no leading spinner so SSE refreshes are seamless.
-  const [groups, mineSnap, sprintSnap, usage, whoami] = await Promise.all([
+  const [groups, sprintSnap, usage, whoami] = await Promise.all([
     api(ROUTES.DASHBOARD),
-    api(ROUTES.JIRA_MINE).catch(() => ({ items: [] })),
     api(ROUTES.JIRA_SPRINT).catch(() => ({ items: [] })),
     api(ROUTES.USAGE).catch(() => null),
     api(ROUTES.WHOAMI).catch(() => null),
   ]);
   state.projects = groups;
-  state.mineSnap = mineSnap;
   state.sprintSnap = sprintSnap;
   rememberStatuses(sprintSnap.items);
   renderProjectNav(groups);
@@ -68,7 +66,6 @@ export async function loadDashboard() {
         ${chip(mine.length, 'My PRs', ICON.branch, 'accent', "scrollDash('dash-mine')")}
         ${chip(review.length, 'To Review', ICON.eye, 'warn', "scrollDash('dash-review')")}
         ${chip((sprintSnap.items||[]).length, sprintLabel(sprintSnap), ICON.zap, 'merged', "scrollDash('dashboard-sprint')")}
-        ${chip((mineSnap.items||[]).length, 'My Tickets', ICON.checkCircle, 'success', "showPage('mytickets')")}
       </div>
     </div>
     <div id="usage-widget" class="usage-row"></div>

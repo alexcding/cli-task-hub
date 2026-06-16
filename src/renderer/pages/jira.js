@@ -1,12 +1,13 @@
 // Shared Jira UI: snapshot tables, ticket filters, the assigned-to-me feed, the
 // per-project Jira tab, and the status-transition menu.
 import { ROUTES } from '/shared/routes.mjs';
-import { state, setProjects } from '../stores/store.js';
-import { api, apiJson } from '../services/api.js';
+import { state } from '../stores/store.js';
+import { api, apiJson, forceSync } from '../services/api.js';
 import { esc, jiraUrl } from '../lib/util.js';
 import { ICON } from '../lib/icons.js';
 import { toast, toastErr } from '../components/toast.js';
 import { renderDashboardSprint } from './dashboard.js';
+import { renderScrumboard } from './scrumboard.js';
 
 // Shared 5-column row renderer for the snapshot-backed Jira tables (JIRA Tickets +
 // per-project tab). `items` are lean tickets from the snapshot endpoints. The status
@@ -93,60 +94,6 @@ async function persistFilters(cfgKey, filters) {
   } catch(e) { toastErr(e.message); }
 }
 
-// ── JIRA Tickets (assigned-to-me feed) ──────────────────────────────────────────
-// Jira project keys across all configured projects (uppercased, deduped). Each project's
-// key lives in its own record.
-function projectJiraKeys() {
-  return new Set((state.projects || []).map(p => (p.jiraProjectKey || '').toUpperCase()).filter(Boolean));
-}
-
-// The assigned-to-me feed scoped to the projects you've added: when any project declares a
-// Jira key, only tickets in those projects are shown (union). With none set, nothing is hidden.
-function scopedMineItems() {
-  const items = state.mineSnap.items || [];
-  const keys = projectJiraKeys();
-  return keys.size ? items.filter(i => keys.has(ticketProjectOf(i.key).toUpperCase())) : items;
-}
-
-export async function loadMyTickets() {
-  const tbody = document.getElementById('mytickets-body');
-  if (!tbody) return;
-  try {
-    // Projects fetched alongside so the per-project Jira-key scoping is current even if the
-    // dashboard hasn't loaded yet this session.
-    const [snap, settings, projects] = await Promise.all([api(ROUTES.JIRA_MINE), api(ROUTES.SETTINGS), api(ROUTES.PROJECTS)]);
-    setProjects(projects);
-    if (state.ticketFilters === null) state.ticketFilters = parseFilters(settings.my_ticket_filters);
-    state.mineSnap = snap;
-    rememberStatuses(snap.items);
-    renderMyTicketsFilter();
-    renderMyTickets();
-  } catch(e) { tbody.innerHTML = jiraRow(esc(e.message), 'var(--danger)'); }
-}
-
-export function renderMyTicketsFilter() {
-  const el = document.getElementById('mytickets-filter');
-  // The project dropdown lists only the Jira keys configured on your projects.
-  if (el) el.innerHTML = ticketFilterBar(scopedMineItems(), state.ticketFilters,
-    k => `setTicketFilter('${k}', this.value)`, { project: [...projectJiraKeys()].sort() });
-}
-
-export function renderMyTickets() {
-  const tbody = document.getElementById('mytickets-body');
-  if (!tbody) return;
-  const items = scopedMineItems();
-  const filtered = itemsMatching(items, state.ticketFilters, null);
-  const emptyMsg = items.length ? 'No tickets match these filters.' : 'No tickets in your projects assigned to you.';
-  renderJiraSnapshot(tbody, { items: filtered, error: items.length ? null : state.mineSnap.error, lastSynced: state.mineSnap.lastSynced }, { emptyMsg });
-}
-
-export async function setTicketFilter(key, value) {
-  state.ticketFilters[key] = value;
-  renderMyTicketsFilter(); // faceted options shift with each selection
-  renderMyTickets();
-  await persistFilters('my_ticket_filters', state.ticketFilters);
-}
-
 // ── Project Jira tab (the active project's saved JQL) ────────────────────────────
 export async function loadProjectJira(id) {
   const tbody = document.getElementById(`proj-jira-${id}`);
@@ -200,34 +147,34 @@ export async function setProjJiraFilter(id, key, value) {
 // submit and surfaces an error if it isn't a permitted transition.
 export const rememberStatuses = items => (items || []).forEach(i => { if (i.status) state.knownStatuses.add(i.status); });
 
-let _statusMenuEl = null;
-function closeStatusMenu() {
-  if (_statusMenuEl) { _statusMenuEl.remove(); _statusMenuEl = null; }
-  document.removeEventListener('click', onStatusMenuOutside, true);
-  document.removeEventListener('keydown', onStatusMenuKey);
+let _menuEl = null;
+function closePopupMenu() {
+  if (_menuEl) { _menuEl.remove(); _menuEl = null; }
+  document.removeEventListener('click', onMenuOutside, true);
+  document.removeEventListener('keydown', onMenuKey);
 }
-function onStatusMenuOutside(e) { if (_statusMenuEl && !_statusMenuEl.contains(e.target)) closeStatusMenu(); }
-function onStatusMenuKey(e) { if (e.key === 'Escape') closeStatusMenu(); }
+function onMenuOutside(e) { if (_menuEl && !_menuEl.contains(e.target)) closePopupMenu(); }
+function onMenuKey(e) { if (e.key === 'Escape') closePopupMenu(); }
 
-export function openStatusMenu(btn) {
-  const open = _statusMenuEl;
-  closeStatusMenu();
-  if (open) return; // second click on the same trigger just closes it
-  const key = btn.dataset.key, current = btn.dataset.status;
-  const targets = [...state.knownStatuses].filter(s => s !== current).sort();
-  if (!targets.length) { toast('No other statuses known yet — open more tickets first.'); return; }
+// A macOS-style popup menu anchored to `btn`. `items`: { label, danger?, onClick }.
+// Shared by the status-transition and assignee menus (same look, same positioning).
+function openPopupMenu(btn, headText, items) {
+  const open = _menuEl;
+  closePopupMenu();
+  if (open) return;      // second click on the same trigger just closes it
+  if (!items.length) return;
 
   const menu = document.createElement('div');
   menu.className = 'status-menu';
   const head = document.createElement('div');
   head.className = 'status-menu-head';
-  head.textContent = `Move ${key} to…`;
+  head.textContent = headText;
   menu.appendChild(head);
-  for (const s of targets) {
+  for (const it of items) {
     const item = document.createElement('button');
-    item.className = 'status-menu-item';
-    item.textContent = s;
-    item.onclick = () => { closeStatusMenu(); doTransition(key, s); };
+    item.className = 'status-menu-item' + (it.danger ? ' danger' : '');
+    item.textContent = it.label;
+    item.onclick = () => { closePopupMenu(); it.onClick(); };
     menu.appendChild(item);
   }
   document.body.appendChild(menu);
@@ -237,11 +184,18 @@ export function openStatusMenu(btn) {
   const below = r.bottom + menu.offsetHeight + 6 < window.innerHeight;
   menu.style.top  = window.scrollY + (below ? r.bottom + 4 : r.top - menu.offsetHeight - 4) + 'px';
   menu.style.left = Math.min(window.scrollX + r.left, window.scrollX + window.innerWidth - menu.offsetWidth - 8) + 'px';
-  _statusMenuEl = menu;
+  _menuEl = menu;
   setTimeout(() => {
-    document.addEventListener('click', onStatusMenuOutside, true);
-    document.addEventListener('keydown', onStatusMenuKey);
+    document.addEventListener('click', onMenuOutside, true);
+    document.addEventListener('keydown', onMenuKey);
   }, 0);
+}
+
+export function openStatusMenu(btn) {
+  const key = btn.dataset.key, current = btn.dataset.status;
+  const targets = [...state.knownStatuses].filter(s => s !== current).sort();
+  if (!targets.length) { toast('No other statuses known yet — open more tickets first.'); return; }
+  openPopupMenu(btn, `Move ${key} to…`, targets.map(s => ({ label: s, onClick: () => doTransition(key, s) })));
 }
 
 async function doTransition(key, status) {
@@ -252,15 +206,59 @@ async function doTransition(key, status) {
   } catch(e) { toastErr(e.message); }
 }
 
-// Update the cached snapshots so the new status shows immediately, then re-render
-// whichever view is active.
+// ── Jira assignee (assign menu) ──────────────────────────────────────────────────
+// acli assigns by account id/email, so we offer the people already seen across loaded
+// tickets (the sprint's roster), plus "Assign to me" and "Unassign". Reassigning to
+// someone not yet on the board isn't offered (no user search) — pick from the roster.
+function assigneeRoster() {
+  const seen = new Map(); // accountId -> display name
+  const add = snap => (snap?.items || []).forEach(i => { if (i.assigneeId && !seen.has(i.assigneeId)) seen.set(i.assigneeId, i.assignee || i.assigneeId); });
+  add(state.boardSnap); add(state.sprintSnap);
+  Object.values(state.projJiraSnap).forEach(add);
+  return [...seen.entries()].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export function openAssignMenu(btn) {
+  const key = btn.dataset.key, currentId = btn.dataset.assigneeId || '';
+  const items = [{ label: 'Assign to me', onClick: () => doAssign(key, '@me', '', '') }];
+  for (const p of assigneeRoster()) {
+    if (p.id === currentId) continue;
+    items.push({ label: p.name, onClick: () => doAssign(key, p.id, p.name, p.id) });
+  }
+  if (currentId) items.push({ label: 'Unassign', danger: true, onClick: () => doAssign(key, '', '', '') });
+  openPopupMenu(btn, `Assign ${key}…`, items);
+}
+
+async function doAssign(key, assignee, name, id) {
+  try {
+    await apiJson(ROUTES.jiraKeyAssign(key), 'POST', { assignee });
+    if (assignee === '@me') {
+      toast(`${key} assigned to me`);
+      forceSync(); // we don't know my Jira display name locally — let the next sync fill it
+    } else {
+      toast(assignee ? `${key} → ${name}` : `${key} unassigned`);
+      applyAssigneeLocally(key, name, id); // optimistic — the next poll confirms
+    }
+  } catch(e) { toastErr(e.message); }
+}
+
+// Update the cached snapshots so the new status/assignee shows immediately, then
+// re-render whichever view is active.
+function rerenderActiveJira() {
+  if (document.getElementById('page-dashboard')?.classList.contains('active')) renderDashboardSprint();
+  if (document.getElementById('page-scrumboard')?.classList.contains('active')) renderScrumboard();
+  if (state.activeProjectId && document.getElementById(`proj-jira-${state.activeProjectId}`)) { renderProjJiraFilter(state.activeProjectId); renderProjJira(state.activeProjectId); }
+}
+function patchSnaps(key, fn) {
+  [state.sprintSnap, state.boardSnap, ...Object.values(state.projJiraSnap)]
+    .forEach(snap => { const it = (snap?.items || []).find(i => i.key === key); if (it) fn(it); });
+}
 function applyStatusLocally(key, status) {
   state.knownStatuses.add(status);
-  const patch = snap => { const it = (snap?.items || []).find(i => i.key === key); if (it) it.status = status; };
-  patch(state.mineSnap);
-  patch(state.sprintSnap);
-  Object.values(state.projJiraSnap).forEach(patch);
-  if (document.getElementById('page-dashboard')?.classList.contains('active')) renderDashboardSprint();
-  if (document.getElementById('page-mytickets')?.classList.contains('active')) { renderMyTicketsFilter(); renderMyTickets(); }
-  if (state.activeProjectId && document.getElementById(`proj-jira-${state.activeProjectId}`)) { renderProjJiraFilter(state.activeProjectId); renderProjJira(state.activeProjectId); }
+  patchSnaps(key, it => { it.status = status; });
+  rerenderActiveJira();
+}
+function applyAssigneeLocally(key, name, id) {
+  patchSnaps(key, it => { it.assignee = name; it.assigneeId = id; });
+  rerenderActiveJira();
 }

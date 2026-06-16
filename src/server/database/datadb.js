@@ -35,6 +35,14 @@ db.exec(`
   );
 `);
 
+// Columns added after the table first shipped — idempotent (throws on DBs that already
+// have them, ignored). `meta` aggregates a board snapshot's extra context (sprint,
+// component, columns) the poller fetches alongside the tickets, so the route is a pure
+// read and the view gets one self-contained object.
+for (const stmt of [`ALTER TABLE jira_snapshots ADD COLUMN meta TEXT`]) {
+  try { db.exec(stmt); } catch { /* column already exists */ }
+}
+
 const parse = (s, fallback) => { try { return JSON.parse(s); } catch { return fallback; } };
 
 // ── PR snapshots ────────────────────────────────────────────────────────────────
@@ -60,8 +68,14 @@ function deleteSnapshot(id) {
 }
 
 // ── Jira snapshots ──────────────────────────────────────────────────────────────
-// Shape returned matches the old JSON store exactly: { items, jql, lastSynced, error }.
-const _jiraRow = r => r ? { items: parse(r.items, []), jql: r.jql || '', lastSynced: r.last_synced, error: r.error } : null;
+// { items, jql, lastSynced, error } plus any aggregated `meta` (sprint/component/columns
+// for board snapshots) flattened in — so the route returns the row verbatim and the view
+// reads one self-contained object, never caring which CLI/API each field came from.
+const _jiraRow = r => {
+  if (!r) return null;
+  const meta = parse(r.meta, null);
+  return { items: parse(r.items, []), jql: r.jql || '', lastSynced: r.last_synced, error: r.error, ...(meta || {}) };
+};
 
 function getJiraSnapshot(id) {
   return _jiraRow(db.prepare('SELECT * FROM jira_snapshots WHERE id = ?').get(id));
@@ -73,9 +87,10 @@ function getAllJiraSnapshots() {
 }
 function setJiraSnapshot(id, snap = {}) {
   db.prepare(
-    `INSERT INTO jira_snapshots (id, items, jql, last_synced, error) VALUES (?, ?, ?, ?, ?)
-     ON CONFLICT(id) DO UPDATE SET items = excluded.items, jql = excluded.jql, last_synced = excluded.last_synced, error = excluded.error`
-  ).run(id, JSON.stringify(snap.items || []), snap.jql || '', snap.lastSynced || null, snap.error || null);
+    `INSERT INTO jira_snapshots (id, items, jql, last_synced, error, meta) VALUES (?, ?, ?, ?, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET items = excluded.items, jql = excluded.jql, last_synced = excluded.last_synced, error = excluded.error, meta = excluded.meta`
+  ).run(id, JSON.stringify(snap.items || []), snap.jql || '', snap.lastSynced || null, snap.error || null,
+        snap.meta ? JSON.stringify(snap.meta) : null);
 }
 function deleteJiraSnapshot(id) {
   db.prepare('DELETE FROM jira_snapshots WHERE id = ?').run(id);

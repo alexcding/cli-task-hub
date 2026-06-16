@@ -30,6 +30,9 @@ export const ROUTES = Object.freeze({
   projectPrs: id => `/api/projects/${id}/prs`,
   PROJECT_JIRA: '/api/projects/:id/jira',
   projectJira: id => `/api/projects/${id}/jira`,
+  // The project's Scrumboard: its active sprint (all assignees, scoped to its component).
+  PROJECT_BOARD: '/api/projects/:id/board',
+  projectBoard: id => `/api/projects/${id}/board`,
   // Evaluate an (unsaved) fix-version script + prefix and return the assembled preview.
   PROJECT_FIXVERSION_PREVIEW: '/api/projects/:id/fixversion-preview',
   projectFixversionPreview: id => `/api/projects/${id}/fixversion-preview`,
@@ -54,13 +57,14 @@ export const ROUTES = Object.freeze({
 
   // ── Jira ───────────────────────────────────────────────────────────────────
   JIRA_SITE: '/api/jira/site',
-  JIRA_MINE: '/api/jira/mine',
   JIRA_SPRINT: '/api/jira/sprint',
   JIRA_SEARCH: '/api/jira/search',
   JIRA_KEY: '/api/jira/:key',
   jiraKey: key => `/api/jira/${encodeURIComponent(key)}`,
   JIRA_KEY_TRANSITION: '/api/jira/:key/transition',
   jiraKeyTransition: key => `/api/jira/${encodeURIComponent(key)}/transition`,
+  JIRA_KEY_ASSIGN: '/api/jira/:key/assign',
+  jiraKeyAssign: key => `/api/jira/${encodeURIComponent(key)}/assign`,
 
   // ── Links ──────────────────────────────────────────────────────────────────
   LINKS: '/api/links',

@@ -48,10 +48,22 @@ async function ensureVersion(projectKey, name, existing = []) {
   return true;
 }
 
+// The board's columns in display order, each with the status ids it contains — the Agile
+// board configuration acli can't read. Lets the Scrumboard mirror the web board's column
+// order/grouping. Returns [{ name, statusIds:[…] }]; needs the Jira API token like the
+// other REST calls, so the caller falls back to a category sort when it throws.
+async function boardConfig(boardId) {
+  const cfg = await call('GET', `/rest/agile/1.0/board/${encodeURIComponent(boardId)}/configuration`);
+  return (cfg?.columnConfig?.columns || []).map(c => ({
+    name: c.name,
+    statusIds: (c.statuses || []).map(s => String(s.id)),
+  }));
+}
+
 // Add `versionName` to issue `key`'s Fix Version field (additive — keeps any existing versions).
 async function setFixVersion(key, versionName) {
   await call('PUT', `/rest/api/3/issue/${encodeURIComponent(key)}`,
     { update: { fixVersions: [{ add: { name: versionName } }] } });
 }
 
-module.exports = { ensureVersion, setFixVersion };
+module.exports = { ensureVersion, setFixVersion, boardConfig };
