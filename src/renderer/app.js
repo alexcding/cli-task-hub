@@ -2,7 +2,7 @@
 // the inline on* handlers in markup working (ES modules aren't globals).
 import { ROUTES } from '/shared/routes.mjs';
 import { state, activeTab, projectById } from './stores/store.js';
-import { api } from './services/api.js';
+import { api, forceSync } from './services/api.js';
 import { canSplitTerminal } from './lib/util.js';
 import { initTheme, setAppTheme, syncThemeFromSettings } from './services/theme.js';
 import { setFontFamily, bumpFontSize, resetFontSize, zoomTarget, syncFontsFromSettings, populateFontMenus } from './services/fonts.js';
@@ -23,6 +23,12 @@ import * as modal from './components/modal.js';
 
 // ── Navigation ────────────────────────────────────────────────────────────────
 function showPage(name, projectId) {
+  // Navigating to a native page forces a sync now instead of waiting out the poll cycle.
+  // This is what surfaces a change made inside an embedded webview the server can't observe
+  // on its own — chiefly a PR merged/closed in the GitHub viewer (no SSE, not necessarily a
+  // webhook). Fire-and-forget so navigation never blocks; the resulting SSE `sync` re-renders
+  // the page via scheduleRefresh().
+  syncOnNav();
   // The viewer replaces the content, so navigating to a page must hide it and bring
   // <main> back (the open tabs stay listed in the left nav).
   document.getElementById('split').hidden = true;
@@ -56,9 +62,21 @@ function showPage(name, projectId) {
     loadSettings();
     populateFontMenus(); // a settings visit is a user gesture — a chance to upgrade to the full list if the permission was deferred
   }
-  // No explicit resync on navigation: every read path (/api/dashboard, project PRs, the Jira
-  // feeds) is stale-while-revalidate — reading a stale snapshot kicks a background sync whose
-  // result lands over SSE. So a page is current on arrival without polling everything here.
+  // (Reads are also stale-while-revalidate on their own — /api/dashboard, project PRs and the
+  // Jira feeds each kick a background sync when their snapshot is stale — but that can't see a
+  // webview-side change, which is why syncOnNav forces a poll on navigation.)
+}
+
+// forceSync POSTs /api/poll, which runs gh across every project + acli across the Jira feeds —
+// too heavy to fire on every click. Throttle leading-edge: the first nav syncs at once (so a
+// webview-side merge surfaces immediately), then rapid page/tab switching is suppressed for the
+// window. The 60s interval poll backstops anything that changes mid-window.
+let _lastNavSync = 0;
+function syncOnNav() {
+  const t = Date.now();
+  if (t - _lastNavSync < 10_000) return;
+  _lastNavSync = t;
+  forceSync();
 }
 
 // ── Keyboard ──────────────────────────────────────────────────────────────────
