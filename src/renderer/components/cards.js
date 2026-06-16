@@ -31,10 +31,21 @@ export function approvedMark(pr) {
   </svg>`;
 }
 
+// GitHub PR labels as small chips. Each carries a color dot tinted with the label's own
+// GitHub color; the name stays in the theme palette so the chips read cleanly in either
+// theme. gh shape: [{ name, color (6-hex, no #), description }].
+export function labelChips(labels) {
+  return (labels || []).map(l => {
+    const dot = /^[0-9a-fA-F]{6}$/.test(l.color || '') ? `#${l.color}` : 'var(--text-3)';
+    return `<span class="pr-label" title="${esc(l.description || l.name)}"><span class="pr-label-dot" style="background:${dot}"></span>${esc(l.name)}</span>`;
+  }).join('');
+}
+
 // A flat, whole-card-clickable PR card. The card opens the PR; the Jira badge keeps
 // its own link to Jira (stopPropagation so it doesn't also trigger the card).
 // Layout: header (num · repo · date + CI dot) on top, title fills the middle,
-// footer holds the author's GitHub avatar (bottom-left) + optional Jira tag.
+// footer holds the author's GitHub avatar (bottom-left) + optional Jira tag, with
+// label chips + the approved mark pinned bottom-right.
 export function prCard(pr) {
   const jiraHtml = (pr.jiraKeys||[]).map(k =>
     `<a href="${jiraUrl(k)}" target="_blank" rel="noopener" class="badge badge-jira" onclick="jiraClick(event, this.href, '${esc(k)}')">${esc(k)}</a>`).join('');
@@ -42,11 +53,13 @@ export function prCard(pr) {
   // GitHub serves any user's avatar at github.com/<login>.png — no API call needed.
   const avatar = login ? `<img class="pr-avatar" src="${ghAvatarSrc(login)}" alt="" title="${esc(login)}" loading="lazy">` : '';
   const footLeft = avatar + jiraHtml;
-  const approved = approvedMark(pr); // green check, pinned bottom-right (see .pr-foot-end)
-  // Footer renders whenever there's a left item (avatar/Jira) OR an approved mark, so the
-  // check shows even on a card with no avatar/Jira tags.
-  const foot = (footLeft || approved)
-    ? `<div class="pr-foot">${footLeft}${approved ? `<span class="pr-foot-end">${approved}</span>` : ''}</div>`
+  const labels = labelChips(pr.labels); // tinted chips, bottom-right (see .pr-foot-end)
+  const approved = approvedMark(pr);     // green check, bottom-right (see .pr-foot-end)
+  const footRight = labels + approved;
+  // Footer renders whenever there's a left item (avatar/Jira) OR a right item (labels /
+  // approved mark), so the right cluster shows even on a card with no avatar/Jira tags.
+  const foot = (footLeft || footRight)
+    ? `<div class="pr-foot">${footLeft}${footRight ? `<span class="pr-foot-end">${footRight}</span>` : ''}</div>`
     : '';
   return `<div class="card clickable pr-card" onclick="openPrSplit('${pr.url}','#${pr.number}','${esc(pr.repo||'')}','${esc(pr.headRefName||'')}')" title="Open PR #${pr.number}">
     <div class="pr-head">
