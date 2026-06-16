@@ -28,5 +28,8 @@ const publishJiraSync = id => broadcast({ type: 'jira-sync', id });
 // The open-tab set changed (renderer PUT /api/tabs). Subscribers that mirror the tabs — the
 // renderer sidebar and the tray menu — re-read /api/tabs in response. No payload needed.
 const publishTabs = () => broadcast({ type: 'tabs' });
+// A new activity-feed entry landed (db.addEvent). Subscribers surface it live: the renderer
+// as an in-app toast when focused, the tray as a native macOS notification when not.
+const publishActivity = event => broadcast({ type: 'activity', event });
 
-module.exports = { register, broadcast, publishSync, publishJiraSync, publishTabs };
+module.exports = { register, broadcast, publishSync, publishJiraSync, publishTabs, publishActivity };

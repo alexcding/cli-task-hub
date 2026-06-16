@@ -7,7 +7,7 @@
 // server's viewed_at, clearing reviewPending) stops the alerts.
 const { Notification, shell } = require('electron');
 const { execFile } = require('child_process');
-const { openLinkInApp } = require('../windows/window');
+const { openLinkInApp, runInApp } = require('../windows/window');
 const { PR_CATEGORY } = require('../../shared/constants.mjs');
 
 let reviewSeeded = false;           // first sync seeds silently — don't notify for reviews
@@ -71,4 +71,43 @@ function detectReviewChanges(reviewPRs, sound) {
   reviewSeeded = true;
 }
 
-module.exports = { detectReviewChanges, playReviewSound, previewSound, prKey };
+// ── Activity notifications ──────────────────────────────────────────────────────
+// The tray's main-process mirror of the renderer's in-app activity toast. The renderer
+// toasts new activity when its window is focused; this fires a native macOS notification
+// when it isn't (gated on the same focus state + the Appearance toggle — see main.js).
+const shortRepo = repo => (repo || '').split('/').pop() || repo || '';
+
+// One activity entry → { title, body, url? }. Mirrors the renderer's presentEvent() copy
+// (src/renderer/pages/logs.js) so a notification reads like its Activity-page row. `url`,
+// when present, is the PR to open on click; otherwise the click just opens the Activity page.
+function activityMessage(ev) {
+  const p = (ev && typeof ev.payload === 'object' && ev.payload) || {};
+  const pr = p.pr || {};
+  const prBody = `#${pr.number ?? '?'} ${pr.title || ''}`.trim();
+  switch (ev && ev.type) {
+    case 'pr_opened': return { title: `Pull request opened in ${shortRepo(p.repo)}`, body: prBody, url: pr.url };
+    case 'pr_merged': return { title: `Pull request merged in ${shortRepo(p.repo)}`, body: prBody, url: pr.url };
+    case 'pr_closed': return { title: `Pull request closed in ${shortRepo(p.repo)}`, body: prBody, url: pr.url };
+    case 'jira_transitioned': return { title: `${p.key || 'Ticket'} → ${p.transition || '?'}`, body: p.version ? `Fix Version ${p.version}` : '' };
+    case 'jira_version_created': return { title: `Fix Version ${p.version || '?'} created`, body: p.project || '' };
+    case 'jira_fixversion_set': return { title: `Fix Version ${p.version || '?'} set`, body: p.key || '' };
+    case 'jira_transition_failed': return { title: `Failed to transition ${p.key || 'ticket'}`, body: p.error || '' };
+    case 'jira_fixversion_failed': return { title: 'Failed to set Fix Version', body: p.error || '' };
+    case 'sync_failed': return { title: `Sync failed for ${shortRepo(p.repo)}`, body: p.error || '' };
+    // Unknown / future types (e.g. jira_sync_failed): title-case the tag and still surface any
+    // error/detail the payload carries, so a notification never drops the info its feed row keeps.
+    default: return { title: ((ev && ev.type) || 'Activity').replace(/_/g, ' '), body: p.error || p.detail || '' };
+  }
+}
+
+// Fire a native notification for one activity entry. Caller decides whether to call (focus
+// + setting checks live in main.js); this just renders and wires the click.
+function notifyActivity(ev) {
+  if (!Notification.isSupported()) return;
+  const m = activityMessage(ev);
+  const n = new Notification({ title: m.title, body: m.body });
+  n.on('click', () => (m.url ? openLinkInApp(m.url, m.title, 'github') : runInApp(`window.showPage && showPage('activity')`)));
+  n.show();
+}
+
+module.exports = { detectReviewChanges, playReviewSound, previewSound, prKey, notifyActivity };

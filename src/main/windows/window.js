@@ -137,6 +137,15 @@ function runInApp(js) {
   else exec();
 }
 
+// Run JS in the renderer ONLY if a window is already open — unlike runInApp, never creates
+// or raises one. For pushing transient UI (an activity toast) into a window we already know
+// is focused; if it isn't open there's nothing to toast into, so it's a no-op.
+function runInOpenApp(js) {
+  if (!win || win.isDestroyed()) return;
+  if (win.webContents.isLoading()) win.webContents.once('did-finish-load', () => win.webContents.executeJavaScript(js).catch(() => {}));
+  else win.webContents.executeJavaScript(js).catch(() => {});
+}
+
 // Open `url` inside the app's embedded viewer (new tab, or focus it if already open).
 // `category` ('mine'|'review') is passed so a tray-opened PR tab lands in the right
 // sidebar group and keeps it across restarts — without it the renderer saves category=''
@@ -156,4 +165,4 @@ function registerSession() {
   session.defaultSession.setPermissionCheckHandler(() => true);
 }
 
-module.exports = { openWindow, getWin, sendToWin, runInApp, openLinkInApp, registerSession, setOnBlur, setOnClosed, isQuitting, quitApp };
+module.exports = { openWindow, getWin, sendToWin, runInApp, runInOpenApp, openLinkInApp, registerSession, setOnBlur, setOnClosed, isQuitting, quitApp };

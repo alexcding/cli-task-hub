@@ -206,6 +206,16 @@
                 </button>
               </div>
             </div>
+            <div class="card-pad theme-row" style="border-top:1px solid var(--border)">
+              <div>
+                <div class="theme-row-title">Activity notifications</div>
+                <div class="theme-row-sub">In-app toast when focused, a macOS notification otherwise</div>
+              </div>
+              <div class="theme-toggle" id="activity-notify-toggle" role="group" aria-label="Activity notifications">
+                <button class="theme-opt" data-notify-opt="on" onclick="setActivityNotify(true)">On</button>
+                <button class="theme-opt" data-notify-opt="off" onclick="setActivityNotify(false)">Off</button>
+              </div>
+            </div>
           </div>
           </div><!-- /appearance -->
 
@@ -398,6 +408,7 @@
 </div>
 
 <div id="toast"></div>
+<div id="activity-toasts"></div>
 
 <script src="/vendor/sortable.min.js"></script>
 <script type="module" src="/app.js"></script>

@@ -40,6 +40,19 @@
 #toast.show { opacity:1;transform:translateY(0); }
 #toast.error { background:var(--danger);color:#fff; }
 
+/* Live activity toasts — stacked above the action toast, top-right, out of the way of
+   the action toast's bottom-right slot. Each reads like an Activity-page row. */
+#activity-toasts { position:fixed;top:58px;right:20px;z-index:201;display:flex;flex-direction:column;gap:10px;width:340px;max-width:calc(100vw - 40px);pointer-events:none; }
+.act-toast { display:flex;align-items:flex-start;gap:11px;padding:11px 12px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r);box-shadow:var(--shadow-md);opacity:0;transform:translateX(12px);transition:opacity .2s,transform .2s;pointer-events:auto; }
+.act-toast.show { opacity:1;transform:translateX(0); }
+.act-toast-icon { width:28px;height:28px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;margin-top:1px; }
+.act-toast-icon svg { width:15px;height:15px;display:block; }
+.act-toast-body { flex:1;min-width:0;font-size:13px;line-height:1.45;color:var(--text); }
+.act-toast-detail { font-size:12px;color:var(--text-3);margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+.act-toast-close { flex-shrink:0;background:none;border:none;color:var(--text-3);cursor:pointer;padding:2px;margin:-2px -2px 0 0;border-radius:6px;display:flex; }
+.act-toast-close:hover { color:var(--text);background:var(--surface-hover); }
+.act-toast-close svg { width:14px;height:14px;display:block; }
+
 /* Inline form */
 .inline-form { display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end; }
 .inline-form .form-group { margin:0; }

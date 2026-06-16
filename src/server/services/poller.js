@@ -147,6 +147,9 @@ async function applyFixVersion(project, pr, keys, recordSet) {
 function handleMerge(repo, pr) {
   const project = db.projectForRepo(repo);
   db.addEvent('pr_merged', { repo, pr: { number: pr.number, title: pr.title, url: pr.url } });
+  // Record the merged state now so the next poll's diff (state === 'MERGED' && prev !== 'MERGED')
+  // doesn't re-detect this same merge and fire a duplicate pr_merged event/notification.
+  prState.set(`${repo}#${pr.number}`, 'MERGED');
   if (project) applyMergeAutomation(project, pr).catch(err => console.error('[automation]', err.message));
 }
 

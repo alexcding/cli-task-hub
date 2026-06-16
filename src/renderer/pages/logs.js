@@ -71,7 +71,8 @@ function jiraLink(key) {
 }
 
 // Each known event type → icon, tint, one-line linked sentence, optional detail line.
-function presentEvent(ev, p) {
+// Exported so the live activity toast (components/activity-toast.js) renders identically.
+export function presentEvent(ev, p) {
   const t = ev.type;
   if (t === 'pr_opened') return {
     icon: TAB_ICON.github, tint: 'var(--accent)', bg: 'var(--accent-bg)',

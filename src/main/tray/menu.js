@@ -107,6 +107,12 @@ let _reviewReqItems = [];
 // there's no limit data (e.g. not signed in) or a render fails → the section is simply
 // omitted. Cached for sync rebuilds.
 let _usageImg = null;
+// Last successfully-fetched /api/settings, cached so the activity-notification decision
+// (main.js) can read it synchronously instead of fetching per SSE event. Renewed on every
+// full refreshMenuData() (60s tick / sync events / an explicit tray:refresh after a toggle);
+// null until the first refresh → callers treat that as defaults (e.g. activityNotify on).
+let _settings = null;
+const getCachedSettings = () => _settings;
 
 // Refresh the cached menu body + tray icon color + review notifications. `tray` is the
 // Tray instance (recolored by state); `refreshMenu` re-invokes the caller so a click can
@@ -124,6 +130,8 @@ async function refreshMenuData(tray, refreshMenu) {
   // /api/usage is SWR-cached server-side, so this 60s/blur fetch is cheap. fetchJSON
   // returns [] on error → renderUsageImage sees no .limits and yields null (no section).
   // Render the agent the user selected in the dashboard widget (persisted setting).
+  // Keep the last good settings object (fetchJSON yields [] on error — don't cache that).
+  if (settings && !Array.isArray(settings)) _settings = settings;
   const agentKey = (settings && settings.usageAgent) || 'claude';
   _usageImg = await renderUsageImage(usage, agentKey).catch(() => null);
   const tabs = (tabData && tabData.tabs) || [];
@@ -208,4 +216,4 @@ function buildMenuNow() {
   ]);
 }
 
-module.exports = { refreshMenuData, refreshMenuTabs, buildMenuNow };
+module.exports = { refreshMenuData, refreshMenuTabs, buildMenuNow, getCachedSettings };

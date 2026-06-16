@@ -10,6 +10,11 @@ const configdb = require('./configdb');
 const datadb = require('./datadb');
 const logdb = require('./logdb');
 
+// Optional listener fired for every activity entry (category='event'), wired by the
+// server bootstrap to fan-out over SSE (renderer toast + tray native notification).
+// A setter (not a hard require of routes/sse) keeps the database layer dependency-free.
+let _onActivity = null;
+
 module.exports = {
   dataDir,
 
@@ -41,7 +46,15 @@ module.exports = {
 
   // Activity feed + structured logs (logs.db). Events are just category='event';
   // other categories (webhook, poller, …) carry diagnostic logs. See lib/logdb.js.
-  addEvent: (type, payload) => logdb.addLog({ category: 'event', level: /fail|error/i.test(type) ? 'error' : 'info', type, payload }),
+  addEvent: (type, payload) => {
+    const level = /fail|error/i.test(type) ? 'error' : 'info';
+    const created_at = new Date().toISOString();
+    logdb.addLog({ category: 'event', level, type, payload, created_at });
+    // Push the new entry to live listeners (SSE → in-app toast / native notification).
+    // Best-effort: a listener fault must never break the write that already committed.
+    if (_onActivity) { try { _onActivity({ type, payload, level, created_at }); } catch { /* ignore */ } }
+  },
+  setActivityListener: (fn) => { _onActivity = fn; },
   getEvents: (limit) => logdb.getLogs({ category: 'event', limit }),
   addLog: logdb.addLog,
   getLogs: logdb.getLogs,

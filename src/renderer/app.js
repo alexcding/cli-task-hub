@@ -17,7 +17,8 @@ import { loadProjectPage, projShowSection, reloadProjectPRs, loadProjectWebhooks
 import { loadGitTab, gitTabPick, gitTabShowCommit, gitTabBack, gitTabRemoveWorktree } from './pages/git-tab.js';
 import * as jiraView from './pages/jira.js';
 import { loadLogs, setLogCategory, clearLogs } from './pages/logs.js';
-import { loadSettings, saveConfig, switchSettingsTab, setReviewSound, previewReviewSound, toggleSecret } from './pages/settings.js';
+import { loadSettings, saveConfig, switchSettingsTab, setReviewSound, previewReviewSound, setActivityNotify, toggleSecret } from './pages/settings.js';
+import { showActivityToast } from './components/activity-toast.js';
 import * as modal from './components/modal.js';
 
 // ── Navigation ────────────────────────────────────────────────────────────────
@@ -160,6 +161,9 @@ function connectStream() {
     let d = {}; try { d = JSON.parse(e.data); } catch {}
     if (d.type === 'reload') { location.reload(); return; } // dev: a file changed
     if (d.type === 'tabs') return; // tab-set changes drive the tray menu; the sidebar already updated locally
+    // Activity toasts are NOT triggered here: the main process is the single decider (it
+    // alone can tell if the app is frontmost vs an embedded webview holding focus) and pushes
+    // the toast via window.__activityToast. An 'activity' event still refreshes the page below.
     scheduleRefresh();
   };
   es.onerror = () => {}; // EventSource auto-reconnects
@@ -186,7 +190,8 @@ Object.assign(window, {
   projShowSection, reloadProjectPRs, loadProjectWebhooks, saveProjectWebhooks, previewFixVersion, scrollDash, setUsageTab,
   loadGitTab, gitTabPick, gitTabShowCommit, gitTabBack, gitTabRemoveWorktree,
   loadLogs, setLogCategory, clearLogs,
-  loadSettings, saveConfig, switchSettingsTab, setReviewSound, previewReviewSound, toggleSecret,
+  loadSettings, saveConfig, switchSettingsTab, setReviewSound, previewReviewSound, setActivityNotify, toggleSecret,
+  __activityToast: showActivityToast, // main pushes activity toasts here when the app is frontmost
   // project modal
   openNewProjectModal: modal.openNewProjectModal, openEditProjectModal: modal.openEditProjectModal,
   closeModal: modal.closeModal, saveProject: modal.saveProject,

@@ -12,6 +12,7 @@ export async function loadSettings() {
   ]);
 
   populateSoundPicker(sounds, settings?.reviewSound);
+  setActivityNotifyUI(settings?.activityNotify !== 'off'); // default on when unset
 
   if (cfg.poll_interval)      document.getElementById('poll-interval').value = cfg.poll_interval;
   if (cfg.jira_base_url)      document.getElementById('jira-base-url').value = cfg.jira_base_url;
@@ -76,6 +77,24 @@ export function previewReviewSound() {
   const value = document.getElementById('review-sound')?.value || 'system';
   if (!window.taskhub?.previewSound) { toastErr('Sound preview is only available in the desktop app'); return; }
   Promise.resolve(window.taskhub.previewSound(value)).catch(e => toastErr('Preview failed: ' + (e?.message || e)));
+}
+
+// ── Activity notifications ──────────────────────────────────────────────────────
+// On = a focused window toasts each new activity entry; the tray fires a native macOS
+// notification when the window isn't focused. The main process is the single decider for
+// both (see src/main/app/main.js) and reads this `activityNotify` setting ('on'/'off') —
+// the renderer only persists it here, so there's one source of truth, not a mirrored copy.
+function setActivityNotifyUI(on) {
+  document.querySelectorAll('#activity-notify-toggle .theme-opt')
+    .forEach(b => b.classList.toggle('active', (b.dataset.notifyOpt === 'on') === on));
+}
+
+export async function setActivityNotify(on) {
+  try {
+    await apiJson(ROUTES.settingsKey('activityNotify'), 'PUT', { value: on ? 'on' : 'off' });
+    setActivityNotifyUI(on);           // reflect the toggle only once it's actually persisted
+    window.taskhub?.refreshTray?.();   // let the tray re-read the setting now, not on its next tick
+  } catch (e) { toastErr(e.message); }
 }
 
 // ── Resource usage ──────────────────────────────────────────────────────────────

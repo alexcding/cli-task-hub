@@ -12,6 +12,7 @@ const express = require('express');
 const path = require('path');
 const poller = require('./services/poller');
 const forwarder = require('./services/webhook-forwarder');
+const db = require('./database/db');
 const { ROUTES } = require('../shared/routes.mjs');
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
@@ -114,6 +115,7 @@ async function start(port = PORT) {
       console.log(`TaskHub running at http://localhost:${port}`);
       poller.start(sse.publishSync);         // PR sync loop publishes snapshot updates over SSE
       poller.startJira(sse.publishJiraSync); // Jira sync loop (assigned-to-me + per-project)
+      db.setActivityListener(sse.publishActivity); // fan new activity entries out to live UIs
       // Dev builds are hard-killed often (no clean tray-quit), which leaks `gh webhook forward`
       // relay hooks and 422s the next run — so wipe stale relay hooks before (re)starting. Off in
       // the packaged app, where the hook could belong to another machine's active forwarder.

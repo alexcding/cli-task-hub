@@ -33,7 +33,8 @@ const terminals = require('../ipc/terminals');
 const system = require('../ipc/system');
 const win = require('../windows/window');
 const { trayIcon, trayPressedIcon } = require('../native/icons');
-const { refreshMenuData, refreshMenuTabs, buildMenuNow } = require('../tray/menu');
+const { refreshMenuData, refreshMenuTabs, buildMenuNow, getCachedSettings } = require('../tray/menu');
+const { notifyActivity } = require('../native/notifications');
 const { setupAutoUpdates } = require('../updater/updater');
 const { BASE_URL } = require('./const');
 
@@ -56,6 +57,19 @@ async function refreshMenuTabsOnly() {
   if (!tray) return;
   await refreshMenuTabs();
   tray.setContextMenu(buildMenuNow());
+}
+
+// A new activity entry arrived over SSE. The main process is the SOLE decider so the two
+// surfaces can never double-fire or both drop: only here can we reliably tell whether the
+// app is frontmost (win.isFocused() stays true even when an embedded <webview> tab holds
+// focus, where the renderer's document.hasFocus() would read false). Frontmost → push the
+// in-app toast into the renderer; otherwise → a native macOS notification. Honors the
+// Appearance toggle from the cached settings (renewed on the tray's refresh cadence + an
+// explicit tray:refresh after a toggle); defaults on when unset/unread.
+function maybeNotifyActivity(event) {
+  if (getCachedSettings()?.activityNotify === 'off') return;
+  if (win.getWin()?.isFocused()) win.runInOpenApp(`window.__activityToast && __activityToast(${JSON.stringify(event)})`);
+  else notifyActivity(event);
 }
 
 // Strip frame-blocking headers so the <webview> can load GitHub/Jira pages, which
@@ -153,6 +167,7 @@ app.whenReady().then(async () => {
   const scheduleFullRefresh = () => { clearTimeout(_streamFullTimer); _streamFullTimer = setTimeout(refreshMenu, 400); };
   supervisor.subscribeStream((evt) => {
     if (evt?.type === 'tabs') refreshMenuTabsOnly();
+    else if (evt?.type === 'activity') maybeNotifyActivity(evt.event);
     else if (evt?.type === 'sync' || evt?.type === 'jira-sync') scheduleFullRefresh();
   });
 
