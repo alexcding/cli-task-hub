@@ -42,8 +42,16 @@ async function gh(args) {
   }
 }
 
+// Pull Jira keys out of a PR's title/body. We deliberately strip fenced code blocks
+// (``` … ``` or ~~~ … ~~~) and inline code spans (`…`) first: those carry example output,
+// changelog samples and command snippets whose keys aren't tickets this PR touches. Counting
+// them would mislink the dashboard card AND drive the on-merge Fix Version / transition
+// automation against unrelated tickets (see services/poller.js).
 const extractJiraKeys = (text) => {
-  const matches = (text || '').match(/\b[A-Z][A-Z0-9]+-\d+\b/g);
+  const prose = (text || '')
+    .replace(/```[\s\S]*?```|~~~[\s\S]*?~~~/g, ' ')
+    .replace(/`[^`]*`/g, ' ');
+  const matches = prose.match(/\b[A-Z][A-Z0-9]+-\d+\b/g);
   return matches ? [...new Set(matches)] : [];
 };
 
