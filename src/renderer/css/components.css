@@ -133,19 +133,24 @@
 /* PR approved mark — green circle + white check, pinned bottom-right (see .pr-foot-end). */
 .pr-approved { width:14px;height:14px;flex-shrink:0;display:block;color:var(--success); }
 
-/* Sprint board: a horizontal row of status columns, each holding ticket cards. Columns
-   are recessed (--bg) so the cards (--surface) read as raised tiles — the flat, native look. */
-.board { display:flex;gap:12px;overflow-x:auto;padding-bottom:6px;align-items:flex-start; }
-.board-col { flex:0 0 168px;background:var(--bg);border:1px solid var(--border);border-radius:var(--rl);padding:10px; }
-.board-col-head { display:flex;align-items:center;gap:8px;padding:2px 4px 10px; }
-.board-col-name { font-size:11.5px;font-weight:600;text-transform:uppercase;letter-spacing:.4px;color:var(--text-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
-.board-col-count { font-size:11px;color:var(--text-3);font-variant-numeric:tabular-nums;margin-left:auto;flex-shrink:0; }
+/* Sprint board (Linear-style minimal): no column or card boxes. A column is just a
+   status-dot header over a hairline, then a stack of flat white cards on the recessed
+   board area — so the whole thing reads clean and flat, not nested boxes. */
+.board { display:flex;gap:16px;overflow-x:auto;padding-bottom:6px;align-items:flex-start; }
+.board-col { flex:0 0 172px; }
+.board-col-head { display:flex;align-items:center;gap:7px;padding:0 2px 8px;margin-bottom:10px;border-bottom:1px solid var(--border); }
+.board-col-name { font-size:13px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+.board-col-count { font-size:12px;color:var(--text-3);font-variant-numeric:tabular-nums;margin-left:auto;flex-shrink:0; }
 .board-col-body { display:flex;flex-direction:column;gap:8px; }
-.board-card { background:var(--surface);border:1px solid var(--border);border-radius:var(--rs);padding:10px 11px; }
-.board-card-head { display:flex;align-items:center;gap:8px;margin-bottom:6px; }
+/* Flat card: white tile, no border, just a hair of shadow; separated from the grey board
+   by color + whitespace. */
+.board-card { position:relative;background:var(--surface);border-radius:8px;padding:11px 12px;box-shadow:var(--shadow); }
+/* Meta row sits at the BOTTOM (summary is the hero on top): type icon · key · priority,
+   with the assignee pinned right. */
+.board-card-foot { display:flex;align-items:center;gap:3px;margin-top:10px; }
 /* Ticket key styled like the GitHub card's repo (.pr-repo): 12px / 500 / text-2, muted,
    no accent. Still clickable. */
-.board-card-key { font-size:12px;font-weight:500;font-variant-numeric:tabular-nums;color:var(--text-2);text-decoration:none; }
+.board-card-key { font-size:12px;font-weight:500;font-variant-numeric:tabular-nums;color:var(--text-2);text-decoration:none;white-space:nowrap; }
 .board-card-key:hover { color:var(--text);text-decoration:underline; }
 .board-av { margin-left:auto;flex-shrink:0;width:20px;height:20px;padding:0;border:none;border-radius:50%;background:var(--surface-hover);color:var(--text-2);font-size:9px;font-weight:700;line-height:1;font-family:inherit;display:inline-flex;align-items:center;justify-content:center;cursor:pointer; }
 .board-av:hover { box-shadow:0 0 0 2px var(--accent); }
@@ -154,10 +159,29 @@
    capsule (.badge-jira), so "I'm the assignee" reads at a glance. */
 .board-av-mine { background:var(--accent-bg);color:var(--accent); }
 .board-av svg { width:12px;height:12px;display:block; }
-.board-card-sum { font-size:13px;line-height:1.45;color:var(--text);display:-webkit-box;-webkit-line-clamp:6;-webkit-box-orient:vertical;overflow:hidden; }
-.board-card-foot { display:flex;align-items:center;gap:6px;margin-top:8px; }
+.board-card-sum { font-size:13.5px;line-height:1.45;color:var(--text);display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden; }
+/* Meta-row marks: issue-type icon (Jira-coloured by type) before the key, then the
+   priority diamond after it. .board-card-meta is the muted fallback for an unknown type. */
 .board-card-meta { font-size:11px;color:var(--text-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
-.board-move { margin-left:auto;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:5px;border:1px solid transparent;background:none;color:var(--text-3);cursor:pointer; }
+/* Negative margins compensate the icon SVG's internal padding: left pulls the glyph out to
+   the summary's leading edge, right pulls the ticket number in close. */
+.board-type { display:inline-flex;align-items:center;flex-shrink:0;margin-left:-3px;margin-right:0; }
+.board-type svg { width:15px;height:15px;display:block; }
+.type-bug { color:var(--danger); }
+.type-story { color:var(--success); }
+.type-task { color:var(--accent); }
+.type-epic { color:var(--merged); }
+/* Priority: stacked chevrons after the ticket number, coloured by level (3=high red,
+   2=medium amber, 1=low grey). */
+.board-prio { flex-shrink:0;display:inline-flex;align-items:center; }
+.board-prio svg { width:13px;height:13px;display:block; }
+.prio-high { color:var(--danger); }
+.prio-medium { color:var(--warn); }
+.prio-low { color:var(--text-3); }
+/* Move control floats in the card's top-right on hover (the avatar now sits in the bottom
+   meta row); absolute so it adds no height. */
+.board-move { position:absolute;right:8px;top:8px;display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:5px;border:1px solid transparent;background:var(--surface);color:var(--text-3);cursor:pointer;opacity:0;transition:opacity .1s; }
+.board-card:hover .board-move { opacity:1; }
 .board-move:hover { border-color:var(--accent);color:var(--accent); }
 .board-move svg { width:13px;height:13px;display:block; }
 /* Scrumboard sprint-name subtitle, under the project tabs. */

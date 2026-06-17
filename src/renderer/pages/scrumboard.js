@@ -8,7 +8,7 @@ import { ROUTES } from '/shared/routes.mjs';
 import { state, setProjects, projectById } from '../stores/store.js';
 import { api, apiJson } from '../services/api.js';
 import { esc, jiraUrl } from '../lib/util.js';
-import { ICON } from '../lib/icons.js';
+import { ICON, ISSUE_ICON } from '../lib/icons.js';
 import { toast, toastErr } from '../components/toast.js';
 import { rememberStatuses } from './jira.js';
 
@@ -31,6 +31,44 @@ function initials(name) {
 
 // Projects eligible for a board tab: those with a Jira key configured.
 const boardProjects = () => (state.projects || []).filter(p => p.jiraProjectKey);
+
+// Issue-type key, normalised (sub-tasks reuse the task mark).
+const typeKey = (it) => {
+  const k = (it.type || '').toLowerCase().trim();
+  return (k === 'sub-task' || k === 'subtask') ? 'task' : k;
+};
+// The Jira-style type icon, shown before the key in the card header. Unknown types fall
+// back to their name as a small muted label (so the type is never lost).
+function typeIcon(it) {
+  const key = typeKey(it);
+  if (ISSUE_ICON[key]) return `<span class="board-type type-${key}" title="${esc(it.type)}">${ISSUE_ICON[key]}</span>`;
+  return it.type ? `<span class="board-card-meta">${esc(it.type)}</span>` : '';
+}
+// Priority → chevron count: 3 (high), 2 (medium), 1 (low), or 0 (none/unknown). Checked
+// highest/lowest before high/low so "Highest" doesn't match the "high" rule.
+function prioCount(p) {
+  const s = (p || '').toLowerCase();
+  if (/highest|high|blocker|critical|urgent|major/.test(s)) return 3;
+  if (/medium|normal/.test(s)) return 2;
+  if (/lowest|low|minor|trivial/.test(s)) return 1;
+  return 0;
+}
+// Stacked up-chevrons by level: 3 = high, 2 = medium, 1 = low (each subpath is one chevron,
+// stacked bottom→top, vertically centred in the 14×14 box so all variants align).
+const PRIO_CHEVRONS = {
+  3: 'M4 11 7 8 10 11M4 8 7 5 10 8M4 5 7 2 10 5',
+  2: 'M4 9.5 7 6.5 10 9.5M4 6.5 7 3.5 10 6.5',
+  1: 'M4 8 7 5 10 8',
+};
+// The priority indicator shown right after the ticket number: stacked chevrons coloured by
+// level (3=high red, 2=medium amber, 1=low grey). Empty when the ticket has no priority;
+// the exact Jira priority shows on hover.
+function prioMark(it) {
+  const n = prioCount(it.priority);
+  if (!n) return '';
+  const lvl = n === 3 ? 'high' : n === 2 ? 'medium' : 'low';
+  return `<span class="board-prio prio-${lvl}" title="${esc(it.priority)} priority"><svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="${PRIO_CHEVRONS[n]}"/></svg></span>`;
+}
 
 export async function loadScrumboard() {
   const body = document.getElementById('scrumboard-body');
@@ -198,17 +236,15 @@ function boardCard(it, mine) {
   // data-key/data-assignee-id). Unassigned cards show a dashed "+" to invite assigning.
   // `mine` (assigned to me) tints the avatar with the Jira-capsule accent background.
   const av = `<button class="board-av${it.assignee ? '' : ' board-av-empty'}${mine ? ' board-av-mine' : ''}" data-key="${key}" data-assignee-id="${esc(it.assigneeId || '')}" onclick="openAssignMenu(this)" title="${it.assignee ? esc(it.assignee) : 'Assign'}">${it.assignee ? esc(initials(it.assignee)) : ICON.plus}</button>`;
-  const meta = [it.type, it.priority].filter(Boolean).map(esc).join(' · ');
   return `<div class="board-card">
-    <div class="board-card-head">
-      <a class="board-card-key" href="${jiraUrl(it.key)}" target="_blank" onclick="jiraClick(event, this.href, '${key}')">${key}</a>
-      ${av}
-    </div>
     <div class="board-card-sum">${esc(it.summary || '')}</div>
     <div class="board-card-foot">
-      <span class="board-card-meta">${meta}</span>
-      <button class="board-move" data-key="${key}" data-status="${esc(it.status || '')}" onclick="openStatusMenu(this)" title="Move ${key}">${ICON.caret}</button>
+      ${typeIcon(it)}
+      <a class="board-card-key" href="${jiraUrl(it.key)}" target="_blank" onclick="jiraClick(event, this.href, '${key}')">${key}</a>
+      ${prioMark(it)}
+      ${av}
     </div>
+    <button class="board-move" data-key="${key}" data-status="${esc(it.status || '')}" onclick="openStatusMenu(this)" title="Move ${key}">${ICON.caret}</button>
   </div>`;
 }
 
