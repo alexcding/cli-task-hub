@@ -36,9 +36,14 @@ export async function loadScrumboard() {
   const body = document.getElementById('scrumboard-body');
   if (!body) return;
   try {
-    // Settings carry the per-project saved assignee filter (board_filter_<id>).
-    const [projects, settings] = await Promise.all([api(ROUTES.PROJECTS), api(ROUTES.SETTINGS)]);
+    // Settings carry the per-project saved assignee filter (board_filter_<id>). The
+    // my-sprint feed lets us highlight my own cards on the team board (non-blocking now
+    // that acli is async).
+    const [projects, settings, sprintSnap] = await Promise.all([
+      api(ROUTES.PROJECTS), api(ROUTES.SETTINGS), api(ROUTES.JIRA_SPRINT).catch(() => null),
+    ]);
     setProjects(projects);
+    if (sprintSnap) state.sprintSnap = sprintSnap;
     const boardable = boardProjects();
     for (const p of boardable) state.boardFilters[p.id] = settings[`board_filter_${p.id}`] || '';
     // Active project: the remembered one if it still has a board, else the first.
@@ -187,11 +192,12 @@ export async function setBoardFilter(value) {
 // type/priority and a move control that reuses the shared status-transition menu
 // (openStatusMenu reads data-key/data-status off the button). `mine` tickets get a subtle
 // accent edge so your own work stands out on a team board.
-function boardCard(it) {
+function boardCard(it, mine) {
   const key = esc(it.key || '');
   // The avatar is the assign control: click → assignee menu (openAssignMenu reads
   // data-key/data-assignee-id). Unassigned cards show a dashed "+" to invite assigning.
-  const av = `<button class="board-av${it.assignee ? '' : ' board-av-empty'}" data-key="${key}" data-assignee-id="${esc(it.assigneeId || '')}" onclick="openAssignMenu(this)" title="${it.assignee ? esc(it.assignee) : 'Assign'}">${it.assignee ? esc(initials(it.assignee)) : ICON.plus}</button>`;
+  // `mine` (assigned to me) tints the avatar with the Jira-capsule accent background.
+  const av = `<button class="board-av${it.assignee ? '' : ' board-av-empty'}${mine ? ' board-av-mine' : ''}" data-key="${key}" data-assignee-id="${esc(it.assigneeId || '')}" onclick="openAssignMenu(this)" title="${it.assignee ? esc(it.assignee) : 'Assign'}">${it.assignee ? esc(initials(it.assignee)) : ICON.plus}</button>`;
   const meta = [it.type, it.priority].filter(Boolean).map(esc).join(' · ');
   return `<div class="board-card">
     <div class="board-card-head">
@@ -243,6 +249,9 @@ export function renderScrumboard() {
   setTitle(snap);
   renderScrumboardFilter(); // keep the assignee list in sync with the loaded board
 
+  // Keys assigned to me (from the my-sprint feed) → tint my cards' avatar on the team board.
+  const mineKeys = new Set((state.sprintSnap?.items || []).map(i => i.key));
+
   // Apply the saved per-project assignee filter.
   const f = state.boardFilters[state.boardProjectId] || '';
   const items = f === '__unassigned__' ? all.filter(i => !i.assigneeId)
@@ -270,7 +279,7 @@ export function renderScrumboard() {
           <span class="board-col-count">${col.items.length}</span>
         </div>
         <div class="board-col-body">
-          ${col.items.map(it => boardCard(it)).join('')}
+          ${col.items.map(it => boardCard(it, mineKeys.has(it.key))).join('')}
         </div>
       </div>`).join('')}
   </div>`;

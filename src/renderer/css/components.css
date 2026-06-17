@@ -150,6 +150,9 @@
 .board-av { margin-left:auto;flex-shrink:0;width:20px;height:20px;padding:0;border:none;border-radius:50%;background:var(--surface-hover);color:var(--text-2);font-size:9px;font-weight:700;line-height:1;font-family:inherit;display:inline-flex;align-items:center;justify-content:center;cursor:pointer; }
 .board-av:hover { box-shadow:0 0 0 2px var(--accent); }
 .board-av-empty { background:none;border:1px dashed var(--border-focus);color:var(--text-3); }
+/* My own ticket: tint the avatar with the same accent background as the dashboard's Jira
+   capsule (.badge-jira), so "I'm the assignee" reads at a glance. */
+.board-av-mine { background:var(--accent-bg);color:var(--accent); }
 .board-av svg { width:12px;height:12px;display:block; }
 .board-card-sum { font-size:13px;line-height:1.45;color:var(--text);display:-webkit-box;-webkit-line-clamp:6;-webkit-box-orient:vertical;overflow:hidden; }
 .board-card-foot { display:flex;align-items:center;gap:6px;margin-top:8px; }
