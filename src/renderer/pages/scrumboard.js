@@ -7,7 +7,7 @@
 import { ROUTES } from '/shared/routes.mjs';
 import { state, setProjects, projectById } from '../stores/store.js';
 import { api, apiJson } from '../services/api.js';
-import { esc, jiraUrl } from '../lib/util.js';
+import { esc, jiraUrl, businessDaysUntil } from '../lib/util.js';
 import { ICON, ISSUE_ICON } from '../lib/icons.js';
 import { toast, toastErr } from '../components/toast.js';
 import { rememberStatuses } from './jira.js';
@@ -147,7 +147,7 @@ function setTitle(snap) {
   if (!el) return;
   const s = snap?.sprint;
   if (!s?.name) { el.textContent = ''; return; }
-  const days = s.endDate ? Math.ceil((new Date(s.endDate) - Date.now()) / 86_400_000) : 0;
+  const days = s.endDate ? businessDaysUntil(s.endDate) : 0;
   el.textContent = days > 0 ? `${s.name} · ${days}d left` : s.name;
 }
 

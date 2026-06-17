@@ -40,6 +40,24 @@ export const ghAvatarSrc = (login, frozen = '') =>
 export const CODE_FONT_FALLBACK = '"SF Mono", "SFMonoServed", Menlo, Monaco, monospace';
 export const codeFontStack = family => family ? `"${family}", ${CODE_FONT_FALLBACK}` : CODE_FONT_FALLBACK;
 
+// Working days (Mon–Fri) remaining until `end` — weekends are skipped so a sprint's
+// "Nd left" reflects actual capacity, not raw calendar span. Counts each weekday from
+// tomorrow through the end date inclusive; 0 once the end date is today or past.
+export const businessDaysUntil = end => {
+  const target = new Date(end);
+  if (isNaN(target)) return 0;
+  target.setHours(0, 0, 0, 0);
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  let count = 0;
+  while (d < target) {
+    d.setDate(d.getDate() + 1);
+    const day = d.getDay();
+    if (day !== 0 && day !== 6) count++;
+  }
+  return count;
+};
+
 export const fmtDate = s => s ? new Date(s).toLocaleDateString('en-US',{month:'short',day:'numeric'}) : '';
 export const timeAgo = s => {
   const sec = Math.max(0, Math.round((Date.now() - Date.parse(s)) / 1000));

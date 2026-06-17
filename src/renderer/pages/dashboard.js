@@ -4,7 +4,7 @@ import { ROUTES } from '/shared/routes.mjs';
 import { state, prByUrl, prGroup } from '../stores/store.js';
 import { PR_CATEGORY, PR_GROUP } from '/shared/constants.mjs';
 import { api } from '../services/api.js';
-import { esc } from '../lib/util.js';
+import { esc, businessDaysUntil } from '../lib/util.js';
 import { ICON } from '../lib/icons.js';
 import { prCard } from '../components/cards.js';
 import { jiraRowsHtml, rememberStatuses } from './jira.js';
@@ -166,7 +166,7 @@ function startUsageAutoRefresh() {
 function sprintLabel(snap) {
   const s = snap?.sprint;
   if (!s?.name) return 'In Sprint';
-  const days = s.endDate ? Math.ceil((new Date(s.endDate) - Date.now()) / 86_400_000) : 0;
+  const days = s.endDate ? businessDaysUntil(s.endDate) : 0;
   return days > 0 ? `${esc(s.name)} · ${days}d left` : esc(s.name);
 }
 
