@@ -19,10 +19,7 @@ function register(app) {
     // reacts to) and ONLY when it actually changed. Other keys (e.g. poll_interval) must not
     // trigger acli. Deferred off the response: writeJiraSnapshot shells out to acli synchronously.
     if ('sprint_jql' in req.body) {
-      setImmediate(() => {
-        try { poller.syncJiraSprint(); }
-        catch (err) { console.error('[config] jira resync failed:', err.message); }
-      });
+      poller.syncJiraSprint().catch(err => console.error('[config] jira resync failed:', err.message));
     }
   });
 

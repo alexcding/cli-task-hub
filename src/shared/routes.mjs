@@ -11,7 +11,7 @@
 //     that add a query string append it: `api(ROUTES.LOGS + '?' + params)`.
 //   • PARAMETERIZED routes — the server's Express pattern (with `:param`) and the client's
 //     path differ, so each gets BOTH: an UPPER pattern for `app.get(...)` and a lowerCamel
-//     builder for the client, e.g. ROUTES.JIRA_KEY ('/api/jira/:key') + ROUTES.jiraKey(key).
+//     builder for the client, e.g. ROUTES.SETTINGS_KEY ('/api/settings/:key') + ROUTES.settingsKey(key).
 
 export const ROUTES = Object.freeze({
   // ── Config / settings / tabs ────────────────────────────────────────────────
@@ -58,9 +58,6 @@ export const ROUTES = Object.freeze({
   // ── Jira ───────────────────────────────────────────────────────────────────
   JIRA_SITE: '/api/jira/site',
   JIRA_SPRINT: '/api/jira/sprint',
-  JIRA_SEARCH: '/api/jira/search',
-  JIRA_KEY: '/api/jira/:key',
-  jiraKey: key => `/api/jira/${encodeURIComponent(key)}`,
   JIRA_KEY_TRANSITION: '/api/jira/:key/transition',
   jiraKeyTransition: key => `/api/jira/${encodeURIComponent(key)}/transition`,
   JIRA_KEY_ASSIGN: '/api/jira/:key/assign',

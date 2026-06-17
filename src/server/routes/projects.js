@@ -13,25 +13,23 @@ const { ROUTES } = require('../../shared/routes.mjs');
 // so a few seconds of caching collapses a typing burst's worth of `acli` spawns into one.
 const _previewVersions = new Map(); // id -> { at, names }
 const PREVIEW_VERSIONS_TTL = 15000;
-function previewVersions(project) {
+async function previewVersions(project) {
   const hit = _previewVersions.get(project.id);
   if (hit && Date.now() - hit.at < PREVIEW_VERSIONS_TTL) return hit.names;
   let names = [];
-  try { names = jira.listVersions(project.jiraProjectKey).map(v => v.name); } catch { /* ignore */ }
+  try { names = (await jira.listVersions(project.jiraProjectKey)).map(v => v.name); } catch { /* ignore */ }
   _previewVersions.set(project.id, { at: Date.now(), names });
   return names;
 }
 
-// A new/changed project has no fresh snapshot yet, so fetch its PRs + Jira now — the snapshot
-// writes broadcast sync/jira-sync, which every subscribed UI (dashboard, tray) reacts to. This
-// is why the renderer no longer pokes /api/poll after a save. Deferred off the response:
-// syncProject awaits gh and syncProjectJira shells out to acli synchronously.
+// A new/changed project has no fresh snapshot yet, so fetch its PRs + Jira (tab + board)
+// now — the snapshot writes broadcast sync/jira-sync, which every subscribed UI (dashboard,
+// scrumboard, tray) reacts to. This is why the renderer no longer pokes /api/poll after a
+// save. Fire-and-forget: all three are async (gh + acli over execFile).
 function kickSync(project) {
-  setImmediate(() => {
-    poller.syncProject(project).catch(err => console.error('[sync] project resync failed:', err.message));
-    try { poller.syncProjectJira(project); }
-    catch (err) { console.error('[jira-sync] project resync failed:', err.message); }
-  });
+  poller.syncProject(project).catch(err => console.error('[sync] project resync failed:', err.message));
+  poller.syncProjectJira(project).catch(err => console.error('[jira-sync] tab resync failed:', err.message));
+  poller.syncProjectBoard(project).catch(err => console.error('[jira-sync] board resync failed:', err.message));
 }
 
 // Build the validated patch for a project from a request body.
@@ -101,14 +99,14 @@ function register(app, PORT) {
 
   // Live preview for the Automation tab: evaluate the (unsaved) prefix + script and return the
   // assembled version name. The script's `versions` input is the project's real Jira versions.
-  app.post(ROUTES.PROJECT_FIXVERSION_PREVIEW, (req, res) => {
+  app.post(ROUTES.PROJECT_FIXVERSION_PREVIEW, async (req, res) => {
     const project = db.getProject(req.params.id);
     if (!project) return res.status(404).json({ error: 'project not found' });
     // Existing versions feed the script's `versions` input + the "exists?" badge. They rarely
     // change mid-edit, so cache them briefly per project — otherwise every debounced keystroke
-    // spawns an `acli project view` subprocess that blocks the event loop. A Jira/acli hiccup
-    // shouldn't break the script preview either — fall back to an empty list.
-    const versions = previewVersions(project);
+    // spawns an `acli project view` subprocess. A Jira/acli hiccup shouldn't break the script
+    // preview either — fall back to an empty list.
+    const versions = await previewVersions(project);
     try {
       const pr = { number: 0, title: 'Sample PR', body: '' };
       const { version, number } = versionScript.buildVersion(

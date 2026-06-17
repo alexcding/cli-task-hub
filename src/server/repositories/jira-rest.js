@@ -9,10 +9,10 @@ const jira = require('./jira');
 // Resolve the base URL + auth header from the live acli account + the stored token. Throws (the
 // caller logs it) when the token or account can't be resolved, so the rest of the merge
 // automation still runs.
-function client() {
+async function client() {
   const token = db.get('jira_api_token');
   if (!token) throw new Error('no Jira API token set (Settings → Jira)');
-  const { site, email } = jira.getAuth();
+  const { site, email } = await jira.getAuth();
   if (!site || !email) throw new Error('could not resolve the Jira account from acli');
   return {
     base: `https://${site}`,
@@ -25,7 +25,7 @@ function client() {
 }
 
 async function call(method, path, body) {
-  const { base, headers } = client();
+  const { base, headers } = await client();
   const res = await fetch(`${base}${path}`, {
     method, headers, body: body === undefined ? undefined : JSON.stringify(body),
   });

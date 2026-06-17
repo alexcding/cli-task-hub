@@ -98,9 +98,14 @@ export function renderScrumboardTabs() {
 }
 
 function setTitle(snap) {
-  // Only the active sprint's name — the topbar already shows "Scrumboard", so no placeholder.
+  // The active sprint's name + days left — the topbar already shows "Scrumboard", so no
+  // placeholder when there's no sprint. textContent (not innerHTML) so no escaping needed.
   const el = document.getElementById('scrumboard-title');
-  if (el) el.textContent = snap?.sprint?.name || '';
+  if (!el) return;
+  const s = snap?.sprint;
+  if (!s?.name) { el.textContent = ''; return; }
+  const days = s.endDate ? Math.ceil((new Date(s.endDate) - Date.now()) / 86_400_000) : 0;
+  el.textContent = days > 0 ? `${s.name} · ${days}d left` : s.name;
 }
 
 // The board's free-form filter: a JQL clause (e.g. `component = iOS`) ANDed into the

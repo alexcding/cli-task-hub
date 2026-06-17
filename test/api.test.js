@@ -190,6 +190,32 @@ test('jira feeds serve a seeded fresh snapshot without acli', async () => {
   assert.equal(body.items[0].key, 'REC-9');
 });
 
+test('project board returns the aggregated snapshot (items + sprint + filter + columns) without acli', async () => {
+  const poller = require('../src/server/services/poller');
+  const project = db.addProject({ name: 'iOS', jiraProjectKey: 'REC' });
+  const meta = {
+    sprint: { id: 1, name: 'Sprint 9', endDate: null, boardId: 5 },
+    query: 'component = iOS',
+    columns: [{ name: 'To Do', statusIds: ['1'] }],
+  };
+  db.setJiraSnapshot(poller.boardSnapId(project), {
+    items: [{ key: 'REC-1', summary: 'S', status: 'To Do', statusId: '1', type: 'Task', priority: 'High', assignee: 'Me', assigneeId: 'acc1' }],
+    jql: 'sprint = 1 AND (component = iOS)', lastSynced: new Date().toISOString(), error: null, meta,
+  });
+  try {
+    const { status, body } = await get(`/api/projects/${project.id}/board`);
+    assert.equal(status, 200);
+    assert.equal(body.items.length, 1);
+    assert.equal(body.items[0].key, 'REC-1');
+    assert.equal(body.sprint.name, 'Sprint 9'); // sprint meta flattened in
+    assert.equal(body.query, 'component = iOS'); // filter clause echoed back
+    assert.equal(body.columns[0].name, 'To Do'); // board column order
+  } finally {
+    db.deleteJiraSnapshot(poller.boardSnapId(project));
+    db.deleteProject(project.id);
+  }
+});
+
 test('events and logs endpoints', async () => {
   db.addEvent('jira_transitioned', { key: 'REC-1', transition: 'Done', trigger: 'manual' });
   const events = await get('/api/events');

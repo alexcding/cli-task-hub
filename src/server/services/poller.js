@@ -109,7 +109,7 @@ async function applyMergeAutomation(project, pr) {
   if (transition) {
     for (const key of keys) {
       try {
-        jira.transitionWorkItem(key, transition);
+        await jira.transitionWorkItem(key, transition);
         db.addEvent('jira_transitioned', { key, transition, version: version || undefined, trigger: `PR #${pr.number} merged` });
         console.log(`[automation] ${key} → ${transition}${version ? ` (fixVersion ${version})` : ''} (PR #${pr.number} ${repo})`);
       } catch (err) {
@@ -127,7 +127,7 @@ async function applyMergeAutomation(project, pr) {
 // others. `recordSet` emits a per-ticket "Fix Version set" activity entry on success — suppressed
 // when a transition will also run (the version rides on the transition entry instead).
 async function applyFixVersion(project, pr, keys, recordSet) {
-  const versions = jira.listVersions(project.jiraProjectKey).map(v => v.name);
+  const versions = (await jira.listVersions(project.jiraProjectKey)).map(v => v.name);
   const { version } = versionScript.buildVersion(
     project.fixVersionPrefix, project.fixVersionScript,
     { now: new Date(), pr: { number: pr.number, title: pr.title, body: pr.body || '' }, versions });
@@ -261,14 +261,14 @@ async function poll() {
 // ── Jira sync ───────────────────────────────────────────────────────────────────
 // Mirrors the PR sync: run a JQL through `acli`, write a lean snapshot, publish.
 // On failure keep the last good items so the UI doesn't blank out (like PR sync).
-function writeJiraSnapshot(id, jql, limit = jiraLimit(), meta = null) {
+async function writeJiraSnapshot(id, jql, limit = jiraLimit(), meta = null) {
   if (!jql) {
     db.setJiraSnapshot(id, { items: [], jql: '', lastSynced: now(), error: null, meta });
     if (onJiraSync) onJiraSync(id);
     return;
   }
   try {
-    const items = jira.searchLean(jql, limit);
+    const items = await jira.searchLean(jql, limit);
     db.setJiraSnapshot(id, { items, jql, lastSynced: now(), error: null, meta });
   } catch (err) {
     const prev = db.getJiraSnapshot(id);
@@ -283,13 +283,13 @@ function writeJiraSnapshot(id, jql, limit = jiraLimit(), meta = null) {
 // once per sprint, not per poll. Held in memory (snapshots persist only fixed columns);
 // it re-resolves within one poll after a restart.
 const _sprintCache = new Map(); // KEY -> { value, at }
-function activeSprintFor(key) {
+async function activeSprintFor(key) {
   key = (key || '').toUpperCase();
   if (!key) return null;
   const c = _sprintCache.get(key);
   if (c && Date.now() - c.at < 15 * 60_000) return c.value;
   let value = null;
-  try { value = jira.activeSprint(key); }
+  try { value = await jira.activeSprint(key); }
   catch (err) { console.error('[jira-sync] active sprint lookup failed:', err.message); }
   _sprintCache.set(key, { value, at: Date.now() });
   return value;
@@ -322,14 +322,28 @@ async function boardColumnsFor(boardId) {
   } catch { return null; }
 }
 
+// Coalesce concurrent syncs of the SAME Jira snapshot id: a stale-read revalidate and the
+// interval poll can otherwise fire the same acli search twice at once (duplicate work +
+// double SSE). Mirrors the PR-side _inFlight coalescing (syncProject). Returns the
+// in-flight promise so all callers observe one run.
+const _jiraInFlight = new Map(); // snapshot id -> promise
+function coalesceJira(id, fn) {
+  const existing = _jiraInFlight.get(id);
+  if (existing) return existing;
+  const p = (async () => fn())().finally(() => { if (_jiraInFlight.get(id) === p) _jiraInFlight.delete(id); });
+  _jiraInFlight.set(id, p);
+  return p;
+}
+
 // Global "my work in the active sprint(s)" feed (dashboard). Notes the dominant project
 // key so currentSprint() can title the section.
-const syncJiraSprint = () => {
-  writeJiraSnapshot(MY_SPRINT_ID, sprintJql());
+const syncJiraSprint = () => coalesceJira(MY_SPRINT_ID, async () => {
+  await writeJiraSnapshot(MY_SPRINT_ID, sprintJql());
   _dashSprintKey = dominantKey(db.getJiraSnapshot(MY_SPRINT_ID)?.items || []);
-};
+  if (_dashSprintKey) await activeSprintFor(_dashSprintKey); // warm so currentSprint() is cached for the route
+});
 // A single project's saved JQL (its Jira tab).
-const syncProjectJira = (project) => { writeJiraSnapshot(project.id, projectJql(project)); };
+const syncProjectJira = (project) => coalesceJira(project.id, () => writeJiraSnapshot(project.id, projectJql(project)));
 
 // A single project's Scrumboard: the WHOLE active sprint for the project's Jira board
 // (every assignee, including Done so the Done column fills), optionally scoped to the
@@ -337,16 +351,16 @@ const syncProjectJira = (project) => { writeJiraSnapshot(project.id, projectJql(
 // only filter components in JQL (not as a returned field), hence the AND clause.
 const boardSnapId = (project) => 'board:' + project.id;
 // Aggregate the board into ONE snapshot: tickets (acli) + the sprint (acli) + the
-// component + the column order (REST). The route just returns this row, so the view
+// filter clause + the column order (REST). The route just returns this row, so the view
 // never knows the data came from two sources. `columns` is null when there's no API
 // token — the tickets still render, the view just category-sorts the columns.
-async function syncProjectBoard(project) {
+async function syncProjectBoardImpl(project) {
   const id = boardSnapId(project);
   // A free-form JQL clause the user types on the board (e.g. `component = iOS`), saved per
   // project and ANDed into the sprint query. Generic — works for any field. No default:
   // unset = the whole sprint.
   const clause = (db.get(`board_query_${project.id}`) || '').trim();
-  const sprint = project.jiraProjectKey ? activeSprintFor(project.jiraProjectKey) : null;
+  const sprint = project.jiraProjectKey ? await activeSprintFor(project.jiraProjectKey) : null;
   if (!sprint?.id) {
     db.setJiraSnapshot(id, { items: [], jql: '', lastSynced: now(), error: null, meta: { sprint: null, query: clause, columns: null } });
     if (onJiraSync) onJiraSync(id);
@@ -356,16 +370,20 @@ async function syncProjectBoard(project) {
   const jql = `sprint = ${sprint.id}` +
     (clause ? ` AND (${clause})` : '') +
     ` ORDER BY priority DESC, key ASC`;
-  writeJiraSnapshot(id, jql, boardLimit(), { sprint, query: clause, columns });
+  await writeJiraSnapshot(id, jql, boardLimit(), { sprint, query: clause, columns });
 }
+// `force` (a filter-change refresh) bypasses coalescing so it always re-reads the new
+// clause instead of joining an in-flight run that started before the clause changed.
+const syncProjectBoard = (project, force = false) =>
+  force ? syncProjectBoardImpl(project) : coalesceJira(boardSnapId(project), () => syncProjectBoardImpl(project));
 
 // Refresh the global feeds + every project's Jira tab + Scrumboard. Async because the
 // board aggregation fetches the column order over REST; project boards refresh in
 // parallel.
 async function pollJira() {
-  syncJiraSprint();
+  await syncJiraSprint();
   await Promise.all(db.getProjects().map(async (p) => {
-    try { syncProjectJira(p); await syncProjectBoard(p); }
+    try { await syncProjectJira(p); await syncProjectBoard(p); }
     catch (err) { console.error(`[jira-sync] ${p.name}:`, err.message); }
   }));
 }

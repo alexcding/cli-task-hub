@@ -1,20 +1,31 @@
-const { spawnSync } = require('child_process');
+const { execFile } = require('child_process');
+const { promisify } = require('util');
+const execFileAsync = promisify(execFile);
 
-const run = (args) => {
-  const result = spawnSync('acli', ['jira', ...args], { encoding: 'utf8' });
-  if (result.error) throw new Error(`acli not found: ${result.error.message}`);
-  if (result.status !== 0) throw new Error((result.stderr || `acli exited ${result.status}`).trim());
+// acli is invoked asynchronously (like `gh` in repositories/github.js) so a slow Jira
+// call never blocks Node's event loop — cached snapshot reads stay instant and feeds
+// sync concurrently. A workitem search can return a lot of JSON, so allow a big buffer;
+// cap the wall time so a hung CLI can't pin a request forever.
+const MAX_BUFFER = 32 * 1024 * 1024; // 32 MB
+const ACLI_TIMEOUT = 30_000;         // 30 s
+
+const run = async (args) => {
+  let result;
+  try {
+    result = await execFileAsync('acli', ['jira', ...args], { encoding: 'utf8', maxBuffer: MAX_BUFFER, timeout: ACLI_TIMEOUT });
+  } catch (err) {
+    // execFile rejects on ENOENT (binary missing) and on non-zero exit (stderr attached).
+    if (err.code === 'ENOENT') throw new Error(`acli not found: ${err.message}`);
+    throw new Error((err.stderr || err.message || `acli exited ${err.code}`).toString().trim());
+  }
   return result.stdout.trim();
 };
-
-const getWorkItem = (key) =>
-  JSON.parse(run(['workitem', 'view', key, '--json']));
 
 // The authenticated Jira account, parsed from `acli jira auth status` (e.g. site
 // "accedobroadband.jira.com", email "you@org.com"). The email + a user API token authenticate
 // the REST writes acli can't do (see repositories/jira-rest.js); the site builds ticket links.
-const getAuth = () => {
-  const out = run(['auth', 'status']);
+const getAuth = async () => {
+  const out = await run(['auth', 'status']);
   return {
     site:  (out.match(/Site:\s*(\S+)/i)  || [])[1] || null,
     email: (out.match(/Email:\s*(\S+)/i) || [])[1] || null,
@@ -22,10 +33,7 @@ const getAuth = () => {
 };
 
 // Just the site host — used to build ticket links without hardcoding.
-const getSite = () => getAuth().site;
-
-const searchWorkItems = (jql, limit = 50) =>
-  JSON.parse(run(['workitem', 'search', '--jql', jql, '--limit', String(limit), '--json']));
+const getSite = async () => (await getAuth()).site;
 
 // acli returns a huge object per item (avatars, changelog, schema…). The poller
 // stores a snapshot the UI reads, so trim each item to just what the UI needs —
@@ -56,15 +64,15 @@ const leanItem = (it) => {
 // names from its default field set here ('updated' is rejected), so keep to these.
 const SEARCH_FIELDS = 'key,summary,status,issuetype,priority,assignee';
 
-const searchLean = (jql, limit = 30) =>
-  JSON.parse(run(['workitem', 'search', '--jql', jql, '--limit', String(limit), '--fields', SEARCH_FIELDS, '--json']))
+const searchLean = async (jql, limit = 30) =>
+  JSON.parse(await run(['workitem', 'search', '--jql', jql, '--limit', String(limit), '--fields', SEARCH_FIELDS, '--json']))
     .map(leanItem);
 
 // acli exits 0 even when a transition fails (it reports per-item results instead),
 // so request --json and surface a real error when nothing transitioned. Used by the
 // status menu and the PR-merge automation alike.
-const transitionWorkItem = (key, status) => {
-  const out = run(['workitem', 'transition', '--key', key, '--status', status, '--yes', '--json']);
+const transitionWorkItem = async (key, status) => {
+  const out = await run(['workitem', 'transition', '--key', key, '--status', status, '--yes', '--json']);
   let parsed;
   try { parsed = JSON.parse(out); } catch { return out; } // older acli without --json
   const failed = (parsed.results || []).filter(r => r.status !== 'SUCCESS');
@@ -77,11 +85,11 @@ const transitionWorkItem = (key, status) => {
 // Assign a work item to someone (account id, email, or '@me'), or unassign when the
 // assignee is blank. Like transitionWorkItem, acli can exit 0 while reporting a per-item
 // failure, so request --json and surface a real error when nothing was assigned.
-const assignWorkItem = (key, assignee) => {
+const assignWorkItem = async (key, assignee) => {
   const args = ['workitem', 'assign', '--key', key, '--yes', '--json'];
   if (assignee) args.push('--assignee', assignee);
   else args.push('--remove-assignee');
-  const out = run(args);
+  const out = await run(args);
   let parsed;
   try { parsed = JSON.parse(out); } catch { return out; } // older acli without --json
   const failed = (parsed.results || []).filter(r => r.status !== 'SUCCESS');
@@ -93,9 +101,9 @@ const assignWorkItem = (key, assignee) => {
 
 // Existing release versions for a Jira project, as [{ id, name, released, archived }].
 // Backs the fix-version automation (the "does it exist yet?" check + the script's `versions`).
-const listVersions = (projectKey) => {
+const listVersions = async (projectKey) => {
   if (!projectKey) return [];
-  const out = JSON.parse(run(['project', 'view', '--key', projectKey, '--json']));
+  const out = JSON.parse(await run(['project', 'view', '--key', projectKey, '--json']));
   return (out.versions || []).map(v => ({ id: v.id, name: v.name, released: !!v.released, archived: !!v.archived }));
 };
 
@@ -103,13 +111,13 @@ const listVersions = (projectKey) => {
 // sprint on it. acli's workitem search never returns the sprint custom field, so
 // this two-call chain is the only way to get the sprint's id/name/dates. The id lets
 // the board feed query `sprint = <id>` (the exact active sprint, all assignees).
-const activeSprint = (projectKey) => {
-  const boards = JSON.parse(run(['board', 'search', '--project', projectKey, '--json', '--limit', '50']));
+const activeSprint = async (projectKey) => {
+  const boards = JSON.parse(await run(['board', 'search', '--project', projectKey, '--json', '--limit', '50']));
   const board = (boards.values || []).find(b => b.type === 'scrum');
   if (!board) return null;
-  const out = JSON.parse(run(['board', 'list-sprints', '--id', String(board.id), '--state', 'active', '--json']));
+  const out = JSON.parse(await run(['board', 'list-sprints', '--id', String(board.id), '--state', 'active', '--json']));
   const s = (out.sprints || [])[0];
   return s ? { id: s.id, name: s.name, endDate: s.endDate || null, boardId: board.id } : null;
 };
 
-module.exports = { getWorkItem, getSite, getAuth, searchWorkItems, searchLean, transitionWorkItem, assignWorkItem, activeSprint, listVersions };
+module.exports = { getSite, getAuth, searchLean, transitionWorkItem, assignWorkItem, activeSprint, listVersions };
