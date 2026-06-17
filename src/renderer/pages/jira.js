@@ -1,7 +1,7 @@
 // Shared Jira UI: snapshot tables, ticket filters, the assigned-to-me feed, the
 // per-project Jira tab, and the status-transition menu.
 import { ROUTES } from '/shared/routes.mjs';
-import { state } from '../stores/store.js';
+import { state, recordPendingMove, clearPendingMove, applyPendingMoves, reconcilePendingMoves } from '../stores/store.js';
 import { api, apiJson, forceSync } from '../services/api.js';
 import { esc, jiraUrl } from '../lib/util.js';
 import { ICON } from '../lib/icons.js';
@@ -105,6 +105,7 @@ export async function loadProjectJira(id) {
     const needSettings = state.projJiraFilters[id] === undefined;
     const [snap, settings] = await Promise.all([api(ROUTES.projectJira(id)), needSettings ? api(ROUTES.SETTINGS) : null]);
     if (needSettings) state.projJiraFilters[id] = parseFilters(settings['ticket_filter_' + id]);
+    reconcilePendingMoves(snap);
     state.projJiraSnap[id] = snap;
     rememberStatuses(snap.items);
     renderProjJiraFilter(id);
@@ -126,7 +127,7 @@ export function renderProjJira(id) {
   const tbody = document.getElementById(`proj-jira-${id}`);
   if (!tbody) return;
   const snap = state.projJiraSnap[id] || { items: [] };
-  const items = snap.items || [];
+  const items = applyPendingMoves(snap.items);  // overlay any sticky-optimistic status change
   const filtered = itemsMatching(items, state.projJiraFilters[id] || {}, null);
   const emptyMsg = !snap.jql ? 'Set a Jira project key or JQL in this project’s settings.'
     : items.length ? 'No tickets match these filters.' : 'No Jira items found.';
@@ -198,12 +199,27 @@ export function openStatusMenu(btn) {
   openPopupMenu(btn, `Move ${key} to…`, targets.map(s => ({ label: s, onClick: () => doTransition(key, s) })));
 }
 
-async function doTransition(key, status) {
+// `statusId` is optional and only the Scrumboard passes it: its configured columns bucket
+// by status id, so the local patch must move the id too (the status name alone wouldn't
+// re-column the card). The Jira tables bucket by name and omit it.
+//
+// Optimistic-FIRST: the card moves before the (slow) acli round-trip, not after, via a sticky
+// pending move (recordPendingMove) that every Jira view overlays and holds across the snapshot
+// reloads each sync triggers — otherwise the next sync re-reads a still-stale snapshot and
+// bounces the card back. The move carries a token so a rejected transition only reverts ITS OWN
+// move: if the user has already re-moved the same ticket, clearPendingMove(seq) is a no-op and
+// the newer move stands.
+export async function doTransition(key, status, statusId) {
+  const seq = recordPendingMove(key, status, statusId);
+  rerenderActiveJira();
   try {
     await apiJson(ROUTES.jiraKeyTransition(key), 'POST', { transition: status });
     toast(`${key} → ${status}`);
-    applyStatusLocally(key, status); // optimistic — the next poll confirms
-  } catch(e) { toastErr(e.message); }
+  } catch(e) {
+    clearPendingMove(key, seq);
+    rerenderActiveJira();
+    toastErr(e.message);
+  }
 }
 
 // ── Jira assignee (assign menu) ──────────────────────────────────────────────────
@@ -252,11 +268,6 @@ function rerenderActiveJira() {
 function patchSnaps(key, fn) {
   [state.sprintSnap, state.boardSnap, ...Object.values(state.projJiraSnap)]
     .forEach(snap => { const it = (snap?.items || []).find(i => i.key === key); if (it) fn(it); });
-}
-function applyStatusLocally(key, status) {
-  state.knownStatuses.add(status);
-  patchSnaps(key, it => { it.status = status; });
-  rerenderActiveJira();
 }
 function applyAssigneeLocally(key, name, id) {
   patchSnaps(key, it => { it.assignee = name; it.assigneeId = id; });

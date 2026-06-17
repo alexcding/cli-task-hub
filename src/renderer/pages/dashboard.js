@@ -1,7 +1,7 @@
 // Dashboard (taskboard). Personal view: "Tasks" = PRs you authored, "Review" = PRs
 // awaiting your review. Other people's PRs live under each project, not here.
 import { ROUTES } from '/shared/routes.mjs';
-import { state, prByUrl, prGroup } from '../stores/store.js';
+import { state, prByUrl, prGroup, applyPendingMoves, reconcilePendingMoves } from '../stores/store.js';
 import { PR_CATEGORY, PR_GROUP } from '/shared/constants.mjs';
 import { api } from '../services/api.js';
 import { esc, businessDaysUntil } from '../lib/util.js';
@@ -21,6 +21,7 @@ export async function loadDashboard() {
     api(ROUTES.WHOAMI).catch(() => null),
   ]);
   state.projects = groups;
+  reconcilePendingMoves(sprintSnap);
   state.sprintSnap = sprintSnap;
   rememberStatuses(sprintSnap.items);
   renderProjectNav(groups);
@@ -175,7 +176,7 @@ function sprintLabel(snap) {
 export function renderDashboardSprint() {
   const el = document.getElementById('dashboard-sprint');
   if (!el) return;
-  const items = state.sprintSnap.items || [];
+  const items = applyPendingMoves(state.sprintSnap.items);  // overlay any sticky-optimistic status change
   const emptyMsg = state.sprintSnap.error ? esc(state.sprintSnap.error) : 'No open tickets in an active sprint.';
   el.innerHTML = `
     <div class="project-group">

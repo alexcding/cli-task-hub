@@ -136,15 +136,31 @@
 /* Sprint board (Linear-style minimal): no column or card boxes. A column is just a
    status-dot header over a hairline, then a stack of flat white cards on the recessed
    board area — so the whole thing reads clean and flat, not nested boxes. */
-.board { display:flex;gap:16px;overflow-x:auto;padding-bottom:6px;align-items:flex-start; }
-.board-col { flex:0 0 172px; }
-.board-col-head { display:flex;align-items:center;gap:7px;padding:0 2px 8px;margin-bottom:10px;border-bottom:1px solid var(--border); }
+/* Columns stretch to equal height (the tallest stack) so a short column's empty strip below
+   its cards is still part of the column — i.e. a drop target that highlights its full height. */
+.board { display:flex;gap:10px;overflow-x:auto;padding-bottom:6px;align-items:stretch; }
+.board-col { flex:0 0 172px;display:flex;flex-direction:column; }
+.board-col-head { display:flex;align-items:center;gap:7px;padding:0 3px 8px;margin-bottom:10px;border-bottom:1px solid var(--border); }
 .board-col-name { font-size:13px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
 .board-col-count { font-size:12px;color:var(--text-3);font-variant-numeric:tabular-nums;margin-left:auto;flex-shrink:0; }
-.board-col-body { display:flex;flex-direction:column;gap:8px; }
+/* flex:1 makes the body fill the (stretched) column, so the drop ring/tint covers the whole
+   card area down to the bottom — incl. the empty strip below the last card. min-height keeps
+   a card-less column reachable when the board itself is short. The padding insets the cards
+   from the body edge so the drop ring shows on all four sides instead of hiding behind the
+   full-width cards; it's always present so hovering causes no layout shift. */
+.board-col-body { flex:1;display:flex;flex-direction:column;gap:8px;min-height:42px;border-radius:8px;padding:5px 3px; }
+/* Drop-target highlight: ring + tint the full-height card area and light up the column title
+   row, so the landing column reads unmistakably — title included. */
+.board-col-drop .board-col-body { box-shadow:inset 0 0 0 2px var(--accent);background:var(--accent-bg); }
+.board-col-drop .board-col-head { border-bottom-color:var(--accent); }
+.board-col-drop .board-col-name,
+.board-col-drop .board-col-count { color:var(--accent); }
 /* Flat card: white tile, no border, just a hair of shadow; separated from the grey board
    by color + whitespace. */
-.board-card { position:relative;background:var(--surface);border-radius:8px;padding:11px 12px;box-shadow:var(--shadow); }
+.board-card { position:relative;background:var(--surface);border-radius:8px;padding:11px 12px;box-shadow:var(--shadow);cursor:grab; }
+.board-card:active { cursor:grabbing; }
+/* The card being dragged fades so the accent drop-ring on the target column reads clearly. */
+.board-card-dragging { opacity:.4; }
 /* Meta row sits at the BOTTOM (summary is the hero on top): type icon · key · priority,
    with the assignee pinned right. */
 .board-card-foot { display:flex;align-items:center;gap:3px;margin-top:10px; }
@@ -159,7 +175,9 @@
    capsule (.badge-jira), so "I'm the assignee" reads at a glance. */
 .board-av-mine { background:var(--accent-bg);color:var(--accent); }
 .board-av svg { width:12px;height:12px;display:block; }
-.board-card-sum { font-size:13.5px;line-height:1.45;color:var(--text);display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden; }
+/* Clamp to 3 lines AND reserve 3 lines (min-height) so every card is the same height
+   regardless of summary length — short titles pad out, long ones truncate. */
+.board-card-sum { font-size:13.5px;line-height:1.45;color:var(--text);display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;min-height:calc(1.45em * 3); }
 /* Meta-row marks: issue-type icon (Jira-coloured by type) before the key, then the
    priority diamond after it. .board-card-meta is the muted fallback for an unknown type. */
 .board-card-meta { font-size:11px;color:var(--text-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }

@@ -5,12 +5,12 @@
 // per-platform project shows just that swimlane. The feed is the project's `board:<id>`
 // snapshot (ROUTES.PROJECT_BOARD) — fetched via acli like every other Jira view.
 import { ROUTES } from '/shared/routes.mjs';
-import { state, setProjects, projectById } from '../stores/store.js';
+import { state, setProjects, projectById, applyPendingMoves, reconcilePendingMoves } from '../stores/store.js';
 import { api, apiJson } from '../services/api.js';
-import { esc, jiraUrl, businessDaysUntil } from '../lib/util.js';
+import { esc, escJs, jiraUrl, businessDaysUntil } from '../lib/util.js';
 import { ICON, ISSUE_ICON } from '../lib/icons.js';
 import { toast, toastErr } from '../components/toast.js';
-import { rememberStatuses } from './jira.js';
+import { rememberStatuses, doTransition } from './jira.js';
 
 // Status workflow categories, ordered left→right so the board reads To Do → In Progress
 // → Done. acli reports `statusCategory` as one of these keys; an unknown/blank category
@@ -70,6 +70,18 @@ function prioMark(it) {
   return `<span class="board-prio prio-${lvl}" title="${esc(it.priority)} priority"><svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="${PRIO_CHEVRONS[n]}"/></svg></span>`;
 }
 
+// Accept a freshly-fetched board snapshot: release any optimistic moves the server has now
+// confirmed (reconcilePendingMoves), store it, learn its statuses, and re-render. One helper so
+// the three fetch paths (load / switch project / change filter) can't drift — and so the reconcile
+// can never be forgotten on a fetch path.
+function acceptBoardSnap(snap) {
+  reconcilePendingMoves(snap);
+  state.boardSnap = snap;
+  rememberStatuses(snap.items);
+  renderScrumboardQuery();
+  renderScrumboard();
+}
+
 export async function loadScrumboard() {
   const body = document.getElementById('scrumboard-body');
   if (!body) return;
@@ -97,10 +109,7 @@ export async function loadScrumboard() {
     }
     const snap = await api(ROUTES.projectBoard(id));
     if (state.boardProjectId !== id) return; // switched away while this was in flight
-    state.boardSnap = snap;
-    rememberStatuses(snap.items);
-    renderScrumboardQuery();
-    renderScrumboard();
+    acceptBoardSnap(snap);
   } catch (e) {
     body.innerHTML = `<div class="empty" style="padding:16px;color:var(--danger)">${esc(e.message)}</div>`;
   }
@@ -116,10 +125,7 @@ export async function setBoardProject(id) {
   try {
     const snap = await api(ROUTES.projectBoard(id));
     if (state.boardProjectId !== id) return; // switched again while this was in flight
-    state.boardSnap = snap;
-    rememberStatuses(snap.items);
-    renderScrumboardQuery();
-    renderScrumboard();
+    acceptBoardSnap(snap);
   } catch (e) { toastErr(e.message); }
 }
 
@@ -184,10 +190,7 @@ export async function setBoardQuery(value) {
     // The clause changes the server query, so re-fetch with ?refresh=1 (re-syncs first).
     const snap = await api(`${ROUTES.projectBoard(id)}?refresh=1`);
     if (state.boardProjectId !== id) return; // switched projects while this was in flight
-    state.boardSnap = snap;
-    rememberStatuses(snap.items);
-    renderScrumboardQuery();
-    renderScrumboard();
+    acceptBoardSnap(snap);
     toast(value ? 'Board filter saved' : 'Board filter cleared');
   } catch (e) { toastErr(e.message); }
 }
@@ -229,18 +232,22 @@ export async function setBoardFilter(value) {
 // One board card: key (links to the ticket) + assignee chip, summary, then a footer with
 // type/priority and a move control that reuses the shared status-transition menu
 // (openStatusMenu reads data-key/data-status off the button). `mine` tickets get a subtle
-// accent edge so your own work stands out on a team board.
-function boardCard(it, mine) {
+// accent edge so your own work stands out on a team board. The whole card is draggable —
+// dropping it on another column transitions the ticket (see boardDrag*); the move dropdown
+// stays as the keyboard/precise path. `fromStatus` is the source column's status so a drop
+// back in the same column is a no-op (compared by status, not a render-time index).
+function boardCard(it, mine, fromStatus) {
   const key = esc(it.key || '');
+  const keyJs = escJs(it.key || '');  // for the '…'-quoted args in inline on* handlers
   // The avatar is the assign control: click → assignee menu (openAssignMenu reads
   // data-key/data-assignee-id). Unassigned cards show a dashed "+" to invite assigning.
   // `mine` (assigned to me) tints the avatar with the Jira-capsule accent background.
   const av = `<button class="board-av${it.assignee ? '' : ' board-av-empty'}${mine ? ' board-av-mine' : ''}" data-key="${key}" data-assignee-id="${esc(it.assigneeId || '')}" onclick="openAssignMenu(this)" title="${it.assignee ? esc(it.assignee) : 'Assign'}">${it.assignee ? esc(initials(it.assignee)) : ICON.plus}</button>`;
-  return `<div class="board-card">
+  return `<div class="board-card" draggable="true" ondragstart="boardDragStart(event, '${keyJs}', '${escJs(fromStatus)}')" ondragend="boardDragEnd(event)">
     <div class="board-card-sum">${esc(it.summary || '')}</div>
     <div class="board-card-foot">
       ${typeIcon(it)}
-      <a class="board-card-key" href="${jiraUrl(it.key)}" target="_blank" onclick="jiraClick(event, this.href, '${key}')">${key}</a>
+      <a class="board-card-key" href="${jiraUrl(it.key)}" target="_blank" onclick="jiraClick(event, this.href, '${keyJs}')">${key}</a>
       ${prioMark(it)}
       ${av}
     </div>
@@ -248,16 +255,82 @@ function boardCard(it, mine) {
   </div>`;
 }
 
+// ── Drag-to-transition ───────────────────────────────────────────────────────────
+// Dragging a card onto another column transitions it to that column's status, reusing the
+// shared doTransition (sticky-optimistic update + next-poll confirm) — exactly what the move
+// dropdown calls. State lives in module locals (dataTransfer still carries the key so the OS
+// shows a drag image). The source identity is the source column's STATUS, not a render-time
+// index: an SSE sync can re-render the board mid-drag, so a status compare keeps "dropped back
+// in the same column" correct even if column positions shift.
+let _dragKey = '';
+let _dragFromStatus = '';
+
+// Strip the drop-target highlight from whatever column still has it. A drag cancelled with Esc
+// (or released outside any column) fires dragend but neither drop nor dragleave, so without this
+// the last-hovered column would stay highlighted until the next full re-render.
+function clearDropHighlight() {
+  document.querySelectorAll('.board-col-drop').forEach(el => el.classList.remove('board-col-drop'));
+}
+
+export function boardDragStart(ev, key, fromStatus) {
+  _dragKey = key;
+  _dragFromStatus = fromStatus;
+  ev.dataTransfer.effectAllowed = 'move';
+  ev.dataTransfer.setData('text/plain', key);
+  ev.currentTarget.classList.add('board-card-dragging');
+}
+
+export function boardDragEnd(ev) {
+  ev.currentTarget.classList.remove('board-card-dragging');
+  clearDropHighlight();
+  _dragKey = '';
+  _dragFromStatus = '';
+}
+
+// dragover must preventDefault for the column to be a valid drop target. dragleave fires
+// when crossing into a child too, so only drop the highlight when the pointer actually
+// leaves the column (relatedTarget outside it).
+export function boardDragOver(ev) {
+  if (!_dragKey) return;
+  ev.preventDefault();
+  ev.dataTransfer.dropEffect = 'move';
+  ev.currentTarget.classList.add('board-col-drop');
+}
+export function boardDragLeave(ev) {
+  if (!ev.currentTarget.contains(ev.relatedTarget)) ev.currentTarget.classList.remove('board-col-drop');
+}
+
+export function boardDrop(ev, status, statusId) {
+  ev.preventDefault();
+  ev.currentTarget.classList.remove('board-col-drop');
+  if (!_dragKey || status === _dragFromStatus) return;  // dropped back in the same column
+  if (!status) { toast('Can’t tell which status this column maps to — use the move menu.'); return; }
+  doTransition(_dragKey, status, statusId);
+}
+
 // Columns in board order. Prefer the board's configured columns (snap.columns groups
 // status ids into ordered, named columns — exactly mirrors the web board). When that's
 // unavailable (no API token), fall back to grouping by status name, ordered by workflow
 // category (To Do → In Progress → Done).
+//
+// Each column carries a drop target: `status` (the status NAME acli transitions into — it
+// transitions by name, not column) and `statusId` (so the optimistic re-column moves the
+// card's id, which is how configured columns bucket). In the name-grouped fallback both come
+// straight from the status. For configured columns they're the first of the column's status
+// ids that actually appears on the board, resolved against an id→name map built from loaded
+// items — both blank when none appear (an empty, never-seen column), so a drop there is
+// rejected with a toast. The "Other" bucket has no single target, so it's never a drop site.
 function buildColumns(items, cfg) {
   if (Array.isArray(cfg) && cfg.length) {
+    const nameOf = new Map();                // statusId -> status name (from loaded items)
+    for (const it of items) if (it.statusId != null) nameOf.set(String(it.statusId), it.status || '');
     const colOf = new Map();                 // statusId -> column index
     cfg.forEach((c, i) => (c.statusIds || []).forEach(id => colOf.set(String(id), i)));
-    const cols = cfg.map(c => ({ name: c.name, items: [] }));
-    const other = { name: 'Other', items: [] };
+    const cols = cfg.map(c => {
+      const id = (c.statusIds || []).map(String).find(sid => nameOf.has(sid)) || '';
+      return { name: c.name, status: id ? nameOf.get(id) : '', statusId: id, items: [] };
+    });
+    const other = { name: 'Other', status: '', statusId: '', items: [] };
     for (const it of items) {
       const idx = colOf.get(String(it.statusId));
       (idx === undefined ? other : cols[idx]).items.push(it);
@@ -267,7 +340,7 @@ function buildColumns(items, cfg) {
   const map = new Map();
   for (const it of items) {
     const name = it.status || '—';
-    if (!map.has(name)) map.set(name, { name, cat: it.statusCategory || '', items: [] });
+    if (!map.has(name)) map.set(name, { name, status: it.status || '', statusId: it.statusId != null ? String(it.statusId) : '', cat: it.statusCategory || '', items: [] });
     map.get(name).items.push(it);
   }
   return [...map.values()].sort((a, b) =>
@@ -281,7 +354,9 @@ export function renderScrumboard() {
   const el = document.getElementById('scrumboard-body');
   if (!el) return;
   const snap = state.boardSnap || { items: [] };
-  const all = snap.items || [];
+  // Overlay any optimistic drag/move still awaiting server confirmation so the card shows in
+  // its new column even right after a sync re-read the (stale) snapshot.
+  const all = applyPendingMoves(snap.items);
   setTitle(snap);
   renderScrumboardFilter(); // keep the assignee list in sync with the loaded board
 
@@ -309,13 +384,13 @@ export function renderScrumboard() {
 
   el.innerHTML = `<div class="board">
     ${ordered.map(col => `
-      <div class="board-col">
+      <div class="board-col" ondragover="boardDragOver(event)" ondragleave="boardDragLeave(event)" ondrop="boardDrop(event, '${escJs(col.status)}', '${escJs(col.statusId)}')">
         <div class="board-col-head">
           <span class="board-col-name">${esc(col.name)}</span>
           <span class="board-col-count">${col.items.length}</span>
         </div>
         <div class="board-col-body">
-          ${col.items.map(it => boardCard(it, mineKeys.has(it.key))).join('')}
+          ${col.items.map(it => boardCard(it, mineKeys.has(it.key), col.status)).join('')}
         </div>
       </div>`).join('')}
   </div>`;

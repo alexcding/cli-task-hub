@@ -16,7 +16,8 @@ import { loadDashboard, scrollDash, setUsageTab } from './pages/dashboard.js';
 import { loadProjectPage, projShowSection, reloadProjectPRs, loadProjectWebhooks, saveProjectWebhooks, previewFixVersion } from './pages/project.js';
 import { loadGitTab, gitTabPick, gitTabShowCommit, gitTabBack, gitTabRemoveWorktree } from './pages/git-tab.js';
 import * as jiraView from './pages/jira.js';
-import { loadScrumboard, setBoardProject, setBoardFilter, setBoardQuery, applyBoardQuery } from './pages/scrumboard.js';
+import { loadScrumboard, setBoardProject, setBoardFilter, setBoardQuery, applyBoardQuery,
+  boardDragStart, boardDragEnd, boardDragOver, boardDragLeave, boardDrop } from './pages/scrumboard.js';
 import { loadLogs, setLogCategory, clearLogs } from './pages/logs.js';
 import { loadSettings, saveConfig, switchSettingsTab, setReviewSound, previewReviewSound, setActivityNotify, toggleSecret } from './pages/settings.js';
 import { showActivityToast } from './components/activity-toast.js';
@@ -204,6 +205,7 @@ Object.assign(window, {
   setPaneView: split.setPaneView, toggleCommitPop, commitAction,
   // views
   loadScrumboard, setBoardProject, setBoardFilter, setBoardQuery, applyBoardQuery,
+  boardDragStart, boardDragEnd, boardDragOver, boardDragLeave, boardDrop,
   loadProjectJira: jiraView.loadProjectJira, setProjJiraFilter: jiraView.setProjJiraFilter,
   openStatusMenu: jiraView.openStatusMenu, openAssignMenu: jiraView.openAssignMenu,
   projShowSection, reloadProjectPRs, loadProjectWebhooks, saveProjectWebhooks, previewFixVersion, scrollDash, setUsageTab,
