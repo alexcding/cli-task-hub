@@ -26,6 +26,7 @@ const CH = {
   OPEN_EXTERNAL:    'open-external',     // invoke ← http(s) url (opened in the default browser)
   AVATAR_FETCH:     'avatar:fetch',      // invoke ← login → data URI | null
   USAGE_GET:        'usage:get',         // invoke → { totalKB, totalCPU, breakdown }
+  TAB_MENU:         'tab:menu',          // invoke ← tab url → 'close' | null (native right-click menu)
 
   // ── Tray (src/main/app/main.js) ───────────────────────────────────────────────────────────
   TRAY_REFRESH: 'tray:refresh',          // send (renderer asks for an immediate rebuild)

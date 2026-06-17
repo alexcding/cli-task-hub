@@ -5,8 +5,7 @@ import { PR_CATEGORY, PR_GROUP } from '/shared/constants.mjs';
 import { esc, ghAvatarSrc } from '../lib/util.js';
 import { ICON, TAB_ICON } from '../lib/icons.js';
 import { ciInfo } from './cards.js';
-import { openMenu } from './menu.js';
-import { activateTab, closeTab, closeSplit, confirmCloseTabTerminals, closePairedTerm, saveTabs, updateTitles } from './viewer.js';
+import { closeTab, saveTabs, updateTitles } from './viewer.js';
 
 // Render the open tabs as grouped rows in the left nav, and show the active tab's
 // title in the viewer header.
@@ -98,24 +97,14 @@ function syncTabOrder() {
   saveTabs();
 }
 
-// Close every tab except `id`.
-function closeOthers(id) {
-  const keep = state.tabs.find(t => t.id === id);
-  if (!keep) return;
-  const closing = state.tabs.filter(t => t.id !== id);
-  if (!confirmCloseTabTerminals(closing)) return;
-  closing.forEach(t => { closePairedTerm(t); t.wv?.remove(); });
-  state.tabs = [keep];
-  activateTab(id);
-}
-
-// Right-click tab menu (the shared context menu in menu.js).
-export function tabMenu(e, id) {
-  return openMenu(e, [
-    { label: 'Close tab', onClick: () => closeTab(id) },
-    state.tabs.length > 1 && { label: 'Close others', onClick: () => closeOthers(id) },
-    { label: 'Close all', onClick: () => closeSplit() },
-  ]);
+// Right-click tab menu — a native Electron context menu popped from main (see CH.TAB_MENU
+// in ipc/system.js), so it matches the webview/tray menus and the native-mac feel. Copy
+// Link / Open Link in Browser act in main; Close tab comes back here since it needs the
+// renderer's tab state. preventDefault so the browser's own context menu never shows.
+export async function tabMenu(e, id) {
+  e.preventDefault();
+  const tab = state.tabs.find(t => t.id === id);
+  if (await window.taskhub?.tabMenu?.(tab?.url || '') === 'close') closeTab(id);
 }
 
 // ── Projects sidebar nav ──────────────────────────────────────────────────────

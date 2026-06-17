@@ -51,6 +51,10 @@ contextBridge.exposeInMainWorld('taskhub', {
   // page's repo/Jira tags.
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
 
+  // Pop a native right-click menu for a sidebar tab at the cursor; resolves to the chosen
+  // action ('close') or null. Copy Link / Open Link in Browser are handled in main.
+  tabMenu: (url) => ipcRenderer.invoke('tab:menu', url),
+
   // Close the dashboard window — ⌘W's fallback when no tab is in view.
   closeWindow: () => ipcRenderer.send('close-window'),
 
