@@ -9,7 +9,7 @@ import { ICON } from '../lib/icons.js';
 import { gitClientLabel, gitClientIcon } from '../lib/git-clients.js';
 import { toast, toastErr } from './toast.js';
 import { renderTabs } from './sidebar.js';
-import { openMenu } from './menu.js';
+import { openMenu, closeMenu } from './menu.js';
 import { disposeTerm, visibleTerm } from './terminal.js';
 import { ensurePrTerminal, applyPrLayout, clearPrLayout, resolveTabFolder } from './split.js';
 import { hideDiffPane } from './diff.js';
@@ -322,15 +322,28 @@ export function openTabFolder() {
 
 // Right-click the folder chip → reveal in Finder always (plus "Open in <client>" when one's
 // configured, since a left-click now opens the client), and "Delete worktree" when the chip is
-// a worktree (not the shared main checkout). Uses the shared context menu.
-export function folderMenu(e) {
+// a worktree (not the shared main checkout). A native macOS menu popped from main (matching the
+// sidebar tab / webview / tray menus); the action comes back here to dispatch. Falls back to the
+// in-page menu in a plain browser, where there's no main process.
+export async function folderMenu(e) {
+  e.preventDefault();
   const el = document.getElementById('split-folder');
   if (!el || el.hidden) return false;
   const { id, cmd } = state.gitClient || {};
+  const hasClient = !!(id && cmd);
+  const isWorktree = el.dataset.worktree === '1';
+  if (window.taskhub?.folderMenu) {
+    closeMenu(); // dismiss any open in-page menu (the native menu won't fire the click that would)
+    const action = await window.taskhub.folderMenu({ hasClient, clientLabel: hasClient ? gitClientLabel(id) : '', isWorktree });
+    if (action === 'client') folderChipClick();
+    else if (action === 'finder') openTabFolder();
+    else if (action === 'delete') removeTabWorktree();
+    return false;
+  }
   return openMenu(e, [
-    (id && cmd) && { label: `Open in ${gitClientLabel(id)}`, onClick: folderChipClick },
+    hasClient && { label: `Open in ${gitClientLabel(id)}`, onClick: folderChipClick },
     { label: 'Reveal in Finder', onClick: openTabFolder },
-    el.dataset.worktree === '1' && { label: 'Delete worktree…', onClick: removeTabWorktree, danger: true },
+    isWorktree && { label: 'Delete worktree…', onClick: removeTabWorktree, danger: true },
   ]);
 }
 

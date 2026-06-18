@@ -61,6 +61,11 @@ contextBridge.exposeInMainWorld('taskhub', {
   // action ('close') or null. Copy Link / Open Link in Browser are handled in main.
   tabMenu: (url) => ipcRenderer.invoke('tab:menu', url),
 
+  // Pop a native right-click menu for the viewer's folder/worktree chip; resolves to the chosen
+  // action ('client' | 'finder' | 'delete') or null. The renderer acts on the result (it owns
+  // the chip's path, git-client command, and the worktree-delete confirm/API).
+  folderMenu: (ctx) => ipcRenderer.invoke('folder:menu', ctx),
+
   // Close the dashboard window — ⌘W's fallback when no tab is in view.
   closeWindow: () => ipcRenderer.send('close-window'),
 

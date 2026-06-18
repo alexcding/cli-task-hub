@@ -28,6 +28,7 @@ const CH = {
   AVATAR_FETCH:     'avatar:fetch',      // invoke ← login → data URI | null
   USAGE_GET:        'usage:get',         // invoke → { totalKB, totalCPU, breakdown }
   TAB_MENU:         'tab:menu',          // invoke ← tab url → 'close' | null (native right-click menu)
+  FOLDER_MENU:      'folder:menu',       // invoke ← { hasClient, clientLabel, isWorktree } → 'client'|'finder'|'delete'|null
 
   // ── Tray (src/main/app/main.js) ───────────────────────────────────────────────────────────
   TRAY_REFRESH: 'tray:refresh',          // send (renderer asks for an immediate rebuild)

@@ -70,6 +70,25 @@ function register() {
     menu.popup({ window: getWin() || undefined, callback: () => resolve(chosen) });
   }));
 
+  // Native right-click menu for the viewer's folder/worktree chip — same native-mac feel as the
+  // tab menu. Positive actions first (open in the chosen git client, then reveal in Finder),
+  // the destructive Delete Worktree fenced off last behind a separator. Every action needs
+  // renderer state (the chip's path, the git-client command, the delete confirm/API), so each
+  // just records a token and resolves it back; the renderer dispatches (see folderMenu in
+  // viewer.js). Non-blocking popup — resolve via the close callback (null if dismissed).
+  ipcMain.handle(CH.FOLDER_MENU, (_e, ctx = {}) => new Promise((resolve) => {
+    let chosen = null;
+    const items = [];
+    if (ctx.hasClient) items.push({ label: `Open in ${ctx.clientLabel || 'git client'}`, click: () => { chosen = 'client'; } });
+    items.push({ label: 'Reveal in Finder', click: () => { chosen = 'finder'; } });
+    if (ctx.isWorktree) {
+      items.push({ type: 'separator' });
+      items.push({ label: 'Delete Worktree…', click: () => { chosen = 'delete'; } });
+    }
+    const menu = Menu.buildFromTemplate(items);
+    menu.popup({ window: getWin() || undefined, callback: () => resolve(chosen) });
+  }));
+
   // Native folder picker for choosing a project's workspace folder.
   ipcMain.handle(CH.CHOOSE_FOLDER, async () => {
     const parent = getWin() || undefined;

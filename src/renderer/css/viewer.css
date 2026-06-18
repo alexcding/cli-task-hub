@@ -31,21 +31,21 @@ body.viewing-term #split-toggle-term { display:none; }
 .split-title .stitle-text { min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .split-title img { flex-shrink:0; width:16px; height:16px; border-radius:50%; object-fit:cover; }
 /* Workspace/worktree folder chip — right end of the webview segment; reveals in Finder. */
-.folder-chip { flex-shrink:0; max-width:240px; display:inline-flex; align-items:center; gap:5px; margin-left:8px; padding:4px 8px; background:none; border:none; border-radius:6px; color:var(--text-2); font:inherit; font-size:12px; font-weight:500; cursor:pointer; }
+.folder-chip { flex-shrink:0; max-width:240px; display:inline-flex; align-items:center; gap:5px; margin-left:8px; padding:7px 12px; background:none; border:none; border-radius:6px; color:var(--text-2); font:inherit; font-size:12px; font-weight:500; cursor:pointer; }
 .folder-chip:hover { background:var(--surface-hover); color:var(--text); }
 .folder-chip .fc-ic { flex-shrink:0; display:inline-flex; }
 .folder-chip svg { flex-shrink:0; width:15px; height:15px; }
 /* When a git client is configured the glyph is that client's brand mark (an <img>). */
 .folder-chip .fc-ic img { flex-shrink:0; width:15px; height:15px; display:block; border-radius:3px; object-fit:contain; }
 .folder-chip .fc-text { min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-/* Worktree tabs: tint the glyph with the accent so it's distinguishable at a glance. When the
-   glyph is a brand <img> (a git client is set), tint can't apply, so ring the icon instead. */
+/* Worktree tabs: tint the glyph with the accent so it's distinguishable at a glance. (A brand
+   <img> can't take the tint; the worktree state still shows in the chip's title.) */
 .folder-chip.is-worktree .fc-ic { color:var(--accent); }
-.folder-chip.is-worktree .fc-ic img { box-shadow:0 0 0 1.5px var(--accent); }
-/* Create-worktree call-to-action (shown instead of the chip on a plain checkout):
-   worktree glyph + label, accent-toned so it reads as the suggested action. */
-.folder-add { gap:5px; margin-left:8px; padding:5px 10px; font-size:12px; font-weight:500; color:var(--accent); }
-.folder-add:hover { background:var(--accent-bg); color:var(--accent); }
+/* Create-worktree call-to-action (shown instead of the chip on a plain checkout): worktree
+   glyph + label, accent-toned. On hover it highlights with the same subtle background as the
+   folder chip — no outline. */
+.folder-add { gap:5px; margin-left:8px; padding:7px 12px; font-size:12px; font-weight:500; color:var(--accent); }
+.folder-add:hover { background:var(--surface-hover); color:var(--accent); }
 .folder-add svg { width:16px; height:16px; }
 .folder-add .fa-label { min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .folder-add:disabled { opacity:.5; cursor:default; }
