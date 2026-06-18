@@ -24,6 +24,7 @@ const CH = {
   SOUND_PREVIEW:    'sound:preview',     // invoke ← path | null | 'system'
   OPEN_PATH:        'open-path',         // invoke ← path
   OPEN_EXTERNAL:    'open-external',     // invoke ← http(s) url (opened in the default browser)
+  OPEN_IN_GIT_CLIENT: 'open-in-git-client', // invoke ← { cmd, path } (run the configured git-client command template)
   AVATAR_FETCH:     'avatar:fetch',      // invoke ← login → data URI | null
   USAGE_GET:        'usage:get',         // invoke → { totalKB, totalCPU, breakdown }
   TAB_MENU:         'tab:menu',          // invoke ← tab url → 'close' | null (native right-click menu)

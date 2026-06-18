@@ -44,6 +44,13 @@ function register() {
   // tags. The scheme/control-char guard lives in openExternalHttp (shared with the tab menu).
   ipcMain.handle(CH.OPEN_EXTERNAL, (_e, url) => openExternalHttp(String(url || '')));
 
+  // Open a tab's worktree/checkout folder in the user's chosen git GUI by running their
+  // configured command template (`open -a Fork {path}`, a deeplink, …) with the path
+  // substituted. Tokenize-and-spawn (no shell) lives in native/git-client.js so the path
+  // can't inject. Backs the viewer split bar's "Open in git client" button.
+  ipcMain.handle(CH.OPEN_IN_GIT_CLIENT, (_e, { cmd, path } = {}) =>
+    require('../native/git-client').openInGitClient(cmd, path));
+
   // Native right-click menu for a sidebar tab (matches the webview/tray menus and the
   // native-mac feel). Order follows the platform norm and our webview menu: positive
   // actions first (open, then copy — same order as window.js), the destructive Close

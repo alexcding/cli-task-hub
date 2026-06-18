@@ -51,6 +51,12 @@ contextBridge.exposeInMainWorld('taskhub', {
   // page's repo/Jira tags.
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
 
+  // Open the active tab's worktree/checkout folder in the user's chosen git GUI by running
+  // their configured command template (`cmd`, e.g. `open -a Fork {path}`) with `{path}`
+  // substituted. Main tokenizes + spawns without a shell. Backs the viewer split bar's
+  // "Open in git client" button (shown only when a client is set in Settings).
+  openInGitClient: (cmd, path) => ipcRenderer.invoke('open-in-git-client', { cmd, path }),
+
   // Pop a native right-click menu for a sidebar tab at the cursor; resolves to the chosen
   // action ('close') or null. Copy Link / Open Link in Browser are handled in main.
   tabMenu: (url) => ipcRenderer.invoke('tab:menu', url),

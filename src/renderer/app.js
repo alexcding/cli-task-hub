@@ -2,6 +2,7 @@
 // the inline on* handlers in markup working (ES modules aren't globals).
 import { ROUTES } from '/shared/routes.mjs';
 import { state, activeTab, projectById } from './stores/store.js';
+import { resolveGitClientCmd } from './lib/git-clients.js';
 import { api, forceSync } from './services/api.js';
 import { canSplitTerminal } from './lib/util.js';
 import { initTheme, setAppTheme, syncThemeFromSettings } from './services/theme.js';
@@ -19,7 +20,7 @@ import * as jiraView from './pages/jira.js';
 import { loadScrumboard, setBoardProject, setBoardFilter, setBoardQuery, applyBoardQuery,
   boardDragStart, boardDragEnd, boardDragOver, boardDragLeave, boardDrop } from './pages/scrumboard.js';
 import { loadLogs, setLogCategory, clearLogs } from './pages/logs.js';
-import { loadSettings, saveConfig, switchSettingsTab, setReviewSound, previewReviewSound, setActivityNotify, toggleSecret } from './pages/settings.js';
+import { loadSettings, saveConfig, switchSettingsTab, setReviewSound, previewReviewSound, setActivityNotify, toggleSecret, setGitClient, setGitClientCmd } from './pages/settings.js';
 import { showActivityToast } from './components/activity-toast.js';
 import * as modal from './components/modal.js';
 
@@ -199,6 +200,7 @@ Object.assign(window, {
   openPrSplit: viewer.openPrSplit, openRepo: viewer.openRepo, openExternal: viewer.openExternal, jiraClick: viewer.jiraClick,
   openTabFolder: viewer.openTabFolder, createTabWorktree: viewer.createTabWorktree,
   folderMenu: viewer.folderMenu, removeTabWorktree: viewer.removeTabWorktree,
+  folderChipClick: viewer.folderChipClick,
   // viewer toolbar
   splitBack: viewer.splitBack, splitHome: viewer.splitHome,
   togglePrSplit: split.togglePrSplit, clearVisibleTerm: terminal.clearVisibleTerm,
@@ -211,7 +213,7 @@ Object.assign(window, {
   projShowSection, reloadProjectPRs, loadProjectWebhooks, saveProjectWebhooks, previewFixVersion, scrollDash, setUsageTab,
   loadGitTab, gitTabPick, gitTabShowCommit, gitTabBack, gitTabRemoveWorktree,
   loadLogs, setLogCategory, clearLogs,
-  loadSettings, saveConfig, switchSettingsTab, setReviewSound, previewReviewSound, setActivityNotify, toggleSecret,
+  loadSettings, saveConfig, switchSettingsTab, setReviewSound, previewReviewSound, setActivityNotify, toggleSecret, setGitClient, setGitClientCmd,
   __activityToast: showActivityToast, // main pushes activity toasts here when the app is frontmost
   // project modal
   openNewProjectModal: modal.openNewProjectModal, openEditProjectModal: modal.openEditProjectModal,
@@ -240,6 +242,10 @@ state.tabTermInit = (async () => {
   try {
     const [site, settings] = await Promise.all([api(ROUTES.JIRA_SITE), api(ROUTES.SETTINGS)]);
     state.jiraBase = site.baseUrl || '';
+    // Chosen git GUI for the viewer's folder-chip action (Settings → Appearance). Only the id
+    // is authoritative; the command is derived (preset from GIT_CLIENTS, custom from gitClientCmd).
+    const gcId = settings.gitClient || '';
+    state.gitClient = { id: gcId, cmd: resolveGitClientCmd(gcId, settings.gitClientCmd) };
     // taskhub.db is authoritative (survives a localStorage clear, shared across windows);
     // re-sync the theme from it and re-apply if it differs from the pre-paint guess.
     syncThemeFromSettings(settings.theme);

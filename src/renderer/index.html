@@ -215,6 +215,23 @@
                 <button class="theme-opt" data-notify-opt="off" onclick="setActivityNotify(false)">Off</button>
               </div>
             </div>
+            <!-- Git client: when set, the viewer's split bar shows an "Open in git client"
+                 button beside the worktree that opens the branch's folder in your git GUI. -->
+            <div class="card-pad theme-row" style="border-top:1px solid var(--border)">
+              <div>
+                <div class="theme-row-title">Open in git client</div>
+                <div class="theme-row-sub">Adds a button beside the worktree to open the branch in your git app</div>
+              </div>
+              <div class="font-controls">
+                <select id="git-client" onchange="setGitClient(this.value)" aria-label="Git client">
+                  <option value="">None</option>
+                </select>
+              </div>
+            </div>
+            <div class="card-pad" id="git-client-cmd-row" hidden style="border-top:1px solid var(--border)">
+              <input type="text" id="git-client-cmd" placeholder="open -a Fork {path}" onchange="setGitClientCmd(this.value)" aria-label="Git client command" style="font-family:var(--diff-font,ui-monospace,SFMono-Regular,monospace);font-size:12.5px">
+              <p class="form-hint"><code class="code-chip">{path}</code> is replaced with the tab's worktree folder. Runs without a shell — e.g. a deeplink like <code class="code-chip">open x-github-client://openLocalRepo/{path}</code>.</p>
+            </div>
           </div>
           </div><!-- /appearance -->
 
@@ -314,9 +331,11 @@
         </button>
         <!-- Plain page title — no link, so the toolbar band stays draggable. -->
         <span class="split-title" id="split-title"></span>
-        <!-- Local folder for this tab (project workspace, or its git worktree). Click to
-             reveal in Finder; filled by updateFolderChip in viewer.js. -->
-        <button class="folder-chip" id="split-folder" hidden onclick="openTabFolder()" oncontextmenu="return folderMenu(event)"></button>
+        <!-- Local folder for this tab (project workspace, or its git worktree). Click opens it
+             in the chosen git client (Settings → Appearance) when one is set — wearing that
+             client's mark — else reveals in Finder; right-click for both. Filled by
+             updateFolderChip in viewer.js. -->
+        <button class="folder-chip" id="split-folder" hidden onclick="folderChipClick()" oncontextmenu="return folderMenu(event)"></button>
         <!-- Plain repo + known PR branch → create a worktree for it. viewer.js fills the
              worktree glyph, sets the branch, and toggles visibility. -->
         <button class="split-btn folder-add" id="split-folder-add" hidden onclick="createTabWorktree()"></button>

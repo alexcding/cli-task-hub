@@ -34,6 +34,12 @@ export const state = {
 
   // Jira ticket link base — auto-detected from acli (or settings override), never hardcoded.
   jiraBase: '',
+
+  // Chosen git GUI for the viewer's folder-chip action (Settings → Appearance). id '' = none
+  // (chip just reveals in Finder); cmd is the resolved command template run with {path}
+  // substituted — derived from the id (preset) or the stored custom template, never persisted
+  // for presets. Loaded at bootstrap (app.js), updated by the Settings picker (setGitClient).
+  gitClient: { id: '', cmd: '' },
   knownStatuses: new Set(),
   // Optimistic Scrumboard moves awaiting server confirmation: ticket key -> { status, statusId }.
   // A drop (or board status change) records the target here and the board renders the card in

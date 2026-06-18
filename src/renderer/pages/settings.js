@@ -5,6 +5,8 @@ import { api, apiJson } from '../services/api.js';
 import { esc, timeAgo, setActiveSegTab } from '../lib/util.js';
 import { toast, toastErr } from '../components/toast.js';
 import { renderProjectNav } from '../components/sidebar.js';
+import { GIT_CLIENTS, resolveGitClientCmd } from '../lib/git-clients.js';
+import { updateGitClient } from '../components/viewer.js';
 
 export async function loadSettings() {
   const [cfg, dbinfo, settings, sounds] = await Promise.all([
@@ -13,6 +15,7 @@ export async function loadSettings() {
 
   populateSoundPicker(sounds, settings?.reviewSound);
   setActivityNotifyUI(settings?.activityNotify !== 'off'); // default on when unset
+  populateGitClientPicker(settings);
 
   if (cfg.poll_interval)      document.getElementById('poll-interval').value = cfg.poll_interval;
   if (cfg.jira_base_url)      document.getElementById('jira-base-url').value = cfg.jira_base_url;
@@ -76,6 +79,54 @@ export function previewReviewSound() {
   const value = document.getElementById('review-sound')?.value || 'system';
   if (!window.taskhub?.previewSound) { toastErr('Sound preview is only available in the desktop app'); return; }
   Promise.resolve(window.taskhub.previewSound(value)).catch(e => toastErr('Preview failed: ' + (e?.message || e)));
+}
+
+// ── Git client ──────────────────────────────────────────────────────────────────
+// The viewer's split bar gets an "Open in git client" button when a client is chosen here.
+// Built-in presets fill the command field from GIT_CLIENTS; "Custom…" lets the user author
+// their own command/deeplink (with a {path} placeholder). Both `gitClient` (id) and
+// `gitClientCmd` (template) are persisted; main runs the template (see native/git-client.js).
+function populateGitClientPicker(settings) {
+  const sel = document.getElementById('git-client');
+  if (!sel) return;
+  const opts = ['<option value="">None</option>'];
+  for (const c of GIT_CLIENTS) opts.push(`<option value="${esc(c.id)}">${esc(c.label)}</option>`);
+  opts.push('<option value="custom">Custom…</option>');
+  sel.innerHTML = opts.join('');
+  const id = settings?.gitClient || '';
+  sel.value = [...sel.options].some(o => o.value === id) ? id : '';
+  document.getElementById('git-client-cmd').value = settings?.gitClientCmd || '';
+  reflectGitClientRow(sel.value);
+}
+
+// The editable command field is shown only for "Custom…"; presets use their built-in template.
+function reflectGitClientRow(id) {
+  const row = document.getElementById('git-client-cmd-row');
+  if (row) row.hidden = id !== 'custom';
+}
+
+// Choose a client. We persist only the id (`gitClient`) — the command for a preset is derived
+// from GIT_CLIENTS at use time, and the custom template lives under `gitClientCmd` (written by
+// setGitClientCmd). One write, so the stored id and command can't drift; switching to a preset
+// leaves the user's custom template intact for when they switch back. The cmd input keeps its
+// own (custom) text — for a preset its placeholder previews the built-in template.
+export async function setGitClient(id) {
+  reflectGitClientRow(id);
+  const customCmd = document.getElementById('git-client-cmd')?.value.trim() || '';
+  try {
+    await apiJson(ROUTES.settingsKey('gitClient'), 'PUT', { value: id });
+    updateGitClient(id, resolveGitClientCmd(id, customCmd)); // refresh the chip now, not on next tab activate
+  } catch (e) { toastErr(e.message); }
+}
+
+// Persist the custom command template (fires on change/blur, so not per keystroke). Only
+// reachable while "Custom…" is selected (the field is hidden otherwise).
+export async function setGitClientCmd(cmd) {
+  const value = (cmd || '').trim();
+  try {
+    await apiJson(ROUTES.settingsKey('gitClientCmd'), 'PUT', { value });
+    updateGitClient('custom', value);
+  } catch (e) { toastErr(e.message); }
 }
 
 // ── Activity notifications ──────────────────────────────────────────────────────

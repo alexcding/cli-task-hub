@@ -6,6 +6,7 @@ import { state, activeTab, prByUrl, prGroup, prTabTitle, jiraTabTitle, jiraByKey
 import { api, apiJson } from '../services/api.js';
 import { esc, jiraKeyFromUrl, canSplitTerminal, ghAvatarSrc } from '../lib/util.js';
 import { ICON } from '../lib/icons.js';
+import { gitClientLabel, gitClientIcon } from '../lib/git-clients.js';
 import { toast, toastErr } from './toast.js';
 import { renderTabs } from './sidebar.js';
 import { openMenu } from './menu.js';
@@ -278,8 +279,10 @@ async function updateFolderChip(force = false) {
     return;
   }
 
-  // Otherwise show the folder chip: the worktree glyph for a dedicated worktree, or the
-  // plain folder for the main checkout / a tab we can't fork — both reveal in Finder.
+  // Otherwise show the folder chip. When a git client is configured (Settings), the chip wears
+  // that client's brand mark and a click opens the branch's folder there (it's already on the
+  // branch); Finder moves to the right-click menu. With no client it shows the worktree/folder
+  // glyph and a click reveals in Finder.
   hideAdd();
   const isWorktree = !!info.isWorktree;
   const name = info.path.split('/').filter(Boolean).pop() || info.path;
@@ -288,11 +291,27 @@ async function updateFolderChip(force = false) {
   // checkout can't be deleted, so it leaves these blank).
   el.dataset.worktree = isWorktree ? '1' : '';
   el.dataset.workspace = isWorktree ? (info.workspace || '') : '';
-  el.title = (isWorktree ? 'Worktree — reveal in Finder (right-click for more) — ' : 'Reveal in Finder — ') + info.path;
+  const gc = state.gitClient || {};
+  const gcOn = !!(gc.id && gc.cmd);
+  const gcIcon = gcOn ? gitClientIcon(gc.id) : '';
+  el.title = gcOn
+    ? `${isWorktree ? 'Worktree — ' : ''}Open ${name} in ${gitClientLabel(gc.id)} — right-click to reveal in Finder`
+    : (isWorktree ? 'Worktree — reveal in Finder (right-click for more) — ' : 'Reveal in Finder — ') + info.path;
+  // Keep the worktree state on the chip even when a brand <img> replaces the glyph: the accent
+  // tint targets the stroke glyph, and an accent ring marks the img (see .is-worktree CSS), so a
+  // worktree stays distinguishable from a main checkout regardless of which icon is shown.
   el.classList.toggle('is-worktree', isWorktree);
-  el.innerHTML = `<span class="fc-ic">${isWorktree ? ICON.worktree : ICON.folder}</span>`
-    + `<span class="fc-text">${esc(name)}</span>`;
+  const glyph = gcIcon ? `<img src="${gcIcon}" alt="">` : (isWorktree ? ICON.worktree : ICON.folder);
+  el.innerHTML = `<span class="fc-ic">${glyph}</span><span class="fc-text">${esc(name)}</span>`;
   el.hidden = false;
+}
+
+// Folder-chip click: open the branch in the configured git client, else reveal in Finder.
+export function folderChipClick() {
+  const { id, cmd } = state.gitClient || {};
+  const p = document.getElementById('split-folder')?.dataset.path;
+  if (p && id && cmd) { window.taskhub?.openInGitClient?.(cmd, p); return; }
+  openTabFolder();
 }
 
 // Reveal the active tab's resolved folder in the system file manager.
@@ -301,12 +320,15 @@ export function openTabFolder() {
   if (p && window.taskhub?.openPath) window.taskhub.openPath(p);
 }
 
-// Right-click the folder chip → reveal in Finder always, plus "Delete worktree" when the
-// chip is a worktree (not the shared main checkout). Uses the shared context menu.
+// Right-click the folder chip → reveal in Finder always (plus "Open in <client>" when one's
+// configured, since a left-click now opens the client), and "Delete worktree" when the chip is
+// a worktree (not the shared main checkout). Uses the shared context menu.
 export function folderMenu(e) {
   const el = document.getElementById('split-folder');
   if (!el || el.hidden) return false;
+  const { id, cmd } = state.gitClient || {};
   return openMenu(e, [
+    (id && cmd) && { label: `Open in ${gitClientLabel(id)}`, onClick: folderChipClick },
     { label: 'Reveal in Finder', onClick: openTabFolder },
     el.dataset.worktree === '1' && { label: 'Delete worktree…', onClick: removeTabWorktree, danger: true },
   ]);
@@ -351,6 +373,13 @@ export async function createTabWorktree() {
 // Open an http(s) URL in the user's default browser (main guards the scheme).
 export function openExternal(url) {
   if (url) window.taskhub?.openExternal?.(url);
+}
+
+// Update the chosen git client (id + command template) and re-render the folder chip so the
+// change takes effect immediately. Called at bootstrap and by the Settings picker.
+export function updateGitClient(id, cmd) {
+  state.gitClient = { id: id || '', cmd: cmd || '' };
+  updateFolderChip(true);
 }
 
 // Open a repo's GitHub home page in the default browser. `repo` is "owner/name".

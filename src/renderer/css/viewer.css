@@ -35,9 +35,13 @@ body.viewing-term #split-toggle-term { display:none; }
 .folder-chip:hover { background:var(--surface-hover); color:var(--text); }
 .folder-chip .fc-ic { flex-shrink:0; display:inline-flex; }
 .folder-chip svg { flex-shrink:0; width:15px; height:15px; }
+/* When a git client is configured the glyph is that client's brand mark (an <img>). */
+.folder-chip .fc-ic img { flex-shrink:0; width:15px; height:15px; display:block; border-radius:3px; object-fit:contain; }
 .folder-chip .fc-text { min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-/* Worktree tabs: tint the glyph with the accent so it's distinguishable at a glance. */
+/* Worktree tabs: tint the glyph with the accent so it's distinguishable at a glance. When the
+   glyph is a brand <img> (a git client is set), tint can't apply, so ring the icon instead. */
 .folder-chip.is-worktree .fc-ic { color:var(--accent); }
+.folder-chip.is-worktree .fc-ic img { box-shadow:0 0 0 1.5px var(--accent); }
 /* Create-worktree call-to-action (shown instead of the chip on a plain checkout):
    worktree glyph + label, accent-toned so it reads as the suggested action. */
 .folder-add { gap:5px; margin-left:8px; padding:5px 10px; font-size:12px; font-weight:500; color:var(--accent); }
