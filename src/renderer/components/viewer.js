@@ -13,6 +13,7 @@ import { openMenu, closeMenu } from './menu.js';
 import { disposeTerm, visibleTerm } from './terminal.js';
 import { ensurePrTerminal, applyPrLayout, clearPrLayout, resolveTabFolder } from './split.js';
 import { hideDiffPane } from './diff.js';
+import { attachFind, closeFind } from './find.js';
 
 let _tabSeq = 0;
 
@@ -60,6 +61,7 @@ export function createTab(url, title, kind, meta = {}) {
   const onNav = () => { if (id === state.activeTabId) updateNavButtons(); };
   wv.addEventListener('did-navigate', onNav);
   wv.addEventListener('did-navigate-in-page', onNav);
+  attachFind(wv);   // route this webview's native find results to the find bar while it's active
   return tab;
 }
 
@@ -118,6 +120,7 @@ export function ensurePanelOpen() {
 }
 
 export function activateTab(id) {
+  closeFind();                                // stop find on the outgoing webview; bar reopens per-tab
   state.activeTabId = id;
   state.activeTermId = null;                  // showing a page, not a terminal
   document.body.classList.remove('viewing-term');
@@ -193,6 +196,7 @@ export function closeTab(id) {
 
 export function closeSplit() {
   if (!confirmCloseTabTerminals(state.tabs)) return;
+  closeFind();
   state.tabs.forEach(t => { closePairedTerm(t); t.wv?.remove(); });
   state.tabs = []; state.activeTabId = null; state.activeTermId = null;
   document.getElementById('split').hidden = true;

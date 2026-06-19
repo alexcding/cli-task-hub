@@ -12,6 +12,7 @@ import { closeMenu, isMenuOpen } from './components/menu.js';
 import * as viewer from './components/viewer.js';
 import * as terminal from './components/terminal.js';
 import * as split from './components/split.js';
+import * as find from './components/find.js';
 import { toggleCommitPop, commitAction } from './components/commit.js';
 import { loadDashboard, scrollDash, setUsageTab } from './pages/dashboard.js';
 import { loadProjectPage, projShowSection, reloadProjectPRs, loadProjectWebhooks, saveProjectWebhooks, previewFixVersion } from './pages/project.js';
@@ -34,6 +35,7 @@ function showPage(name, projectId) {
   syncOnNav();
   // The viewer replaces the content, so navigating to a page must hide it and bring
   // <main> back (the open tabs stay listed in the left nav).
+  find.closeFind(); // stop find + clear highlights on the outgoing tab before activeTabId is lost
   document.getElementById('split').hidden = true;
   document.body.classList.remove('viewing-tab', 'viewing-term', 'pr-split', 'pane-diff');
   state.activeTabId = null; state.activeTermId = null;  // terminals stay alive, just unfocused
@@ -111,6 +113,10 @@ function handleShortcut(action) {
       else window.taskhub?.closeWindow?.();
       break;
     case 'tab:closeAll':  if (state.tabs.length) viewer.closeSplit(); break;
+    // Find-in-page acts on the active webview tab (no-op otherwise — see find.js).
+    case 'find:open':     find.openFind(); break;
+    case 'find:next':     find.findNext(true); break;
+    case 'find:prev':     find.findNext(false); break;
     case 'pane:toggleTerm': split.togglePrSplit(); break;
     case 'pane:toggleView':
       if (canSplitTerminal(tab) && tab.prSplit) split.setPaneView(tab.paneView === 'diff' ? 'term' : 'diff');
@@ -205,6 +211,9 @@ Object.assign(window, {
   splitBack: viewer.splitBack, splitHome: viewer.splitHome,
   togglePrSplit: split.togglePrSplit, clearVisibleTerm: terminal.clearVisibleTerm,
   setPaneView: split.setPaneView, toggleCommitPop, commitAction,
+  // find-in-page bar
+  onFindInput: find.onFindInput, onFindKey: find.onFindKey, closeFind: () => find.closeFind(true),
+  findNext: () => find.findNext(true), findPrev: () => find.findNext(false),
   // views
   loadScrumboard, setBoardProject, setBoardFilter, setBoardQuery, applyBoardQuery,
   boardDragStart, boardDragEnd, boardDragOver, boardDragLeave, boardDrop,

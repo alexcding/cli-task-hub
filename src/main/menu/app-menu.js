@@ -37,7 +37,17 @@ function setAppMenu() {
       { label: 'Close All Tabs', accelerator: 'Alt+Cmd+W', click: send('tab:closeAll') },
       { label: 'Close Window', accelerator: 'Shift+Cmd+W', role: 'close' },
     ]},
-    { role: 'editMenu' },
+    // Custom Edit menu (vs role:'editMenu') so Find-in-page lives in its conventional home.
+    // ⌘F/⌘G fire even with focus inside a <webview>; find.js drives Chromium's native find.
+    { label: 'Edit', submenu: [
+      { role: 'undo' }, { role: 'redo' },
+      { type: 'separator' },
+      { role: 'cut' }, { role: 'copy' }, { role: 'paste' }, { role: 'selectAll' },
+      { type: 'separator' },
+      { label: 'Find…', accelerator: 'Cmd+F', click: send('find:open') },
+      { label: 'Find Next', accelerator: 'Cmd+G', click: send('find:next') },
+      { label: 'Find Previous', accelerator: 'Shift+Cmd+G', click: send('find:prev') },
+    ]},
     { label: 'View', submenu: [
       // Reloads the embedded page when a tab is in view, otherwise the active page's data.
       { label: 'Reload', accelerator: 'Cmd+R', click: send('view:reload') },
