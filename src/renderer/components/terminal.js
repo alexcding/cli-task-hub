@@ -4,7 +4,7 @@
 import { state, activeTab } from '../stores/store.js';
 import { codeFontStack } from '../lib/util.js';
 import { termTheme } from '../services/theme.js';
-import { renderTabs } from './sidebar.js';
+import { renderTabs, refreshTermBusy } from './sidebar.js';
 import { ensurePanelOpen, hideAllPanes, showSplitLoading, updateNavButtons, closeSplit, activateTab as activateWebTab } from './viewer.js';
 import { clearPrLayout } from './split.js';
 
@@ -60,7 +60,7 @@ export async function attachTermView(id, dir, title, { paired = false, pairKey =
   term.loadAddon(fit);
   term.open(el);
   try { term.loadAddon(new WebglAddon.WebglAddon()); } catch {} // GPU renderer; falls back to DOM
-  const entry = { el, term, fit, off: null, offExit: null, cwd: dir, title, paired, pairKey, hasContext: !!hasContext };
+  const entry = { el, term, fit, off: null, offExit: null, cwd: dir, title, paired, pairKey, hasContext: !!hasContext, busy: false, busyTimer: null, typingUntil: 0 };
   // Register in state.terms and wire BOTH listeners before any await. On replay there's an
   // attach round-trip below; if the PTY exits during it, onExit must already be subscribed
   // (and the entry findable) so onTermExit → disposeTerm cleans up instead of leaving a
@@ -68,7 +68,14 @@ export async function attachTermView(id, dir, title, { paired = false, pairKey =
   state.terms.set(id, entry);
   // keystrokes → PTY. A shell prompt by itself is disposable; once the user types, closing its
   // task tab asks before stopping the PTY.
-  term.onData(d => { entry.hasContext = true; taskhub.term.write(id, d); });
+  term.onData(d => {
+    entry.hasContext = true;
+    // Typed characters echo straight back as output; that echo must not read as "the CLI
+    // is working". Suppress the busy spinner for a short window after each keystroke, but
+    // NOT after Enter — submitting a line runs a real command whose output is genuine work.
+    entry.typingUntil = /[\r\n]/.test(d) ? 0 : Date.now() + 600;
+    taskhub.term.write(id, d);
+  });
   entry.offExit = taskhub.term.onExit(id, () => onTermExit(id, state.terms.get(id)?.paired));
   // Subscribe to live output FIRST. On replay we queue chunks until the buffered backlog is
   // written, then flush only the chunks newer than the backlog (by seq) — so output produced
@@ -78,6 +85,7 @@ export async function attachTermView(id, dir, title, { paired = false, pairKey =
   entry.off = taskhub.term.onData(id, (chunk, seq) => {
     if (flushing) queued.push({ seq, chunk });
     else term.write(chunk);
+    markBusy(entry);
   });
   if (replay) {
     let attachSeq = 0;
@@ -94,6 +102,21 @@ export async function attachTermView(id, dir, title, { paired = false, pairKey =
     for (const q of queued) if (q.seq > attachSeq) term.write(q.chunk);
   }
   return id;
+}
+
+// PTY output is our "the CLI is working" signal: each chunk marks the paired tab busy and
+// re-arms an idle timer; when no output arrives for BUSY_IDLE_MS the terminal goes idle.
+// The window is generous so a stream that pauses between chunks doesn't blink the spinner
+// off and on. We only flip the busy flag on the edge (not per chunk) and update the tab via
+// a class toggle (refreshTermBusy), so the spinner animates smoothly without re-rendering.
+// Only paired terminals drive a tab indicator; keystroke echo is filtered via typingUntil.
+const BUSY_IDLE_MS = 1500;
+function markBusy(entry) {
+  if (!entry.paired) return;
+  if (Date.now() < entry.typingUntil) return; // output is just the echo of keystrokes
+  if (!entry.busy) { entry.busy = true; refreshTermBusy(); }
+  clearTimeout(entry.busyTimer);
+  entry.busyTimer = setTimeout(() => { entry.busy = false; refreshTermBusy(); }, BUSY_IDLE_MS);
 }
 
 function bindPairedTermToTab(id, pairKey) {
@@ -123,6 +146,7 @@ export async function rehydrateTerminals() {
 export function disposeTerm(id) {
   const t = state.terms.get(id);
   if (!t) return;
+  clearTimeout(t.busyTimer);
   try { t.off?.(); t.offExit?.(); } catch {}
   try { taskhub.term.kill(id); } catch {}
   try { t.term.dispose(); } catch {}

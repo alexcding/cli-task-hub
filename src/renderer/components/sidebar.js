@@ -22,6 +22,17 @@ export function renderTabs() {
     }
   }
   updateTitles();
+  refreshTermBusy();
+}
+
+// Flip the "working" spinner on each open-tab row from its paired terminal's busy flag.
+// A class toggle on the existing rows (not a markup rebuild) so the spinner keeps spinning
+// smoothly across busy↔idle edges and SSE refreshes — the source of the earlier flicker.
+export function refreshTermBusy() {
+  document.querySelectorAll('#opentabs-nav .opentab').forEach(el => {
+    const t = state.tabs.find(x => x.id === el.dataset.id);
+    el.classList.toggle('busy', !!(t?.termId && state.terms.get(t.termId)?.busy));
+  });
 }
 
 // Grouped sidebar markup: GitHub groups (Mine/Review) then a Jira group, each a list
@@ -30,6 +41,10 @@ function tabsMarkup() {
   // GitHub tabs show the PR author's avatar (github.com/<login>.png, no API call),
   // with the CI status as a colored badge. Fall back to the GitHub octicon.
   const itemHtml = t => {
+    // "Working" spinner on the right of the row, shown only while the paired terminal is
+    // busy (the .busy class is toggled on the row by refreshTermBusy — NOT baked into this
+    // markup — so a busy↔idle flip never rebuilds the row or restarts the spin animation).
+    const spin = '<span class="tab-spin"></span>';
     let icon;
     if (t.kind === 'github') {
       const pr = prByUrl(t.url);
@@ -55,6 +70,7 @@ function tabsMarkup() {
           oncontextmenu="return tabMenu(event,'${t.id}')" title="${esc(t.url)}">
        ${icon}
        <span class="tab-title">${esc(t.title)}</span>
+       ${spin}
        <button class="tab-x" onclick="event.stopPropagation();closeTab('${t.id}')" title="Close tab">${ICON.close}</button>
      </div>`;
   };

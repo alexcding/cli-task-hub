@@ -63,6 +63,11 @@ body.viewing-tab main { display:none; }
 .ci-badge.ci-success { background:var(--success); }
 .ci-badge.ci-failure { background:var(--danger); }
 .ci-badge.ci-running { background:var(--warn); }
+/* "CLI is working" spinner at the row's right edge while its paired terminal is
+   producing output (toggled by markBusy in terminal.js). On hover the close button
+   (also right-pinned) floats over it. Reuses the `spin` keyframe defined in pages.css. */
+.tab-spin { display:none; flex-shrink:0; width:13px; height:13px; border-radius:50%; background:conic-gradient(var(--text-3) 300deg, var(--border) 0); -webkit-mask:radial-gradient(farthest-side, transparent calc(100% - 1.5px), #000 0); mask:radial-gradient(farthest-side, transparent calc(100% - 1.5px), #000 0); animation:spin 2.2s linear infinite; }
+.opentab.busy .tab-spin { display:block; }
 /* Close button: out of flow (absolute) so the title uses the full row width. It
    reveals on row hover, floating over the right edge — a left gradient (matching the
    row's hover bg) fades the title out beneath it instead of reserving a slot. */
