@@ -12,16 +12,18 @@ import { closeMenu, isMenuOpen } from './components/menu.js';
 import * as viewer from './components/viewer.js';
 import * as terminal from './components/terminal.js';
 import * as split from './components/split.js';
+import { toggleWorkflowRun } from './components/workflow.js';
 import * as find from './components/find.js';
 import { toggleCommitPop, commitAction } from './components/commit.js';
 import { loadDashboard, scrollDash, setUsageTab } from './pages/dashboard.js';
-import { loadProjectPage, projShowSection, reloadProjectPRs, loadProjectWebhooks, saveProjectWebhooks, previewFixVersion } from './pages/project.js';
+import { loadProjectPage, projShowSection, reloadProjectPRs, loadProjectWebhooks, saveProjectWebhooks, previewFixVersion,
+  wfNew, wfDelete, wfSetName, wfSetCli, wfAddStep, wfRemoveStep, wfEditStepCommand, wfEditStepTitle, saveWorkflows } from './pages/project.js';
 import { loadGitTab, gitTabPick, gitTabShowCommit, gitTabBack, gitTabRemoveWorktree } from './pages/git-tab.js';
 import * as jiraView from './pages/jira.js';
 import { loadScrumboard, setBoardProject, setBoardFilter, setBoardQuery, applyBoardQuery,
   boardDragStart, boardDragEnd, boardDragOver, boardDragLeave, boardDrop } from './pages/scrumboard.js';
 import { loadLogs, setLogCategory, clearLogs } from './pages/logs.js';
-import { loadSettings, saveConfig, switchSettingsTab, setReviewSound, previewReviewSound, setActivityNotify, toggleSecret, setGitClient, setGitClientCmd } from './pages/settings.js';
+import { loadSettings, saveConfig, switchSettingsTab, setReviewSound, previewReviewSound, setActivityNotify, toggleSecret, setGitClient, setGitClientCmd, toggleHook } from './pages/settings.js';
 import { showActivityToast } from './components/activity-toast.js';
 import * as modal from './components/modal.js';
 
@@ -188,6 +190,12 @@ function connectStream() {
     let d = {}; try { d = JSON.parse(e.data); } catch {}
     if (d.type === 'reload') { location.reload(); return; } // dev: a file changed
     if (d.type === 'tabs') return; // tab-set changes drive the tray menu; the sidebar already updated locally
+    // CLI hook signals (installed via Settings → Agents): drive the tab's busy spinner precisely.
+    // runId is the terminal id we injected as TASKHUB_RUN_ID; empty for sessions we didn't launch.
+    if (d.type === 'agent-turn-start' || d.type === 'agent-turn-done') {
+      if (d.runId) terminal.setTermBusy(d.runId, d.type === 'agent-turn-start');
+      return; // not a data change — no page refresh
+    }
     // Activity toasts are NOT triggered here: the main process is the single decider (it
     // alone can tell if the app is frontmost vs an embedded webview holding focus) and pushes
     // the toast via window.__activityToast. An 'activity' event still refreshes the page below.
@@ -209,7 +217,7 @@ Object.assign(window, {
   folderChipClick: viewer.folderChipClick,
   // viewer toolbar
   splitBack: viewer.splitBack, splitHome: viewer.splitHome,
-  togglePrSplit: split.togglePrSplit, clearVisibleTerm: terminal.clearVisibleTerm,
+  togglePrSplit: split.togglePrSplit, clearVisibleTerm: terminal.clearVisibleTerm, toggleWorkflowRun,
   setPaneView: split.setPaneView, toggleCommitPop, commitAction,
   // find-in-page bar
   onFindInput: find.onFindInput, onFindKey: find.onFindKey, closeFind: () => find.closeFind(true),
@@ -220,9 +228,10 @@ Object.assign(window, {
   loadProjectJira: jiraView.loadProjectJira, setProjJiraFilter: jiraView.setProjJiraFilter,
   openStatusMenu: jiraView.openStatusMenu, openAssignMenu: jiraView.openAssignMenu,
   projShowSection, reloadProjectPRs, loadProjectWebhooks, saveProjectWebhooks, previewFixVersion, scrollDash, setUsageTab,
+  wfNew, wfDelete, wfSetName, wfSetCli, wfAddStep, wfRemoveStep, wfEditStepCommand, wfEditStepTitle, saveWorkflows,
   loadGitTab, gitTabPick, gitTabShowCommit, gitTabBack, gitTabRemoveWorktree,
   loadLogs, setLogCategory, clearLogs,
-  loadSettings, saveConfig, switchSettingsTab, setReviewSound, previewReviewSound, setActivityNotify, toggleSecret, setGitClient, setGitClientCmd,
+  loadSettings, saveConfig, switchSettingsTab, setReviewSound, previewReviewSound, setActivityNotify, toggleSecret, setGitClient, setGitClientCmd, toggleHook,
   __activityToast: showActivityToast, // main pushes activity toasts here when the app is frontmost
   // project modal
   openNewProjectModal: modal.openNewProjectModal, openEditProjectModal: modal.openEditProjectModal,

@@ -60,7 +60,7 @@ export async function attachTermView(id, dir, title, { paired = false, pairKey =
   term.loadAddon(fit);
   term.open(el);
   try { term.loadAddon(new WebglAddon.WebglAddon()); } catch {} // GPU renderer; falls back to DOM
-  const entry = { el, term, fit, off: null, offExit: null, cwd: dir, title, paired, pairKey, hasContext: !!hasContext, busy: false, busyTimer: null, typingUntil: 0 };
+  const entry = { id, el, term, fit, off: null, offExit: null, cwd: dir, title, paired, pairKey, hasContext: !!hasContext, busy: false };
   // Register in state.terms and wire BOTH listeners before any await. On replay there's an
   // attach round-trip below; if the PTY exits during it, onExit must already be subscribed
   // (and the entry findable) so onTermExit → disposeTerm cleans up instead of leaving a
@@ -70,10 +70,6 @@ export async function attachTermView(id, dir, title, { paired = false, pairKey =
   // task tab asks before stopping the PTY.
   term.onData(d => {
     entry.hasContext = true;
-    // Typed characters echo straight back as output; that echo must not read as "the CLI
-    // is working". Suppress the busy spinner for a short window after each keystroke, but
-    // NOT after Enter — submitting a line runs a real command whose output is genuine work.
-    entry.typingUntil = /[\r\n]/.test(d) ? 0 : Date.now() + 600;
     taskhub.term.write(id, d);
   });
   entry.offExit = taskhub.term.onExit(id, () => onTermExit(id, state.terms.get(id)?.paired));
@@ -85,7 +81,6 @@ export async function attachTermView(id, dir, title, { paired = false, pairKey =
   entry.off = taskhub.term.onData(id, (chunk, seq) => {
     if (flushing) queued.push({ seq, chunk });
     else term.write(chunk);
-    markBusy(entry);
   });
   if (replay) {
     let attachSeq = 0;
@@ -104,19 +99,52 @@ export async function attachTermView(id, dir, title, { paired = false, pairKey =
   return id;
 }
 
-// PTY output is our "the CLI is working" signal: each chunk marks the paired tab busy and
-// re-arms an idle timer; when no output arrives for BUSY_IDLE_MS the terminal goes idle.
-// The window is generous so a stream that pauses between chunks doesn't blink the spinner
-// off and on. We only flip the busy flag on the edge (not per chunk) and update the tab via
-// a class toggle (refreshTermBusy), so the spinner animates smoothly without re-rendering.
-// Only paired terminals drive a tab indicator; keystroke echo is filtered via typingUntil.
-const BUSY_IDLE_MS = 1500;
-function markBusy(entry) {
-  if (!entry.paired) return;
-  if (Date.now() < entry.typingUntil) return; // output is just the echo of keystrokes
-  if (!entry.busy) { entry.busy = true; refreshTermBusy(); }
-  clearTimeout(entry.busyTimer);
-  entry.busyTimer = setTimeout(() => { entry.busy = false; refreshTermBusy(); }, BUSY_IDLE_MS);
+// The tab "working" spinner is driven ENTIRELY by the chosen CLI's hooks (turn-start/turn-done over
+// SSE) — there is no output-based fallback. So the spinner means exactly "a hook-enabled claude/codex
+// turn is running"; a plain shell command, a build, or a CLI without the hook installed shows no
+// spinner. Only paired terminals carry a tab indicator.
+
+// turn-done (or disposal): clear the spinner AND resolve any workflow step waiting on this turn.
+function goIdle(entry) {
+  if (entry.busy) { entry.busy = false; refreshTermBusy(); }
+  flushTurnWaiters(entry.id, true);
+}
+
+// Drive a terminal's busy state from a CLI hook (turn-start/turn-done over SSE), keyed by the
+// TASKHUB_RUN_ID we injected = the terminal id. NO time cap: a turn ends only when the Stop hook
+// fires (feature-dev can run 30+ minutes), so a fixed cutoff would falsely end it. A lost turn-done
+// leaves the spinner on until the next turn / abort / tab close — acceptable (rare; localhost curl).
+export function setTermBusy(id, busy) {
+  const entry = state.terms.get(id);
+  if (!entry || !entry.paired) return;
+  if (busy) { if (!entry.busy) { entry.busy = true; refreshTermBusy(); } }
+  else goIdle(entry);
+}
+
+// Workflow step-clock: resolve TRUE when this terminal's turn finishes (the Stop hook, any duration).
+// Resolves FALSE on abort or terminal disposal. No internal timeout — the Stop hook ends the turn,
+// so a fixed cutoff would guillotine long agentic runs (hence workflows require hooks installed).
+const _turnWaiters = new Map(); // id -> [fn(ok)]
+function flushTurnWaiters(id, ok) {
+  const a = id && _turnWaiters.get(id);
+  if (a) { _turnWaiters.delete(id); a.forEach(fn => { try { fn(ok); } catch {} }); }
+}
+export function whenTurnDone(id, { timeoutMs = 0, signal } = {}) {
+  return new Promise(resolve => {
+    let done = false;
+    const cleanup = () => {
+      if (timer) clearTimeout(timer);
+      const arr = _turnWaiters.get(id);
+      if (arr) { const i = arr.indexOf(fn); if (i >= 0) arr.splice(i, 1); if (!arr.length) _turnWaiters.delete(id); }
+      if (signal) signal.removeEventListener('abort', onAbort);
+    };
+    const finish = v => { if (done) return; done = true; cleanup(); resolve(v); };
+    const fn = ok => finish(ok !== false);
+    const onAbort = () => finish(false);
+    const a = _turnWaiters.get(id) || []; a.push(fn); _turnWaiters.set(id, a);
+    const timer = timeoutMs > 0 ? setTimeout(() => finish(false), timeoutMs) : null;
+    if (signal) { if (signal.aborted) finish(false); else signal.addEventListener('abort', onAbort); }
+  });
 }
 
 function bindPairedTermToTab(id, pairKey) {
@@ -146,7 +174,7 @@ export async function rehydrateTerminals() {
 export function disposeTerm(id) {
   const t = state.terms.get(id);
   if (!t) return;
-  clearTimeout(t.busyTimer);
+  flushTurnWaiters(id, false); // unblock any workflow step awaiting this terminal's turn
   try { t.off?.(); t.offExit?.(); } catch {}
   try { taskhub.term.kill(id); } catch {}
   try { t.term.dispose(); } catch {}

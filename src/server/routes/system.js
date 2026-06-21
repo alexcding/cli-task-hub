@@ -6,6 +6,8 @@ const github = require('../repositories/github');
 const usage = require('../repositories/usage');
 const poller = require('../services/poller');
 const forwarder = require('../services/webhook-forwarder');
+const agentHooks = require('../services/agent-hooks');
+const sse = require('./sse');
 const { ROUTES } = require('../../shared/routes.mjs');
 
 function register(app) {
@@ -70,6 +72,28 @@ function register(app) {
     try { await Promise.all([poller.poll(), poller.pollJira()]); res.json({ ok: true }); }
     catch (err) { res.status(500).json({ error: err.message }); }
   });
+
+  // ── Agent CLI hooks (Settings → Agents) ───────────────────────────────────────────
+  app.get(ROUTES.AGENT_HOOKS, (req, res) => res.json(agentHooks.status()));
+  app.post(ROUTES.AGENT_HOOK, (req, res) => {
+    try { agentHooks.install(req.params.cli); res.json({ ok: true, status: agentHooks.status() }); }
+    catch (err) { res.status(400).json({ error: err.message }); }
+  });
+  app.delete(ROUTES.AGENT_HOOK, (req, res) => {
+    try { agentHooks.uninstall(req.params.cli); res.json({ ok: true, status: agentHooks.status() }); }
+    catch (err) { res.status(400).json({ error: err.message }); }
+  });
+  // The installed hooks ping these as a CLI turn starts (UserPromptSubmit) and ends (Stop).
+  // cli/runId arrive as query params; the CLI's own hook payload is the JSON body. We broadcast
+  // over SSE; the renderer maps runId (= the terminal id we injected as TASKHUB_RUN_ID) to a
+  // terminal and drives its busy spinner. runId is empty for sessions TaskHub didn't launch.
+  const relayHook = sseType => (req, res) => {
+    res.sendStatus(204);
+    const { cli, runId } = req.query;
+    try { sse.broadcast({ type: sseType, cli: cli || '', runId: runId || '', payload: req.body || null }); } catch { /* no listeners */ }
+  };
+  app.post(ROUTES.HOOK_TURN_START, relayHook('agent-turn-start'));
+  app.post(ROUTES.HOOK_TURN_DONE, relayHook('agent-turn-done'));
 }
 
 module.exports = { register };

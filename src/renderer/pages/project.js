@@ -8,6 +8,7 @@ import { ROUTES } from '/shared/routes.mjs';
 import { state, projectById as proj } from '../stores/store.js';
 import { api, apiJson } from '../services/api.js';
 import { esc, escJs, jiraUrl, setActiveSegTab } from '../lib/util.js';
+import { wfBranchName, normalizeSteps, resolvePlaceholders } from '../lib/workflow.mjs';
 import { ICON, TAB_ICON } from '../lib/icons.js';
 import { toast, toastErr } from '../components/toast.js';
 import { renderProjectNav } from '../components/sidebar.js';
@@ -83,7 +84,7 @@ export async function loadProjectPage(id) {
         </div>
         <!-- Section picker: each tab shows one section at a time (paged, not scrolled). -->
         <div class="seg-tabs pd-segs" role="tablist">
-          ${seg('prs', 'Pull Requests')}${seg('jira', 'Jira')}${seg('git', 'Git')}${seg('settings', 'Automation')}
+          ${seg('prs', 'Pull Requests')}${seg('jira', 'Jira')}${seg('git', 'Git')}${seg('settings', 'Automation')}${seg('workflows', 'Workflows')}
         </div>
       </div>
 
@@ -143,6 +144,17 @@ export async function loadProjectPage(id) {
         </div>
         <div id="proj-webhooks-${id}"></div>
       </section>
+
+      <!-- Workflows: per-project automation recipes, lazy-loaded the first time shown -->
+      <section class="pd-sec" id="pd-workflows-${id}" data-sec="workflows" hidden>
+        <div class="pd-sec-head">
+          <h2 class="pd-sec-title"><span class="pd-sec-ic tint-accent">${ICON.terminal}</span>Workflows</h2>
+          <div class="pd-sec-ctl">
+            <button class="btn btn-secondary btn-sm" onclick="wfNew('${id}')">${ICON.plus} New workflow</button>
+          </div>
+        </div>
+        <div id="proj-workflows-${id}"></div>
+      </section>
       </div><!-- /.pd-body -->
     </div>`;
 
@@ -159,11 +171,12 @@ export async function loadProjectPage(id) {
 // is shown; PRs and Jira are already loaded by loadProjectPage. The scroller resets to the
 // top so each page starts at its heading. `btn` is always the clicked seg-tab (every caller is
 // an inline onclick passing `this`).
-const SECTIONS = ['prs', 'jira', 'git', 'settings'];
+const SECTIONS = ['prs', 'jira', 'git', 'settings', 'workflows'];
 export function projShowSection(id, sec, btn) {
   if (btn) setActiveSegTab(btn);
   SECTIONS.forEach(s => { const el = document.getElementById(`pd-${s}-${id}`); if (el) el.hidden = s !== sec; });
   if (sec === 'git') lazyOnce(`proj-gittab-${id}`, () => loadGitTab(id));
+  if (sec === 'workflows') lazyOnce(`proj-workflows-${id}`, () => loadProjectWorkflows(id));
   if (sec === 'settings') {
     // Build the form once; on every (re)show, re-read the live 'gh webhook forward' status so
     // it reconciles after a Save (which only reflects the saved intent — see saveProjectWebhooks).
@@ -292,6 +305,174 @@ export function previewFixVersion(id) {
       el.textContent = `Script error: ${e.message}`;
     }
   }, 250);
+}
+
+// ── Workflows tab ─────────────────────────────────────────────────────────────────────
+// A project owns a list of workflows; each is a CLI + an ordered set of command lines. The
+// Workflow button on a ticket/PR (later) opens the item's worktree, launches the CLI, and types
+// each command. Edits live in a module-local buffer per project (commands/cards add-remove, so
+// rows re-render) and the whole list is saved at once. The buffer is the source of truth while
+// editing — every input syncs to it, so re-rendering never loses unsaved text.
+const _wfBuf = {}; // projectId -> [ { id, name, cli, steps:[{ title, command }] } ]
+const _rid = () => (self.crypto?.randomUUID ? self.crypto.randomUUID() : 'wf-' + Math.random().toString(36).slice(2));
+const _emptyStep = () => ({ title: '', command: '' });
+// Editor steps: the shared normalizer (tolerates the legacy commands:[string] shape) plus a UI
+// default of one empty row so a fresh/empty workflow always has something to type into.
+const _wfSteps = w => { const s = normalizeSteps(w); return s.length ? s : [_emptyStep()]; };
+function wfList(id) {
+  if (!_wfBuf[id]) {
+    const arr = Array.isArray(proj(id)?.workflows) ? proj(id).workflows : [];
+    _wfBuf[id] = arr.map(w => ({
+      id: w.id || _rid(),
+      name: w.name || '',
+      cli: w.cli === 'codex' ? 'codex' : 'claude',
+      steps: _wfSteps(w),
+    }));
+  }
+  return _wfBuf[id];
+}
+const wfGet = (id, wfId) => wfList(id).find(w => w.id === wfId);
+
+// A representative context so the preview shows resolved commands before any real run.
+function wfSampleCtx(p) {
+  const key = `${p?.jiraProjectKey || 'ABC'}-123`;
+  return {
+    key,
+    url: state.jiraBase ? jiraUrl(key) : `https://example.atlassian.net/browse/${key}`,
+    branch: wfBranchName(key, 'sample task'),
+    pr: '42',
+    repo: p?.repo || 'owner/repo',
+    workspace: p?.workspace || '',
+    worktree: '',
+  };
+}
+
+export function loadProjectWorkflows(id) {
+  const el = document.getElementById(`proj-workflows-${id}`);
+  if (!el) return;
+  const p = proj(id);
+  if (!p) { el.innerHTML = '<div class="empty">Project not found.</div>'; return; }
+  const list = wfList(id);
+  if (!list.length) {
+    el.innerHTML = `<div class="empty"><div class="empty-icon">${ICON.terminal}</div>
+      <p>No workflows yet. A workflow runs a saved set of commands on a ticket or pull request — it opens the item's worktree, launches your CLI, and types each command in turn.</p>
+      <button class="btn btn-primary" onclick="wfNew('${id}')">${ICON.plus} New workflow</button></div>`;
+    return;
+  }
+  el.innerHTML = `<div class="webhooks-form">
+      ${list.map(w => workflowCardHtml(id, w)).join('')}
+      <div class="webhooks-actions"><button class="btn btn-primary" onclick="saveWorkflows('${id}')">Save changes</button></div>
+    </div>`;
+  list.forEach(w => wfPreview(id, w.id));
+}
+
+function workflowCardHtml(id, w) {
+  const cli = c => `<button type="button" class="wf-cli wf-cli-${c}${w.cli === c ? ' on' : ''}" onclick="wfSetCli('${id}','${w.id}','${c}')"><span class="wf-cli-mk"></span>${c === 'claude' ? 'Claude' : 'Codex'}</button>`;
+  return `<div class="card wf-card" data-wf="${w.id}">
+      <div class="card-header wf-card-head">
+        <input type="text" class="wf-name" value="${esc(w.name)}" placeholder="Workflow name" oninput="wfSetName('${id}','${w.id}',this.value)">
+        <button type="button" class="wf-card-del" title="Delete workflow" aria-label="Delete workflow" onclick="wfDelete('${id}','${w.id}')">${ICON.close}</button>
+      </div>
+      <div class="card-pad">
+        <div class="form-group">
+          <label class="form-label">Run with</label>
+          <div class="wf-clis">${cli('claude')}${cli('codex')}</div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Steps — run in order</label>
+          <div class="wf-steps" id="wf-steps-${id}-${w.id}">${wfStepsHtml(id, w)}</div>
+          <button type="button" class="wf-add" onclick="wfAddStep('${id}','${w.id}')">${ICON.plus} Add step</button>
+        </div>
+        <p class="form-hint">Each step is a command plus a short goal. The command is typed into the CLI; the goal is what the headless CLI checks to tell whether the step finished. Use <code class="code-chip">{url}</code>, <code class="code-chip">{key}</code>, <code class="code-chip">{pr}</code>, <code class="code-chip">{branch}</code>, <code class="code-chip">{repo}</code> — filled in from the ticket or PR (<code class="code-chip">{pr}</code> is the GitHub PR number). A worktree is created automatically when the item has none; existing worktrees are reused.</p>
+        <div class="wf-preview" id="wf-preview-${id}-${w.id}"></div>
+      </div>
+    </div>`;
+}
+
+function wfStepsHtml(id, w) {
+  return w.steps.map((s, i) => `<div class="wf-step">
+      <div class="wf-step-head">
+        <span class="wf-ord">${i + 1}</span>
+        <input type="text" class="wf-step-title" value="${esc(s.title)}" placeholder="Goal — e.g. “feature implemented and committed” (used to check the step is done)" oninput="wfEditStepTitle('${id}','${w.id}',${i},this.value)">
+        <button type="button" class="wf-del" title="Remove step" aria-label="Remove step" onclick="wfRemoveStep('${id}','${w.id}',${i})">${ICON.close}</button>
+      </div>
+      <input type="text" class="wf-step-cmd" spellcheck="false" value="${esc(s.command)}" placeholder="/feature_dev {url}" oninput="wfEditStepCommand('${id}','${w.id}',${i},this.value)">
+    </div>`).join('');
+}
+
+export function wfNew(id) {
+  const list = wfList(id);
+  list.push({ id: _rid(), name: `Workflow ${list.length + 1}`, cli: 'claude', steps: [_emptyStep()] });
+  loadProjectWorkflows(id);
+}
+export function wfDelete(id, wfId) {
+  const list = wfList(id);
+  const i = list.findIndex(w => w.id === wfId);
+  if (i >= 0) list.splice(i, 1);
+  loadProjectWorkflows(id);
+}
+export function wfSetName(id, wfId, val) { const w = wfGet(id, wfId); if (w) w.name = val; }
+export function wfSetCli(id, wfId, cli) {
+  const w = wfGet(id, wfId);
+  if (!w) return;
+  w.cli = cli === 'codex' ? 'codex' : 'claude';
+  document.querySelector(`#proj-workflows-${id} .wf-card[data-wf="${wfId}"]`)
+    ?.querySelectorAll('.wf-cli').forEach(b => b.classList.toggle('on', b.classList.contains(`wf-cli-${w.cli}`)));
+  wfPreview(id, wfId);
+}
+export function wfAddStep(id, wfId) { const w = wfGet(id, wfId); if (w) { w.steps.push(_emptyStep()); wfRedrawSteps(id, wfId); } }
+export function wfRemoveStep(id, wfId, i) {
+  const w = wfGet(id, wfId);
+  if (!w) return;
+  w.steps.splice(i, 1);
+  if (!w.steps.length) w.steps.push(_emptyStep());
+  wfRedrawSteps(id, wfId);
+}
+export function wfEditStepCommand(id, wfId, i, val) { const w = wfGet(id, wfId); if (w?.steps[i]) { w.steps[i].command = val; wfPreview(id, wfId); } }
+export function wfEditStepTitle(id, wfId, i, val) { const w = wfGet(id, wfId); if (w?.steps[i]) { w.steps[i].title = val; wfPreview(id, wfId); } }
+function wfRedrawSteps(id, wfId) {
+  const el = document.getElementById(`wf-steps-${id}-${wfId}`);
+  const w = wfGet(id, wfId);
+  if (el && w) el.innerHTML = wfStepsHtml(id, w);
+  wfPreview(id, wfId);
+}
+
+// Live, client-side preview: resolve placeholders against a sample item and list the steps the
+// run would take (worktree → launch CLI → each command + Enter). No server round-trip needed.
+export function wfPreview(id, wfId) {
+  const el = document.getElementById(`wf-preview-${id}-${wfId}`);
+  if (!el) return;
+  const w = wfGet(id, wfId);
+  if (!w) return;
+  const ctx = wfSampleCtx(proj(id));
+  const steps = w.steps.filter(s => s.command.trim());
+  if (!steps.length) { el.className = 'wf-preview'; el.innerHTML = ''; return; }
+  const rows = [
+    `<div class="wf-pv"><span class="wf-arr">›</span><span>create worktree <span class="wf-mut">${esc(ctx.branch)}</span></span></div>`,
+    `<div class="wf-pv"><span class="wf-arr">›</span><span>launch <span class="wf-cli-name wf-cli-name-${w.cli}">${esc(w.cli)}</span></span></div>`,
+    ...steps.map(s => `<div class="wf-pv"><span class="wf-arr">›</span><span>${esc(resolvePlaceholders(s.command, ctx))}</span><span class="wf-ent">⏎</span></div>` +
+      (s.title.trim() ? `<div class="wf-pv-goal">done when: ${esc(resolvePlaceholders(s.title, ctx))}</div>` : '')),
+  ];
+  el.className = 'wf-preview ok';
+  el.innerHTML = `<div class="wf-pv-head">Preview <span class="wf-pv-key">${esc(ctx.key)}</span></div><div class="wf-pv-body">${rows.join('')}</div>`;
+}
+
+export async function saveWorkflows(id) {
+  const workflows = wfList(id).map(w => ({
+    id: w.id,
+    name: (w.name || '').trim() || 'Untitled workflow',
+    cli: w.cli,
+    steps: w.steps
+      .map(s => ({ title: s.title.trim(), command: s.command.trim() }))
+      .filter(s => s.command),
+  }));
+  try {
+    await apiJson(ROUTES.project(id), 'PUT', { workflows });
+    delete _wfBuf[id];                              // reseed from the saved (sanitized) state
+    toast('Workflows saved');
+    renderProjectNav(await api(ROUTES.PROJECTS));   // refresh store/sidebar (same path as the webhook save)
+    loadProjectWorkflows(id);
+  } catch (e) { toastErr(e.message); }
 }
 
 // Reflect whether `gh webhook forward` is actually running for this project's repo, in the

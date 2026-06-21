@@ -106,6 +106,9 @@ for (const stmt of [
   `ALTER TABLE projects ADD COLUMN fix_version_enabled INTEGER NOT NULL DEFAULT 0`,
   `ALTER TABLE projects ADD COLUMN fix_version_prefix TEXT NOT NULL DEFAULT ''`,
   `ALTER TABLE projects ADD COLUMN fix_version_script TEXT NOT NULL DEFAULT ''`,
+  // Per-project automation recipes: a JSON array of { id, name, cli, commands[] }. The Workflow
+  // button on a ticket/PR opens its worktree, launches the CLI, and types each command in turn.
+  `ALTER TABLE projects ADD COLUMN workflows TEXT NOT NULL DEFAULT ''`,
   // Project color was dropped — projects show an icon, not a swatch. Drop the column
   // from installs that still have it (throws "no such column" on fresh DBs, ignored).
   `ALTER TABLE projects DROP COLUMN color`,
@@ -121,16 +124,23 @@ const configAll = () => Object.fromEntries(db.prepare('SELECT key, value FROM co
 
 // ── Projects ──────────────────────────────────────────────────────────────────
 // Object shape (camelCase) matches the old JSON store; columns are snake_case.
-const PROJECT_FIELDS = ['name', 'repo', 'workspace', 'jiraProjectKey', 'jql', 'mergeTransition', 'forwardWebhooks', 'fixVersionEnabled', 'fixVersionPrefix', 'fixVersionScript'];
-const COL = { name: 'name', repo: 'repo', workspace: 'workspace', jiraProjectKey: 'jira_project_key', jql: 'jql', mergeTransition: 'merge_transition', forwardWebhooks: 'forward_webhooks', fixVersionEnabled: 'fix_version_enabled', fixVersionPrefix: 'fix_version_prefix', fixVersionScript: 'fix_version_script' };
+const PROJECT_FIELDS = ['name', 'repo', 'workspace', 'jiraProjectKey', 'jql', 'mergeTransition', 'forwardWebhooks', 'fixVersionEnabled', 'fixVersionPrefix', 'fixVersionScript', 'workflows'];
+const COL = { name: 'name', repo: 'repo', workspace: 'workspace', jiraProjectKey: 'jira_project_key', jql: 'jql', mergeTransition: 'merge_transition', forwardWebhooks: 'forward_webhooks', fixVersionEnabled: 'fix_version_enabled', fixVersionPrefix: 'fix_version_prefix', fixVersionScript: 'fix_version_script', workflows: 'workflows' };
 // Fields stored as 0/1 INTEGER (SQLite has no bool type). One place to coerce on write.
 const BOOL_FIELDS = new Set(['forwardWebhooks', 'fixVersionEnabled']);
-const toColValue = (field, value) => BOOL_FIELDS.has(field) ? (value ? 1 : 0) : value;
+// Fields stored as a JSON-encoded TEXT column (objects/arrays). Encoded on write, parsed on read.
+const JSON_FIELDS = new Set(['workflows']);
+const toColValue = (field, value) =>
+  JSON_FIELDS.has(field) ? JSON.stringify(value == null ? [] : value)
+    : BOOL_FIELDS.has(field) ? (value ? 1 : 0)
+      : value;
+const _safeJson = (s, fallback) => { try { return s ? JSON.parse(s) : fallback; } catch { return fallback; } };
 const _project = r => r && {
   id: r.id, name: r.name, repo: r.repo, workspace: r.workspace,
   jiraProjectKey: r.jira_project_key, jql: r.jql, mergeTransition: r.merge_transition,
   forwardWebhooks: !!r.forward_webhooks, created_at: r.created_at,
   fixVersionEnabled: !!r.fix_version_enabled, fixVersionPrefix: r.fix_version_prefix || '', fixVersionScript: r.fix_version_script || '',
+  workflows: _safeJson(r.workflows, []),
 };
 
 const getProjects = () => db.prepare('SELECT * FROM projects ORDER BY created_at ASC').all().map(_project);

@@ -87,6 +87,39 @@ test('projects: validation errors', async () => {
   assert.equal((await send('PUT', '/api/projects/nope', { name: 'Y' })).status, 404);
 });
 
+test('projects: workflows are sanitized and round-trip', async () => {
+  const p = (await send('POST', '/api/projects', { name: 'WF' })).body;
+  assert.deepEqual(p.workflows ?? [], []); // new project has no workflows
+
+  const saved = await send('PUT', `/api/projects/${p.id}`, {
+    workflows: [
+      { name: 'Feature dev', cli: 'nonsense', steps: [
+        { title: 'feature done', command: '/feature_dev {url}' },
+        { title: 'blank', command: '   ' },          // dropped: no command
+        { command: 'npm test' },                      // title optional
+      ] },
+      { name: 'Legacy', cli: 'codex', commands: ['echo hi'] }, // old shape tolerated
+    ],
+  });
+  assert.equal(saved.status, 200);
+  const [a, b] = saved.body.workflows;
+  assert.equal(a.cli, 'claude');                                  // bad cli → claude
+  assert.deepEqual(a.steps, [
+    { title: 'feature done', command: '/feature_dev {url}' },
+    { title: '', command: 'npm test' },
+  ]);                                                             // blank-command step dropped, title defaults to ''
+  assert.ok(a.id);                                                // id assigned by the server
+  assert.equal(b.cli, 'codex');
+  assert.deepEqual(b.steps, [{ title: '', command: 'echo hi' }]); // commands:[str] → steps
+
+  // Persisted: a fresh GET returns the same list.
+  const got = await get(`/api/projects/${p.id}`);
+  assert.equal(got.body.workflows.length, 2);
+  assert.equal(got.body.workflows[0].name, 'Feature dev');
+
+  await send('DELETE', `/api/projects/${p.id}`);
+});
+
 test('repo accepts owner/repo and GitHub URLs', async () => {
   const a = await send('POST', '/api/projects', { name: 'RepoA', repo: 'octo/repo' });
   assert.equal(a.body.repo, 'octo/repo');

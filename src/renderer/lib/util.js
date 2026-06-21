@@ -8,6 +8,9 @@ export const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').rep
 // the JS literal — backslash-escape first, then esc() the result for the attribute.
 export const escJs = s => esc(String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'"));
 
+// Promise that resolves after `ms` — a tiny shared sleep for sequenced UI/terminal steps.
+export const delay = ms => new Promise(r => setTimeout(r, ms));
+
 // Jira ticket link. Base is auto-detected from acli (or a settings override),
 // loaded once at startup into state.jiraBase — never hardcoded.
 export const jiraUrl = key => state.jiraBase ? `${state.jiraBase}/browse/${key}` : '#';

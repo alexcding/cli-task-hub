@@ -14,6 +14,7 @@ const CH = {
   TERM_KILL:   'term:kill',     // invoke  ← { id }
   TERM_LIST:   'term:list',     // invoke  → [{ id, cwd, ... }]
   TERM_ATTACH: 'term:attach',   // invoke  ← { id } → { buf, seq }
+  TERM_FG:     'term:fg',       // invoke  ← { id } → { process, atShell }
   TERM_DATA:   'term:data',     // send    → { id, chunk, seq }  (main → renderer)
   TERM_EXIT:   'term:exit',     // send    → { id, exitCode, signal } (main → renderer)
 

@@ -12,6 +12,7 @@ import { renderTabs } from './sidebar.js';
 import { openMenu, closeMenu } from './menu.js';
 import { disposeTerm, visibleTerm } from './terminal.js';
 import { ensurePrTerminal, applyPrLayout, clearPrLayout, resolveTabFolder } from './split.js';
+import { refreshWorkflowBtn } from './workflow.js';
 import { hideDiffPane } from './diff.js';
 import { attachFind, closeFind } from './find.js';
 
@@ -231,6 +232,7 @@ export function updateTitles() {
   }
   if (tt) tt.textContent = (state.activeTermId && visibleTerm()) ? 'Terminal' : '';
   updateFolderChip();
+  refreshWorkflowBtn();
 }
 
 // Folder chip (right of the webview segment): shows the active tab's local folder — the

@@ -152,6 +152,80 @@
 .fixver-tag { font-size:11px; color:var(--text-3); }
 .fixver-tag.new { color:var(--success); }
 
+/* ── Workflows tab: one card per recipe (CLI pick + ordered command lines) ─────────────── */
+.wf-card-head { display:flex; align-items:center; gap:10px; }
+.wf-name { flex:1; min-width:0; font-size:14px; font-weight:600; color:var(--text); background:transparent;
+           border:1px solid transparent; border-radius:var(--rs); padding:4px 8px; margin:-4px -8px; }
+.wf-name:hover { border-color:var(--border); }
+.wf-name:focus { border-color:var(--accent); background:var(--bg); outline:none; }
+.wf-card-del { flex-shrink:0; display:grid; place-items:center; width:28px; height:28px; padding:0;
+               color:var(--text-3); background:none; border:0; border-radius:var(--rs); cursor:pointer; }
+.wf-card-del:hover { color:var(--danger); background:var(--danger-bg); }
+.wf-card-del svg { width:15px; height:15px; }
+
+/* CLI pick — the chosen one carries that CLI's brand tint (Claude coral / Codex periwinkle). */
+.wf-clis { display:flex; gap:8px; }
+.wf-cli { display:inline-flex; align-items:center; gap:9px; font:inherit; font-size:13px; font-weight:500;
+          color:var(--text-2); background:var(--bg); border:1px solid var(--border); border-radius:var(--r);
+          padding:8px 14px 8px 11px; cursor:pointer; }
+.wf-cli-mk { width:15px; height:15px; border-radius:50%; border:1.5px solid var(--border-focus); flex-shrink:0; }
+.wf-cli.on { color:var(--text); }
+.wf-cli-claude.on { border-color:var(--claude); background:var(--claude-bg); }
+.wf-cli-claude.on .wf-cli-mk { border-color:var(--claude); background:var(--claude); box-shadow:inset 0 0 0 2.5px var(--claude-bg); }
+.wf-cli-codex.on { border-color:var(--codex); background:var(--codex-bg); }
+.wf-cli-codex.on .wf-cli-mk { border-color:var(--codex); background:var(--codex); box-shadow:inset 0 0 0 2.5px var(--codex-bg); }
+
+/* Step rows — each is a goal (title) + a command line. The goal is fed to the headless CLI
+   to judge whether the step is done; the command is what gets typed into the terminal. */
+.wf-steps { display:flex; flex-direction:column; gap:10px; margin-bottom:10px; }
+.wf-step { display:flex; flex-direction:column; gap:6px; background:var(--bg); border:1px solid var(--border);
+           border-radius:var(--r); padding:8px 8px 9px; }
+.wf-step:focus-within { border-color:var(--accent); background:var(--surface); }
+.wf-step-head { display:flex; align-items:center; gap:8px; }
+.wf-ord { flex-shrink:0; width:20px; text-align:center; font-size:12px; color:var(--text-3); font-variant-numeric:tabular-nums; }
+.wf-step-title { flex:1; min-width:0; font-size:12.5px; font-weight:500; color:var(--text); background:transparent;
+                 border:0; padding:2px 2px; outline:none; }
+.wf-step-title::placeholder { color:var(--text-3); font-weight:400; }
+.wf-step-cmd { font-family:var(--diff-font,ui-monospace,SFMono-Regular,monospace); font-size:12.5px; color:var(--text);
+               background:var(--surface); border:1px solid var(--border); border-radius:var(--rs); padding:7px 9px;
+               margin-left:28px; outline:none; }
+.wf-step-cmd:focus { border-color:var(--border-focus); }
+.wf-step-cmd::placeholder { color:var(--text-3); }
+.wf-del { flex-shrink:0; display:grid; place-items:center; width:26px; height:26px; padding:0; color:var(--text-3);
+          background:none; border:0; border-radius:var(--rs); cursor:pointer; }
+.wf-del:hover { color:var(--danger); background:var(--danger-bg); }
+.wf-del svg { width:13px; height:13px; }
+.wf-add { display:inline-flex; align-items:center; gap:6px; font:inherit; font-size:13px; color:var(--text-2);
+          background:none; border:1px dashed var(--border-focus); border-radius:var(--r); padding:7px 12px; cursor:pointer; }
+.wf-add:hover { color:var(--text); border-color:var(--text-3); background:var(--surface-hover); }
+.wf-add svg { width:14px; height:14px; }
+
+/* Preview block */
+.wf-preview { margin-top:16px; border:1px solid var(--border); border-radius:var(--r); overflow:hidden; }
+.wf-preview:empty { display:none; }
+.wf-pv-head { display:flex; align-items:center; gap:8px; padding:7px 12px; background:var(--bg);
+              border-bottom:1px solid var(--border); font-size:10.5px; font-weight:600; letter-spacing:.06em;
+              text-transform:uppercase; color:var(--text-3); }
+.wf-pv-key { font-family:var(--diff-font,ui-monospace,SFMono-Regular,monospace); text-transform:none; letter-spacing:0;
+             font-weight:500; font-size:12px; color:var(--text-2); }
+.wf-pv-body { font-family:var(--diff-font,ui-monospace,SFMono-Regular,monospace); font-size:12px; padding:12px;
+              display:flex; flex-direction:column; gap:6px; }
+.wf-pv { display:flex; gap:9px; align-items:baseline; color:var(--text); }
+.wf-arr { color:var(--accent); flex-shrink:0; }
+.wf-mut { color:var(--text-3); }
+.wf-ent { color:var(--text-3); margin-left:auto; }
+.wf-pv-goal { color:var(--text-3); padding:1px 0 2px 18px; font-size:11px; }
+.wf-cli-name-claude { color:var(--claude); }
+.wf-cli-name-codex { color:var(--codex); }
+
+/* ── Settings → Agents: CLI hook install rows ──────────────────────────────────────────── */
+.hook-row { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:13px 0; border-top:1px solid var(--border); }
+.hook-row:first-of-type { border-top:0; padding-top:4px; }
+.hook-row-text { display:flex; align-items:center; gap:10px; }
+.hook-row-title { font-size:13px; font-weight:500; color:var(--text); }
+.hook-pill { font-size:11.5px; color:var(--text-3); background:var(--surface-hover); border:1px solid var(--border); padding:2px 9px; border-radius:20px; }
+.hook-pill.on { color:var(--success); background:var(--success-bg); border-color:transparent; }
+
 .log-toolbar { display:flex; align-items:center; gap:12px; margin-bottom:12px; flex-wrap:wrap; }
 .log-errors { display:flex; align-items:center; gap:5px; margin-left:auto; font-size:12px; color:var(--text-2); cursor:pointer; }
 .log-errors input { width:auto; margin:0; }

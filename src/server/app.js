@@ -112,6 +112,7 @@ async function start(port = PORT) {
       server = srv;
       server.on('error', (err) => console.error('[server] runtime error:', err)); // post-listen errors
       console.log(`TaskHub running at http://localhost:${port}`);
+      require('./services/agent-hooks').writePort(port); // so installed CLI hooks can reach us across port drift
       poller.start(sse.publishSync);         // PR sync loop publishes snapshot updates over SSE
       poller.startJira(sse.publishJiraSync); // Jira sync loop (assigned-to-me + per-project)
       db.setActivityListener(sse.publishActivity); // fan new activity entries out to live UIs

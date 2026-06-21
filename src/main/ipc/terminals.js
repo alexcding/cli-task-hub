@@ -24,13 +24,16 @@ function registerIpc() {
     const appPath = app.getAppPath();
     const fallback = appPath && !appPath.includes('app.asar') ? appPath : os.homedir();
     const dir = cwd && typeof cwd === 'string' ? cwd : fallback;
-    const p = pty.spawn(sh || process.env.SHELL || '/bin/zsh', ['-l', '-i'], {
+    const shellPath = sh || process.env.SHELL || '/bin/zsh';
+    const p = pty.spawn(shellPath, ['-l', '-i'], {
       name: 'xterm-256color',
       cwd: dir,
       cols: 80, rows: 24,
-      env: { ...process.env, TERM: 'xterm-256color', COLORTERM: 'truecolor', LANG: process.env.LANG || 'en_US.UTF-8' },
+      // TASKHUB_RUN_ID lets an installed Claude/Codex hook ping back tagged with THIS terminal's
+      // id (the hook echoes ${TASKHUB_RUN_ID}), so the renderer can drive this tab's busy spinner.
+      env: { ...process.env, TERM: 'xterm-256color', COLORTERM: 'truecolor', LANG: process.env.LANG || 'en_US.UTF-8', TASKHUB_RUN_ID: id },
     });
-    const entry = { pty: p, cwd: dir, title: path.basename(dir) || dir, paired: !!paired, pairKey: String(pairKey || ''), hasContext: false, chunks: [], bufLen: 0, seq: 0 };
+    const entry = { pty: p, cwd: dir, title: path.basename(dir) || dir, paired: !!paired, pairKey: String(pairKey || ''), hasContext: false, chunks: [], bufLen: 0, seq: 0, shell: path.basename(shellPath) };
     // Keep a rolling tail of output as WHOLE chunks (never sliced mid-byte/escape) so a
     // window that was closed and reopened can replay the recent screen. Each chunk carries a
     // monotonic seq so the renderer can replay the backlog and then resume the live stream
@@ -62,6 +65,21 @@ function registerIpc() {
   ipcMain.handle(CH.TERM_ATTACH, (_e, { id }) => {
     const t = terminals.get(id);
     return t ? { buf: t.chunks.join(''), seq: t.seq } : { buf: '', seq: 0 };
+  });
+  // The PTY's current foreground process, compared against the shell THIS terminal was spawned
+  // with (no hardcoded shell list). atShell=true ⇒ sitting at a prompt; false ⇒ a program (e.g.
+  // an already-running claude/codex) is in the foreground. Unknown → assume at-prompt.
+  ipcMain.handle(CH.TERM_FG, (_e, { id }) => {
+    const t = terminals.get(id);
+    if (!t) return { process: '', atShell: true };
+    let proc = '';
+    try { proc = (t.pty.process || '').trim(); } catch {}
+    if (proc) return { process: proc, atShell: proc === t.shell };
+    // Process name unreadable on this platform → fall back to whether a child process is running
+    // under the PTY (a CLI in the foreground ⇒ not at a prompt). Safer than assuming "at shell".
+    let busy = false;
+    try { const { hasChildProcess } = require('../native/usage'); busy = hasChildProcess(t.pty.pid); } catch {}
+    return { process: '', atShell: !busy };
   });
 }
 

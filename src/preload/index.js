@@ -97,6 +97,9 @@ contextBridge.exposeInMainWorld('taskhub', {
     // Reattach after a window reopen; resolves to { buf, seq }: the buffered backlog to
     // replay plus the seq of its last chunk (so live output can resume without a gap/dup).
     attach: (id) => ipcRenderer.invoke('term:attach', { id }),
+    // Foreground process of the PTY → { process, atShell }. Lets a workflow tell whether the
+    // terminal is at a shell prompt (launch the CLI) or already running one (don't re-launch).
+    foreground: (id) => ipcRenderer.invoke('term:fg', { id }),
     // Stream a terminal's output; cb(chunk, seq). Returns an unsubscribe function.
     onData: (id, cb) => subscribe(dataListeners, id, cb),
     // Notified when a terminal's shell exits; cb({ exitCode, signal }). Returns unsubscribe.

@@ -28,6 +28,39 @@ export async function loadSettings() {
 
   renderDbInspector(dbinfo);
   initUsage();
+  loadHookStatus();
+}
+
+// ── Agent CLI hooks (Settings → Agents) ─────────────────────────────────────────
+// Install a "turn finished" hook into Claude Code / Codex so Workflows get a reliable
+// signal. The server merges idempotently and reports status; we just reflect it.
+const HOOK_LABEL = { claude: 'Claude Code', codex: 'Codex' };
+function renderHookRow(cli, status) {
+  const pill = document.getElementById(`hook-status-${cli}`);
+  const btn = document.getElementById(`hook-btn-${cli}`);
+  if (!pill || !btn) return;
+  const installed = status === 'installed';
+  pill.textContent = installed ? 'Installed' : 'Not installed';
+  pill.className = `hook-pill${installed ? ' on' : ''}`;
+  btn.textContent = installed ? 'Remove' : 'Install';
+  btn.className = `btn btn-sm ${installed ? 'btn-secondary' : 'btn-primary'}`;
+  btn.dataset.installed = installed ? '1' : '';
+}
+export async function loadHookStatus() {
+  try {
+    const st = await api(ROUTES.AGENT_HOOKS);
+    renderHookRow('claude', st.claude);
+    renderHookRow('codex', st.codex);
+  } catch { /* not reachable (e.g. plain browser) — leave the rows as-is */ }
+}
+export async function toggleHook(cli) {
+  const installed = document.getElementById(`hook-btn-${cli}`)?.dataset.installed === '1';
+  try {
+    const r = await api(ROUTES.agentHook(cli), { method: installed ? 'DELETE' : 'POST' });
+    renderHookRow('claude', r.status.claude);
+    renderHookRow('codex', r.status.codex);
+    toast(`${HOOK_LABEL[cli]} hook ${installed ? 'removed' : 'installed'}`);
+  } catch (e) { toastErr(e.message); }
 }
 
 // Reveal/hide a password field — the eye button inside an .input-reveal wrapper toggles
@@ -44,7 +77,7 @@ export function toggleSecret(btn) {
 // index.html (#settings-tab-<name>); all fields stay in the DOM regardless of the
 // active tab, so loadSettings() can populate them whether or not a panel is shown.
 export function switchSettingsTab(tab, btn) {
-  ['appearance','polling','jira','system'].forEach(t => {
+  ['appearance','polling','jira','system','agents'].forEach(t => {
     document.getElementById(`settings-tab-${t}`)?.classList.toggle('active', t === tab);
   });
   setActiveSegTab(btn);

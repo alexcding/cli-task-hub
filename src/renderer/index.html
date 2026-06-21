@@ -115,6 +115,7 @@
             <button class="seg-tab" onclick="switchSettingsTab('polling',this)">Polling</button>
             <button class="seg-tab" onclick="switchSettingsTab('jira',this)">Jira</button>
             <button class="seg-tab" onclick="switchSettingsTab('system',this)">System</button>
+            <button class="seg-tab" onclick="switchSettingsTab('agents',this)">Agents</button>
           </div>
 
           <div class="tab-panel active" id="settings-tab-appearance">
@@ -312,6 +313,24 @@
           </div><!-- /system flex -->
           </div><!-- /system -->
 
+          <div class="tab-panel" id="settings-tab-agents">
+          <div class="card">
+            <div class="card-header"><h3>CLI integration</h3></div>
+            <div class="card-pad">
+              <p class="card-intro">Install a hook into Claude Code and Codex so TaskHub knows the moment a command finishes — this is what lets Workflows run reliably instead of guessing from terminal output. It's added to your <code class="code-chip">~/.claude</code> / <code class="code-chip">~/.codex</code> config and leaves your existing hooks untouched.</p>
+              <div class="hook-row">
+                <div class="hook-row-text"><span class="hook-row-title">Claude Code</span><span class="hook-pill" id="hook-status-claude">Checking…</span></div>
+                <button class="btn btn-sm btn-primary" id="hook-btn-claude" onclick="toggleHook('claude')">Install</button>
+              </div>
+              <div class="hook-row">
+                <div class="hook-row-text"><span class="hook-row-title">Codex</span><span class="hook-pill" id="hook-status-codex">Checking…</span></div>
+                <button class="btn btn-sm btn-primary" id="hook-btn-codex" onclick="toggleHook('codex')">Install</button>
+              </div>
+              <p class="form-hint">Codex may ask you to trust the hook the first time you launch it after installing — that's expected; approve it once.</p>
+            </div>
+          </div>
+          </div><!-- /agents -->
+
         </div>
       </div>
 
@@ -353,8 +372,9 @@
           </button>
         </div>
         <span class="split-title" id="term-title"></span>
-        <button class="split-btn" id="term-clear" title="Clear terminal (⌘K)" onclick="clearVisibleTerm()">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19.5 4.5l-7.3 7.3"/><path d="M12.2 11.8c-3.2-.8-6 .6-7.4 3.6L3 19.5l4.6-.9c3.3-.6 5-2.7 4.6-6.8z"/><path d="M7.5 14.5l2 2"/></svg>
+        <button class="split-btn" id="term-workflow" title="Run workflow" onclick="toggleWorkflowRun(event)" hidden>
+          <svg class="wf-play" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="7 4 19 12 7 20 7 4"/></svg>
+          <span class="wf-run" aria-hidden="true"><svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><rect x="8.5" y="8.5" width="7" height="7" rx="1.5"/></svg></span>
         </button>
         <button class="split-btn" id="commit-btn" title="Commit changes" onclick="toggleCommitPop()">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.5"/><path d="M2.5 12h6"/><path d="M15.5 12h6"/></svg><span class="cb-label">Commit</span>

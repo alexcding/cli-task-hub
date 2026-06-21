@@ -1,5 +1,6 @@
 // Project CRUD + workspace→repo auto-detection. Mutations re-sync the webhook
 // forwarder so new/changed repos start (or stop) forwarding immediately.
+const crypto = require('node:crypto');
 const db = require('../database/db');
 const github = require('../repositories/github');
 const jira = require('../repositories/jira');
@@ -32,6 +33,29 @@ function kickSync(project) {
   poller.syncProjectBoard(project).catch(err => console.error('[jira-sync] board resync failed:', err.message));
 }
 
+// Per-project workflow recipes (Workflows tab). Never trust the client: whitelist the CLI,
+// cap counts/lengths, drop steps with no command, and ensure every workflow has a stable id.
+// A step is { title, command }: the command is typed into the terminal; the title is the
+// step's goal, fed to the headless CLI so it can judge whether the step is done.
+function sanitizeSteps(w) {
+  const raw = Array.isArray(w?.steps) ? w.steps
+    : Array.isArray(w?.commands) ? w.commands.map(c => ({ command: c })) // tolerate the old shape
+      : [];
+  return raw
+    .map(s => ({ title: String(s?.title || '').slice(0, 120), command: String(s?.command || '').slice(0, 500) }))
+    .filter(s => s.command.trim())
+    .slice(0, 20);
+}
+function sanitizeWorkflows(arr) {
+  if (!Array.isArray(arr)) return [];
+  return arr.slice(0, 20).map(w => ({
+    id: (w && typeof w.id === 'string' && w.id) ? w.id.slice(0, 64) : crypto.randomUUID(),
+    name: String(w?.name || '').slice(0, 80),
+    cli: w?.cli === 'codex' ? 'codex' : 'claude',
+    steps: sanitizeSteps(w),
+  }));
+}
+
 // Build the validated patch for a project from a request body.
 // Returns { patch } or { error }.
 function projectPatch(body) {
@@ -50,6 +74,7 @@ function projectPatch(body) {
   if (body.fixVersionEnabled !== undefined) patch.fixVersionEnabled = !!body.fixVersionEnabled;
   if (body.fixVersionPrefix !== undefined) patch.fixVersionPrefix = String(body.fixVersionPrefix).trim();
   if (body.fixVersionScript !== undefined) patch.fixVersionScript = String(body.fixVersionScript);
+  if (body.workflows !== undefined) patch.workflows = sanitizeWorkflows(body.workflows);
   if (body.repo  !== undefined) {
     const raw = String(body.repo).trim();
     if (raw === '') { patch.repo = ''; }

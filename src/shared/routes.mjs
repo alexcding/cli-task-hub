@@ -79,4 +79,11 @@ export const ROUTES = Object.freeze({
   FORWARDERS: '/api/forwarders',
   POLL: '/api/poll',
   WEBHOOK_GITHUB: '/webhook/github',
+
+  // ── Agent CLI hooks (Settings → Agents): install/inspect the "turn finished" hook ──────
+  AGENT_HOOKS: '/api/agent-hooks',            // GET status { claude, codex }
+  AGENT_HOOK: '/api/agent-hooks/:cli',        // POST install / DELETE remove (server pattern)
+  agentHook: cli => `/api/agent-hooks/${cli}`,// client
+  HOOK_TURN_START: '/api/hooks/turn-start',   // POST — installed UserPromptSubmit hook pings on turn start
+  HOOK_TURN_DONE: '/api/hooks/turn-done',     // POST — installed Stop hook pings on turn end
 });
