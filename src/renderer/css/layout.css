@@ -6,16 +6,16 @@ aside { width:var(--sidebar-w); background:var(--surface); border-right:1px soli
 .sidebar-resizer::before { content:''; position:absolute; left:50%; top:0; bottom:0; width:1px; transform:translateX(-50%); background:transparent; }
 .sidebar-resizer:hover::before { background:var(--border-focus); }
 .sidebar-logo { height:52px; padding:0 16px; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:8px; }
-.logo-icon { width:26px;height:26px; background:var(--accent); border-radius:7px; display:flex;align-items:center;justify-content:center; flex-shrink:0; }
+.logo-icon { width:24px;height:24px; background:var(--accent); border-radius:7px; display:flex;align-items:center;justify-content:center; flex-shrink:0; }
 .logo-text { font-size:15px; font-weight:650; letter-spacing:-.2px; }
 nav { padding:8px; flex:1; overflow-y:auto; }
 .nav-label { font-size:11px; font-weight:600; color:var(--text-3); text-transform:uppercase; letter-spacing:.5px; padding:10px 8px 4px; }
-.nav-btn { display:flex; align-items:center; gap:9px; width:100%; padding:6px 10px; background:none; border:none; border-radius:var(--rs); color:var(--text-2); font-size:14.5px; font-weight:500; cursor:pointer; text-align:left; transition:background .12s,color .12s; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.nav-btn { display:flex; align-items:center; gap:9px; width:100%; padding:6px 10px; background:none; border:none; border-radius:var(--rs); color:var(--text-2); font-size:13.5px; font-weight:500; cursor:pointer; text-align:left; transition:background .12s,color .12s; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .nav-btn:hover { background:var(--surface-hover); color:var(--text); }
 .nav-btn.active { background:var(--surface-hover); color:var(--text); }
-.nav-btn .icon { width:20px; height:20px; display:flex; align-items:center; justify-content:center; flex-shrink:0; color:var(--text-3); }
+.nav-btn .icon { width:19px; height:19px; display:flex; align-items:center; justify-content:center; flex-shrink:0; color:var(--text-3); }
 .nav-btn:hover .icon, .nav-btn.active .icon { color:var(--text-2); }
-.nav-btn .icon svg { width:20px; height:20px; display:block; stroke-width:1.5; }
+.nav-btn .icon svg { width:19px; height:19px; display:block; stroke-width:1.5; }
 .nav-add { background:none;border:none;color:var(--text-3);cursor:pointer;padding:2px;line-height:0;border-radius:4px;transition:color .12s,background .12s;display:inline-flex; }
 .nav-add:hover { color:var(--text);background:var(--surface-hover); }
 .nav-add svg { width:14px;height:14px;display:block; }

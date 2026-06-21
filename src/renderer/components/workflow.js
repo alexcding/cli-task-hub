@@ -11,6 +11,7 @@ import { jiraKeyFromUrl, canSplitTerminal, delay } from '../lib/util.js';
 import { resolvePlaceholders, wfBranchName } from '../lib/workflow.mjs';
 import { resolveTabFolder, ensurePrTerminal, applyPrLayout } from './split.js';
 import { whenTurnDone, setTermBusy } from './terminal.js';
+import { analyzeTerminal } from '../services/analyzer.js';
 import { openMenu } from './menu.js';
 import { toast, toastErr } from './toast.js';
 
@@ -80,6 +81,20 @@ async function submitLine(termId, line) {
   window.taskhub?.term?.write(termId, line);
   await delay(60);
   window.taskhub?.term?.write(termId, '\r');
+}
+
+// After a step's turn finishes, hand the agent's last message + step context to the shared analyzer
+// (one headless CLI call — settle/read/record all live in the service) and return its decision
+// (proceed / retry / stop). Any skip/failure → 'proceed' (the prior behavior: keep advancing). The
+// model is advisory and never generates commands.
+async function decideAfterStep(wf, steps, i, termId) {
+  const stepName = steps[i].title || steps[i].command;
+  const next = i + 1 < steps.length ? `Next step: "${steps[i + 1].title || steps[i + 1].command}".` : 'This was the last step.';
+  const context = `Automated workflow "${wf.name}". Finished step ${i + 1}/${steps.length}: "${stepName}". ${next}`;
+  const r = await analyzeTerminal(termId, { context });
+  notifyTasksUpdated();
+  if (r?.decision) toast(`${wf.name}: ${r.decision}${r.reason ? ` — ${r.reason}` : ''}`);
+  return r?.decision || 'proceed';
 }
 
 export async function runWorkflow(tab, wf) {
@@ -157,6 +172,7 @@ export async function runWorkflow(tab, wf) {
       repo: p.repo || tab.repo || '',
       worktree: (f && f.path) || '', workspace: (f && f.workspace) || p.workspace,
     };
+    let retried = false; // one retry budget per step
     for (let i = 0; i < steps.length; i++) {
       if (ac.signal.aborted) break;
       run.step = i + 1; run.stepTitle = steps[i].title || '';
@@ -167,6 +183,18 @@ export async function runWorkflow(tab, wf) {
       // terminal being disposed (tab closed); either way, stop rather than type into a dead/aborted run.
       const done = await whenTurnDone(termId, { signal: ac.signal });
       if (ac.signal.aborted || !done) break;
+
+      // Judge the step from the agent's last message (advisory — we still only type predefined
+      // step commands). proceed → next step; retry → re-run THIS step once; stop → halt (the agent
+      // is asking the user / is blocked / failed). Its summary+state also populate the session card.
+      const decision = await decideAfterStep(wf, steps, i, termId);
+      if (ac.signal.aborted) break;
+      if (decision === 'stop') { toast(`${wf.name}: stopped — agent needs attention`); break; }
+      if (decision === 'retry') {
+        if (retried) { toast(`${wf.name}: stopped after retry`); break; }
+        retried = true; i--; continue;   // re-run the same predefined step once
+      }
+      retried = false;                    // a clean proceed refreshes the retry budget
     }
     if (ac.signal.aborted) {
       window.taskhub?.term?.write(termId, '\x1b'); // ESC — interrupt the CLI's current turn

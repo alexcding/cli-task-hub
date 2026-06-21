@@ -89,5 +89,10 @@ export const ROUTES = Object.freeze({
   agentHook: cli => `/api/agent-hooks/${cli}`,// client
   HOOK_TURN_START: '/api/hooks/turn-start',   // POST — installed UserPromptSubmit hook pings on turn start
   HOOK_TURN_DONE: '/api/hooks/turn-done',     // POST — installed Stop hook pings on turn end
-  HOOK_ACTIVITY: '/api/hooks/activity',       // POST — installed PreToolUse hook pings with the tool it's about to run
+
+  // ── Headless CLI analysis (Tasks page + workflow automation) ────────────────────────
+  // POST { cli, text, context? } → { summary, state, decision?, reason? } via a one-shot headless
+  // CLI call. The card reads summary/state; an automated workflow passes step context and gates
+  // its loop on decision (proceed/retry/stop). One call, two consumers.
+  AGENT_ANALYZE: '/api/agent-analyze',
 });

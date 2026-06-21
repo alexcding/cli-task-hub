@@ -1,11 +1,8 @@
 // Install/inspect/remove TaskHub's hooks in the user's Claude Code and Codex configs (both JSON:
-// ~/.claude/settings.json and ~/.codex/hooks.json). We install THREE hooks per CLI:
-//   • UserPromptSubmit → /api/hooks/turn-start  ("the CLI started working" — spinner ON + goal)
-//   • PreToolUse       → /api/hooks/activity    ("about to run tool X" — live Tasks-page status)
+// ~/.claude/settings.json and ~/.codex/hooks.json). We install TWO hooks per CLI:
+//   • UserPromptSubmit → /api/hooks/turn-start  ("the CLI started working" — spinner ON)
 //   • Stop            → /api/hooks/turn-done   ("the CLI finished its turn" — spinner OFF)
-// This gives a precise, hook-driven busy indicator + live status instead of guessing from output.
-// All three are fire-and-forget (POST stdin, ignore the response) so they never gate the CLI's
-// own permission flow — safe for Codex's PreToolUse, which rejects approval/additionalContext.
+// This gives a precise, hook-driven busy indicator instead of guessing from terminal output.
 // We MERGE idempotently and tag our entries by the /api/hooks/ marker, so installing never
 // clobbers the user's existing hooks and uninstalling removes only ours.
 const fs = require('fs');
@@ -22,7 +19,6 @@ const PORT_FILE = path.join(dataDir, '.server-port');
 const MARKER = 'taskhub-workflow-hook';
 const ENDPOINT_START = '/api/hooks/turn-start';     // UserPromptSubmit → spinner ON
 const ENDPOINT_DONE = '/api/hooks/turn-done';       // Stop → spinner OFF
-const ENDPOINT_ACTIVITY = '/api/hooks/activity';    // PreToolUse → live "what it's doing" status
 
 const CLAUDE_SETTINGS = path.join(os.homedir(), '.claude', 'settings.json');
 const CODEX_HOOKS = path.join(os.homedir(), '.codex', 'hooks.json');
@@ -81,7 +77,7 @@ const TARGETS = {
 
 // The hooks we install, as (event → ping endpoint) pairs — one source of truth for
 // install/uninstall/status so adding an event is a single-line change.
-const HOOKS = [['UserPromptSubmit', ENDPOINT_START], ['PreToolUse', ENDPOINT_ACTIVITY], ['Stop', ENDPOINT_DONE]];
+const HOOKS = [['UserPromptSubmit', ENDPOINT_START], ['Stop', ENDPOINT_DONE]];
 
 function status() {
   // Installed = ALL of our hook events are present, so a partial/older install (e.g. only Stop,
@@ -106,7 +102,7 @@ function uninstall(cli) {
 }
 
 module.exports = {
-  status, install, uninstall, writePort, ENDPOINT_START, ENDPOINT_DONE, ENDPOINT_ACTIVITY,
+  status, install, uninstall, writePort, ENDPOINT_START, ENDPOINT_DONE,
   // exported for tests
   _isOurs: isOurs, _hasOurHookIn: hasOurHookIn, _addHookTo: addHookTo, _removeHookFrom: removeHookFrom,
   _entryFor: entryFor, _hookCommand: hookCommand,

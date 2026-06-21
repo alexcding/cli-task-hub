@@ -5,7 +5,6 @@ import { state, activeTab, projectById } from './stores/store.js';
 import { resolveGitClientCmd } from './lib/git-clients.js';
 import { api, forceSync } from './services/api.js';
 import { canSplitTerminal } from './lib/util.js';
-import { activityFromTool } from './lib/agent-activity.mjs';
 import { initTheme, setAppTheme, syncThemeFromSettings } from './services/theme.js';
 import { setFontFamily, bumpFontSize, resetFontSize, zoomTarget, syncFontsFromSettings, populateFontMenus } from './services/fonts.js';
 import { renderTabs, renderProjectNav, tabMenu, initSidebarResize } from './components/sidebar.js';
@@ -24,7 +23,7 @@ import * as jiraView from './pages/jira.js';
 import { loadScrumboard, setBoardProject, setBoardFilter, setBoardQuery, applyBoardQuery,
   boardDragStart, boardDragEnd, boardDragOver, boardDragLeave, boardDrop } from './pages/scrumboard.js';
 import { loadLogs, setLogCategory, clearLogs } from './pages/logs.js';
-import { loadTasks, openTaskSession } from './pages/tasks.js';
+import { loadTasks, openTaskSession, analyzeSession } from './pages/tasks.js';
 import { loadSettings, saveConfig, switchSettingsTab, setReviewSound, previewReviewSound, setActivityNotify, toggleSecret, setGitClient, setGitClientCmd, toggleHook } from './pages/settings.js';
 import { showActivityToast } from './components/activity-toast.js';
 import * as modal from './components/modal.js';
@@ -67,7 +66,7 @@ function showPage(name, projectId) {
     document.getElementById('page-title').textContent = 'Tasks';
     loadTasks();
   } else if (name === 'activity') {
-    document.getElementById('page-title').textContent = 'Activity';
+    document.getElementById('page-title').textContent = 'Events';
     loadLogs();
   } else if (name === 'settings') {
     document.getElementById('page-title').textContent = 'Settings';
@@ -107,6 +106,7 @@ function handleShortcut(action) {
   switch (action) {
     case 'nav:dashboard': showPage('dashboard'); break;
     case 'nav:scrumboard': showPage('scrumboard'); break;
+    case 'nav:tasks':     showPage('tasks'); break;
     case 'nav:activity':  showPage('activity'); break;
     case 'nav:settings':  showPage('settings'); break;
     case 'project:new':   modal.openNewProjectModal(); break;
@@ -199,19 +199,18 @@ function connectStream() {
     if (d.type === 'tabs') return; // tab-set changes drive the tray menu; the sidebar already updated locally
     // CLI hook signals (installed via Settings → CLIs): drive the tab's busy spinner precisely.
     // runId is the terminal id we injected as TASKHUB_RUN_ID; empty for sessions we didn't launch.
-    if (d.type === 'agent-turn-start' || d.type === 'agent-turn-done' || d.type === 'agent-activity') {
+    if (d.type === 'agent-turn-start' || d.type === 'agent-turn-done') {
       if (d.runId) {
-        if (d.type === 'agent-activity') {
-          // PreToolUse: what the agent is about to do, rendered as a live status line.
-          terminal.setTermActivity(d.runId, activityFromTool(d.payload?.tool_name, d.payload?.tool_input));
-        } else {
-          terminal.setTermBusy(d.runId, d.type === 'agent-turn-start');
-          // UserPromptSubmit carries the prompt — the task's goal/description.
-          if (d.type === 'agent-turn-start' && d.payload?.prompt) terminal.setTermGoal(d.runId, d.payload.prompt);
-        }
-        if (d.cli) terminal.setTermCli(d.runId, d.cli);
+        terminal.setTermBusy(d.runId, d.type === 'agent-turn-start');
+        if (d.cli) terminal.setTermCli(d.runId, d.cli); // label the session's CLI on the Tasks page
+        // A new turn invalidates the previous analysis (and supersedes any in-flight one via gen).
+        if (d.type === 'agent-turn-start') { const e = state.terms.get(d.runId); if (e) { e.summary = ''; e.state = ''; e.summaryFor = ''; e.gen = (e.gen || 0) + 1; } }
+        // The done (Stop) hook is the ONLY trigger for a session's headless analysis — and it runs
+        // regardless of whether the Tasks page is open ON PURPOSE: the analysis is a signal the
+        // automation consumes, not just card decoration, so it must not be gated on UI visibility.
+        if (d.type === 'agent-turn-done') analyzeSession(d.runId);
       }
-      // The Tasks page shows live status per session, so any hook edge IS a change for it.
+      // The Tasks page shows live working/idle per session, so a turn edge IS a change for it.
       if (document.querySelector('.page.active')?.id === 'page-tasks') loadTasks();
       return; // otherwise not a data change — no page refresh
     }
@@ -250,6 +249,8 @@ Object.assign(window, {
   wfNew, wfDelete, wfSetName, wfSetCli, wfAddStep, wfRemoveStep, wfEditStepCommand, wfEditStepTitle, saveWorkflows,
   loadGitTab, gitTabPick, gitTabShowCommit, gitTabBack, gitTabRemoveWorktree,
   loadLogs, setLogCategory, clearLogs,
+  // openTaskSession is used by inline card onclick; loadTasks is reached via window.loadTasks?.()
+  // from workflow.js's notifyTasksUpdated (avoids a tasks↔workflow import cycle) — keep both.
   loadTasks, openTaskSession,
   loadSettings, saveConfig, switchSettingsTab, setReviewSound, previewReviewSound, setActivityNotify, toggleSecret, setGitClient, setGitClientCmd, toggleHook,
   __activityToast: showActivityToast, // main pushes activity toasts here when the app is frontmost

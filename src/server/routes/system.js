@@ -7,6 +7,7 @@ const usage = require('../repositories/usage');
 const poller = require('../services/poller');
 const forwarder = require('../services/webhook-forwarder');
 const agentHooks = require('../services/agent-hooks');
+const cliAnalyze = require('../services/cli-analyze');
 const cliTools = require('../services/cli-tools');
 const sse = require('./sse');
 const { ROUTES } = require('../../shared/routes.mjs');
@@ -102,9 +103,20 @@ function register(app) {
   };
   app.post(ROUTES.HOOK_TURN_START, relayHook('agent-turn-start'));
   app.post(ROUTES.HOOK_TURN_DONE, relayHook('agent-turn-done'));
-  // PreToolUse fires before each tool the CLI runs; the body carries { tool_name, tool_input }.
-  // The renderer turns it into a live "Editing app.js / Running: npm test" status on the Tasks page.
-  app.post(ROUTES.HOOK_ACTIVITY, relayHook('agent-activity'));
+
+  // One-shot headless analysis of an agent's last message → { summary, state, decision?, reason? }.
+  // The Tasks card uses summary/state; an automated workflow passes step context and gates on decision.
+  app.post(ROUTES.AGENT_ANALYZE, async (req, res) => {
+    const { cli, text, context } = req.body || {};
+    try {
+      res.json(await cliAnalyze.analyze({ cli, text, context }));
+    } catch (err) {
+      // Surface a dead/hung judge in the Logs page instead of failing silently — the renderer
+      // falls back (card → raw preview; automated workflow → proceed), so this is the only signal.
+      db.addLog({ category: 'agent', level: 'error', type: 'analyze_failed', payload: { cli: cli || '', error: err.message } });
+      res.status(502).json({ error: err.message });
+    }
+  });
 }
 
 module.exports = { register };

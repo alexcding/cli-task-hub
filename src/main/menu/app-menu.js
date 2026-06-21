@@ -72,7 +72,8 @@ function setAppMenu() {
     { label: 'Go', submenu: [
       { label: 'Dashboard', accelerator: 'Cmd+1', click: sendOpen('nav:dashboard') },
       { label: 'Scrumboard', accelerator: 'Cmd+2', click: sendOpen('nav:scrumboard') },
-      { label: 'Activity', accelerator: 'Cmd+3', click: sendOpen('nav:activity') },
+      { label: 'Tasks', accelerator: 'Cmd+3', click: sendOpen('nav:tasks') },
+      { label: 'Events', accelerator: 'Cmd+4', click: sendOpen('nav:activity') },
       { type: 'separator' },
       { label: 'Back', accelerator: 'Cmd+[', click: send('nav:back') },
       { label: 'Forward', accelerator: 'Cmd+]', click: send('nav:forward') },
