@@ -1,7 +1,7 @@
 /* App shell: sidebar + nav, topbar, workarea, and macOS native-chrome adjustments. */
 /* Layout */
 .layout { display:flex; height:100vh; overflow:hidden; }
-aside { width:var(--sidebar-w); background:var(--surface); border-right:1px solid var(--border); display:flex; flex-direction:column; position:fixed; top:0;left:0;bottom:0; z-index:10; }
+aside { width:var(--sidebar-w); background:var(--surface); border-right:1px solid var(--border); display:flex; flex-direction:column; position:fixed; top:0;left:0;bottom:0; z-index:10; -webkit-font-smoothing:auto; }
 .sidebar-resizer { position:absolute; top:0; right:-3px; bottom:0; width:7px; cursor:col-resize; z-index:11; }
 .sidebar-resizer::before { content:''; position:absolute; left:50%; top:0; bottom:0; width:1px; transform:translateX(-50%); background:transparent; }
 .sidebar-resizer:hover::before { background:var(--border-focus); }
@@ -10,7 +10,7 @@ aside { width:var(--sidebar-w); background:var(--surface); border-right:1px soli
 .logo-text { font-size:15px; font-weight:650; letter-spacing:-.2px; }
 nav { padding:8px; flex:1; overflow-y:auto; }
 .nav-label { font-size:11px; font-weight:600; color:var(--text-3); text-transform:uppercase; letter-spacing:.5px; padding:10px 8px 4px; }
-.nav-btn { display:flex; align-items:center; gap:9px; width:100%; padding:6px 10px; background:none; border:none; border-radius:var(--rs); color:var(--text-2); font-size:13.5px; font-weight:500; cursor:pointer; text-align:left; transition:background .12s,color .12s; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.nav-btn { display:flex; align-items:center; gap:9px; width:100%; padding:6px 10px; background:none; border:none; border-radius:var(--rs); color:var(--text-2); font-size:14.5px; font-weight:500; cursor:pointer; text-align:left; transition:background .12s,color .12s; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .nav-btn:hover { background:var(--surface-hover); color:var(--text); }
 .nav-btn.active { background:var(--surface-hover); color:var(--text); }
 .nav-btn .icon { width:20px; height:20px; display:flex; align-items:center; justify-content:center; flex-shrink:0; color:var(--text-3); }
@@ -60,4 +60,4 @@ html.native-mac .logo-icon, html.native-mac .logo-text { display:none; }
    than match the 52px content toolbar. Trim it + the first header's padding so "Overview"
    sits just below the close buttons, like a standard macOS sidebar. No stray separator. */
 html.native-mac .sidebar-logo { height:30px; border-bottom:none; }
-html.native-mac nav > .nav-label:first-child { padding-top:4px; }
+html.native-mac nav > .nav-btn:first-child { margin-top:4px; }
