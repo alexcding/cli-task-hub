@@ -13,6 +13,43 @@
 .act-time { font-size:12px;color:var(--text-3);white-space:nowrap;flex-shrink:0;margin-top:4px;font-variant-numeric:tabular-nums; }
 .act-cat { font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;padding:1px 6px;border-radius:4px;background:var(--surface-hover);color:var(--text-3);margin-left:6px;vertical-align:1px; }
 
+/* Tasks page — live CLI sessions as a card grid. Each card: a working/idle state pill + CLI
+   badge, the GitHub/Jira mark + title, project·branch meta, the goal (what it was asked), the
+   live activity (what it's doing now), and a workflow step progress bar. A working card is marked
+   only by its pulsing live dot — no card outline. Clicking opens/refocuses its tab (pages/tasks.js). */
+.task-count { font-size:12px;color:var(--text-3);font-variant-numeric:tabular-nums; }
+.task-grid { display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px; }
+@keyframes task-pulse { 50% { opacity:.35; } }
+
+.task-card { position:relative;background:var(--surface);border:1px solid var(--border);border-radius:var(--rl);padding:14px 16px;cursor:pointer;overflow:hidden;transition:border-color .15s,box-shadow .15s,transform .06s; }
+.task-card:hover { border-color:var(--border-focus);box-shadow:var(--shadow-md); }
+.task-card:active { transform:translateY(1px); }
+
+.tc-top { display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:11px; }
+.tc-state { display:inline-flex;align-items:center;gap:7px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--text-3); }
+.tc-state.live { color:var(--success); }
+.tc-dot { width:7px;height:7px;border-radius:50%;flex-shrink:0;background:var(--text-3); }
+.tc-state.live .tc-dot { background:var(--success);box-shadow:0 0 0 3px var(--success-bg);animation:task-pulse 1.4s ease-in-out infinite; }
+.tc-cli { font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--text-3);background:var(--surface-hover);padding:2px 7px;border-radius:5px;flex-shrink:0; }
+
+.tc-head { display:flex;align-items:center;gap:9px;min-width:0; }
+.tc-ic { width:18px;height:18px;flex-shrink:0;display:flex;align-items:center;justify-content:center;color:var(--text-2); }
+.tc-ic svg { width:16px;height:16px;display:block; }
+.tc-title { font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
+.tc-meta { font-size:12px;color:var(--text-3);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
+
+.tc-goal { font-size:12.5px;color:var(--text-2);line-height:1.45;margin-top:11px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden; }
+.tc-activity { display:flex;align-items:center;gap:6px;font-size:12.5px;font-weight:500;color:var(--accent);margin-top:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
+.tc-activity-ic { flex-shrink:0;display:flex;color:var(--accent); }
+.tc-activity-ic svg { width:13px;height:13px;display:block; }
+
+.tc-wf { margin-top:13px; }
+.tc-segs { display:flex;gap:3px; }
+.tc-seg { flex:1;height:4px;border-radius:2px;background:var(--border); }
+.tc-seg.done { background:var(--accent); }
+.tc-seg.cur { animation:task-pulse 1.4s ease-in-out infinite; }
+.tc-wf-label { font-size:11px;color:var(--text-3);margin-top:7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
+
 /* Project settings card */
 .project-settings-card { background:var(--surface);border:1px solid var(--border);border-radius:var(--rl);margin-bottom:12px; }
 .project-settings-header { padding:14px 16px;display:flex;align-items:center;gap:10px;cursor:pointer;user-select:none; }
@@ -218,13 +255,18 @@
 .wf-cli-name-claude { color:var(--claude); }
 .wf-cli-name-codex { color:var(--codex); }
 
-/* ── Settings → Agents: CLI hook install rows ──────────────────────────────────────────── */
+/* ── Settings → CLIs: CLI detection + hook install rows ─────────────────────────────────── */
 .hook-row { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:13px 0; border-top:1px solid var(--border); }
 .hook-row:first-of-type { border-top:0; padding-top:4px; }
 .hook-row-text { display:flex; align-items:center; gap:10px; }
 .hook-row-title { font-size:13px; font-weight:500; color:var(--text); }
 .hook-pill { font-size:11.5px; color:var(--text-3); background:var(--surface-hover); border:1px solid var(--border); padding:2px 9px; border-radius:20px; }
 .hook-pill.on { color:var(--success); background:var(--success-bg); border-color:transparent; }
+.hook-pill.warn { color:var(--warn); background:var(--warn-bg); border-color:transparent; cursor:help; }
+/* "Install" help link on the detection-only rows (gh/acli) — opens the CLI's official docs. */
+.cli-install-link { display:inline-flex; align-items:center; gap:4px; font-size:12.5px; font-weight:500; color:var(--accent); text-decoration:none; }
+.cli-install-link:hover { text-decoration:underline; }
+.cli-install-link svg { width:12px; height:12px; display:block; }
 
 .log-toolbar { display:flex; align-items:center; gap:12px; margin-bottom:12px; flex-wrap:wrap; }
 .log-errors { display:flex; align-items:center; gap:5px; margin-left:auto; font-size:12px; color:var(--text-2); cursor:pointer; }

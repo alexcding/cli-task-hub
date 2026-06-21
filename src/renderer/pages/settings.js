@@ -29,20 +29,57 @@ export async function loadSettings() {
   renderDbInspector(dbinfo);
   initUsage();
   loadHookStatus();
+  // CLI detection spawns a process per CLI, so run it lazily — only when the CLIs tab is the one
+  // on screen (e.g. returning to Settings with it already active). Switching to it also triggers it.
+  if (document.getElementById('settings-tab-clis')?.classList.contains('active')) loadCliTools();
 }
 
-// ── Agent CLI hooks (Settings → Agents) ─────────────────────────────────────────
+// ── CLI detection (Settings → CLIs) ─────────────────────────────────────────────
+// Show whether each CLI TaskHub drives is on the user's PATH, so a missing binary
+// explains an empty feed. Server probes with `<bin> --version` (see services/cli-tools.js).
+const CLI_IDS = ['claude', 'codex', 'gh', 'acli'];
+// The login command we point users at when a present CLI is signed out — shown as the pill's tooltip.
+const LOGIN_CMD = { gh: 'gh auth login', acli: 'acli jira auth login' };
+// Each row's pill reflects the worst-known state: missing → not signed in → ready. `authed` is
+// undefined for the agent CLIs (no auth probe), where presence alone is the full story.
+function renderCliStatus(id, info) {
+  const present = !!info?.present;
+  const pill = document.getElementById(`cli-status-${id}`);
+  if (pill) {
+    let text, cls, title = '';
+    if (!present)                   { text = 'Not found';     cls = ''; }
+    else if (info.authed === false) { text = 'Not signed in'; cls = ' warn'; title = `Run \`${LOGIN_CMD[id] || ''}\` in a terminal to sign in`; }
+    else                            { text = 'Installed';     cls = ' on'; }
+    pill.textContent = text;
+    pill.className = `hook-pill${cls}`;
+    if (title) pill.title = title; else pill.removeAttribute('title');
+  }
+  // gh/acli rows carry an "Install" help link (→ official docs); show it only when missing.
+  const link = document.getElementById(`cli-install-${id}`);
+  if (link) link.hidden = present;
+}
+export async function loadCliTools() {
+  try {
+    const d = await api(ROUTES.CLI_TOOLS);
+    CLI_IDS.forEach(id => renderCliStatus(id, d[id]));
+  } catch { /* not reachable (e.g. plain browser) — leave the pills as-is */ }
+}
+
+// ── Workflow hooks (Settings → CLIs) ────────────────────────────────────────────
 // Install a "turn finished" hook into Claude Code / Codex so Workflows get a reliable
-// signal. The server merges idempotently and reports status; we just reflect it.
+// signal. Separate concern from "is the CLI installed" (that's the CLI integration card
+// above). The server merges idempotently and reports status; we reflect it on the pill + button.
 const HOOK_LABEL = { claude: 'Claude Code', codex: 'Codex' };
 function renderHookRow(cli, status) {
   const pill = document.getElementById(`hook-status-${cli}`);
   const btn = document.getElementById(`hook-btn-${cli}`);
-  if (!pill || !btn) return;
+  if (!btn) return;
   const installed = status === 'installed';
-  pill.textContent = installed ? 'Installed' : 'Not installed';
-  pill.className = `hook-pill${installed ? ' on' : ''}`;
-  btn.textContent = installed ? 'Remove' : 'Install';
+  if (pill) {
+    pill.textContent = installed ? 'Installed' : 'Not installed';
+    pill.className = `hook-pill${installed ? ' on' : ''}`;
+  }
+  btn.textContent = installed ? 'Remove hook' : 'Install hook';
   btn.className = `btn btn-sm ${installed ? 'btn-secondary' : 'btn-primary'}`;
   btn.dataset.installed = installed ? '1' : '';
 }
@@ -77,10 +114,13 @@ export function toggleSecret(btn) {
 // index.html (#settings-tab-<name>); all fields stay in the DOM regardless of the
 // active tab, so loadSettings() can populate them whether or not a panel is shown.
 export function switchSettingsTab(tab, btn) {
-  ['appearance','polling','jira','system','agents'].forEach(t => {
+  ['appearance','clis','jira','system'].forEach(t => {
     document.getElementById(`settings-tab-${t}`)?.classList.toggle('active', t === tab);
   });
   setActiveSegTab(btn);
+  // Lazily probe the CLIs (process spawns + a network auth check) only when that tab is opened,
+  // and re-probe on each visit so a just-completed install/login is reflected (no server cache).
+  if (tab === 'clis') loadCliTools();
 }
 
 // ── Review sound ──────────────────────────────────────────────────────────────

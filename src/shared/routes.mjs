@@ -80,10 +80,14 @@ export const ROUTES = Object.freeze({
   POLL: '/api/poll',
   WEBHOOK_GITHUB: '/webhook/github',
 
-  // ── Agent CLI hooks (Settings → Agents): install/inspect the "turn finished" hook ──────
+  // ── CLI detection (Settings → CLIs): which CLIs are installed on PATH ──────────────────
+  CLI_TOOLS: '/api/cli-tools',                // GET presence { claude, codex, gh, acli }
+
+  // ── Agent CLI hooks (Settings → CLIs): install/inspect the "turn finished" hook ──────
   AGENT_HOOKS: '/api/agent-hooks',            // GET status { claude, codex }
   AGENT_HOOK: '/api/agent-hooks/:cli',        // POST install / DELETE remove (server pattern)
   agentHook: cli => `/api/agent-hooks/${cli}`,// client
   HOOK_TURN_START: '/api/hooks/turn-start',   // POST — installed UserPromptSubmit hook pings on turn start
   HOOK_TURN_DONE: '/api/hooks/turn-done',     // POST — installed Stop hook pings on turn end
+  HOOK_ACTIVITY: '/api/hooks/activity',       // POST — installed PreToolUse hook pings with the tool it's about to run
 });

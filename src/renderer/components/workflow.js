@@ -1,7 +1,7 @@
 // Workflow runner: the "automation" button in the terminal toolbar runs a project's saved
 // workflow on the active PR/Jira tab — ensure the worktree, open the split terminal in it, launch
 // the chosen CLI, then type each step's command, advancing on the CLI's Stop hook (turn-done).
-// REQUIRES the chosen CLI's hook installed (Settings → Agents): the Stop hook is the only reliable
+// REQUIRES the chosen CLI's hook installed (Settings → CLIs): the Stop hook is the only reliable
 // "this step finished" signal for long agentic turns, so without it we don't run. Config lives in
 // the Workflows tab (pages/project.js); the turn-done clock lives in terminal.js (whenTurnDone).
 import { ROUTES } from '/shared/routes.mjs';
@@ -28,10 +28,25 @@ const workflowsForTab = tab => {
   return p && Array.isArray(p.workflows) ? p.workflows : [];
 };
 
-// In-flight runs, keyed by tab id → AbortController. The toolbar button reflects the ACTIVE tab:
-// a play triangle when idle, a spinner+stop when that tab's workflow is running.
+// In-flight runs, keyed by tab id → { ac, name, cli, step, total, stepTitle }. The toolbar button
+// reflects the ACTIVE tab: a play triangle when idle, a spinner+stop when that tab's workflow is
+// running. The Tasks page reads `step`/`total` live via workflowRunState (mutated as steps advance).
 const _runs = new Map();
 const isRunning = tabId => _runs.has(tabId);
+
+// Live run state for the Tasks page (pages/tasks.js): which workflow is running on this tab and
+// how far along. null when no workflow is in flight (a bare/manual session). Returns a snapshot
+// copy so callers can't mutate the live record.
+export const workflowRunState = tabId => {
+  const r = _runs.get(tabId);
+  return r ? { name: r.name, cli: r.cli, step: r.step, total: r.total, stepTitle: r.stepTitle } : null;
+};
+
+// Nudge the Tasks page to re-render when a run's step advances (busy↔idle edges already refresh it
+// via the SSE turn hooks; this covers the between-turns step bump). No-op unless that page is open.
+function notifyTasksUpdated() {
+  if (document.querySelector('.page.active')?.id === 'page-tasks') window.loadTasks?.();
+}
 
 // Reflect the active tab: hidden unless its project has a workflow (or a run is in flight);
 // running shows the stop/spinner state.
@@ -51,7 +66,7 @@ export function refreshWorkflowBtn() {
 export function toggleWorkflowRun(e) {
   const tab = state.activeTermId ? null : activeTab();
   if (!tab) return;
-  if (isRunning(tab.id)) { _runs.get(tab.id).abort(); return; }
+  if (isRunning(tab.id)) { _runs.get(tab.id).ac.abort(); return; }
   const wfs = workflowsForTab(tab);
   if (!wfs.length) { toastErr('No workflow configured for this project'); return; }
   if (wfs.length === 1) { runWorkflow(tab, wfs[0]); return; }
@@ -80,10 +95,10 @@ export async function runWorkflow(tab, wf) {
   if (!st || st[wf.cli] !== 'installed') {
     const cli = CLI_LABEL[wf.cli] || wf.cli;
     // A dialog (not a transient toast) because the user must act — and offer to take them there.
-    if (confirm(`The ${cli} hook isn't installed.\n\nWorkflows need it so TaskHub knows when each step finishes. Open Settings → Agents to install it?`)) {
+    if (confirm(`The ${cli} hook isn't installed.\n\nWorkflows need it so TaskHub knows when each step finishes. Open Settings → CLIs to install it?`)) {
       window.showPage?.('settings');
-      const btn = document.querySelector('button[onclick="switchSettingsTab(\'agents\',this)"]');
-      if (btn) window.switchSettingsTab?.('agents', btn);
+      const btn = document.querySelector('button[onclick="switchSettingsTab(\'clis\',this)"]');
+      if (btn) window.switchSettingsTab?.('clis', btn);
     }
     return;
   }
@@ -96,8 +111,10 @@ export async function runWorkflow(tab, wf) {
   }
 
   const ac = new AbortController();
-  _runs.set(tab.id, ac);
+  const run = { ac, name: wf.name || 'Workflow', cli: wf.cli, step: 0, total: steps.length, stepTitle: '' };
+  _runs.set(tab.id, run);
   refreshWorkflowBtn();
+  notifyTasksUpdated();
   try {
     // 1. Ensure the worktree (create for a new Jira task / unbuilt PR branch; reuse if present).
     toast(`${wf.name}: preparing worktree…`);
@@ -142,6 +159,8 @@ export async function runWorkflow(tab, wf) {
     };
     for (let i = 0; i < steps.length; i++) {
       if (ac.signal.aborted) break;
+      run.step = i + 1; run.stepTitle = steps[i].title || '';
+      notifyTasksUpdated();
       toast(`${wf.name}: step ${i + 1}/${steps.length}`);
       await submitLine(termId, resolvePlaceholders(steps[i].command, ctx));
       // Wait for the Stop hook (turn-done) — any duration. Resolves false only on abort or the
@@ -157,5 +176,5 @@ export async function runWorkflow(tab, wf) {
       toast(`${wf.name}: done`);
     }
   } catch (e) { toastErr('Workflow failed: ' + e.message); }
-  finally { _runs.delete(tab.id); refreshWorkflowBtn(); }
+  finally { _runs.delete(tab.id); refreshWorkflowBtn(); notifyTasksUpdated(); }
 }

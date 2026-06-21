@@ -7,6 +7,7 @@ const usage = require('../repositories/usage');
 const poller = require('../services/poller');
 const forwarder = require('../services/webhook-forwarder');
 const agentHooks = require('../services/agent-hooks');
+const cliTools = require('../services/cli-tools');
 const sse = require('./sse');
 const { ROUTES } = require('../../shared/routes.mjs');
 
@@ -73,7 +74,14 @@ function register(app) {
     catch (err) { res.status(500).json({ error: err.message }); }
   });
 
-  // ── Agent CLI hooks (Settings → Agents) ───────────────────────────────────────────
+  // ── CLI detection (Settings → CLIs) ──────────────────────────────────────────────
+  app.get(ROUTES.CLI_TOOLS, (req, res) => {
+    cliTools.detect()
+      .then(d => res.json(d))
+      .catch(err => res.status(500).json({ error: err.message }));
+  });
+
+  // ── Agent CLI hooks (Settings → CLIs) ──────────────────────────────────────────────
   app.get(ROUTES.AGENT_HOOKS, (req, res) => res.json(agentHooks.status()));
   app.post(ROUTES.AGENT_HOOK, (req, res) => {
     try { agentHooks.install(req.params.cli); res.json({ ok: true, status: agentHooks.status() }); }
@@ -94,6 +102,9 @@ function register(app) {
   };
   app.post(ROUTES.HOOK_TURN_START, relayHook('agent-turn-start'));
   app.post(ROUTES.HOOK_TURN_DONE, relayHook('agent-turn-done'));
+  // PreToolUse fires before each tool the CLI runs; the body carries { tool_name, tool_input }.
+  // The renderer turns it into a live "Editing app.js / Running: npm test" status on the Tasks page.
+  app.post(ROUTES.HOOK_ACTIVITY, relayHook('agent-activity'));
 }
 
 module.exports = { register };

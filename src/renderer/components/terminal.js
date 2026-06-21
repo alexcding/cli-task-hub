@@ -60,7 +60,10 @@ export async function attachTermView(id, dir, title, { paired = false, pairKey =
   term.loadAddon(fit);
   term.open(el);
   try { term.loadAddon(new WebglAddon.WebglAddon()); } catch {} // GPU renderer; falls back to DOM
-  const entry = { id, el, term, fit, off: null, offExit: null, cwd: dir, title, paired, pairKey, hasContext: !!hasContext, busy: false };
+  // goal/activity/cli drive the Tasks page's live status: `goal` = what the agent was last asked
+  // (UserPromptSubmit), `activity` = what it's doing right now (PreToolUse, cleared when idle),
+  // `cli` = which agent (claude/codex). All set from CLI-hook SSE events keyed by this id.
+  const entry = { id, el, term, fit, off: null, offExit: null, cwd: dir, title, paired, pairKey, hasContext: !!hasContext, busy: false, goal: '', activity: '', cli: '' };
   // Register in state.terms and wire BOTH listeners before any await. On replay there's an
   // attach round-trip below; if the PTY exits during it, onExit must already be subscribed
   // (and the entry findable) so onTermExit → disposeTerm cleans up instead of leaving a
@@ -107,7 +110,23 @@ export async function attachTermView(id, dir, title, { paired = false, pairKey =
 // turn-done (or disposal): clear the spinner AND resolve any workflow step waiting on this turn.
 function goIdle(entry) {
   if (entry.busy) { entry.busy = false; refreshTermBusy(); }
+  entry.activity = ''; // "what it's doing right now" only applies while a turn is live
   flushTurnWaiters(entry.id, true);
+}
+
+// Tasks-page status, set from the CLI's hooks (see app.js SSE). Pure mutators — the caller
+// re-renders the Tasks page when it's the active view. Only paired terminals carry status.
+export function setTermGoal(id, text) {
+  const e = state.terms.get(id);
+  if (e && e.paired && text) e.goal = String(text);
+}
+export function setTermActivity(id, text) {
+  const e = state.terms.get(id);
+  if (e && e.paired) e.activity = text ? String(text) : '';
+}
+export function setTermCli(id, cli) {
+  const e = state.terms.get(id);
+  if (e && e.paired && cli) e.cli = String(cli);
 }
 
 // Drive a terminal's busy state from a CLI hook (turn-start/turn-done over SSE), keyed by the

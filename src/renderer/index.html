@@ -38,6 +38,7 @@
     <nav>
       <button class="nav-btn active" data-page="dashboard" onclick="showPage('dashboard')"><span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></span> Dashboard</button>
       <button class="nav-btn" data-page="scrumboard" onclick="showPage('scrumboard')"><span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><line x1="9" y1="5" x2="9" y2="19"/><line x1="15" y1="5" x2="15" y2="19"/></svg></span> Scrumboard</button>
+      <button class="nav-btn" data-page="tasks" onclick="showPage('tasks')"><span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 7 2 2 3.5-3.5"/><path d="m3 17 2 2 3.5-3.5"/><line x1="13" y1="6" x2="21" y2="6"/><line x1="13" y1="18" x2="21" y2="18"/></svg></span> Tasks</button>
       <button class="nav-btn" data-page="activity" onclick="showPage('activity')"><span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 8L9 4l-3 8H2"/></svg></span> Activity</button>
 
       <div class="nav-label" style="margin-top:4px">Projects</div>
@@ -105,16 +106,26 @@
         </div>
       </div>
 
+      <!-- TASKS (live CLI sessions + workflow status) -->
+      <div id="page-tasks" class="page">
+        <div style="max-width:860px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+            <span id="tasks-count" class="task-count"></span>
+            <button class="btn btn-secondary btn-sm" onclick="loadTasks()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v5h-5"/></svg> Refresh</button>
+          </div>
+          <div id="tasks-list"></div>
+        </div>
+      </div>
+
       <!-- SETTINGS -->
       <div id="page-settings" class="page">
         <div style="max-width:760px">
 
           <div class="seg-tabs" role="tablist">
             <button class="seg-tab active" onclick="switchSettingsTab('appearance',this)">Appearance</button>
-            <button class="seg-tab" onclick="switchSettingsTab('polling',this)">Polling</button>
+            <button class="seg-tab" onclick="switchSettingsTab('clis',this)">CLIs</button>
             <button class="seg-tab" onclick="switchSettingsTab('jira',this)">Jira</button>
             <button class="seg-tab" onclick="switchSettingsTab('system',this)">System</button>
-            <button class="seg-tab" onclick="switchSettingsTab('agents',this)">Agents</button>
           </div>
 
           <div class="tab-panel active" id="settings-tab-appearance">
@@ -235,7 +246,54 @@
           </div>
           </div><!-- /appearance -->
 
-          <div class="tab-panel" id="settings-tab-polling">
+          <div class="tab-panel" id="settings-tab-clis">
+          <div style="display:flex;flex-direction:column;gap:16px">
+
+          <!-- CLI integration: the CLIs TaskHub drives. Each row's pill reflects whether the
+               binary is on PATH (and, for gh/acli, signed in) via /api/cli-tools; a missing one
+               gets an "Install" link to its official docs. Workflow hooks are a separate card. -->
+          <div class="card">
+            <div class="card-header"><h3>CLI integration</h3></div>
+            <div class="card-pad">
+              <p class="card-intro">TaskHub shells out to these CLIs — Claude Code and Codex for agent workflows, <code class="code-chip">gh</code> and <code class="code-chip">acli</code> for polling GitHub and Jira. The pill shows whether each is installed (and, for <code class="code-chip">gh</code> / <code class="code-chip">acli</code>, signed in).</p>
+              <div class="hook-row">
+                <div class="hook-row-text"><span class="hook-row-title">Claude Code</span><span class="hook-pill" id="cli-status-claude">Checking…</span></div>
+                <a class="cli-install-link" id="cli-install-claude" href="#" hidden onclick="openExternal('https://docs.claude.com/en/docs/claude-code/setup'); return false;">Install <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7M9 7h8v8"/></svg></a>
+              </div>
+              <div class="hook-row">
+                <div class="hook-row-text"><span class="hook-row-title">Codex</span><span class="hook-pill" id="cli-status-codex">Checking…</span></div>
+                <a class="cli-install-link" id="cli-install-codex" href="#" hidden onclick="openExternal('https://github.com/openai/codex'); return false;">Install <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7M9 7h8v8"/></svg></a>
+              </div>
+              <div class="hook-row">
+                <div class="hook-row-text"><span class="hook-row-title">GitHub CLI <code class="code-chip">gh</code></span><span class="hook-pill" id="cli-status-gh">Checking…</span></div>
+                <a class="cli-install-link" id="cli-install-gh" href="#" hidden onclick="openExternal('https://cli.github.com'); return false;">Install <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7M9 7h8v8"/></svg></a>
+              </div>
+              <div class="hook-row">
+                <div class="hook-row-text"><span class="hook-row-title">Jira CLI <code class="code-chip">acli</code></span><span class="hook-pill" id="cli-status-acli">Checking…</span></div>
+                <a class="cli-install-link" id="cli-install-acli" href="#" hidden onclick="openExternal('https://developer.atlassian.com/cloud/acli/guides/install-macos/'); return false;">Install <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7M9 7h8v8"/></svg></a>
+              </div>
+            </div>
+          </div>
+
+          <!-- Workflow hooks: a separate concern from "is the CLI installed". Installs a turn-finished
+               hook into Claude Code / Codex so Workflows + the Tasks live-activity get a reliable signal. -->
+          <div class="card">
+            <div class="card-header"><h3>Workflow hooks</h3></div>
+            <div class="card-pad">
+              <p class="card-intro">Install a turn-finished hook into Claude Code / Codex so TaskHub knows the moment a command finishes — what lets Workflows run reliably and drives the live status on the Tasks page. It's merged into your <code class="code-chip">~/.claude</code> / <code class="code-chip">~/.codex</code> config and leaves your existing hooks untouched.</p>
+              <div class="hook-row">
+                <div class="hook-row-text"><span class="hook-row-title">Claude Code</span><span class="hook-pill" id="hook-status-claude">Checking…</span></div>
+                <button class="btn btn-sm btn-primary" id="hook-btn-claude" onclick="toggleHook('claude')">Install hook</button>
+              </div>
+              <div class="hook-row">
+                <div class="hook-row-text"><span class="hook-row-title">Codex</span><span class="hook-pill" id="hook-status-codex">Checking…</span></div>
+                <button class="btn btn-sm btn-primary" id="hook-btn-codex" onclick="toggleHook('codex')">Install hook</button>
+              </div>
+              <p class="form-hint">Codex may ask you to trust the hook the first time you launch it after installing — approve it once.</p>
+            </div>
+          </div>
+
+          <!-- Polling: gh/acli run on independent timers (no live connection to GitHub/Jira). -->
           <div class="card">
             <div class="card-header"><h3>Polling</h3></div>
             <div class="card-pad">
@@ -253,7 +311,8 @@
               <button class="btn btn-primary" onclick="saveConfig()">Save</button>
             </div>
           </div>
-          </div><!-- /polling -->
+          </div><!-- /clis flex -->
+          </div><!-- /clis -->
 
           <div class="tab-panel" id="settings-tab-jira">
           <div class="card">
@@ -311,24 +370,6 @@
           </div>
           </div><!-- /system flex -->
           </div><!-- /system -->
-
-          <div class="tab-panel" id="settings-tab-agents">
-          <div class="card">
-            <div class="card-header"><h3>CLI integration</h3></div>
-            <div class="card-pad">
-              <p class="card-intro">Install a hook into Claude Code and Codex so TaskHub knows the moment a command finishes — this is what lets Workflows run reliably instead of guessing from terminal output. It's added to your <code class="code-chip">~/.claude</code> / <code class="code-chip">~/.codex</code> config and leaves your existing hooks untouched.</p>
-              <div class="hook-row">
-                <div class="hook-row-text"><span class="hook-row-title">Claude Code</span><span class="hook-pill" id="hook-status-claude">Checking…</span></div>
-                <button class="btn btn-sm btn-primary" id="hook-btn-claude" onclick="toggleHook('claude')">Install</button>
-              </div>
-              <div class="hook-row">
-                <div class="hook-row-text"><span class="hook-row-title">Codex</span><span class="hook-pill" id="hook-status-codex">Checking…</span></div>
-                <button class="btn btn-sm btn-primary" id="hook-btn-codex" onclick="toggleHook('codex')">Install</button>
-              </div>
-              <p class="form-hint">Codex may ask you to trust the hook the first time you launch it after installing — that's expected; approve it once.</p>
-            </div>
-          </div>
-          </div><!-- /agents -->
 
         </div>
       </div>

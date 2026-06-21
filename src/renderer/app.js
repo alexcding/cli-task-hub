@@ -5,6 +5,7 @@ import { state, activeTab, projectById } from './stores/store.js';
 import { resolveGitClientCmd } from './lib/git-clients.js';
 import { api, forceSync } from './services/api.js';
 import { canSplitTerminal } from './lib/util.js';
+import { activityFromTool } from './lib/agent-activity.mjs';
 import { initTheme, setAppTheme, syncThemeFromSettings } from './services/theme.js';
 import { setFontFamily, bumpFontSize, resetFontSize, zoomTarget, syncFontsFromSettings, populateFontMenus } from './services/fonts.js';
 import { renderTabs, renderProjectNav, tabMenu, initSidebarResize } from './components/sidebar.js';
@@ -23,6 +24,7 @@ import * as jiraView from './pages/jira.js';
 import { loadScrumboard, setBoardProject, setBoardFilter, setBoardQuery, applyBoardQuery,
   boardDragStart, boardDragEnd, boardDragOver, boardDragLeave, boardDrop } from './pages/scrumboard.js';
 import { loadLogs, setLogCategory, clearLogs } from './pages/logs.js';
+import { loadTasks, openTaskSession } from './pages/tasks.js';
 import { loadSettings, saveConfig, switchSettingsTab, setReviewSound, previewReviewSound, setActivityNotify, toggleSecret, setGitClient, setGitClientCmd, toggleHook } from './pages/settings.js';
 import { showActivityToast } from './components/activity-toast.js';
 import * as modal from './components/modal.js';
@@ -61,6 +63,9 @@ function showPage(name, projectId) {
     // Edit lives on the page now — the gear button beside the project title (project.js).
     document.querySelectorAll('.nav-btn[data-project]').forEach(b => { if(b.dataset.project===projectId) b.classList.add('active'); });
     loadProjectPage(projectId);
+  } else if (name === 'tasks') {
+    document.getElementById('page-title').textContent = 'Tasks';
+    loadTasks();
   } else if (name === 'activity') {
     document.getElementById('page-title').textContent = 'Activity';
     loadLogs();
@@ -161,6 +166,8 @@ function refreshActivePage() {
     loadDashboard();
   } else if (active === 'page-activity') {
     loadLogs();
+  } else if (active === 'page-tasks') {
+    loadTasks();
   } else if (active === 'page-scrumboard') {
     loadScrumboard();
   } else if (active === 'page-project' && state.activeProjectId) {
@@ -190,11 +197,23 @@ function connectStream() {
     let d = {}; try { d = JSON.parse(e.data); } catch {}
     if (d.type === 'reload') { location.reload(); return; } // dev: a file changed
     if (d.type === 'tabs') return; // tab-set changes drive the tray menu; the sidebar already updated locally
-    // CLI hook signals (installed via Settings → Agents): drive the tab's busy spinner precisely.
+    // CLI hook signals (installed via Settings → CLIs): drive the tab's busy spinner precisely.
     // runId is the terminal id we injected as TASKHUB_RUN_ID; empty for sessions we didn't launch.
-    if (d.type === 'agent-turn-start' || d.type === 'agent-turn-done') {
-      if (d.runId) terminal.setTermBusy(d.runId, d.type === 'agent-turn-start');
-      return; // not a data change — no page refresh
+    if (d.type === 'agent-turn-start' || d.type === 'agent-turn-done' || d.type === 'agent-activity') {
+      if (d.runId) {
+        if (d.type === 'agent-activity') {
+          // PreToolUse: what the agent is about to do, rendered as a live status line.
+          terminal.setTermActivity(d.runId, activityFromTool(d.payload?.tool_name, d.payload?.tool_input));
+        } else {
+          terminal.setTermBusy(d.runId, d.type === 'agent-turn-start');
+          // UserPromptSubmit carries the prompt — the task's goal/description.
+          if (d.type === 'agent-turn-start' && d.payload?.prompt) terminal.setTermGoal(d.runId, d.payload.prompt);
+        }
+        if (d.cli) terminal.setTermCli(d.runId, d.cli);
+      }
+      // The Tasks page shows live status per session, so any hook edge IS a change for it.
+      if (document.querySelector('.page.active')?.id === 'page-tasks') loadTasks();
+      return; // otherwise not a data change — no page refresh
     }
     // Activity toasts are NOT triggered here: the main process is the single decider (it
     // alone can tell if the app is frontmost vs an embedded webview holding focus) and pushes
@@ -231,6 +250,7 @@ Object.assign(window, {
   wfNew, wfDelete, wfSetName, wfSetCli, wfAddStep, wfRemoveStep, wfEditStepCommand, wfEditStepTitle, saveWorkflows,
   loadGitTab, gitTabPick, gitTabShowCommit, gitTabBack, gitTabRemoveWorktree,
   loadLogs, setLogCategory, clearLogs,
+  loadTasks, openTaskSession,
   loadSettings, saveConfig, switchSettingsTab, setReviewSound, previewReviewSound, setActivityNotify, toggleSecret, setGitClient, setGitClientCmd, toggleHook,
   __activityToast: showActivityToast, // main pushes activity toasts here when the app is frontmost
   // project modal

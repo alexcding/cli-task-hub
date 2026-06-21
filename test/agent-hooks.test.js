@@ -12,6 +12,12 @@ test('hook command targets the marker endpoint and stays shell-literal', () => {
   assert.ok(cmd.endsWith("taskhub-workflow-hook'")); // ownership marker (so isOurs can't false-match)
 });
 
+test('the activity (PreToolUse) hook targets its own endpoint', () => {
+  const cmd = hooks._hookCommand('codex', hooks.ENDPOINT_ACTIVITY);
+  assert.match(cmd, /\/api\/hooks\/activity\?cli=codex/);
+  assert.ok(cmd.endsWith("taskhub-workflow-hook'")); // still ours, so uninstall reclaims it
+});
+
 test('claude entries carry a matcher, codex entries do not', () => {
   assert.equal(hooks._entryFor('claude', hooks.ENDPOINT_START).matcher, '.*');
   assert.ok(!('matcher' in hooks._entryFor('codex', hooks.ENDPOINT_START)));
