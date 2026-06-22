@@ -35,6 +35,62 @@ async function ensureTermFont() {
   try { await Promise.all([document.fonts.load('13px "SF Mono"'), document.fonts.load('13px "SFMonoServed"')]); } catch {}
 }
 
+// POSIX single-quote a path so spaces and shell metacharacters survive being typed into
+// the shell (a single quote inside the path is closed, escaped, and reopened).
+const shQuote = p => `'${String(p).replace(/'/g, `'\\''`)}'`;
+
+// Write dropped/pasted file paths into the PTY as quoted, space-separated tokens (with a
+// trailing space so they read as arguments). Marks the terminal as having context.
+function insertTermPaths(entry, paths) {
+  const text = paths.filter(Boolean).map(shQuote).join(' ');
+  if (!text) return false;
+  entry.hasContext = true;
+  taskhub.term.write(entry.id, text + ' ');
+  return true;
+}
+
+// Finder → terminal path entry: drop a file/folder (or paste one copied in Finder) and its
+// absolute path is typed at the prompt. webUtils.getPathForFile (via the preload) resolves
+// the path; it returns '' for clipboard image bytes that aren't a real file.
+//
+// A pasted IMAGE (a screenshot — bytes, not a file) can't be typed as a path. The terminal
+// never carries the image itself; instead Claude Code (a real host process behind the PTY)
+// reads the macOS clipboard directly when it receives Ctrl+V (\x16). ⌘V normally never gets
+// there because the browser/xterm consume it for text paste — so on a ⌘V image paste we
+// forward \x16 to the PTY, letting Claude Code grab the still-present clipboard image. (Plain
+// Ctrl+V already reaches the PTY as \x16 via xterm, so that path works without us.)
+function wireTermDnd(el, entry, term) {
+  el.addEventListener('dragover', e => { e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'; });
+  el.addEventListener('drop', e => {
+    const files = [...(e.dataTransfer?.files || [])];
+    if (!files.length) return; // a text/selection drag — let xterm handle it
+    e.preventDefault();
+    const paths = files.map(f => taskhub.pathForFile(f)).filter(Boolean);
+    if (insertTermPaths(entry, paths)) term.focus();
+  });
+  // Capture phase, on the container: fires before xterm's own paste handler (on its inner
+  // textarea), so we can preventDefault before xterm pastes nothing for a file/image.
+  el.addEventListener('paste', e => {
+    const cd = e.clipboardData;
+    if (!cd) return;
+    const files = [...(cd.files || [])];
+    // A real file (dragged-in or Finder-copied) → insert its path.
+    const paths = files.map(f => taskhub.pathForFile(f)).filter(Boolean);
+    if (paths.length) { e.preventDefault(); e.stopPropagation(); insertTermPaths(entry, paths); return; }
+    // No path, but the clipboard holds an image (a screenshot — checked via files AND items,
+    // since Chromium exposes it through either) → forward Ctrl+V so a clipboard-reading TUI
+    // (Claude Code) reads the image itself, instead of xterm dropping it.
+    const hasImage = files.some(f => f.type.startsWith('image/'))
+      || [...(cd.items || [])].some(it => it.kind === 'file' && it.type.startsWith('image/'));
+    if (hasImage) {
+      e.preventDefault(); e.stopPropagation();
+      entry.hasContext = true;
+      taskhub.term.write(entry.id, '\x16');
+    }
+    // else: plain text → fall through to xterm's native paste.
+  }, true);
+}
+
 // Create an xterm view bound to a fresh PTY (does NOT activate it). `paired` marks a
 // terminal that belongs to a GitHub/Jira tab and `pairKey` is that tab's URL.
 export async function createTermView(cwd, title, { paired = false, pairKey = '' } = {}) {
@@ -76,6 +132,7 @@ export async function attachTermView(id, dir, title, { paired = false, pairKey =
     entry.hasContext = true;
     taskhub.term.write(id, d);
   });
+  wireTermDnd(el, entry, term); // drag/paste a Finder file → its path typed at the prompt
   entry.offExit = taskhub.term.onExit(id, () => onTermExit(id, state.terms.get(id)?.paired));
   // Subscribe to live output FIRST. On replay we queue chunks until the buffered backlog is
   // written, then flush only the chunks newer than the backlog (by seq) — so output produced

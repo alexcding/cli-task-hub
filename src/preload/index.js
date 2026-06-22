@@ -7,7 +7,7 @@
 // as literals below; keep them in sync with src/shared/channels.js (which the non-sandboxed
 // main process does import). Do NOT add a local require here — it throws and silently kills
 // the bridge, leaving window.taskhub undefined.
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 // ── Terminal output fan-out ───────────────────────────────────────────────────
 // Main pushes per-terminal events tagged with the terminal id; we dispatch to the
@@ -38,6 +38,12 @@ contextBridge.exposeInMainWorld('taskhub', {
   // Open the native folder picker; resolves to the chosen absolute path, or null if
   // the dialog was cancelled. Used to set a project's workspace folder.
   chooseFolder: () => ipcRenderer.invoke('choose-folder'),
+
+  // Absolute filesystem path of a dropped/pasted File. File.path was removed in Electron 32+,
+  // so the path must be resolved here via webUtils (the renderer can't). Returns '' for a File
+  // not backed by a real file on disk (e.g. a pasted image blob) — the caller uses that to tell
+  // a dragged-in file from pasted image bytes. Backs terminal drag-and-drop / paste-path.
+  pathForFile: (file) => { try { return webUtils.getPathForFile(file); } catch { return ''; } },
 
   // Preview a review-notification sound through main's afplay (pass a sound's path, or
   // null/'system' for the macOS default). Used by the Settings sound picker.
