@@ -374,19 +374,36 @@
     </div>
   </main>
 
-  <!-- Embedded viewer: shows the active left-nav tab's page in an Electron webview -->
+  <!-- Embedded viewer: shows the active tab's page in an Electron webview (or a local file
+       in the CodeMirror editor). The left content pane carries a Safari-compact horizontal
+       tab bar (content-tabs.js); the sidebar's vertical tabs are a separate, unmirrored set. -->
   <div id="split" class="split" hidden>
     <div class="split-bar">
-      <!-- Webview segment (over the PR pane in split mode) -->
+      <!-- Webview segment (over the PR pane in split mode). Holds the back/home controls,
+           then the Safari-compact horizontal tab bar (#ctabs) for the LEFT content pane:
+           a read-only default tab (the PR/Jira page) + extra web/file tabs + a "+". -->
       <div class="bar-seg bar-wv">
-        <button class="split-btn" id="split-back" title="Back (⌘[)" onclick="splitBack()">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
-        </button>
-        <button class="split-btn" title="Home (default page)" onclick="splitHome()">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9.5 12 3l9 6.5"/><path d="M5 9v11h14V9"/><path d="M9.5 20v-6h5v6"/></svg>
-        </button>
-        <!-- Plain page title — no link, so the toolbar band stays draggable. -->
-        <span class="split-title" id="split-title"></span>
+        <!-- Left controls + right "+" are equal-flex side groups so a lone centered tab lands
+             at true bar-center (not offset by the heavier left cluster). -->
+        <div class="bar-nav">
+          <button class="split-btn nav-lg" id="split-back" title="Back (⌘[)" onclick="splitBack()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+          </button>
+          <button class="split-btn nav-lg" id="split-fwd" title="Forward (⌘])" onclick="splitForward()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
+          </button>
+          <button class="split-btn nav-lg" title="Home (default page)" onclick="splitHome()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9.5 12 3l9 6.5"/><path d="M5 9v11h14V9"/><path d="M9.5 20v-6h5v6"/></svg>
+          </button>
+        </div>
+        <!-- Horizontal content tabs render here (content-tabs.js). The page title lives on the
+             default tab's chip. -->
+        <div class="ctabs" id="ctabs"></div>
+        <div class="bar-add">
+          <button class="ctab-add" id="ctab-add" title="New tab" onclick="addLink()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+          </button>
+        </div>
       </div>
       <!-- Terminal segment (over the terminal pane in split mode, or full-width when a terminal is the sole view).
            The view switch flips the pane between the paired terminal and a read-only

@@ -22,6 +22,7 @@ export const ROUTES = Object.freeze({
   SOUNDS: '/api/sounds',
   TABS: '/api/tabs',
   TASKS: '/api/tasks',                                // durable New Task sessions (GET list / POST upsert / DELETE ?url=)
+  FILE: '/api/file',                                  // local file for the embedded editor (GET ?path= read / PUT write)
 
   // ── Projects ─────────────────────────────────────────────────────────────────
   PROJECTS: '/api/projects',

@@ -136,15 +136,18 @@ function handleShortcut(action) {
     case 'font:smaller':  { const z = zoomTarget(); if (z) bumpFontSize(z, -1); break; }
     case 'font:reset':    { const z = zoomTarget(); if (z) resetFontSize(z); break; }
     // Reload the embedded page when a tab is in view; otherwise re-fetch the active page's data.
-    case 'view:reload':
-      if (tab && tab.started) {
-        tab.loaded = false;
+    case 'view:reload': {
+      // Reload whichever webview is shown in the left pane (default page OR active web link),
+      // not just the default tab's — otherwise ⌘R reloads a hidden webview.
+      const wv = viewer.activeLeftWebview();
+      if (wv && wv.src) {
         viewer.showSplitLoading(true);
-        try { tab.wv.reload(); } catch {}
+        try { wv.reload(); } catch {}
       } else {
         refreshActivePage();
       }
       break;
+    }
   }
 }
 window.__shortcut = handleShortcut; // called by the app menu via executeJavaScript (like __openTab)
@@ -230,12 +233,18 @@ Object.assign(window, {
   showPage, setAppTheme, setFontFamily, bumpFontSize,
   // sidebar / tabs
   activateTab: viewer.activateTab, closeTab: viewer.closeTab, tabMenu,
+  // Safari-compact horizontal content tabs (per-context web/file links)
+  setActiveLink: viewer.setActiveLink, addLink: viewer.addLink, editLink: viewer.editLink,
+  ctabInputKey: viewer.ctabInputKey, ctabInputBlur: viewer.ctabInputBlur,
+  closeLink: viewer.closeLink, closeOtherLinks: viewer.closeOtherLinks, ctabMenu: viewer.ctabMenu,
+  saveLinkFile: viewer.saveLinkFile, openFileTab: viewer.openFileTab,
+  saveTabs: viewer.saveTabs, __refreshTabs: renderTabs,
   openPrSplit: viewer.openPrSplit, openRepo: viewer.openRepo, openExternal: viewer.openExternal, jiraClick: viewer.jiraClick,
   openTabFolder: viewer.openTabFolder, newTask: viewer.newTask,
   folderMenu: viewer.folderMenu, removeTabWorktree: viewer.removeTabWorktree,
   folderChipClick: viewer.folderChipClick,
   // viewer toolbar
-  splitBack: viewer.splitBack, splitHome: viewer.splitHome,
+  splitBack: viewer.splitBack, splitForward: viewer.splitForward, splitHome: viewer.splitHome,
   togglePrSplit: split.togglePrSplit, toggleWorkflowRun,
   setPaneView: split.setPaneView, toggleCommitPop, commitAction,
   setReviewView, histShowCommit,

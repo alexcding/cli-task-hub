@@ -5,16 +5,20 @@
 // can't reach its DOM, and the native path highlights every match + scrolls to the active
 // one for free. The bar itself is shared markup in split-body; it always acts on the active
 // tab's webview (and only when a page — not a terminal — is the view).
-import { state, activeTab } from '../stores/store.js';
+import { state } from '../stores/store.js';
+import { activeLeftWebview } from './viewer.js';
 
 const bar   = () => document.getElementById('find-bar');
 const input = () => document.getElementById('find-input');
 const count = () => document.getElementById('find-count');
 
-// The webview to search: the active tab's, but only when a page (not a terminal) is on screen.
+// The webview to search: whichever page is shown in the LEFT content pane (the default PR
+// page OR the active web link), but only when a page — not a terminal — is on screen. Routes
+// through activeLeftWebview so find follows the active content tab, not just the default.
 function targetWv() {
-  const t = state.activeTermId ? null : activeTab();
-  return t && t.wv && t.started ? t.wv : null;
+  if (state.activeTermId) return null;
+  const wv = activeLeftWebview();
+  return wv && wv.src ? wv : null;
 }
 
 export function findVisible() { return !!(bar() && !bar().hidden); }

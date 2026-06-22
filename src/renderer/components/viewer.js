@@ -17,11 +17,24 @@ import { persistTask } from '../services/tasks.js';
 import { refreshWorkflowBtn } from './workflow.js';
 import { hideDiffPane } from './diff.js';
 import { attachFind, closeFind } from './find.js';
+import { renderContentTabs, playTabIn, playTabOut, markActiveTab } from './content-tabs.js';
+import { ensureEditor, disposeEditor, saveEditor, focusEditor, gotoLine } from './editor.js';
 
 let _tabSeq = 0;
+let _linkSeq = 0;
 
-// Open a URL as a tab in the left nav. New tabs append at the bottom; re-opening an
-// already-open URL just focuses it (keeps its position).
+// A file link's url is `file://<absolute path>`; recover the path for the editor + API.
+export function pathFromUrl(url) {
+  if (!url) return '';
+  return url.startsWith('file://') ? decodeURIComponent(url.slice('file://'.length)) : url;
+}
+// Build the `file://` url that keys a file link (dedupe within a context + persistence).
+export const fileUrl = p => 'file://' + encodeURI(p);
+
+// Open a PR/Jira page as a viewer tab (a "context"). New tabs append; re-opening an
+// already-open url just focuses it. This is the ONLY way a viewer tab is born — the
+// dashboard/sidebar/tray all route here. The horizontal bar's extra web/file tabs are
+// NOT viewer tabs; they're per-context links (see addLink / openFileTab).
 export function openInSplit(url, title, kind, meta = {}) {
   const existing = state.tabs.find(t => t.url === url);
   if (existing) {
@@ -35,37 +48,316 @@ export function openInSplit(url, title, kind, meta = {}) {
   activateTab(tab.id);
 }
 
-// Build a <webview>-backed tab object (not yet added to state.tabs). Shared by
-// openInSplit (new tab) and restoreTabs (rehydrate from the server-saved set).
+// Build a <webview>-backed viewer tab (not yet added to state.tabs). Shared by openInSplit
+// (new tab) and restoreTabs (rehydrate). `savedLinks` rebuilds the context's extra tabs.
 export function createTab(url, title, kind, meta = {}) {
   const id = 'tab' + (++_tabSeq);
+  // repo/branch (for GitHub PRs) let the terminal map to the right project workspace +
+  // worktree without depending on state.projects still holding PR data.
+  // category ('mine'|'review') and login (the PR author) are persisted so a GitHub tab keeps
+  // its sidebar group AND its author avatar across restarts and even after its PR merges and
+  // leaves the snapshot. avatar is the author's avatar frozen as a data URI (freezeAvatar).
+  // links[] are this context's extra horizontal tabs; activeLink is the shown one (null = default).
+  const tab = { id, kind: kind === 'jira' ? 'jira' : 'github', title: title || url, url, wv: null,
+    loaded: false, started: false, repo: meta.repo || '', branch: meta.branch || '',
+    jiraKey: meta.jiraKey || jiraKeyFromUrl(url), prSplit: !!meta.prSplit,
+    paneView: meta.paneView === 'diff' ? 'diff' : 'term', category: meta.category || '',
+    login: meta.login || '', avatar: meta.avatar || '',
+    links: (meta.links || []).map(rebuildLink), activeLink: null };
+
+  const wv = createWebviewEl();
+  tab.wv = wv;
+  wv.addEventListener('did-stop-loading', () => { tab.loaded = true; if (id === state.activeTabId && !tab.activeLink) showSplitLoading(false); });
+  // Keep the Back button's enabled state in sync as the user navigates within the tab.
+  const onNav = () => { if (id === state.activeTabId && !tab.activeLink) updateNavButtons(); };
+  wv.addEventListener('did-navigate', onNav);
+  wv.addEventListener('did-navigate-in-page', onNav);
+  return tab;
+}
+
+// Create a hidden <webview> with the app's shared-session policy, appended to split-body, with
+// find-in-page wired. Shared by the default tab (createTab) and per-context web links
+// (buildLinkWebview) — callers attach their own navigation listeners.
+// Perf: lazy — `src` is set on first activation, so restored/background views don't all load at
+// once; backgroundThrottling pauses hidden ones. NOTE: deliberately NO `partition` — webviews
+// use the default session so they share your GitHub/Jira login cookies AND get the
+// X-Frame-Options stripping applied to session.defaultSession in tray.js (allowFraming).
+function createWebviewEl() {
   const wv = document.createElement('webview');
-  // Perf: (1) lazy — `src` is set on first activation (see activateTab), so restored
-  // and background tabs don't all load at once; (2) throttle when hidden.
-  // NOTE: deliberately NO `partition` — webviews must use the default session so they
-  // share your existing GitHub/Jira login cookies AND get the X-Frame-Options stripping
-  // applied to session.defaultSession in tray.js (allowFraming).
   wv.setAttribute('webpreferences', 'backgroundThrottling=yes');
   wv.setAttribute('allowpopups', '');
   wv.style.display = 'none';
   document.getElementById('split-body').appendChild(wv);
-  // repo/branch (for GitHub PRs) let the terminal map to the right project workspace +
-  // worktree without depending on state.projects still holding PR data.
-  // category ('mine'|'review') and login (the PR author) are persisted like repo/branch
-  // so a GitHub tab keeps its sidebar group AND its author avatar across restarts and even
-  // after its PR merges and leaves the snapshot — neither depends on state.projects still
-  // holding the PR. Live data refreshes both (see views/dashboard.js); '' until known.
-  // avatar is the author's avatar frozen as a data URI at open time (freezeAvatar): a
-  // pinned tab keeps the exact image even if the live PR vanishes or the author changes
-  // their picture. '' until fetched; falls back to the live github.com/<login>.png URL.
-  const tab = { id, kind: kind === 'jira' ? 'jira' : 'github', title: title || url, url, wv, loaded: false, started: false, repo: meta.repo || '', branch: meta.branch || '', jiraKey: meta.jiraKey || jiraKeyFromUrl(url), prSplit: !!meta.prSplit, paneView: meta.paneView === 'diff' ? 'diff' : 'term', category: meta.category || '', login: meta.login || '', avatar: meta.avatar || '' };
-  wv.addEventListener('did-stop-loading', () => { tab.loaded = true; if (id === state.activeTabId) showSplitLoading(false); });
-  // Keep the Back button's enabled state in sync as the user navigates within the tab.
-  const onNav = () => { if (id === state.activeTabId) updateNavButtons(); };
-  wv.addEventListener('did-navigate', onNav);
-  wv.addEventListener('did-navigate-in-page', onNav);
   attachFind(wv);   // route this webview's native find results to the find bar while it's active
-  return tab;
+  return wv;
+}
+
+// ── Horizontal content tabs (per-context links: web pages + local files) ─────────────
+// Extra tabs live on the active viewer tab as `links`. They render in the LEFT pane only;
+// switching among them never touches the right split view. Added two ways only: the user's
+// `+` (addLink → inline url/path entry) or a terminal file link (openFileTab).
+
+// Is this link the one currently shown (active link of the active tab)?
+const linkShown = l => { const t = activeTab(); return !!(t && t.activeLink === l.id); };
+
+// Resolve a link id within the active context → { tab, link } (link null if not found). The
+// single lookup the link handlers share.
+function linkById(id) {
+  const tab = activeTab();
+  return { tab, link: (tab && (tab.links || []).find(l => l.id === id)) || null };
+}
+
+// Tear down a link's left-pane resources (its webview or its editor pane). The single teardown
+// the close paths share (closeLink / closeOtherLinks / commitLinkInput / closeTab / closeSplit).
+function disposeLink(l) {
+  if (l.wv) l.wv.remove();
+  if (l.ed) { disposeEditor(l); l.ed.remove(); }
+}
+
+// Rebuild a persisted link into a runtime link object (no DOM element until shown).
+function rebuildLink(s) {
+  return { id: 'lnk' + (++_linkSeq), kind: s.kind === 'file' ? 'file' : 'web', url: s.url || '',
+    title: s.title || '', icon: s.icon || '', path: s.path || (s.kind === 'file' ? pathFromUrl(s.url) : ''),
+    home: s.url || '', wv: null, ed: null, edView: null, started: false, loaded: false, dirty: false, editing: false };
+}
+function makeWebLink() {
+  return { id: 'lnk' + (++_linkSeq), kind: 'web', url: '', title: '', icon: '', path: '',
+    wv: null, started: false, loaded: false, editing: true };
+}
+function makeFileLink(p) {
+  return { id: 'lnk' + (++_linkSeq), kind: 'file', url: fileUrl(p), title: basename(p) || p, icon: '',
+    path: p, ed: null, edView: null, loaded: false, dirty: false, editing: false };
+}
+
+// Build the <webview> for a web link, lazily, on first show.
+function buildLinkWebview(link) {
+  const wv = createWebviewEl();
+  link.wv = wv;
+  wv.addEventListener('did-stop-loading', () => { link.loaded = true; if (linkShown(link)) showSplitLoading(false); });
+  const onNav = () => { if (linkShown(link)) updateNavButtons(); };
+  // Persist URL/title via the debounced saver — a chatty SPA fires many nav/title events, and
+  // each saveTabs() is a full /api/tabs PUT serializing every tab. Coalesce the bursts.
+  wv.addEventListener('did-navigate', e => { onNav(); if (e.url) { link.url = e.url; saveTabsSoon(); } });
+  wv.addEventListener('did-navigate-in-page', onNav);
+  // After load, the tab adopts the page's title + favicon (a browser tab).
+  wv.addEventListener('page-title-updated', e => { if (e.title) { link.title = e.title; renderContentTabs(); saveTabsSoon(); } });
+  wv.addEventListener('page-favicon-updated', e => { const ic = e.favicons && e.favicons[0]; if (ic) { link.icon = ic; renderContentTabs(); } });
+}
+function buildLinkEditorPane(link) {
+  const ed = document.createElement('div');
+  ed.className = 'editor-pane';
+  ed.style.display = 'none';
+  document.getElementById('split-body').appendChild(ed);
+  link.ed = ed;
+}
+
+// Paint the LEFT content pane for a context: show the active link's element (or the default
+// PR webview), hiding the rest. Does NOT touch the right split view.
+function paintLeft(tab) {
+  if (!tab) return;
+  if (tab.wv) tab.wv.style.display = 'none';
+  (tab.links || []).forEach(l => { if (l.wv) l.wv.style.display = 'none'; if (l.ed) l.ed.style.display = 'none'; });
+  const link = tab.activeLink ? (tab.links || []).find(l => l.id === tab.activeLink) : null;
+  if (!link) {                                   // default tab — the PR/Jira page
+    if (tab.wv) {
+      if (!tab.started) { tab.started = true; tab.wv.setAttribute('src', tab.url); }
+      tab.wv.style.display = '';
+    }
+    return;
+  }
+  if (!link.url) return;                          // blank tab: address field is in the bar; left stays empty
+  if (link.kind === 'file') {
+    if (!link.ed) buildLinkEditorPane(link);
+    link.ed.style.display = '';
+    ensureEditor(link);
+  } else {
+    if (!link.wv) buildLinkWebview(link);
+    if (!link.started) { link.started = true; link.wv.setAttribute('src', link.url); }
+    link.wv.style.display = '';
+  }
+}
+
+// The webview currently shown in the left pane (default tab's or the active web link's),
+// for the toolbar's Back/Home, find-in-page (find.js), and reload (⌘R in app.js). A file
+// link has no webview, so this returns null there.
+export function activeLeftWebview() {
+  const t = activeTab();
+  if (!t) return null;
+  if (t.activeLink) return (t.links || []).find(l => l.id === t.activeLink)?.wv || null;
+  return t.wv || null;
+}
+function activeLeftLoaded() {
+  const t = activeTab();
+  if (!t) return true;
+  if (t.activeLink) { const l = (t.links || []).find(x => x.id === t.activeLink); return l ? (l.kind === 'file' || l.loaded) : true; }
+  return t.loaded;
+}
+
+// Switch which horizontal tab is shown in the left pane. linkId null = the default PR tab.
+// Deliberately does NOT call openPrPanel/clearPrLayout — the right split view stays put.
+export function setActiveLink(linkId) {
+  const tab = activeTab();
+  if (!tab) return;
+  closeFind();
+  tab.activeLink = linkId || null;
+  paintLeft(tab);
+  updateNavButtons();
+  markActiveTab();           // class toggle (not a rebuild) so the pill fill animates
+  saveTabs();
+  const link = linkId ? (tab.links || []).find(l => l.id === linkId) : null;
+  if (link?.kind === 'file' && link.edView) focusEditor(link);
+}
+
+// `+` → open a blank tab whose chip is an inline address field (type a URL or file path).
+export function addLink() {
+  const tab = activeTab();
+  if (!tab) return;
+  tab.links = tab.links || [];
+  const link = makeWebLink();
+  tab.links.push(link);
+  tab.activeLink = link.id;
+  paintLeft(tab);            // nothing to show yet — the inline input lives in the bar
+  renderContentTabs();       // renders + focuses the input
+  playTabIn(link.id);        // grow the new tab in
+}
+
+// Re-enter URL editing on an existing tab (double-click its chip).
+export function editLink(id) {
+  const { link } = linkById(id);
+  if (!link) return;
+  link.editing = true;
+  renderContentTabs();
+}
+
+// Common web TLDs — used to tell a bare host (github.com/x) from a filename (README.md).
+// Without this, the old `\.[a-z]{2,}` test sent `package.json`/`README.md` to https://, since
+// `.json`/`.md` look just like a TLD. This is a dev tool, so ambiguous input favors FILE.
+const WEB_TLD = /\.(?:com|org|net|io|dev|app|ai|gov|edu|co|sh|me|info|xyz|cloud|page|tv|so|gg)(?:[/:?#]|$)/i;
+
+// Decide whether typed text is a web URL or a local file path.
+//  • http(s):// → web as-is.   • leading / ~ ./ ../ or www. → file/web by prefix.
+//  • host with a known web TLD (github.com/x) → web with https://.   • everything else → file.
+function classifyInput(v) {
+  if (/^https?:\/\//i.test(v)) return { kind: 'web', value: v };
+  if (/^(\/|~|\.\.?\/)/.test(v)) return { kind: 'file', value: v };
+  if (/^www\./i.test(v)) return { kind: 'web', value: 'https://' + v };
+  // Only the host part (before the first '/') decides web-vs-file, so `src/app.js` stays a file.
+  if (WEB_TLD.test(v.split('/')[0] + '/')) return { kind: 'web', value: 'https://' + v };
+  return { kind: 'file', value: v };
+}
+
+// Commit the inline address input: turn the tab into a web or file tab and load it.
+function commitLinkInput(id, raw) {
+  const { tab, link } = linkById(id);
+  if (!link) return;
+  const v = (raw || '').trim();
+  if (!v) { closeLink(id); return; }
+  const { kind, value } = classifyInput(v);
+  // Tear down any element from a prior value (e.g. re-edited tab whose kind changed).
+  disposeLink(link); link.wv = null; link.ed = null;
+  link.kind = kind; link.editing = false; link.started = false; link.loaded = false; link.icon = '';
+  if (kind === 'file') { link.path = value; link.url = fileUrl(value); link.title = basename(value) || value; }
+  else { link.url = value; link.title = value; link.home = value; }   // home = the entered URL (Home button)
+  paintLeft(tab);
+  renderContentTabs(true);   // force past the typing guard — the input is still focused here
+  saveTabs();
+}
+
+// Inline-input key handler: Enter commits, Escape cancels (discards a never-loaded blank tab).
+export function ctabInputKey(e, id) {
+  if (e.key === 'Enter') { e.preventDefault(); commitLinkInput(id, e.target.value); }
+  else if (e.key === 'Escape') { e.preventDefault(); cancelLinkInput(id); }
+}
+export function ctabInputBlur(id) {
+  const { link } = linkById(id);
+  if (!link) return;
+  if (!link.url) closeLink(id);                  // a blank tab abandoned without entering anything
+  else if (link.editing) { link.editing = false; renderContentTabs(true); }
+}
+function cancelLinkInput(id) {
+  const { link } = linkById(id);
+  if (!link) return;
+  if (!link.url) closeLink(id);
+  else { link.editing = false; renderContentTabs(true); }
+}
+
+// Close one extra tab (shrink it out first); fall back to the default tab if it was active.
+export function closeLink(id) {
+  const tab = activeTab();
+  if (!tab || !tab.links) return;
+  if (!tab.links.some(l => l.id === id)) return;
+  playTabOut(id, () => {
+    const j = tab.links.findIndex(l => l.id === id);
+    if (j < 0) return;
+    disposeLink(tab.links[j]);
+    tab.links.splice(j, 1);
+    if (tab.activeLink === id) { tab.activeLink = null; paintLeft(tab); updateNavButtons(); }
+    renderContentTabs(true);
+    saveTabs();
+  });
+}
+
+// "Close other tabs" — drop every extra tab, keep the default. The default can't be closed.
+export function closeOtherLinks() {
+  const tab = activeTab();
+  if (!tab || !tab.links?.length) return;
+  tab.links.forEach(disposeLink);
+  tab.links = [];
+  tab.activeLink = null;
+  paintLeft(tab);
+  updateNavButtons();
+  renderContentTabs();
+  saveTabs();
+}
+
+// Right-click an extra tab → close / close others (an in-page menu).
+export function ctabMenu(e, id) {
+  e.preventDefault();
+  return openMenu(e, [
+    { label: 'Close tab', onClick: () => closeLink(id) },
+    { label: 'Close other tabs', onClick: closeOtherLinks },
+  ]);
+}
+
+// Save a file tab (its save button → here; ⌘S is handled inside CodeMirror).
+export function saveLinkFile(id) {
+  const { link } = linkById(id);
+  if (link) saveEditor(link);
+}
+
+// Open a local file as an extra tab in the CURRENT context (a terminal file-link click).
+// Reuses an already-open file in this context; `line` (1-based) jumps there.
+export function openFileTab(filePath, line = 0) {
+  if (!filePath) return;
+  // Resolve the owning context: the active viewer tab, or — when a full-screen (standalone)
+  // terminal is showing (activeTabId is null then) — the tab that owns the active terminal,
+  // found by its pairKey. Without this, terminal file-links no-op in a solo task terminal.
+  let tab = activeTab();
+  if (!tab && state.activeTermId) {
+    const term = state.terms.get(state.activeTermId);
+    if (term?.pairKey) tab = state.tabs.find(t => t.url === term.pairKey) || null;
+  }
+  if (!tab) return;
+  tab.links = tab.links || [];
+  const want = normFilePath(filePath);
+  let link = tab.links.find(l => l.kind === 'file' && normFilePath(l.path) === want);
+  if (!link) { link = makeFileLink(filePath); tab.links.push(link); }
+  if (line) link._pendingLine = line;
+  tab.activeLink = link.id;
+  if (state.activeTabId === tab.id) {
+    paintLeft(tab);
+    renderContentTabs(true);
+  } else {
+    activateTab(tab.id);   // bring the owning context into view (leaving the solo terminal)
+  }
+  saveTabs();
+  if (line && link.edView) gotoLine(link, line);
+}
+
+// Light path normalization for the dedup key (collapse `//` and `/./`) so the same file
+// reached two ways doesn't open two editors. Not a full realpath — symlinks/`..` still differ.
+function normFilePath(p) {
+  return String(p || '').replace(/\/{2,}/g, '/').replace(/\/\.(?=\/)/g, '');
 }
 
 // ── Tab persistence ─────────────────────────────────────────────────────────────
@@ -82,13 +374,21 @@ export function saveTabs() {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      tabs: state.tabs.map(t => ({ kind: t.kind, title: t.title, url: t.url, repo: t.repo, branch: t.branch, jiraKey: t.jiraKey, prSplit: t.prSplit, paneView: t.paneView, category: t.category, login: t.login, avatar: t.avatar })),
+      tabs: state.tabs.map(t => ({ kind: t.kind, title: t.title, url: t.url, repo: t.repo, branch: t.branch, jiraKey: t.jiraKey, prSplit: t.prSplit, paneView: t.paneView, category: t.category, login: t.login, avatar: t.avatar,
+        // The context's extra horizontal tabs (web pages + local files). Only committed ones
+        // (with a url) — a blank, never-entered tab isn't persisted.
+        links: (t.links || []).filter(l => l.url).map(l => ({ kind: l.kind, url: l.url, title: l.title, path: l.path || '', icon: l.icon || '' })) })),
       active: active ? active.url : null,
     }),
   }).catch(() => {});
   // Note: we don't push a tray refresh here. The tray pulls the latest saved tabs itself when
   // it's about to open (main's blur handler → tabs-only refresh), so persisting is enough.
 }
+
+// Debounced saveTabs for high-frequency triggers (web-link in-page navigations / title churn),
+// so a busy SPA doesn't fire a full /api/tabs PUT per event. Trailing-edge, 800ms.
+let _saveTabsTimer = 0;
+export function saveTabsSoon() { clearTimeout(_saveTabsTimer); _saveTabsTimer = setTimeout(saveTabs, 800); }
 
 export async function restoreTabs() {
   // Read the saved set first. If the server is briefly unreachable, retry a few times
@@ -105,7 +405,7 @@ export async function restoreTabs() {
     // A tab opened from the tray may already be in state.tabs by the time restore lands —
     // skip it so we don't double-add.
     if (t && t.url && !state.tabs.some(x => x.url === t.url)) {
-      state.tabs.push(createTab(t.url, t.title, t.kind, { repo: t.repo, branch: t.branch, jiraKey: t.jiraKey, prSplit: t.prSplit, paneView: t.paneView, category: t.category, login: t.login, avatar: t.avatar }));
+      state.tabs.push(createTab(t.url, t.title, t.kind, { repo: t.repo, branch: t.branch, jiraKey: t.jiraKey, prSplit: t.prSplit, paneView: t.paneView, category: t.category, login: t.login, avatar: t.avatar, links: Array.isArray(t.links) ? t.links : [] }));
     }
   }
   state.tabsReady = true;
@@ -127,20 +427,17 @@ export function activateTab(id) {
   state.activeTabId = id;
   state.activeTermId = null;                  // showing a page, not a terminal
   document.body.classList.remove('viewing-term');
-  // Lazy load: only kick off the page load the first time a tab is shown.
   const cur = state.tabs.find(t => t.id === id);
-  if (cur && cur.wv && !cur.started) { cur.started = true; cur.wv.setAttribute('src', cur.url); }
   hideAllPanes();
-  if (cur && cur.wv) cur.wv.style.display = '';
+  if (cur) paintLeft(cur);                    // show the active link, or the default PR page
   document.getElementById('split').hidden = false;
   document.body.classList.add('viewing-tab');
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active')); // a tab is the view now
-  const t = activeTab();
-  showSplitLoading(t ? !t.loaded : false);
+  showSplitLoading(cur ? !activeLeftLoaded() : false);
   updateNavButtons();
-  // PR ↔ terminal split: the right panel is per-tab (`prSplit`, default OFF) — a fresh link shows
-  // just the page. When it IS expanded, openPrPanel shows the live terminal, recreates the task's
-  // terminal if its worktree exists on disk, or shows the New Task empty state.
+  // PR ↔ terminal split: the right panel is per-tab (`prSplit`, default OFF). It belongs to the
+  // CONTEXT (the default tab), not to which horizontal link is showing — switching links won't
+  // re-run this (see setActiveLink). When expanded, openPrPanel shows the live terminal, etc.
   if (canSplitTerminal(cur) && cur.prSplit) openPrPanel(cur);
   else clearPrLayout();
   document.getElementById('split-toggle-term')?.classList.toggle('on', !!(canSplitTerminal(cur) && cur.prSplit));
@@ -148,10 +445,14 @@ export function activateTab(id) {
   saveTabs();
 }
 
-// Hide every pane in the viewer (webview tabs + terminals + diff). The caller then
-// shows one; applyPrLayout re-adds pane-diff when the incoming tab is in diff view.
+// Hide every left-pane element (default webviews + per-context link webviews/editor panes) +
+// terminals + diff. The caller then shows one; applyPrLayout re-adds pane-diff when the
+// incoming tab is in diff view.
 export function hideAllPanes() {
-  state.tabs.forEach(t => { if (t.wv) t.wv.style.display = 'none'; });
+  state.tabs.forEach(t => {
+    if (t.wv) t.wv.style.display = 'none';
+    (t.links || []).forEach(l => { if (l.wv) l.wv.style.display = 'none'; if (l.ed) l.ed.style.display = 'none'; });
+  });
   for (const t of state.terms.values()) t.el.style.display = 'none';
   hideDiffPane();
   document.body.classList.remove('pane-diff');
@@ -175,6 +476,7 @@ export function closeTab(id) {
   const tab = state.tabs[i];
   closePairedTerm(tab);
   tab.wv?.remove();
+  (tab.links || []).forEach(disposeLink);
   state.tabs.splice(i, 1);
   if (state.activeTabId === id) {
     const next = state.tabs[i] || state.tabs[i - 1];
@@ -188,7 +490,7 @@ export function closeTab(id) {
 
 export function closeSplit() {
   closeFind();
-  state.tabs.forEach(t => { closePairedTerm(t); t.wv?.remove(); });
+  state.tabs.forEach(t => { closePairedTerm(t); t.wv?.remove(); (t.links || []).forEach(disposeLink); });
   state.tabs = []; state.activeTabId = null; state.activeTermId = null;
   document.getElementById('split').hidden = true;
   document.body.classList.remove('viewing-tab', 'viewing-term', 'pr-split', 'pane-diff'); // restore <main>
@@ -196,30 +498,32 @@ export function closeSplit() {
   saveTabs();
 }
 
-export function splitBack()    { const t = activeTab(); try { if (t && t.wv.canGoBack()) t.wv.goBack(); } catch {} }
-export function splitForward() { const t = activeTab(); try { if (t && t.wv.canGoForward()) t.wv.goForward(); } catch {} } // no toolbar button — ⌘] only
-export function splitHome()  { const t = activeTab(); if (t && t.wv) { t.loaded = false; showSplitLoading(true); t.wv.loadURL(t.url); } } // back to the tab's default link
+// Back/Home act on whichever webview is shown in the left pane — the default PR page or the
+// active web link (a file tab has no webview, so these no-op there).
+export function splitBack()    { const wv = activeLeftWebview(); try { if (wv?.canGoBack()) wv.goBack(); } catch {} }
+export function splitForward() { const wv = activeLeftWebview(); try { if (wv?.canGoForward()) wv.goForward(); } catch {} } // no toolbar button — ⌘] only
+// Home → the shown pane's DEFAULT page: the PR/Jira url for the default tab, or a web link's
+// originally-entered url. (Not "reload current" — that lost the go-home behavior.)
+export function splitHome() {
+  const t = activeTab();
+  const wv = activeLeftWebview();
+  if (!t || !wv) return;
+  const link = t.activeLink ? (t.links || []).find(l => l.id === t.activeLink) : null;
+  const home = link ? (link.home || link.url) : t.url;
+  if (!home) return;
+  try { showSplitLoading(true); wv.loadURL(home); } catch {}
+}
 export function showSplitLoading(on) { document.getElementById('split-loading').hidden = !on; }
-// Grey out Back when the active tab has no history to go back to.
-export function updateNavButtons() { const t = activeTab(); const b = document.getElementById('split-back'); if (b) { let can = false; try { can = !!(t && t.wv && t.started && t.wv.canGoBack()); } catch {} b.disabled = !can; } }
+// Grey out Back when the shown webview has no history to go back to.
+export function updateNavButtons() { const wv = activeLeftWebview(); const b = document.getElementById('split-back'); if (b) { let can = false; try { can = !!(wv && wv.canGoBack()); } catch {} b.disabled = !can; } }
 
 // Titles: PR/page title in the webview segment. In split mode the pane's name lives on
 // the active view-switch button (segmented control), so the segment title stays empty;
 // a solo full-width terminal (no switch visible) still gets the "Terminal" label.
 export function updateTitles() {
-  const st = document.getElementById('split-title');
+  // The webview segment's title now lives on the content bar's default chip (content-tabs.js),
+  // so there's no #split-title to fill here — only the terminal segment's label remains.
   const tt = document.getElementById('term-title');
-  if (st) {
-    const t = state.activeTermId ? null : activeTab();
-    if (!t) { st.innerHTML = ''; }
-    else {
-      const login = t.kind === 'github' ? (prByUrl(t.url)?.author?.login || t.login) : '';
-      // Prefer the frozen data URI; fall back to the live github.com URL until it's fetched.
-      const src = ghAvatarSrc(login, t.avatar);
-      const avatar = src ? `<img src="${src}" alt="" title="${esc(login)}" loading="lazy">` : '';
-      st.innerHTML = avatar + `<span class="stitle-text">${esc(t.title || '')}</span>`;
-    }
-  }
   if (tt) tt.textContent = (state.activeTermId && visibleTerm()) ? 'Terminal' : '';
   updateFolderChip();
   refreshWorkflowBtn();

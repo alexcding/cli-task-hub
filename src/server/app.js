@@ -22,7 +22,10 @@ const app = express();
 // default 100kb cap so one route's needs don't widen the whole API's buffer ceiling.
 const jsonBig = express.json({ limit: '15mb' });
 const jsonStd = express.json();
-app.use((req, res, next) => (req.path === ROUTES.GIT_DISCARD ? jsonBig : jsonStd)(req, res, next));
+// /api/git/discard carries a patch and /api/file carries file content; both can exceed
+// the default 100kb cap, so route them through the bigger parser. Everything else keeps
+// the tight ceiling so one route's needs don't widen the whole API's buffer.
+app.use((req, res, next) => (req.path === ROUTES.GIT_DISCARD || req.path === ROUTES.FILE ? jsonBig : jsonStd)(req, res, next));
 // Shared cross-process contracts (src/shared/*.mjs) exposed to the renderer at /shared.
 // The page imports e.g. /shared/constants.mjs; Node consumers require() the same files
 // from disk. This surface stays stable regardless of where the renderer's files live.
@@ -55,6 +58,7 @@ try { const dir = SF_MONO_DIRS.find(d => require('fs').existsSync(d)); if (dir) 
 require('./routes/config').register(app);
 require('./routes/projects').register(app, PORT);
 require('./routes/git').register(app);
+require('./routes/file').register(app);
 require('./routes/prs').register(app);
 require('./routes/jira').register(app);
 require('./routes/system').register(app);

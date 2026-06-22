@@ -6,6 +6,7 @@ import { esc, ghAvatarSrc } from '../lib/util.js';
 import { ICON, TAB_ICON } from '../lib/icons.js';
 import { ciInfo } from './cards.js';
 import { closeTab, saveTabs, updateTitles } from './viewer.js';
+import { renderContentTabs } from './content-tabs.js';
 
 // Render the open tabs as grouped rows in the left nav, and show the active tab's
 // title in the viewer header.
@@ -21,6 +22,7 @@ export function renderTabs() {
       initTabSort();
     }
   }
+  renderContentTabs();   // the active context's horizontal tab bar (left content pane)
   updateTitles();
   refreshTermBusy();
 }

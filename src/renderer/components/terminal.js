@@ -2,7 +2,7 @@
 // with webview tabs (only one pane shown at a time); each terminal is an xterm view
 // bound to a main-process PTY by id.
 import { state, activeTab } from '../stores/store.js';
-import { codeFontStack } from '../lib/util.js';
+import { codeFontStack, loadScript } from '../lib/util.js';
 import { agentOutput } from '../lib/terminal-tail.mjs';
 import { termTheme } from '../services/theme.js';
 import { renderTabs, refreshTermBusy } from './sidebar.js';
@@ -14,10 +14,6 @@ import { clearPrLayout } from './split.js';
 let _xtReady = null;
 export function loadXterm() {
   if (_xtReady) return _xtReady;
-  const loadScript = src => new Promise((res, rej) => {
-    const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = () => rej(new Error('failed to load ' + src));
-    document.head.appendChild(s);
-  });
   _xtReady = (async () => {
     const css = document.createElement('link'); css.rel = 'stylesheet'; css.href = '/vendor/xterm.css'; document.head.appendChild(css);
     await loadScript('/vendor/xterm.js');
@@ -93,6 +89,50 @@ function wireTermDnd(el, entry, term) {
 
 // Create an xterm view bound to a fresh PTY (does NOT activate it). `paired` marks a
 // terminal that belongs to a GitHub/Jira tab and `pairKey` is that tab's URL.
+// Detect file paths printed in terminal output (Claude Code / build tools / stack traces) and
+// make them clickable — opening the file in an editor tab. Matches path-with-extension tokens
+// that contain a slash (so a bare word isn't a false positive), with an optional :line[:col].
+// Registered per terminal; failures are swallowed so a link-API change never breaks the term.
+const FILE_LINK_RE = /(?:~\/|\.{1,2}\/|\/)?(?:[\w.@+-]+\/)+[\w.@+-]+\.[\w]+(?::\d+(?::\d+)?)?/g;
+
+function wireFileLinks(term, getEntry) {
+  try {
+    term.registerLinkProvider({
+      provideLinks(lineNo, callback) {
+        const line = term.buffer.active.getLine(lineNo - 1);
+        if (!line) { callback(undefined); return; }
+        const text = line.translateToString(true);
+        const links = [];
+        FILE_LINK_RE.lastIndex = 0;
+        let m;
+        while ((m = FILE_LINK_RE.exec(text))) {
+          const raw = m[0];
+          if (raw.includes('://')) continue;                 // part of a URL, not a file path
+          links.push({
+            text: raw,
+            range: { start: { x: m.index + 1, y: lineNo }, end: { x: m.index + raw.length, y: lineNo } },
+            activate: () => openFileLink(raw, getEntry?.()),
+          });
+        }
+        callback(links.length ? links : undefined);
+      },
+    });
+  } catch { /* link provider API unavailable — terminals still work */ }
+}
+
+// Resolve a clicked path token (strip a trailing :line[:col], join a relative path to the
+// terminal's cwd) and open it in an editor tab at the given line.
+function openFileLink(raw, entry) {
+  let p = raw, line = 0;
+  const mm = raw.match(/^(.*?):(\d+)(?::\d+)?$/);
+  if (mm) { p = mm[1]; line = parseInt(mm[2], 10); }
+  if (!p.startsWith('/') && !p.startsWith('~')) {
+    const cwd = entry?.cwd ? entry.cwd.replace(/\/$/, '') : '';
+    p = cwd ? cwd + '/' + p : p;
+  }
+  window.openFileTab?.(p, line);
+}
+
 export async function createTermView(cwd, title, { paired = false, pairKey = '' } = {}) {
   await loadXterm();
   const { id, cwd: dir, title: t, pairKey: key, hasContext } = await taskhub.term.create({ cwd: cwd || undefined, paired, pairKey });
@@ -116,6 +156,7 @@ export async function attachTermView(id, dir, title, { paired = false, pairKey =
   const fit = new FitAddon.FitAddon();
   term.loadAddon(fit);
   term.open(el);
+  wireFileLinks(term, () => state.terms.get(id)); // ⌘-click a printed file path → open it in an editor tab
   // GPU renderer. The WebGL context can be lost (GPU reset, sleep/wake, the window backgrounded);
   // when it is, the addon stops painting and the terminal would freeze blank. Dispose it on loss so
   // xterm falls back to its DOM renderer (slower, but always paints) instead of a dead screen.
