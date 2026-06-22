@@ -116,7 +116,14 @@ export async function attachTermView(id, dir, title, { paired = false, pairKey =
   const fit = new FitAddon.FitAddon();
   term.loadAddon(fit);
   term.open(el);
-  try { term.loadAddon(new WebglAddon.WebglAddon()); } catch {} // GPU renderer; falls back to DOM
+  // GPU renderer. The WebGL context can be lost (GPU reset, sleep/wake, the window backgrounded);
+  // when it is, the addon stops painting and the terminal would freeze blank. Dispose it on loss so
+  // xterm falls back to its DOM renderer (slower, but always paints) instead of a dead screen.
+  try {
+    const webgl = new WebglAddon.WebglAddon();
+    webgl.onContextLoss(() => { try { webgl.dispose(); } catch {} });
+    term.loadAddon(webgl);
+  } catch {} // WebGL unavailable → xterm uses the DOM renderer
   // Tasks-page status fields: `cli` (claude/codex, from the hook SSE events) labels the session;
   // `summary`/`state` hold the last headless-analysis result for the card; `summaryFor` is the
   // message text we last analyzed (dedupe key). The live preview is read off the xterm buffer.
@@ -131,6 +138,17 @@ export async function attachTermView(id, dir, title, { paired = false, pairKey =
   term.onData(d => {
     entry.hasContext = true;
     taskhub.term.write(id, d);
+  });
+  // Shift+Enter → newline instead of submit. xterm sends CR (\r) for BOTH plain and Shift+Enter,
+  // so a TUI can't tell them apart; we intercept the combo and send LF (\x0a, == Ctrl+J), which
+  // Claude Code / Codex treat as "insert newline". Plain Enter still sends \r (submit). Returning
+  // false stops xterm's default handling (so onData doesn't also fire a \r); we write LF ourselves.
+  term.attachCustomKeyEventHandler(e => {
+    if (e.key === 'Enter' && e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey) {
+      if (e.type === 'keydown') { entry.hasContext = true; taskhub.term.write(id, '\n'); }
+      return false;
+    }
+    return true;
   });
   wireTermDnd(el, entry, term); // drag/paste a Finder file → its path typed at the prompt
   entry.offExit = taskhub.term.onExit(id, () => onTermExit(id, state.terms.get(id)?.paired));
