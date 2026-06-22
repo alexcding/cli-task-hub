@@ -57,6 +57,14 @@ function register(app) {
     sse.publishTabs(); // notify subscribers (renderer sidebar + tray menu) the tab set changed
     res.json({ ok: true });
   }));
+
+  // ── Tasks (taskhub.db — durable New Task sessions, survive restart) ──────────────
+  // GET lists them; POST upserts one (keyed by url, sent when a task is created); DELETE ?url=
+  // removes one (the Tasks-page trash). Unlike tabs they aren't a full-set PUT — tasks are
+  // added/removed one at a time over their lifecycle.
+  app.get(ROUTES.TASKS, wrap((req, res) => res.json(configdb.getTasks())));
+  app.post(ROUTES.TASKS, wrap((req, res) => { configdb.upsertTask(req.body || {}); res.json({ ok: true }); }));
+  app.delete(ROUTES.TASKS, wrap((req, res) => { if (req.query.url) configdb.removeTask(String(req.query.url)); res.json({ ok: true }); }));
 }
 
 module.exports = { register };

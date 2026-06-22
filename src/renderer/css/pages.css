@@ -38,6 +38,13 @@
 .tc-state.err { color:var(--danger); }
 .tc-state.err .tc-dot { background:var(--danger); }
 .tc-cli { font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--text-3);background:var(--surface-hover);padding:2px 7px;border-radius:5px;flex-shrink:0; }
+.tc-actions { display:inline-flex;align-items:center;gap:8px;flex-shrink:0; }
+/* Trash bin (top-right): stop this session's terminal. Faint until the card is hovered, then
+   reveals; reddens on its own hover. Above the card click target via stopPropagation. */
+.tc-del { display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;padding:0;border:none;border-radius:6px;background:none;color:var(--text-3);cursor:pointer;opacity:0;transition:opacity .15s,color .15s,background .15s; }
+.tc-del svg { width:15px;height:15px;display:block; }
+.task-card:hover .tc-del { opacity:.75; }
+.tc-del:hover { opacity:1;color:var(--danger);background:var(--danger-bg); }
 
 .tc-head { display:flex;align-items:center;gap:9px;min-width:0; }
 .tc-ic { width:18px;height:18px;flex-shrink:0;display:flex;align-items:center;justify-content:center;color:var(--text-2); }
@@ -52,6 +59,8 @@
 .tc-term-empty { color:var(--text-3);font-style:italic; }
 /* Analyzed one-line summary (shown once a session is idle) — prose, not console. */
 .tc-summary { margin-top:11px;font-size:13px;line-height:1.45;color:var(--text-2);display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden; }
+/* Dormant task (no live terminal — resumable): dim, italic resume hint in place of a preview. */
+.tc-dormant { color:var(--text-3);font-style:italic; }
 
 .tc-wf { margin-top:13px; }
 .tc-segs { display:flex;gap:3px; }

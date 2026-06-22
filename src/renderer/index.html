@@ -387,14 +387,6 @@
         </button>
         <!-- Plain page title — no link, so the toolbar band stays draggable. -->
         <span class="split-title" id="split-title"></span>
-        <!-- Local folder for this tab (project workspace, or its git worktree). Click opens it
-             in the chosen git client (Settings → Appearance) when one is set — wearing that
-             client's mark — else reveals in Finder; right-click for both. Filled by
-             updateFolderChip in viewer.js. -->
-        <button class="folder-chip" id="split-folder" hidden onclick="folderChipClick()" oncontextmenu="return folderMenu(event)"></button>
-        <!-- Plain repo + known PR branch → create a worktree for it. viewer.js fills the
-             worktree glyph, sets the branch, and toggles visibility. -->
-        <button class="split-btn folder-add" id="split-folder-add" hidden onclick="createTabWorktree()"></button>
       </div>
       <!-- Terminal segment (over the terminal pane in split mode, or full-width when a terminal is the sole view).
            The view switch flips the pane between the paired terminal and a read-only
@@ -436,6 +428,15 @@
           <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
         </button>
       </div>
+      <!-- Right-pane empty state: a GitHub/Jira tab with no terminal yet shows no Terminal/Review
+           tabs — just this New Task button. It creates the branch's worktree (if absent) then opens
+           the terminal in it (newTask in viewer.js). Occupies the terminal slot; split.js toggles it. -->
+      <div class="term-empty" id="term-empty" hidden>
+        <button class="new-task-cta" onclick="newTask()">
+          <span class="ntc-ic"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 7l4 5-4 5"/><path d="M12 17h7"/></svg></span>
+          <span>New Task</span>
+        </button>
+      </div>
       <!-- Diff pane: shares the terminal's slot in the split; diff.js renders into it. -->
       <div class="diff-pane" id="diff-pane" style="display:none"></div>
       <!-- Inline commit history for the tab's worktree, drawn over the diff pane when the
@@ -446,30 +447,39 @@
       <div class="diff-confirm" id="diff-confirm" hidden></div>
       <!-- Bottom action bar pinned to the foot of the right pane. The top toolbar stays
            clear of actions; everything actionable lives here. Terminal view shows the
-           .pf-term buttons (Clear / Run workflow); the Changes view (body.pane-diff) shows
+           .pf-term buttons (Run workflow); the Changes view (body.pane-diff) shows
            the .pf-diff buttons (commit History / Commit). CSS swaps which set is visible. -->
       <div class="pane-foot" id="pane-foot">
         <div class="pf-side pf-left">
-          <button class="pf-btn pf-term" id="pf-clear" title="Clear terminal" onclick="clearVisibleTerm()">
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 16 3 18l4 4h6"/><path d="m13 22 8-8a2 2 0 0 0 0-3l-6-6a2 2 0 0 0-3 0L4 13a2 2 0 0 0 0 3l4 4"/></svg><span>Clear</span>
-          </button>
+          <!-- Local folder for this task (the worktree, or the project workspace before one exists):
+               identifies the worktree the terminal runs in, and is the git-client shortcut. Click
+               opens it in the chosen git client (Settings → Appearance) wearing its mark, else reveals
+               in Finder; right-click for both. Terminal view only (.pf-term hides it in Review).
+               Filled by updateFolderChip. -->
+          <button class="folder-chip pf-term" id="split-folder" hidden onclick="folderChipClick()" oncontextmenu="return folderMenu(event)"></button>
           <!-- Review sub-view switch: the working diff (current changes) vs the branch's commit
                history. Both always reachable — neither is a toggle you have to turn off. -->
           <div class="seg-tabs review-switch pf-diff">
-            <button class="seg-tab on" id="review-changes" title="Working changes" onclick="setReviewView('changes')">
-              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4.5v6"/><path d="M9 7.5h6"/><path d="M9 16.5h6"/></svg><span>Changes</span>
-            </button>
             <button class="seg-tab" id="review-history" title="Commit history" onclick="setReviewView('history')">
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l3 2"/></svg><span>History</span>
+            </button>
+            <button class="seg-tab on" id="review-changes" title="Working changes" onclick="setReviewView('changes')">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4.5v6"/><path d="M9 7.5h6"/><path d="M9 16.5h6"/></svg><span>Changes</span>
             </button>
           </div>
         </div>
         <div class="pf-side pf-right">
-          <button class="pf-btn pf-term" id="term-workflow" title="Run workflow" onclick="toggleWorkflowRun(event)" hidden>
-            <svg class="wf-play" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="7 4 19 12 7 20 7 4"/></svg>
-            <span class="wf-run" aria-hidden="true"><svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><rect x="8.5" y="8.5" width="7" height="7" rx="1.5"/></svg></span>
-            <span class="pf-label">Run</span>
-          </button>
+          <!-- Run + workflow picker as one outlined segmented control: Run (left) executes the workflow
+               selected in the picker (right), from the project's saved workflows (Workflows tab).
+               refreshWorkflowBtn (workflow.js) shows/hides the whole group (none → hidden; running → just
+               the Stop button, picker hidden) and populates the options. -->
+          <div class="wf-group pf-term" id="wf-group" hidden>
+            <button class="pf-btn wf-btn" id="term-workflow" title="Run the selected workflow" onclick="toggleWorkflowRun()">
+              <svg class="wf-play" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 4 13.5h7L11 22l9-11.5h-7z"/></svg>
+              <span class="wf-run" aria-hidden="true"><svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><rect x="8.5" y="8.5" width="7" height="7" rx="1.5"/></svg></span>
+            </button>
+            <select class="wf-select" id="wf-select" title="Workflow to run"></select>
+          </div>
           <button class="pf-btn pf-diff" id="commit-btn" title="Commit changes" onclick="toggleCommitPop()">
             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.5"/><path d="M2.5 12h6"/><path d="M15.5 12h6"/></svg><span class="cb-label">Commit</span>
           </button>

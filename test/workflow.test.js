@@ -20,6 +20,13 @@ test('wfBranchName: feature/<key>-<summary>, drops an empty summary cleanly', as
   assert.equal(wfBranchName('REC-12', null), 'feature/rec-12');
 });
 
+test('jiraTaskBranch: <KEY>-<summary-slug>, key kept verbatim, empty summary → just the key', async () => {
+  const { jiraTaskBranch } = await mod;
+  assert.equal(jiraTaskBranch('RECORD-648', 'Display content rating'), 'RECORD-648-display-content-rating');
+  assert.equal(jiraTaskBranch('RECORD-648', ''), 'RECORD-648'); // no trailing dash
+  assert.equal(jiraTaskBranch('RECORD-648', null), 'RECORD-648');
+});
+
 test('normalizeSteps: passes steps through, converts the legacy commands[] shape, defaults fields', async () => {
   const { normalizeSteps } = await mod;
   assert.deepEqual(normalizeSteps({ steps: [{ title: 'a', command: 'x' }, { command: 'y' }] }),

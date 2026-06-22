@@ -23,9 +23,9 @@ function register(app) {
   // Create a git worktree for a PR branch as a sibling of the project workspace, so the
   // tab can get its own checkout. Local git only. Returns { path } on success or { error }.
   app.post(ROUTES.WORKTREE, async (req, res) => {
-    const { path: dir, branch } = req.body || {};
+    const { path: dir, branch, create, base } = req.body || {};
     if (!dir || !branch) return res.status(400).json({ error: 'path and branch required' });
-    res.json(await github.createWorktree(String(dir), String(branch)));
+    res.json(await github.createWorktree(String(dir), String(branch), { create: !!create, base: base ? String(base) : '' }));
   });
 
   // Remove a worktree (folder + admin entry), run from the project workspace. Local git only.

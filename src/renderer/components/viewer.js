@@ -4,14 +4,16 @@
 import { ROUTES } from '/shared/routes.mjs';
 import { state, activeTab, prByUrl, prGroup, prTabTitle, jiraTabTitle, jiraByKey } from '../stores/store.js';
 import { api, apiJson } from '../services/api.js';
-import { esc, jiraKeyFromUrl, canSplitTerminal, ghAvatarSrc } from '../lib/util.js';
+import { esc, jiraKeyFromUrl, canSplitTerminal, ghAvatarSrc, basename } from '../lib/util.js';
 import { ICON } from '../lib/icons.js';
 import { gitClientLabel, gitClientIcon } from '../lib/git-clients.js';
 import { toast, toastErr } from './toast.js';
 import { renderTabs } from './sidebar.js';
 import { openMenu, closeMenu } from './menu.js';
-import { disposeTerm, visibleTerm } from './terminal.js';
-import { ensurePrTerminal, applyPrLayout, clearPrLayout, resolveTabFolder } from './split.js';
+import { visibleTerm } from './terminal.js';
+import { ensurePrTerminal, applyPrLayout, clearPrLayout, resolveTabFolder, removeWorktree, openPrPanel } from './split.js';
+import { jiraTaskBranch } from '../lib/workflow.mjs';
+import { persistTask } from '../services/tasks.js';
 import { refreshWorkflowBtn } from './workflow.js';
 import { hideDiffPane } from './diff.js';
 import { attachFind, closeFind } from './find.js';
@@ -136,13 +138,11 @@ export function activateTab(id) {
   const t = activeTab();
   showSplitLoading(t ? !t.loaded : false);
   updateNavButtons();
-  // PR ↔ terminal split: a GitHub PR shows a paired terminal to its right when ITS own
-  // `prSplit` is on (per-tab, default off). Switching tabs reveals it instantly (no slide).
-  if (canSplitTerminal(cur) && cur.prSplit && window.taskhub?.term) {
-    ensurePrTerminal(cur).then(() => { if (state.activeTabId === cur.id) applyPrLayout(cur); });
-  } else {
-    clearPrLayout();
-  }
+  // PR ↔ terminal split: the right panel is per-tab (`prSplit`, default OFF) — a fresh link shows
+  // just the page. When it IS expanded, openPrPanel shows the live terminal, recreates the task's
+  // terminal if its worktree exists on disk, or shows the New Task empty state.
+  if (canSplitTerminal(cur) && cur.prSplit) openPrPanel(cur);
+  else clearPrLayout();
   document.getElementById('split-toggle-term')?.classList.toggle('on', !!(canSplitTerminal(cur) && cur.prSplit));
   renderTabs();
   saveTabs();
@@ -157,23 +157,15 @@ export function hideAllPanes() {
   document.body.classList.remove('pane-diff');
 }
 
-function pairedTermHasContext(tab) {
-  return !!(tab && tab.termId && state.terms.get(tab.termId)?.hasContext);
-}
-
-export function confirmCloseTabTerminals(tabs) {
-  const contextual = tabs.filter(pairedTermHasContext);
-  if (!contextual.length) return true;
-  if (contextual.length === 1) {
-    const title = contextual[0].title || 'this task';
-    return confirm(`Close "${title}" and stop its terminal?\n\nThe terminal has input/history that will be lost.`);
-  }
-  return confirm(`Close ${contextual.length} tabs and stop their terminals?\n\nThese terminals have input/history that will be lost.`);
-}
-
+// Closing a web tab NEVER kills its task. A paired terminal is a deliberately-started task (worktree
+// + terminal) — there are no auto-spawned bare shells anymore — so it keeps running in the background
+// and shows on the Tasks page; only the Tasks-page trash button (deleteTaskSession) or the shell
+// exiting stops it. Closing the tab just unbinds + hides the pane; the PTY lives on (it's keyed to the
+// tab's URL, so reopening the link re-adopts it).
 export function closePairedTerm(tab) {
   if (!tab?.termId) return;
-  disposeTerm(tab.termId);
+  const term = state.terms.get(tab.termId);
+  if (term) term.el.style.display = 'none'; // keep the PTY alive; just unbind + hide
   tab.termId = null;
 }
 
@@ -181,7 +173,6 @@ export function closeTab(id) {
   const i = state.tabs.findIndex(t => t.id === id);
   if (i < 0) return;
   const tab = state.tabs[i];
-  if (!confirmCloseTabTerminals([tab])) return;
   closePairedTerm(tab);
   tab.wv?.remove();
   state.tabs.splice(i, 1);
@@ -196,7 +187,6 @@ export function closeTab(id) {
 }
 
 export function closeSplit() {
-  if (!confirmCloseTabTerminals(state.tabs)) return;
   closeFind();
   state.tabs.forEach(t => { closePairedTerm(t); t.wv?.remove(); });
   state.tabs = []; state.activeTabId = null; state.activeTermId = null;
@@ -250,10 +240,8 @@ let _folderKey = null;
 let _folderAt = 0;
 async function updateFolderChip(force = false) {
   const el = document.getElementById('split-folder');
-  const addBtn = document.getElementById('split-folder-add');
   if (!el) return;
   const hideChip = () => { el.hidden = true; el.dataset.path = ''; el.dataset.worktree = ''; el.dataset.workspace = ''; };
-  const hideAdd = () => { if (addBtn) { addBtn.hidden = true; addBtn.dataset.workspace = ''; addBtn.dataset.branch = ''; } };
   const t = state.activeTermId ? null : activeTab();
   const branch = t && t.kind === 'github' ? (t.branch || prByUrl(t.url)?.headRefName || '') : '';
   // The tab + its branch/key decide the folder; skip the resolve when that's unchanged AND
@@ -265,33 +253,20 @@ async function updateFolderChip(force = false) {
   _folderAt = now;
   _folderKey = key;
 
-  if (!t || (t.kind !== 'github' && t.kind !== 'jira')) { hideChip(); hideAdd(); return; }
+  if (!t || (t.kind !== 'github' && t.kind !== 'jira')) { hideChip(); return; }
   const reqId = ++_folderReq;
   const tabId = t.id;
   const info = await resolveTabFolder(t).catch(() => null);
   if (reqId !== _folderReq || state.activeTabId !== tabId) return; // tab switched mid-resolve
-  if (!info || !info.path) { hideChip(); hideAdd(); return; }
+  if (!info || !info.path) { hideChip(); return; }
 
-  // Branch not checked out anywhere yet + a known PR branch → encourage a dedicated
-  // worktree with a "Create worktree" CTA. (When it's already in the main checkout we fall
-  // through to the plain folder chip instead of offering a create that git would reject.)
-  if (!info.matched && info.workspace && branch && addBtn) {
-    hideChip();
-    addBtn.dataset.workspace = info.workspace;
-    addBtn.dataset.branch = branch;
-    addBtn.title = `Create a worktree for ${branch}`;
-    addBtn.innerHTML = ICON.worktree + '<span class="fa-label">Create worktree</span>';
-    addBtn.hidden = false;
-    return;
-  }
-
-  // Otherwise show the folder chip. When a git client is configured (Settings), the chip wears
-  // that client's brand mark and a click opens the branch's folder there (it's already on the
-  // branch); Finder moves to the right-click menu. With no client it shows the worktree/folder
+  // Show the folder chip — always the current folder (the branch's worktree if one exists, else the
+  // project workspace). Creating a worktree is no longer a chip CTA; it happens via New Task. When a
+  // git client is configured (Settings), the chip wears that client's brand mark and a click opens the
+  // folder there; Finder moves to the right-click menu. With no client it shows the worktree/folder
   // glyph and a click reveals in Finder.
-  hideAdd();
   const isWorktree = !!info.isWorktree;
-  const name = info.path.split('/').filter(Boolean).pop() || info.path;
+  const name = basename(info.path) || info.path;
   el.dataset.path = info.path;
   // A worktree carries its workspace so the right-click menu can offer deletion (the main
   // checkout can't be deleted, so it leaves these blank).
@@ -360,32 +335,52 @@ export async function removeTabWorktree() {
   const workspace = el?.dataset.workspace, worktree = el?.dataset.path;
   if (!workspace || !worktree) return;
   if (!confirm(`Delete this worktree?\n\n${worktree}\n\nThe folder is removed; the branch is kept. Uncommitted changes there will block deletion.`)) return;
-  try {
-    const r = await apiJson(ROUTES.WORKTREE_REMOVE, 'POST', { path: workspace, worktree });
-    if (r.error) { toastErr(r.error); return; }
-    toast('Worktree deleted');
-    updateFolderChip(true);
-  } catch (e) {
-    toastErr('Failed to delete worktree: ' + e.message);
-  }
+  const r = await removeWorktree(workspace, worktree);
+  if (r.error) { toastErr(r.error); return; }
+  toast('Worktree deleted');
+  updateFolderChip(true);
 }
 
-// Create a git worktree for the active tab's PR branch (sibling of the project workspace),
-// then re-resolve the chip so it flips to the new worktree.
-export async function createTabWorktree() {
-  const btn = document.getElementById('split-folder-add');
-  const workspace = btn?.dataset.workspace, branch = btn?.dataset.branch;
-  if (!workspace || !branch) return;
-  btn.disabled = true;
+// New task: open the active tab's terminal in its branch worktree, creating the worktree first
+// if the branch isn't checked out anywhere yet. This is the SINGLE worktree-create entry point —
+// the old folder-chip "Create worktree" CTA folded into it. Branch naming mirrors the workflow
+// runner: a GitHub PR uses its head ref; a Jira ticket derives feature/<KEY>-<summary>. After this
+// the tab has a live terminal, so the button hides (updateTitles) and ⌘J / the pane-switch take over.
+export async function newTask() {
+  const tab = activeTab();
+  if (!tab || !canSplitTerminal(tab)) return;
+  const btn = document.querySelector('.new-task-cta');
+  if (btn) btn.disabled = true;
   try {
-    const r = await apiJson(ROUTES.WORKTREE, 'POST', { path: workspace, branch });
-    if (r.error) { toastErr(r.error); return; }
-    toast(`Worktree created for ${branch}`);
-    updateFolderChip(true);
+    const f = await resolveTabFolder(tab);
+    let cwd = f.path; // where the terminal opens — the just-created worktree if we create one below
+    // A Jira task names its branch (and worktree folder) after the ticket key + a short title slug
+    // — e.g. RECORD-648-ios-vod-player-display — and creates it off the default branch. A GitHub PR
+    // uses its existing head ref.
+    const key = tab.jiraKey || jiraKeyFromUrl(tab.url) || '';
+    const branch = tab.kind === 'jira'
+      ? jiraTaskBranch(key, jiraByKey(key)?.summary || '')
+      : (tab.branch || prByUrl(tab.url)?.headRefName || '');
+    if (!f.matched && f.workspace && branch) {
+      const r = await apiJson(ROUTES.WORKTREE, 'POST', { path: f.workspace, branch, create: tab.kind === 'jira' });
+      if (r && r.error) { toastErr(r.error); return; }
+      toast(`Worktree created for ${branch}`);
+      cwd = r.path || cwd;
+      updateFolderChip(true);
+    }
+    tab.prSplit = true;
+    saveTabs();
+    await ensurePrTerminal(tab, cwd); // pass the resolved/created path so it isn't re-resolved
+    if (state.activeTabId === tab.id) applyPrLayout(tab, true);
+    document.getElementById('split-toggle-term')?.classList.add('on');
+    updateTitles(); // hide the New Task button now the tab has a terminal; set the worktree title
+    // Track the task durably — it now survives tab close / terminal death / app restart (Tasks page).
+    persistTask({ url: tab.url, kind: tab.kind, title: tab.title, repo: tab.repo || '', branch,
+      jiraKey: tab.kind === 'jira' ? key : '', workspace: f.workspace || '', worktree: cwd || '' });
   } catch (e) {
-    toastErr('Failed to create worktree: ' + e.message);
+    toastErr('Failed to start task: ' + e.message);
   } finally {
-    btn.disabled = false;
+    if (btn) btn.disabled = false;
   }
 }
 

@@ -265,7 +265,6 @@ export function visibleTerm() {
   const cur = activeTab();
   return cur && cur.termId ? state.terms.get(cur.termId) : null;
 }
-export function clearVisibleTerm() { const t = visibleTerm(); if (t) { t.term.clear(); t.term.focus(); } }
 
 export function initTerminals() {
   let raf = 0;

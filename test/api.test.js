@@ -147,6 +147,26 @@ test('tabs round-trip through /api/tabs', async () => {
   assert.equal(body.active, tabs[0].url);
 });
 
+test('tasks: upsert, list, and delete through /api/tasks', async () => {
+  const url = 'https://example.atlassian.net/browse/REC-42';
+  const rec = { url, kind: 'jira', title: 'REC-42 Thing', repo: 'o/r', branch: 'REC-42-thing',
+    jiraKey: 'REC-42', workspace: '/ws/repo', worktree: '/ws/repo.worktrees/REC-42-thing', cli: 'claude' };
+  assert.equal((await send('POST', '/api/tasks', rec)).status, 200);
+  let body = (await get('/api/tasks')).body;
+  const t = body.find(x => x.url === url);
+  assert.ok(t, 'task is listed after upsert');
+  assert.equal(t.worktree, rec.worktree);
+  assert.equal(t.cli, 'claude');
+  // Upsert is idempotent (keyed by url) — title change updates in place, no duplicate row.
+  assert.equal((await send('POST', '/api/tasks', { ...rec, title: 'REC-42 Renamed' })).status, 200);
+  body = (await get('/api/tasks')).body;
+  assert.equal(body.filter(x => x.url === url).length, 1);
+  assert.equal(body.find(x => x.url === url).title, 'REC-42 Renamed');
+  // Delete by url removes it.
+  assert.equal((await send('DELETE', `/api/tasks?url=${encodeURIComponent(url)}`)).status, 200);
+  assert.equal((await get('/api/tasks')).body.some(x => x.url === url), false);
+});
+
 test('links: validation and round-trip', async () => {
   assert.equal((await send('POST', '/api/links', { prNumber: 1 })).status, 400);
   const ok = await send('POST', '/api/links', { prNumber: 7, prRepo: 'o/r', jiraKey: 'REC-7' });

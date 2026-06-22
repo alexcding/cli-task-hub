@@ -24,7 +24,8 @@ import * as jiraView from './pages/jira.js';
 import { loadScrumboard, setBoardProject, setBoardFilter, setBoardQuery, applyBoardQuery,
   boardDragStart, boardDragEnd, boardDragOver, boardDragLeave, boardDrop } from './pages/scrumboard.js';
 import { loadLogs, setLogCategory, clearLogs } from './pages/logs.js';
-import { loadTasks, openTaskSession, analyzeSession, updateTasksBadge } from './pages/tasks.js';
+import { loadTasks, openTaskSession, deleteTaskSession, analyzeSession, updateTasksBadge } from './pages/tasks.js';
+import { loadPersistedTasks } from './services/tasks.js';
 import { loadSettings, saveConfig, switchSettingsTab, setReviewSound, previewReviewSound, setActivityNotify, toggleSecret, setGitClient, setGitClientCmd, toggleHook } from './pages/settings.js';
 import { showActivityToast } from './components/activity-toast.js';
 import * as modal from './components/modal.js';
@@ -129,7 +130,6 @@ function handleShortcut(action) {
     case 'pane:toggleView':
       if (canSplitTerminal(tab) && tab.prSplit) split.setPaneView(tab.paneView === 'diff' ? 'term' : 'diff');
       break;
-    case 'term:clear':    terminal.clearVisibleTerm(); break;
     // ⌘+ / ⌘− / ⌘0: font size of the pane in view (terminal or diff), persisted.
     // zoomTarget() is null when nothing zoomable is on screen → no-op.
     case 'font:bigger':   { const z = zoomTarget(); if (z) bumpFontSize(z, 1); break; }
@@ -231,12 +231,12 @@ Object.assign(window, {
   // sidebar / tabs
   activateTab: viewer.activateTab, closeTab: viewer.closeTab, tabMenu,
   openPrSplit: viewer.openPrSplit, openRepo: viewer.openRepo, openExternal: viewer.openExternal, jiraClick: viewer.jiraClick,
-  openTabFolder: viewer.openTabFolder, createTabWorktree: viewer.createTabWorktree,
+  openTabFolder: viewer.openTabFolder, newTask: viewer.newTask,
   folderMenu: viewer.folderMenu, removeTabWorktree: viewer.removeTabWorktree,
   folderChipClick: viewer.folderChipClick,
   // viewer toolbar
   splitBack: viewer.splitBack, splitHome: viewer.splitHome,
-  togglePrSplit: split.togglePrSplit, clearVisibleTerm: terminal.clearVisibleTerm, toggleWorkflowRun,
+  togglePrSplit: split.togglePrSplit, toggleWorkflowRun,
   setPaneView: split.setPaneView, toggleCommitPop, commitAction,
   setReviewView, histShowCommit,
   // find-in-page bar
@@ -254,7 +254,7 @@ Object.assign(window, {
   // openTaskSession is used by inline card onclick; loadTasks/updateTasksBadge are reached via
   // window.* from workflow.js (notifyTasksUpdated) and sidebar.js (refreshTermBusy) so the running
   // count stays live off-page, without a tasks↔workflow/sidebar import cycle — keep all three.
-  loadTasks, openTaskSession, updateTasksBadge,
+  loadTasks, openTaskSession, deleteTaskSession, updateTasksBadge,
   loadSettings, saveConfig, switchSettingsTab, setReviewSound, previewReviewSound, setActivityNotify, toggleSecret, setGitClient, setGitClientCmd, toggleHook,
   __activityToast: showActivityToast, // main pushes activity toasts here when the app is frontmost
   // project modal
@@ -279,6 +279,10 @@ state.tabTermInit = (async () => {
   await viewer.restoreTabs();          // rehydrate GitHub/Jira tabs from the last session
   await terminal.rehydrateTerminals(); // reattach PTYs that outlived a window close/reopen
 })().catch(e => console.error('[init] tab/terminal restore failed:', e)); // never leave it unhandled — awaiters in ensurePrTerminal() still try/catch
+
+// Durable tasks (worktree + terminal, persisted) — load them so the Tasks page lists every task
+// (resumable) even after a restart, independent of which tabs/terminals are live.
+loadPersistedTasks().then(() => { if (document.querySelector('.page.active')?.id === 'page-tasks') loadTasks(); updateTasksBadge(); });
 
 (async () => {
   try {

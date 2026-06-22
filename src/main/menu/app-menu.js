@@ -54,7 +54,6 @@ function setAppMenu() {
       { type: 'separator' },
       { label: 'Toggle Terminal Panel', accelerator: 'Cmd+J', click: send('pane:toggleTerm') },
       { label: 'Switch Terminal / Changes', accelerator: 'Shift+Cmd+D', click: send('pane:toggleView') },
-      { label: 'Clear Terminal', accelerator: 'Cmd+K', click: send('term:clear') },
       { type: 'separator' },
       // Font size of the pane in view — terminal or diff (zoomTarget in fonts.js) —
       // persisted via Settings → Appearance.

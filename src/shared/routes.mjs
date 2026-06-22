@@ -21,6 +21,7 @@ export const ROUTES = Object.freeze({
   settingsKey: key => `/api/settings/${encodeURIComponent(key)}`, // client
   SOUNDS: '/api/sounds',
   TABS: '/api/tabs',
+  TASKS: '/api/tasks',                                // durable New Task sessions (GET list / POST upsert / DELETE ?url=)
 
   // ── Projects ─────────────────────────────────────────────────────────────────
   PROJECTS: '/api/projects',

@@ -12,6 +12,12 @@ export const wfSlug = s =>
 export const wfBranchName = (key, summary) =>
   `feature/${[wfSlug(key), wfSlug(summary)].filter(Boolean).join('-')}`;
 
+// A New Task worktree's branch/folder name: the ticket KEY kept verbatim (e.g. RECORD-648) plus a
+// short title slug so the worktree reads at a glance — RECORD-648-ios-vod-player-display. The key
+// already being branch-safe, only the summary is slugified. Empty summary → just the key.
+export const jiraTaskBranch = (key, summary) =>
+  [String(key == null ? '' : key).trim(), wfSlug(summary)].filter(Boolean).join('-');
+
 // Normalize a workflow's steps to [{title, command}], tolerating the legacy commands:[string]
 // shape. Pure (no UI defaults) so both the editor buffer and any other reader share one rule.
 export function normalizeSteps(w) {

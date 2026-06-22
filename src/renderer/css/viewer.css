@@ -21,6 +21,9 @@ body.viewing-term .bar-term { display:flex; border-left:none; }
    It's webview-only, so hide it when a terminal is the sole view. */
 #split-toggle-term { align-self:center; margin-right:12px; }
 body.viewing-term #split-toggle-term { display:none; }
+/* Expanded ("on") state uses the plain hover highlight, NOT the accent that generic .split-btn.on
+   applies — an open right panel isn't an accent-worthy selection. */
+#split-toggle-term.on { color:var(--text); background:var(--surface-hover); }
 .split-btn { background:none; border:none; color:var(--text-2); cursor:pointer; padding:6px; border-radius:6px; flex-shrink:0; display:inline-flex; align-items:center; justify-content:center; }
 .split-btn:hover { background:var(--surface-hover); color:var(--text); }
 .split-btn:disabled { opacity:.3; cursor:default; }
@@ -32,17 +35,21 @@ body.viewing-term #split-toggle-term { display:none; }
 #term-workflow .wf-run { display:none; }
 #term-workflow.running .wf-play { display:none; }
 #term-workflow.running .wf-run { display:inline-flex; align-items:center; justify-content:center; }
-.wf-run { position:relative; width:16px; height:16px; color:var(--accent); }
-.wf-run::before { content:""; position:absolute; inset:-1px; border-radius:50%; background:conic-gradient(var(--accent) 300deg, var(--border) 0); -webkit-mask:radial-gradient(farthest-side, transparent calc(100% - 2px), #000 0); mask:radial-gradient(farthest-side, transparent calc(100% - 2px), #000 0); animation:spin 1s linear infinite; }
+.wf-run { position:relative; width:16px; height:16px; color:var(--text-3); }
+.wf-run::before { content:""; position:absolute; inset:-1px; border-radius:50%; background:conic-gradient(var(--text-3) 300deg, var(--border) 0); -webkit-mask:radial-gradient(farthest-side, transparent calc(100% - 2px), #000 0); mask:radial-gradient(farthest-side, transparent calc(100% - 2px), #000 0); animation:spin 1s linear infinite; }
 .wf-run svg { position:relative; width:9px; height:9px; }
 #term-workflow.running:hover .wf-run, #term-workflow.running:hover .wf-run::before { color:var(--danger); }
 #term-workflow.running:hover .wf-run::before { background:conic-gradient(var(--danger) 300deg, var(--border) 0); }
+/* Icon-only run button (no label): square-ish. The play glyph uses the app's neutral toolbar tone
+   (inherits .pf-btn's --text-2, → --text on hover) — not the accent. */
+.wf-btn { padding:7px 9px; }
 /* Each segment's header shows its title (PR title left, terminal folder right). */
 .split-title { flex:1; min-width:0; font-size:13px; font-weight:600; display:flex; align-items:center; gap:7px; overflow:hidden; }
 .split-title .stitle-text { min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .split-title img { flex-shrink:0; width:16px; height:16px; border-radius:50%; object-fit:cover; }
-/* Workspace/worktree folder chip — right end of the webview segment; reveals in Finder. */
-.folder-chip { flex-shrink:0; max-width:240px; display:inline-flex; align-items:center; gap:5px; margin-left:8px; padding:7px 12px; background:none; border:none; border-radius:6px; color:var(--text-2); font:inherit; font-size:12px; font-weight:500; cursor:pointer; }
+/* Workspace/worktree folder chip — bottom-left of the terminal pane (in .pane-foot); opens the
+   folder in the configured git client, else reveals in Finder. Terminal view only (.pf-term). */
+.folder-chip { flex-shrink:0; max-width:240px; display:inline-flex; align-items:center; gap:5px; padding:7px 12px; background:none; border:none; border-radius:6px; color:var(--text-2); font:inherit; font-size:12px; font-weight:500; cursor:pointer; }
 .folder-chip:hover { background:var(--surface-hover); color:var(--text); }
 .folder-chip .fc-ic { flex-shrink:0; display:inline-flex; }
 .folder-chip svg { flex-shrink:0; width:15px; height:15px; }
@@ -52,16 +59,8 @@ body.viewing-term #split-toggle-term { display:none; }
 /* Worktree tabs: tint the glyph with the accent so it's distinguishable at a glance. (A brand
    <img> can't take the tint; the worktree state still shows in the chip's title.) */
 .folder-chip.is-worktree .fc-ic { color:var(--accent); }
-/* Create-worktree call-to-action (shown instead of the chip on a plain checkout): worktree
-   glyph + label, accent-toned. On hover it highlights with the same subtle background as the
-   folder chip — no outline. */
-.folder-add { gap:5px; margin-left:8px; padding:7px 12px; font-size:12px; font-weight:500; color:var(--accent); }
-.folder-add:hover { background:var(--surface-hover); color:var(--accent); }
-.folder-add svg { width:16px; height:16px; }
-.folder-add .fa-label { min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.folder-add:disabled { opacity:.5; cursor:default; }
 /* display:inline-flex above overrides the UA [hidden] rule, so hiding needs to be explicit. */
-.folder-chip[hidden], .folder-add[hidden] { display:none; }
+.folder-chip[hidden] { display:none; }
 body.viewing-tab main { display:none; }
 .tab-group { display:flex; align-items:center; gap:3px; }
 .tab-group-label { font-size:13px; font-weight:500; letter-spacing:.3px; color:var(--text-3); padding:0 3px; flex-shrink:0; }
@@ -110,6 +109,22 @@ body.pr-split .split-body .term-pane { left: var(--pr-split, 60%); }
 body.pr-split #pr-divider { display:block; }
 .split-btn.on { color:var(--accent); background:var(--accent-bg); }
 
+/* Right-pane empty state (#term-empty): occupies the terminal slot when a GitHub/Jira tab has no
+   terminal yet, holding only the New Task button. split.js toggles its [hidden] + body.pr-empty. */
+.term-empty { position:absolute; inset:0; bottom:var(--foot-h); display:flex; align-items:center; justify-content:center; background:var(--bg); }
+.term-empty[hidden] { display:none; }
+body.pr-split .split-body .term-empty { left:var(--pr-split, 60%); }
+/* While the empty state shows there are no Terminal/Review tabs and no action bar. */
+/* …including the action bar — body.pr-split shows it later in this file, so out-specify that. */
+body.pr-empty .pane-switch { display:none; }
+body.pr-empty.pr-split .pane-foot, body.pr-empty.viewing-term .pane-foot { display:none; }
+/* New Task call-to-action: a >_ glyph + label, accent-outlined, prompt-like. */
+.new-task-cta { display:inline-flex; align-items:center; gap:8px; padding:10px 18px; font:inherit; font-size:13px; font-weight:600; color:var(--accent); background:var(--accent-bg); border:1px solid var(--accent); border-radius:8px; cursor:pointer; transition:background .12s,color .12s; }
+.new-task-cta:hover { background:var(--accent); color:#fff; }
+.new-task-cta .ntc-ic { display:inline-flex; }
+.new-task-cta svg { display:block; }
+.new-task-cta:disabled { opacity:.5; cursor:default; }
+
 /* Diff pane — read-only `git diff` of the tab's worktree, switchable with the paired
    terminal (split.js toggles body.pane-diff). Semantic add/remove colors live here
    (not in the main palette blocks) since only the diff view uses them. */
@@ -156,7 +171,7 @@ body.viewing-term .pane-switch { display:none; }
 
 /* Bottom action bar — pinned to the foot of the right pane (terminal/diff side). The top
    toolbar holds only navigation + the view switch; everything actionable lives here. The
-   terminal view shows the .pf-term buttons (Clear / Run); the Changes view (body.pane-diff)
+   terminal view shows the .pf-term items (the folder chip + Run); the Changes view (body.pane-diff)
    shows the .pf-diff buttons (History / Commit). Sits below the divider (z<6) so the full-
    height divider stays draggable; the panes above reserve --foot-h so it never overlaps them. */
 .pane-foot { position:absolute; left:0; right:0; bottom:0; height:var(--foot-h); z-index:5;
@@ -174,6 +189,31 @@ body.pr-split .pane-foot, body.viewing-term .pane-foot { display:flex; }
 /* .pf-btn sets display:inline-flex, which overrides the UA [hidden] rule — hide explicitly
    (refreshWorkflowBtn toggles #term-workflow's hidden attr by workflow availability). */
 .pf-btn[hidden] { display:none; }
+/* Workflow picker in the terminal-view foot, paired with the Run button (workflow.js fills it).
+   appearance:none drops the native control chrome so it matches the flat .pf-btn look; a custom
+   chevron (inline SVG) sits at the right edge. A data-URI can't read a CSS var, so the caret colour
+   is the literal --text-3 value, swapped per theme below (a palette swap, like the rest of the UI). */
+.wf-select { -webkit-appearance:none; appearance:none; max-width:200px; padding:7px 28px 7px 10px;
+  font:600 12px -apple-system,BlinkMacSystemFont,sans-serif; color:var(--text-2);
+  background-color:var(--surface-hover);
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%239298a3' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M6 9l6 6 6-6'/></svg>");
+  background-repeat:no-repeat; background-position:right 8px center; background-size:14px;
+  border:1px solid var(--border); border-radius:8px; cursor:pointer; }
+html[data-theme="dark"] .wf-select {
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236e6e6e' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M6 9l6 6 6-6'/></svg>"); }
+.wf-select:hover { color:var(--text); border-color:var(--border-focus); }
+.wf-select:disabled { opacity:.5; cursor:default; }
+.wf-select[hidden] { display:none; }
+
+/* Run + picker as ONE outlined segmented control: the group owns the border/corners; the play
+   button and the picker sit inside it, divided by a hairline. When running, the picker is hidden
+   and the group is just the (rounded) Stop button. */
+.wf-group { display:inline-flex; align-items:center; border:1px solid var(--border); border-radius:8px; overflow:hidden; }
+.wf-group[hidden] { display:none; }
+.wf-group:hover { border-color:var(--border-focus); }
+.wf-group .wf-btn { border-radius:0; }                         /* the group provides the outline */
+.wf-group .wf-select { border:none; border-left:1px solid var(--border); border-radius:0; background-color:transparent; }
+.wf-group .wf-select:hover { border-left-color:var(--border); } /* keep the divider neutral; the group border highlights */
 /* View-scoped: terminal actions vs Changes actions. */
 body.pane-diff .pf-term { display:none; }
 body:not(.pane-diff) .pf-diff { display:none; }

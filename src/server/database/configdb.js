@@ -79,6 +79,21 @@ db.exec(`
     position  INTEGER NOT NULL DEFAULT 0,
     active    INTEGER NOT NULL DEFAULT 0
   );
+  -- Tasks: a deliberately-created "New Task" (a git worktree + its terminal). Unlike tabs, a task
+  -- is durable — it survives the tab closing, the terminal dying, and an app restart, so people can
+  -- resume work from the Tasks page. Keyed by the PR/Jira url. Removed only by the Tasks-page trash.
+  CREATE TABLE IF NOT EXISTS tasks (
+    url        TEXT PRIMARY KEY,
+    kind       TEXT NOT NULL,
+    title      TEXT,
+    repo       TEXT,
+    branch     TEXT,
+    jira_key   TEXT,
+    workspace  TEXT,
+    worktree   TEXT,
+    cli        TEXT,
+    created_at TEXT NOT NULL
+  );
   -- Per-PR review-request tracking, keyed "repo#number". requested_at is the latest
   -- time GitHub requested MY review (from the PR timeline); viewed_at is when I opened
   -- it from the tray's "Review requested" list. The list shows a PR while
@@ -241,6 +256,28 @@ function setTabs(tabs = [], active = null) {
   } catch (err) { db.exec('ROLLBACK'); throw err; }
 }
 
+// ── Tasks (durable New Task sessions — a worktree + its terminal; see services/tasks.js) ────────
+function getTasks() {
+  return db.prepare('SELECT * FROM tasks ORDER BY created_at ASC').all().map(r => ({
+    url: r.url, kind: r.kind, title: r.title || '', repo: r.repo || '', branch: r.branch || '',
+    jiraKey: r.jira_key || '', workspace: r.workspace || '', worktree: r.worktree || '',
+    cli: r.cli || '', createdAt: r.created_at,
+  }));
+}
+const _upsertTask = db.prepare(
+  `INSERT INTO tasks (url, kind, title, repo, branch, jira_key, workspace, worktree, cli, created_at)
+   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+   ON CONFLICT(url) DO UPDATE SET kind=excluded.kind, title=excluded.title, repo=excluded.repo,
+     branch=excluded.branch, jira_key=excluded.jira_key, workspace=excluded.workspace,
+     worktree=excluded.worktree, cli=excluded.cli`
+);
+function upsertTask(t = {}) {
+  if (!t.url) return;
+  _upsertTask.run(t.url, t.kind === 'jira' ? 'jira' : 'github', t.title || t.url, t.repo || '',
+    t.branch || '', t.jiraKey || '', t.workspace || '', t.worktree || '', t.cli || '', t.createdAt || now());
+}
+const removeTask = url => db.prepare('DELETE FROM tasks WHERE url = ?').run(url);
+
 // ── Review state (per-PR review-request tracking — see the review_state table) ────
 const getReviewState = key => db.prepare('SELECT requested_at, viewed_at FROM review_state WHERE key = ?').get(key) || null;
 // Record the latest time my review was requested. Preserves viewed_at; only writes
@@ -276,6 +313,7 @@ module.exports = {
   getLinks, getLinksByPR, addLink, removeLink,
   addEvent, getEvents,
   getTabs, setTabs,
+  getTasks, upsertTask, removeTask,
   getReviewState, setReviewRequestedAt, setReviewViewed, pruneReviewStateForRepo,
   getSetting, setSetting, getAllSettings,
 };

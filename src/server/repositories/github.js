@@ -210,7 +210,7 @@ async function worktreeForJiraKey(dir, key) {
 // Best-effort `fetch origin <branch>` first so a PR branch that only exists on the remote
 // can be checked out; `git worktree add <dest> <branch>` then DWIMs a local branch from
 // origin/<branch> when there's no local one. Never throws — failures come back as { error }.
-async function createWorktree(workspace, branch) {
+async function createWorktree(workspace, branch, opts = {}) {
   if (!workspace || !branch) return { error: 'workspace and branch required' };
   const path = require('path');
   const fsp = require('fs/promises');
@@ -235,7 +235,20 @@ async function createWorktree(workspace, branch) {
     // `worktree add` can fail with "already registered" for a dest that no longer exists.
     try { await gitRun(workspace, ['worktree', 'prune']); } catch { /* nothing to prune */ }
     try { await gitRun(workspace, ['fetch', 'origin', branch]); } catch { /* local-only branch / offline */ }
-    await gitRun(workspace, ['worktree', 'add', dest, branch]);
+    try {
+      await gitRun(workspace, ['worktree', 'add', dest, branch]); // existing branch (local or origin/<branch>)
+    } catch (addErr) {
+      // No such branch yet. For a new task (opts.create) branch it off the default branch; otherwise
+      // surface the missing-ref error (e.g. a fork PR whose branch isn't on origin). Match ONLY the
+      // missing-ref phrases `worktree add` emits — same narrow set as the fork-message check below —
+      // so an unrelated failure (bad path "No such file…", a flag error) throws instead of silently
+      // creating an unintended branch.
+      if (!opts.create || !/invalid reference|unknown revision/i.test(gitErrLine(addErr, ''))) throw addErr;
+      const base = opts.base || await gitDefaultBranch(workspace) || 'main';
+      try { await gitRun(workspace, ['fetch', 'origin', base]); } catch { /* offline */ }
+      try { await gitRun(workspace, ['worktree', 'add', '-b', branch, dest, `origin/${base}`]); }
+      catch { await gitRun(workspace, ['worktree', 'add', '-b', branch, dest]); } // off current HEAD as a last resort
+    }
     return { ok: true, path: dest };
   } catch (err) {
     const msg = gitErrLine(err, 'git worktree add failed');

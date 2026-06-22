@@ -140,7 +140,7 @@ export async function loadProjectPage(id) {
       <!-- Settings: webhook forwarding, lazy-loaded the first time its page is shown -->
       <section class="pd-sec" id="pd-settings-${id}" data-sec="settings" hidden>
         <div class="pd-sec-head">
-          <h2 class="pd-sec-title"><span class="pd-sec-ic tint-neutral">${ICON.zap}</span>Automation</h2>
+          <h2 class="pd-sec-title"><span class="pd-sec-ic tint-neutral">${ICON.cpu}</span>Automation</h2>
         </div>
         <div id="proj-webhooks-${id}"></div>
       </section>
@@ -148,7 +148,7 @@ export async function loadProjectPage(id) {
       <!-- Workflows: per-project automation recipes, lazy-loaded the first time shown -->
       <section class="pd-sec" id="pd-workflows-${id}" data-sec="workflows" hidden>
         <div class="pd-sec-head">
-          <h2 class="pd-sec-title"><span class="pd-sec-ic tint-accent">${ICON.terminal}</span>Workflows</h2>
+          <h2 class="pd-sec-title"><span class="pd-sec-ic tint-accent">${ICON.zap}</span>Workflows</h2>
           <div class="pd-sec-ctl">
             <button class="btn btn-secondary btn-sm" onclick="wfNew('${id}')">${ICON.plus} New workflow</button>
           </div>
@@ -354,7 +354,7 @@ export function loadProjectWorkflows(id) {
   if (!p) { el.innerHTML = '<div class="empty">Project not found.</div>'; return; }
   const list = wfList(id);
   if (!list.length) {
-    el.innerHTML = `<div class="empty"><div class="empty-icon">${ICON.terminal}</div>
+    el.innerHTML = `<div class="empty"><div class="empty-icon">${ICON.zap}</div>
       <p>No workflows yet. A workflow runs a saved set of commands on a ticket or pull request — it opens the item's worktree, launches your CLI, and types each command in turn.</p>
       <button class="btn btn-primary" onclick="wfNew('${id}')">${ICON.plus} New workflow</button></div>`;
     return;

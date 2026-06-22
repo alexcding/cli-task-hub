@@ -7,12 +7,12 @@
 import { ROUTES } from '/shared/routes.mjs';
 import { state, activeTab, projectByRepo, projectByPrUrl, projectByJiraKey, jiraByKey } from '../stores/store.js';
 import { api, apiJson } from '../services/api.js';
-import { jiraKeyFromUrl, canSplitTerminal, delay } from '../lib/util.js';
+import { esc, jiraKeyFromUrl, canSplitTerminal, delay } from '../lib/util.js';
 import { resolvePlaceholders, wfBranchName } from '../lib/workflow.mjs';
 import { resolveTabFolder, ensurePrTerminal, applyPrLayout } from './split.js';
 import { whenTurnDone, setTermBusy } from './terminal.js';
 import { analyzeTerminal } from '../services/analyzer.js';
-import { openMenu } from './menu.js';
+import { persistTask } from '../services/tasks.js';
 import { toast, toastErr } from './toast.js';
 
 const shq = s => "'" + String(s).replace(/'/g, "'\\''") + "'"; // single-quote a path for the shell
@@ -54,29 +54,49 @@ function notifyTasksUpdated() {
 // running shows the stop/spinner state. The button lives in the terminal-view bottom bar — CSS
 // (body.pane-diff .pf-term) already hides it in the Changes view, so this only gates on
 // workflow availability, not which pane is showing.
+// Coalesced behind a rAF: callers fire it from hot paths (updateTitles on every sidebar render +
+// every panel show/hide), so several calls per frame collapse into one that runs AFTER the frame —
+// it never blocks the show/hide animation or a render with the project/workflow lookup + DOM work.
+let _wfBtnRaf = 0;
 export function refreshWorkflowBtn() {
+  if (_wfBtnRaf) return;
+  _wfBtnRaf = requestAnimationFrame(() => { _wfBtnRaf = 0; doRefreshWorkflowBtn(); });
+}
+function doRefreshWorkflowBtn() {
   const btn = document.getElementById('term-workflow');
+  const sel = document.getElementById('wf-select');
+  const grp = document.getElementById('wf-group');
   if (!btn) return;
   const tab = state.activeTermId ? null : activeTab();
   const running = !!(tab && isRunning(tab.id));
   const wfs = tab && canSplitTerminal(tab) ? workflowsForTab(tab) : [];
-  btn.hidden = wfs.length === 0 && !running;
+  if (grp) grp.hidden = wfs.length === 0 && !running; // hide the whole control when there's nothing to run
   btn.classList.toggle('running', running);
-  const label = btn.querySelector('.pf-label');
-  if (label) label.textContent = running ? 'Stop' : (wfs.length > 1 ? 'Run…' : 'Run');
-  btn.title = running ? 'Stop workflow' : (wfs.length === 1 ? `Run workflow: ${wfs[0].name}` : 'Run workflow…');
+  btn.title = running ? 'Stop workflow' : (wfs.length ? 'Run the selected workflow' : 'No workflow configured');
+  if (sel) {
+    // Dropdown of the project's workflows; the Run button executes whichever is selected. Repopulate
+    // only when the set changes so the user's current choice survives a refresh. Hidden while a run
+    // is in flight (the button shows Stop) and when the project has no workflows.
+    const sig = wfs.map(w => w.name || '').join('\n');
+    if (sel.dataset.sig !== sig) {
+      sel.innerHTML = wfs.map((w, i) => `<option value="${i}">${esc(w.name || 'Untitled workflow')}</option>`).join('');
+      sel.dataset.sig = sig;
+    }
+    sel.disabled = running;
+    sel.hidden = running || wfs.length === 0;
+  }
 }
 
-// One button, two jobs: run when idle, stop when running. For multiple workflows, use the shared
-// context menu (menu.js) so it honors the app-wide Escape-to-close and single-open-menu behavior.
-export function toggleWorkflowRun(e) {
+// The Run/Stop button: stop when a run is in flight, else run the workflow selected in the dropdown.
+export function toggleWorkflowRun() {
   const tab = state.activeTermId ? null : activeTab();
   if (!tab) return;
   if (isRunning(tab.id)) { _runs.get(tab.id).ac.abort(); return; }
   const wfs = workflowsForTab(tab);
   if (!wfs.length) { toastErr('No workflow configured for this project'); return; }
-  if (wfs.length === 1) { runWorkflow(tab, wfs[0]); return; }
-  if (e) openMenu(e, wfs.map(wf => ({ label: wf.name || 'Untitled workflow', onClick: () => runWorkflow(tab, wf) })));
+  const sel = document.getElementById('wf-select');
+  const idx = sel && sel.value !== '' ? Number(sel.value) : 0;
+  runWorkflow(tab, wfs[idx] || wfs[0]);
 }
 
 // Type a line then press Enter. Interactive TUIs (claude/codex) read raw input and treat CR (\r),
@@ -144,15 +164,21 @@ export async function runWorkflow(tab, wf) {
       ? wfBranchName(key, jiraByKey(key)?.summary || '')
       : (tab.branch || (p.prs || []).find(pr => pr.url === tab.url)?.headRefName || '');
     if (!f.matched && branch) {
-      const r = await apiJson(ROUTES.WORKTREE, 'POST', { path: f.workspace || p.workspace, branch });
+      // A Jira task's branch is new — ask the server to create it off the default branch; a PR's
+      // head ref already exists, so don't (matches newTask in viewer.js).
+      const r = await apiJson(ROUTES.WORKTREE, 'POST', { path: f.workspace || p.workspace, branch, create: tab.kind === 'jira' });
       if (r && r.error) throw new Error(r.error);
       f = await resolveTabFolder(tab); // re-resolve now that it exists, so the terminal opens in it
     }
 
-    // 2. Open the split terminal in that worktree.
+    // 2. Open the split terminal in that worktree (pass the resolved path so it isn't re-resolved).
     tab.prSplit = true;
-    await ensurePrTerminal(tab);
+    await ensurePrTerminal(tab, (f && f.path) || p.workspace);
     if (state.activeTabId === tab.id) applyPrLayout(tab, true);
+    // Track the task durably (survives tab close / restart — resumable from the Tasks page).
+    persistTask({ url: tab.url, kind: tab.kind, title: tab.title, repo: tab.repo || '', branch,
+      jiraKey: tab.kind === 'jira' ? key : '', workspace: (f && f.workspace) || p.workspace || '',
+      worktree: (f && f.path) || '', cli: wf.cli || '' });
     const termId = tab.termId;
     if (!termId) throw new Error('terminal not ready');
     const dir = (f && f.path) || p.workspace;
