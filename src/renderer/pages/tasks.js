@@ -14,7 +14,7 @@ import { toast, toastErr } from '../components/toast.js';
 import { workflowRunState } from '../components/workflow.js';
 import { openInSplit, activateTab, closeTab } from '../components/viewer.js';
 import { terminalTailLines, disposeTerm } from '../components/terminal.js';
-import { resolveTabFolder, removeWorktree } from '../components/split.js';
+import { resolveTabFolder, removeWorktree, worktreeHolders } from '../components/split.js';
 import { analyzeTerminal } from '../services/analyzer.js';
 import { unpersistTask } from '../services/tasks.js';
 
@@ -230,8 +230,15 @@ export async function deleteTaskSession(url) {
       : (wsRoot && cwd && cwd.startsWith(`${wsRoot}.worktrees/`)) ? cwd : '';
   }
   const hasWorktree = !!(ws && worktree);
+  // Probe for external apps sitting on the worktree (only here, on an explicit delete). They won't
+  // block removal, but an open Xcode re-saves state into the just-removed folder and leaves a husk —
+  // so name them in the confirm and nudge the user to quit them first. Advisory; never blocks.
+  const holders = hasWorktree ? await worktreeHolders(worktree) : [];
+  const holderWarn = holders.length
+    ? `\n\nWarning: ${holders.map(h => h.command).join(', ')} ${holders.length === 1 ? 'is' : 'are'} open on this worktree — quit ${holders.length === 1 ? 'it' : 'them'} first, or leftover files may remain.`
+    : '';
   const msg = hasWorktree
-    ? `Delete this task?\n\nIts worktree (${basename(worktree)}) will be removed${termId ? ' and the terminal stopped' : ''}.`
+    ? `Delete this task?\n\nIts worktree (${basename(worktree)}) will be removed${termId ? ' and the terminal stopped' : ''}.${holderWarn}`
     : 'Delete this task?';
   if (!confirm(msg)) return;
   // Remove the worktree first; a dirty tree blocks it → keep everything and tell the user why.

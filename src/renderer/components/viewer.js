@@ -362,7 +362,17 @@ export async function newTask() {
       ? jiraTaskBranch(key, jiraByKey(key)?.summary || '')
       : (tab.branch || prByUrl(tab.url)?.headRefName || '');
     if (!f.matched && f.workspace && branch) {
-      const r = await apiJson(ROUTES.WORKTREE, 'POST', { path: f.workspace, branch, create: tab.kind === 'jira' });
+      let r = await apiJson(ROUTES.WORKTREE, 'POST', { path: f.workspace, branch, create: tab.kind === 'jira' });
+      // A non-worktree folder is already sitting where this worktree would go. We never delete a
+      // folder we didn't create without asking — confirm an override, tailoring the warning to how
+      // safe it is (only regenerable editor state vs. real files), then retry with override.
+      if (r && r.folderConflict) {
+        const what = r.disposable
+          ? `A leftover folder (only editor state, no source) is at:\n${r.path}\n\nDelete it and create the task here?`
+          : `A folder already exists at:\n${r.path}\n\nIt isn't a git worktree and may contain files. Delete it and create the task here?`;
+        if (!confirm(what)) return;
+        r = await apiJson(ROUTES.WORKTREE, 'POST', { path: f.workspace, branch, create: tab.kind === 'jira', override: true });
+      }
       if (r && r.error) { toastErr(r.error); return; }
       toast(`Worktree created for ${branch}`);
       cwd = r.path || cwd;

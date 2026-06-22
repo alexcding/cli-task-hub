@@ -42,6 +42,7 @@ export const ROUTES = Object.freeze({
   DETECT_REPO: '/api/detect-repo',
   WORKTREE: '/api/worktree',
   WORKTREE_REMOVE: '/api/worktree/remove',
+  WORKTREE_HOLDERS: '/api/worktree/holders',
   DIFF: '/api/diff',
   GIT_COMMIT: '/api/git/commit',
   GIT_PUSH: '/api/git/push',

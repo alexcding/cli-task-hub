@@ -1,5 +1,7 @@
 const { execFile } = require('child_process');
 const { promisify } = require('util');
+const fsp = require('fs/promises');
+const path = require('path');
 const execFileAsync = promisify(execFile);
 const { PR_CATEGORY } = require('../../shared/constants.mjs');
 const { prJiraKeys } = require('../../shared/jira-keys.mjs'); // Jira-key scraping policy (pure, shared)
@@ -173,6 +175,28 @@ function worktreeFolder(branch) {
   return branch.split(/[/\\]+/).filter(Boolean).pop() || branch;
 }
 
+// Files an abandoned worktree regenerates on its own — IDE/OS state that carries no work. Xcode,
+// left open on a worktree whose checkout was already removed, re-saves its UI state and recreates a
+// `<proj>.xcodeproj/project.xcworkspace/xcuserdata/…/UserInterfaceState.xcuserstate` tree; Finder
+// drops `.DS_Store`. A `<ws>.worktrees/<x>` folder holding ONLY these (and no `.git`) is leftover
+// cruft, not a checkout — so createWorktree can clear it and recreate rather than dead-ending on
+// "a folder already exists". Anything outside this set is treated as real content and left intact.
+const isDisposableName = name =>
+  name === '.DS_Store' || name === 'contents.xcworkspacedata' || /\.xcuserstate$/.test(name);
+async function isDisposableLeftover(dir) {
+  let entries;
+  try { entries = await fsp.readdir(dir, { withFileTypes: true }); } catch { return false; }
+  for (const e of entries) {
+    if (e.isDirectory()) {
+      if (e.name === '.git') return false;                                  // a (possibly broken) checkout — never auto-clear
+      if (!(await isDisposableLeftover(path.join(dir, e.name)))) return false;
+    } else if (e.isFile()) {
+      if (!isDisposableName(e.name)) return false;                          // any real file → not disposable
+    } else return false;                                                     // symlink/socket/etc. → be safe, leave it
+  }
+  return true;
+}
+
 // The git worktree checked out at `branch`, if any (so a PR's terminal can open in the
 // matching worktree instead of the main checkout). Returns the entry { path, isMain } —
 // isMain true means the branch is checked out in the shared main tree, not a dedicated
@@ -212,8 +236,6 @@ async function worktreeForJiraKey(dir, key) {
 // origin/<branch> when there's no local one. Never throws — failures come back as { error }.
 async function createWorktree(workspace, branch, opts = {}) {
   if (!workspace || !branch) return { error: 'workspace and branch required' };
-  const path = require('path');
-  const fsp = require('fs/promises');
   // Strip any trailing slash first: `${ws}.worktrees` only lands a SIBLING of the checkout
   // when ws has no trailing separator ("/x/repo" → "/x/repo.worktrees"); "/x/repo/" would
   // give "/x/repo/.worktrees" — a hidden dir nested INSIDE the repo.
@@ -225,10 +247,29 @@ async function createWorktree(workspace, branch, opts = {}) {
     if (await exists(dest)) {
       // Folder's already there. If git knows it as a worktree, adopt it (idempotent) instead
       // of erroring — covers a re-click after the branch-prefix match above resolved late, or
-      // a worktree created outside the app. Only a non-worktree folder is a real conflict.
-      const registered = (await listWorktrees(workspace)).some(w => w.path === dest);
-      if (registered) return { ok: true, path: dest };
-      return { error: 'A folder already exists at ' + dest };
+      // a worktree created outside the app.
+      const registered = async () => (await listWorktrees(workspace)).some(w => w.path === dest);
+      if (await registered()) return { ok: true, path: dest };
+      // Not registered, but the folder exists. Resolve it instead of dead-ending on "a folder
+      // already exists":
+      //   • a real worktree that lost its admin link (its `.git` pointer survives but git's
+      //     bookkeeping was pruned/orphaned, e.g. the main repo was re-cloned) → `worktree repair`
+      //     re-establishes the connection from the worktree side, then we adopt it.
+      //   • an empty husk (a half-finished create, or a worktree whose folder was hand-deleted and
+      //     re-made) → remove it and fall through to create cleanly below.
+      //   • anything else (a non-worktree folder with real content) → DON'T unilaterally delete a
+      //     folder we didn't create. Report it as a conflict so the caller can ask the user, then
+      //     retry with opts.override to wipe + recreate. We tag whether it's only regenerable IDE
+      //     state (isDisposableLeftover) so the prompt can say how safe the deletion is.
+      if (await exists(path.join(dest, '.git'))) {
+        try { await gitRun(workspace, ['worktree', 'repair', dest]); } catch { /* not repairable */ }
+        if (await registered()) return { ok: true, path: dest };
+      }
+      const entries = await fsp.readdir(dest).catch(() => ['?']); // unreadable → treat as non-empty (don't touch it)
+      if (entries.length && !opts.override) {
+        return { error: 'A folder already exists at ' + dest, folderConflict: true, path: dest, disposable: await isDisposableLeftover(dest) };
+      }
+      await fsp.rm(dest, { recursive: true, force: true }).catch(() => {}); // empty husk, or user-confirmed override → wipe, then create below
     }
     await fsp.mkdir(path.dirname(dest), { recursive: true });
     // Clear admin entries for worktrees whose folders were deleted by hand — otherwise
@@ -263,6 +304,39 @@ async function createWorktree(workspace, branch, opts = {}) {
   }
 }
 
+// Processes with a file OPEN under a worktree, so the delete flow can warn that an external app
+// (typically Xcode) is sitting on it. On macOS an open file unlinks fine, so this never BLOCKS
+// removal — but the app re-saves state into the just-removed folder, leaving the husk that blocks
+// the next New Task; closing it first is the only real prevention. Advisory only: we name holders,
+// never kill them. `lsof +D` walks the tree (can be slow on a big checkout) so it's bounded and
+// only ever run on an explicit delete.
+//
+// The key filter is fd TYPE, not the command name (unreliable — the task's own `claude` shows up
+// under a versioned exec name lsof can't be allow-listed against). A shell or CLI merely PARKED in
+// the worktree holds it only as its `cwd`/`rtd` (a directory fd); an editor actually editing holds
+// open REGULAR files (numbered fds). So we count a process only when it has a real open file there —
+// that cleanly drops the task's own shell + CLI and keeps the GUI app the user should quit. Returns
+// distinct [{ command, pid }] (empty on any failure — a missing/odd `lsof` must never wedge a delete).
+async function worktreeHolders(dir) {
+  if (!dir) return [];
+  let stdout = '';
+  // -F pcft → field-tagged lines: `p<pid>` + `c<command>` per process, then `f<fd>` + `t<type>` per
+  // open file. lsof exits non-zero when a path is inaccessible or nothing matches, but still prints
+  // what it found, so we read partial output off the error rather than discarding it.
+  try { ({ stdout } = await execFileAsync('lsof', ['-F', 'pcft', '+D', String(dir)], { maxBuffer: MAX_BUFFER, timeout: 8000 })); }
+  catch (e) { stdout = (e.stdout || '').toString(); }
+  const holders = new Map(); // pid → command, only for processes holding a real open file
+  let pid = '', cmd = '', fd = '';
+  for (const line of stdout.split('\n')) {
+    const tag = line[0], val = line.slice(1);
+    if (tag === 'p') { pid = val; cmd = ''; fd = ''; }
+    else if (tag === 'c') cmd = val;
+    else if (tag === 'f') fd = val;                                  // fd: a number (open file) or cwd/rtd/txt/mem
+    else if (tag === 't' && val === 'REG' && /^\d/.test(fd)) holders.set(pid, cmd); // a numbered fd on a REG file = genuinely open
+  }
+  return [...holders.entries()].map(([p, command]) => ({ command, pid: Number(p) || 0 }));
+}
+
 // Remove a git worktree (the folder + its admin entry) via `git -C <workspace> worktree
 // remove <dest>`, run from the MAIN checkout so git never refuses "can't remove current
 // worktree". NOT forced: git declines if the worktree has uncommitted/untracked changes,
@@ -272,6 +346,11 @@ async function removeWorktree(workspace, dest) {
   if (!workspace || !dest) return { error: 'workspace and worktree path required' };
   try {
     await gitRun(workspace, ['worktree', 'remove', dest]);
+    // `worktree remove` deletes the folder, but an IDE still open on the checkout (Xcode) re-saves
+    // its UI state to the just-removed path moments later, recreating an `xcuserdata` husk that then
+    // blocks the next New Task. Sweep that leftover now if it's nothing but regenerable IDE state —
+    // shrinking the race so the husk doesn't linger (createWorktree clears any straggler on re-create).
+    try { if (await isDisposableLeftover(dest)) await fsp.rm(dest, { recursive: true, force: true }); } catch { /* gone already / unreadable */ }
     return { ok: true };
   } catch (err) {
     return { error: gitErrLine(err, 'git worktree remove failed') };
@@ -550,17 +629,16 @@ async function gitCommit(dir, message, includeUntracked = true) {
 // worktree (`git apply -R`). If the file drifted since the diff was rendered the apply
 // fails cleanly and the caller re-renders — it can never half-apply a stale hunk.
 async function gitDiscard(dir, patch) {
-  const fs = require('fs/promises');
   const os = require('os');
-  const file = require('path').join(os.tmpdir(), `taskhub-discard-${process.pid}-${Date.now()}.patch`);
+  const file = path.join(os.tmpdir(), `taskhub-discard-${process.pid}-${Date.now()}.patch`);
   try {
-    await fs.writeFile(file, patch);
+    await fsp.writeFile(file, patch);
     await gitRun(dir, ['apply', '-R', file]);
     return { ok: true };
   } catch (err) {
     return { error: gitErrLine(err, 'git apply failed') };
   } finally {
-    fs.unlink(file).catch(() => {});
+    fsp.unlink(file).catch(() => {});
   }
 }
 
@@ -633,4 +711,4 @@ async function getPRs(repo, state = 'open', limit = 30, { ci = false, fresh = fa
 
 // ghStats reads the metrics; noteInflight/noteCoalesced let the poller's sync-dedup layer
 // bump the gauges without reaching into _gh's field names.
-module.exports = { gh, ghStats, noteInflight, noteCoalesced, getPRs, getCurrentUser, getUserName, reviewRequestedAt, categoryOf, awaitingReview, parseRepo, gitRemoteRepo, worktreeForBranch, worktreeForJiraKey, createWorktree, removeWorktree, gitDiff, gitCommit, gitPush, gitDiscard, gitLog, gitShow, gitBranches, gitDefaultBranch, commitAvatars, listWorktrees, summarizeCI };
+module.exports = { gh, ghStats, noteInflight, noteCoalesced, getPRs, getCurrentUser, getUserName, reviewRequestedAt, categoryOf, awaitingReview, parseRepo, gitRemoteRepo, worktreeForBranch, worktreeForJiraKey, createWorktree, removeWorktree, worktreeHolders, gitDiff, gitCommit, gitPush, gitDiscard, gitLog, gitShow, gitBranches, gitDefaultBranch, commitAvatars, listWorktrees, summarizeCI };

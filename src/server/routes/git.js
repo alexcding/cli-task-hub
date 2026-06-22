@@ -23,9 +23,9 @@ function register(app) {
   // Create a git worktree for a PR branch as a sibling of the project workspace, so the
   // tab can get its own checkout. Local git only. Returns { path } on success or { error }.
   app.post(ROUTES.WORKTREE, async (req, res) => {
-    const { path: dir, branch, create, base } = req.body || {};
+    const { path: dir, branch, create, base, override } = req.body || {};
     if (!dir || !branch) return res.status(400).json({ error: 'path and branch required' });
-    res.json(await github.createWorktree(String(dir), String(branch), { create: !!create, base: base ? String(base) : '' }));
+    res.json(await github.createWorktree(String(dir), String(branch), { create: !!create, base: base ? String(base) : '', override: !!override }));
   });
 
   // Remove a worktree (folder + admin entry), run from the project workspace. Local git only.
@@ -33,6 +33,14 @@ function register(app) {
     const { path: dir, worktree } = req.body || {};
     if (!dir || !worktree) return res.status(400).json({ error: 'path and worktree required' });
     res.json(await github.removeWorktree(String(dir), String(worktree)));
+  });
+
+  // External processes (e.g. Xcode) with files open under a worktree, so the delete flow can warn
+  // before removing it. Advisory only — `lsof`-backed, the task's own shell/CLI filtered out.
+  app.get(ROUTES.WORKTREE_HOLDERS, async (req, res) => {
+    const dir = req.query.path;
+    if (!dir) return res.json({ holders: [] });
+    res.json({ holders: await github.worktreeHolders(String(dir)) });
   });
 
   // Uncommitted changes in a checkout (the diff pane).

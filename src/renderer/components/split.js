@@ -58,6 +58,16 @@ export async function removeWorktree(workspace, worktree) {
   catch (e) { return { error: e.message }; }
 }
 
+// External apps (e.g. Xcode) with files open under a worktree — surfaced before a task delete so we
+// can warn the user to close them (an open app re-saves state into the just-removed folder, leaving
+// a husk). Advisory only; returns distinct process names. Never throws — a failed probe just yields
+// nothing rather than blocking the delete.
+export async function worktreeHolders(worktree) {
+  if (!worktree) return [];
+  try { return (await api(`${ROUTES.WORKTREE_HOLDERS}?path=${encodeURIComponent(worktree)}`))?.holders || []; }
+  catch { return []; }
+}
+
 // Re-adopt a surviving paired terminal for this tab by its URL (kept alive after a close, or
 // rehydrated after a window reload). Sets tab.termId and returns it, or null if none — never
 // creates one (that's ensurePrTerminal / New Task). The single source for URL-keyed adoption,
