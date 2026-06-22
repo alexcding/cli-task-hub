@@ -38,7 +38,7 @@
     <nav>
       <button class="nav-btn active" data-page="dashboard" onclick="showPage('dashboard')"><span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></span> Dashboard</button>
       <button class="nav-btn" data-page="scrumboard" onclick="showPage('scrumboard')"><span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><line x1="9" y1="5" x2="9" y2="19"/><line x1="15" y1="5" x2="15" y2="19"/></svg></span> Scrumboard</button>
-      <button class="nav-btn" data-page="tasks" onclick="showPage('tasks')"><span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="3"/><path d="M18 3 21 6 18 9 15 6Z"/><rect x="3" y="15" width="6" height="6" rx="1"/><circle cx="18" cy="18" r="3"/><path d="M9 6h6"/><path d="M6 9v6"/><path d="M18 9v6"/></svg></span> Tasks</button>
+      <button class="nav-btn" data-page="tasks" onclick="showPage('tasks')"><span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="3"/><path d="M18 3 21 6 18 9 15 6Z"/><rect x="3" y="15" width="6" height="6" rx="1"/><circle cx="18" cy="18" r="3"/><path d="M9 6h6"/><path d="M6 9v6"/><path d="M18 9v6"/></svg></span> Tasks<span class="nav-count" id="tasks-nav-count"></span></button>
       <button class="nav-btn" data-page="activity" onclick="showPage('activity')"><span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><line x1="8.5" y1="13" x2="15.5" y2="13"/><line x1="8.5" y1="16.5" x2="14" y2="16.5"/></svg></span> Events</button>
 
       <div class="nav-label" style="margin-top:4px">Projects</div>
@@ -404,18 +404,11 @@
           <button class="seg-tab on" id="pane-view-term" title="Terminal (⇧⌘D)" onclick="setPaneView('term')">
             <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 7l4 5-4 5"/><path d="M12 17h7"/></svg><span class="pv-label">Terminal</span>
           </button>
-          <button class="seg-tab" id="pane-view-diff" title="Changes — git diff (⇧⌘D)" onclick="setPaneView('diff')">
-            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4.5v6"/><path d="M9 7.5h6"/><path d="M9 16.5h6"/></svg><span class="pv-label">Changes</span>
+          <button class="seg-tab" id="pane-view-diff" title="Review — git diff (⇧⌘D)" onclick="setPaneView('diff')">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4.5v6"/><path d="M9 7.5h6"/><path d="M9 16.5h6"/></svg><span class="pv-label">Review</span>
           </button>
         </div>
         <span class="split-title" id="term-title"></span>
-        <button class="split-btn" id="term-workflow" title="Run workflow" onclick="toggleWorkflowRun(event)" hidden>
-          <svg class="wf-play" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="7 4 19 12 7 20 7 4"/></svg>
-          <span class="wf-run" aria-hidden="true"><svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><rect x="8.5" y="8.5" width="7" height="7" rx="1.5"/></svg></span>
-        </button>
-        <button class="split-btn" id="commit-btn" title="Commit changes" onclick="toggleCommitPop()">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.5"/><path d="M2.5 12h6"/><path d="M15.5 12h6"/></svg><span class="cb-label">Commit</span>
-        </button>
       </div>
       <!-- Right-panel toggle (terminal/changes pane) lives outside both segments so it
            stays pinned to the far right of the toolbar — its position doesn't shift
@@ -445,15 +438,49 @@
       </div>
       <!-- Diff pane: shares the terminal's slot in the split; diff.js renders into it. -->
       <div class="diff-pane" id="diff-pane" style="display:none"></div>
+      <!-- Inline commit history for the tab's worktree, drawn over the diff pane when the
+           Changes-view History button is toggled on (history.js renders into it). -->
+      <div class="history-pane" id="history-pane" hidden></div>
       <!-- Discard confirmation: an overlay scoped to the diff pane's region (not a
            window-blocking native confirm). diff.js fills + toggles it. -->
       <div class="diff-confirm" id="diff-confirm" hidden></div>
+      <!-- Bottom action bar pinned to the foot of the right pane. The top toolbar stays
+           clear of actions; everything actionable lives here. Terminal view shows the
+           .pf-term buttons (Clear / Run workflow); the Changes view (body.pane-diff) shows
+           the .pf-diff buttons (commit History / Commit). CSS swaps which set is visible. -->
+      <div class="pane-foot" id="pane-foot">
+        <div class="pf-side pf-left">
+          <button class="pf-btn pf-term" id="pf-clear" title="Clear terminal" onclick="clearVisibleTerm()">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 16 3 18l4 4h6"/><path d="m13 22 8-8a2 2 0 0 0 0-3l-6-6a2 2 0 0 0-3 0L4 13a2 2 0 0 0 0 3l4 4"/></svg><span>Clear</span>
+          </button>
+          <!-- Review sub-view switch: the working diff (current changes) vs the branch's commit
+               history. Both always reachable — neither is a toggle you have to turn off. -->
+          <div class="seg-tabs review-switch pf-diff">
+            <button class="seg-tab on" id="review-changes" title="Working changes" onclick="setReviewView('changes')">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4.5v6"/><path d="M9 7.5h6"/><path d="M9 16.5h6"/></svg><span>Changes</span>
+            </button>
+            <button class="seg-tab" id="review-history" title="Commit history" onclick="setReviewView('history')">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l3 2"/></svg><span>History</span>
+            </button>
+          </div>
+        </div>
+        <div class="pf-side pf-right">
+          <button class="pf-btn pf-term" id="term-workflow" title="Run workflow" onclick="toggleWorkflowRun(event)" hidden>
+            <svg class="wf-play" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="7 4 19 12 7 20 7 4"/></svg>
+            <span class="wf-run" aria-hidden="true"><svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><rect x="8.5" y="8.5" width="7" height="7" rx="1.5"/></svg></span>
+            <span class="pf-label">Run</span>
+          </button>
+          <button class="pf-btn pf-diff" id="commit-btn" title="Commit changes" onclick="toggleCommitPop()">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.5"/><path d="M2.5 12h6"/><path d="M15.5 12h6"/></svg><span class="cb-label">Commit</span>
+          </button>
+        </div>
+      </div>
     </div>
     <!-- Divider is a child of .split (not .split-body) so it spans the FULL height — through
          the toolbar to the very top — matching the sidebar resizer, instead of stopping at
          the toolbar's bottom edge. -->
     <div id="pr-divider" title="Drag to resize"></div>
-    <!-- Commit popover (commit.js renders into it), anchored under the toolbar's Commit button. -->
+    <!-- Commit popover (commit.js renders into it), anchored above the bottom bar's Commit button. -->
     <div id="commit-pop" class="commit-pop" hidden></div>
   </div>
   </div><!-- /workarea -->

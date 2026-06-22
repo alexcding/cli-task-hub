@@ -46,11 +46,14 @@ export const workflowRunState = tabId => {
 // Nudge the Tasks page to re-render when a run's step advances (busy↔idle edges already refresh it
 // via the SSE turn hooks; this covers the between-turns step bump). No-op unless that page is open.
 function notifyTasksUpdated() {
+  window.updateTasksBadge?.(); // keep the left-nav running count live even when the page is closed
   if (document.querySelector('.page.active')?.id === 'page-tasks') window.loadTasks?.();
 }
 
 // Reflect the active tab: hidden unless its project has a workflow (or a run is in flight);
-// running shows the stop/spinner state.
+// running shows the stop/spinner state. The button lives in the terminal-view bottom bar — CSS
+// (body.pane-diff .pf-term) already hides it in the Changes view, so this only gates on
+// workflow availability, not which pane is showing.
 export function refreshWorkflowBtn() {
   const btn = document.getElementById('term-workflow');
   if (!btn) return;
@@ -59,6 +62,8 @@ export function refreshWorkflowBtn() {
   const wfs = tab && canSplitTerminal(tab) ? workflowsForTab(tab) : [];
   btn.hidden = wfs.length === 0 && !running;
   btn.classList.toggle('running', running);
+  const label = btn.querySelector('.pf-label');
+  if (label) label.textContent = running ? 'Stop' : (wfs.length > 1 ? 'Run…' : 'Run');
   btn.title = running ? 'Stop workflow' : (wfs.length === 1 ? `Run workflow: ${wfs[0].name}` : 'Run workflow…');
 }
 

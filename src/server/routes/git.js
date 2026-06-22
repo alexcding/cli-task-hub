@@ -61,7 +61,7 @@ function register(app) {
   app.get(ROUTES.GIT_LOG, async (req, res) => {
     const dir = req.query.path;
     if (!dir) return res.status(400).json({ error: 'path required' });
-    res.json(await github.gitLog(String(dir), { limit: Number(req.query.limit) || 100, skip: Number(req.query.skip) || 0, ref: req.query.ref ? String(req.query.ref) : '' }));
+    res.json(await github.gitLog(String(dir), { limit: Number(req.query.limit) || 100, skip: Number(req.query.skip) || 0, ref: req.query.ref ? String(req.query.ref) : '', aheadOnly: req.query.aheadOnly === '1', base: req.query.base ? String(req.query.base) : '' }));
   });
 
   // Local branches + worktree folders + default branch for the Git tab's left rail. Read-only

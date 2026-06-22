@@ -7,7 +7,8 @@ import { api } from '../services/api.js';
 import { jiraKeyFromUrl, canSplitTerminal } from '../lib/util.js';
 import { toastErr } from './toast.js';
 import { createTermView, disposeTerm, fitTerm, visibleTerm } from './terminal.js';
-import { renderDiffPane, hideDiffPane } from './diff.js';
+import { hideDiffPane } from './diff.js';
+import { hideHistory, applyReview } from './history.js';
 import { saveTabs, updateTitles } from './viewer.js';
 
 // Resolve a tab's local folder: the matching git checkout if its branch/key is checked
@@ -110,8 +111,8 @@ function showPaneContent(tab, t) {
   document.getElementById('pane-view-term')?.classList.toggle('on', !diff);
   document.getElementById('pane-view-diff')?.classList.toggle('on', diff);
   t.el.style.display = diff ? 'none' : '';
-  if (diff) renderDiffPane(t.cwd);
-  else hideDiffPane();
+  if (diff) applyReview(tab, t.cwd); // restore this tab's Review sub-view (Changes / History)
+  else { hideHistory(); hideDiffPane(); } // Terminal: drop the opaque history overlay too
   return diff;
 }
 
@@ -157,6 +158,7 @@ export function setPaneView(view) {
 // webview grows to fill) before hiding the pane; without them (e.g. a tab closed) it just drops
 // the layout class.
 export function clearPrLayout(tab = null, animate = false) {
+  hideHistory();
   hideDiffPane();
   document.body.classList.remove('pane-diff');
   const t = animate && tab && tab.termId && state.terms.get(tab.termId);

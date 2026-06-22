@@ -33,6 +33,8 @@ export function refreshTermBusy() {
     const t = state.tabs.find(x => x.id === el.dataset.id);
     el.classList.toggle('busy', !!(t?.termId && state.terms.get(t.termId)?.busy));
   });
+  // Every busy↔idle edge also moves the Tasks-nav running count (window bridge avoids a cycle).
+  window.updateTasksBadge?.();
 }
 
 // Grouped sidebar markup: GitHub groups (Mine/Review) then a Jira group, each a list

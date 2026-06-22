@@ -125,7 +125,25 @@ function startTicker() {
   }, 1500);
 }
 
+// The left-nav "Tasks" badge: how many sessions are running right now (busy terminal or a workflow
+// in flight) — the same predicate the page uses for "working". Empty string when none, so the
+// `.nav-count:empty` rule hides the badge entirely at 0. Updated on every busy↔idle edge
+// (refreshTermBusy) and workflow step change (notifyTasksUpdated), so it stays live off-page too.
+export function updateTasksBadge() {
+  const el = document.getElementById('tasks-nav-count');
+  if (!el) return;
+  let n = 0;
+  for (const [, t] of state.terms) {
+    if (!t.paired) continue;
+    const tab = state.tabs.find(x => x.url === (t.pairKey || ''));
+    if (t.busy || workflowRunState(tab?.id)) n++;
+  }
+  el.textContent = n ? String(n) : '';
+  el.title = n ? `${n} task${n === 1 ? '' : 's'} running` : '';
+}
+
 export function loadTasks() {
+  updateTasksBadge();
   const list = sessions();
   // Working first (active sessions on top), then by title for a stable order.
   list.sort((a, b) => (Number(b.busy) - Number(a.busy)) || a.title.localeCompare(b.title));

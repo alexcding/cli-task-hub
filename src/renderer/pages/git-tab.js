@@ -6,11 +6,13 @@
 import { ROUTES } from '/shared/routes.mjs';
 import { state, projectById as proj } from '../stores/store.js';
 import { api, apiJson } from '../services/api.js';
-import { esc, escJs, fmtDate } from '../lib/util.js';
+import { esc, escJs } from '../lib/util.js';
 import { ICON } from '../lib/icons.js';
 import { toast, toastErr } from '../components/toast.js';
 import { computeGraph } from '../lib/git-graph.mjs';
-import { ensureDiff2Html, drawDiff, graphSvg, refChips, fmtDateTime, LANE_W, ROW_H } from '../components/git.js';
+import { parseDiff } from '../lib/diff-parse.mjs';
+import { fmtDateTime, ROW_H, renderCommitRows, avatarImg } from '../components/git.js';
+import { renderReadOnly, wireDiffCollapse } from '../components/diff.js';
 
 // One project tab is visible at a time → a single module-level snapshot suffices.
 let _t = null;   // { id, cwd, ref, viewing, commits, graph, refs, view:'list'|'commit', sha, detail }
@@ -37,8 +39,6 @@ export async function loadGitTab(id) {
       <div class="gt-main" id="gt-main-${id}"><div class="loading-row"><div class="spinner"></div> Loading history…</div></div>
     </div>`;
 
-  await ensureDiff2Html();
-  if (!document.getElementById(`proj-gittab-${id}`)) return; // tab changed during bundle load
   await Promise.all([loadRefs(id), loadLog(id)]);
 }
 
@@ -116,19 +116,14 @@ function renderMain(id) {
   if (!main || !_t) return;
   if (_t.view === 'commit') return renderCommit(id);
   if (!_t.commits?.length) { main.innerHTML = `<div class="pg-empty">No commits on this branch.</div>`; return; }
-  const w = Math.max(1, _t.graph.laneCount) * LANE_W;
+  const rows = renderCommitRows(_t.commits, _t.graph, {
+    onclick: sha => `gitTabShowCommit('${id}','${sha}')`,
+    avatarUrl: c => _t.avatars?.[c.sha] || _t.avatarByName?.[c.author] || '',
+  });
   main.innerHTML = `
     <div class="gt-main-head">${ICON.branch}<span>${esc(_t.viewing || '')}</span><span class="gt-count">${_t.commits.length}</span>
       <button class="pg-refresh" title="Refresh" onclick="loadGitTab('${id}')">${ICON.refresh}</button></div>
-    <div class="gt-clog" style="--pg-row-h:${ROW_H}px">${_t.commits.map((c, i) => `
-      <div class="pg-crow" onclick="gitTabShowCommit('${id}','${c.sha}')" title="${esc(c.subject)}">
-        ${graphSvg(_t.graph.rows[i], _t.graph.laneCount, w)}
-        ${avatar(c)}
-        <div class="pg-crow-main">
-          <div class="pg-crow-subj">${refChips(c.refs)}${esc(c.subject)}</div>
-          <div class="pg-crow-meta">${esc(c.author)} · <span title="${esc(c.date)}">${esc(fmtDate(c.date))}</span> · <span class="pg-sha">${esc(c.short)}</span></div>
-        </div>
-      </div>`).join('')}</div>`;
+    <div class="gt-clog" style="--pg-row-h:${ROW_H}px">${rows}</div>`;
 }
 
 export function gitTabPick(id, ref) {
@@ -186,8 +181,10 @@ function renderCommit(id) {
       <div id="gt-cd-diff-${id}" class="pg-cd-diff"></div>
     </div>`;
   const diffEl = document.getElementById(`gt-cd-diff-${id}`);
-  if (data.diff && data.diff.trim()) drawDiff(diffEl, data.diff);
-  else if (diffEl) diffEl.innerHTML = `<div class="pg-empty">No changes (empty or merge commit).</div>`;
+  if (!diffEl) return;
+  // Same .diff-table renderer as the Changes pane + inline history (read-only — no discard).
+  if (data.diff && data.diff.trim()) { diffEl.innerHTML = renderReadOnly(parseDiff(data.diff)); wireDiffCollapse(diffEl); }
+  else diffEl.innerHTML = `<div class="pg-empty">No changes (empty or merge commit).</div>`;
 }
 
 // Remove an existing worktree folder (the only worktree write here — creation lives on the
@@ -211,38 +208,6 @@ export async function gitTabRemoveWorktree(id, btn, worktreePath) {
 function shortPath(p) {
   const parts = String(p || '').split('/').filter(Boolean);
   return parts.length <= 2 ? p : '…/' + parts.slice(-2).join('/');
-}
-
-// Commit avatar: a generated initials badge (instant, no network, colour hashed per author) with
-// the author's real GitHub avatar overlaid when known (loadAvatars). The badge is the base, so if
-// the image is missing or fails to load the initials show through — no broken-image flash.
-// Keyed by author NAME (not email) so one person always gets the same initials + colour, even
-// when they commit under several emails.
-const _badges = new Map();
-function authorBadge(name, email) {
-  const key = String(name || email || '?').trim().toLowerCase();
-  let b = _badges.get(key);
-  if (b) return b;
-  const words = String(name || email || '?').trim().split(/\s+/).filter(Boolean);
-  const initials = (words.length >= 2 ? words[0][0] + words[1][0] : (words[0] || '?').slice(0, 1)).toUpperCase();
-  let h = 0;
-  for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) | 0;
-  b = { initials, hue: ((h % 360) + 360) % 360 };
-  _badges.set(key, b);
-  return b;
-}
-function avatarImg(url) {
-  return `<img class="pg-av-img" src="${esc(url)}" alt="" loading="lazy" onerror="this.remove()">`;
-}
-// Real avatar for a commit: GitHub's match for this exact SHA, else the photo resolved for any
-// other commit by the same author name (covers the same person's unlinked-email commits).
-function avatarUrl(c) {
-  return _t?.avatars?.[c.sha] || _t?.avatarByName?.[c.author] || '';
-}
-function avatar(c) {
-  const { initials, hue } = authorBadge(c.author, c.email);
-  const url = avatarUrl(c);
-  return `<span class="pg-av" data-sha="${c.sha}" data-name="${esc(c.author || '')}" style="background:hsl(${hue} 52% 47%)" title="${esc(c.author || c.email)}">${esc(initials)}${url ? avatarImg(url) : ''}</span>`;
 }
 
 // Fetch real GitHub avatars for the visible commits (cached server-side per repo|ref) and patch

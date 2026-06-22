@@ -333,6 +333,16 @@ function gitDefaultBranch(dir) {
   });
 }
 
+// Resolve a base branch NAME to a ref that exists in this worktree for `base..HEAD`: the local
+// branch first, then the remote-tracking origin/<name> (a PR base often isn't checked out
+// locally). Returns null if neither resolves, so the caller can skip the range cleanly.
+async function resolveBaseRef(dir, name) {
+  for (const cand of [name, `origin/${name}`]) {
+    try { await gitRun(dir, ['rev-parse', '--verify', '--quiet', cand]); return cand; } catch { /* not present */ }
+  }
+  return null;
+}
+
 // Real GitHub avatars for commit authors, keyed by full SHA, via one `gh api` commits call —
 // the local `git log` only has name+email, which don't map to a GitHub login/avatar. Only
 // commits actually pushed to GitHub resolve; the rest fall back to a generated initials avatar
@@ -373,15 +383,35 @@ function gitRemotes(dir) {
 // display. Newest-first, which computeGraph() in git-graph.mjs expects. Never throws.
 const REF_RE = /^[^-][\w./-]*$/; // ref-ish token, never a flag — safe to hand to `git log`
 const LOG_FMT = '%H%x1f%h%x1f%P%x1f%an%x1f%ae%x1f%aI%x1f%D%x1f%s%x1e';
-async function gitLog(dir, { limit = 100, skip = 0, ref = '' } = {}) {
+async function gitLog(dir, { limit = 100, skip = 0, ref = '', aheadOnly = false, base = '' } = {}) {
   if (!dir) return { error: 'path required' };
   try {
     // Pick the branch to show: an explicit (validated) pick from the head's branch picker,
     // else the repo's default branch, else plain HEAD ('' → git's current checkout). Resolve
     // the default only when nothing was picked (the picked ref already decides `viewing`).
     const picked = ref && REF_RE.test(ref) ? ref : '';
-    const defaultBranch = picked ? null : await gitDefaultBranch(dir);
-    const viewing = picked || defaultBranch || '';
+    // The default branch and HEAD metadata both feed the ahead-of-base range and are independent,
+    // so resolve them together rather than serially.
+    const [defaultBranch, meta] = await Promise.all([
+      picked ? Promise.resolve(null) : gitDefaultBranch(dir),
+      gitMeta(dir),
+    ]);
+    let viewing = picked || defaultBranch || '';
+    // aheadOnly (the inline PR history): show just this branch's own commits — the range
+    // base..HEAD — instead of the whole graph. Prefer the PR's real base branch (passed in,
+    // validated), else the repo default. On the base branch itself there's nothing to diff, so
+    // fall back to the normal newest-first log. `baseUsed` rides back for the header.
+    let revision = viewing;
+    let baseUsed = null;
+    if (aheadOnly && !picked && meta.branch) {
+      const want = base && REF_RE.test(base) ? base : defaultBranch;
+      const baseRef = want && want !== meta.branch ? await resolveBaseRef(dir, want) : null;
+      if (baseRef) {
+        baseUsed = want;            // report the human branch name, not the resolved origin/<name>
+        viewing = meta.branch;
+        revision = `${baseRef}..HEAD`; // HEAD always resolves; baseRef is verified to exist
+      }
+    }
     // Clamp count/skip with Math (not `| 0`, which truncates to 32-bit and wraps large values
     // negative — e.g. skip=3e9 would become a negative --skip git rejects).
     const maxCount = Math.max(1, Math.min(1000, Math.floor(Number(limit)) || 100));
@@ -391,7 +421,7 @@ async function gitLog(dir, { limit = 100, skip = 0, ref = '' } = {}) {
     args.push(`--pretty=format:${LOG_FMT}`);
     // Trailing `--` disambiguates the ref as a revision, not a pathspec (`git log main` alone
     // is "ambiguous" when a file named main could exist).
-    if (viewing) args.push(viewing, '--');
+    if (revision) args.push(revision, '--');
     const [{ stdout }, remotes] = await Promise.all([gitRun(dir, args), gitRemotes(dir)]);
     const commits = stdout.split('\x1e').map(rec => rec.replace(/^\n/, '')).filter(Boolean).map(rec => {
       const [sha, short, parents, author, email, date, refs, subject] = rec.split('\x1f');
@@ -402,9 +432,8 @@ async function gitLog(dir, { limit = 100, skip = 0, ref = '' } = {}) {
         refs: parseRefs(refs, remotes),
       };
     });
-    const meta = await gitMeta(dir);
     // `branch` is the checked-out HEAD; `viewing` is the branch this log actually shows.
-    return { commits, ...meta, viewing: viewing || meta.branch, defaultBranch };
+    return { commits, ...meta, viewing: viewing || meta.branch, defaultBranch, base: baseUsed };
   } catch (err) {
     // Unborn HEAD (no commits yet) is not an error for this view — show an empty history.
     if (/does not have any commits|unknown revision|bad default revision/i.test(String(err.stderr || ''))) {

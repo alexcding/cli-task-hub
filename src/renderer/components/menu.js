@@ -25,7 +25,10 @@ export function openMenu(e, items) {
     m.appendChild(b);
   }
   document.body.appendChild(m);
-  m.style.top = (window.scrollY + e.clientY) + 'px';
+  // Clamp into the viewport on both axes (offset* is known now that it's in the DOM): near the
+  // bottom edge the menu rides up so it stays fully visible — e.g. the Run button in the bottom bar.
+  const top = Math.min(window.scrollY + e.clientY, window.scrollY + window.innerHeight - m.offsetHeight - 8);
+  m.style.top = Math.max(window.scrollY + 8, top) + 'px';
   m.style.left = Math.min(window.scrollX + e.clientX, window.scrollX + window.innerWidth - m.offsetWidth - 8) + 'px';
   _el = m;
   setTimeout(() => document.addEventListener('click', closeMenu, true), 0);

@@ -15,6 +15,7 @@ import * as split from './components/split.js';
 import { toggleWorkflowRun } from './components/workflow.js';
 import * as find from './components/find.js';
 import { toggleCommitPop, commitAction } from './components/commit.js';
+import { setReviewView, histShowCommit } from './components/history.js';
 import { loadDashboard, scrollDash, setUsageTab } from './pages/dashboard.js';
 import { loadProjectPage, projShowSection, reloadProjectPRs, loadProjectWebhooks, saveProjectWebhooks, previewFixVersion,
   wfNew, wfDelete, wfSetName, wfSetCli, wfAddStep, wfRemoveStep, wfEditStepCommand, wfEditStepTitle, saveWorkflows } from './pages/project.js';
@@ -23,7 +24,7 @@ import * as jiraView from './pages/jira.js';
 import { loadScrumboard, setBoardProject, setBoardFilter, setBoardQuery, applyBoardQuery,
   boardDragStart, boardDragEnd, boardDragOver, boardDragLeave, boardDrop } from './pages/scrumboard.js';
 import { loadLogs, setLogCategory, clearLogs } from './pages/logs.js';
-import { loadTasks, openTaskSession, analyzeSession } from './pages/tasks.js';
+import { loadTasks, openTaskSession, analyzeSession, updateTasksBadge } from './pages/tasks.js';
 import { loadSettings, saveConfig, switchSettingsTab, setReviewSound, previewReviewSound, setActivityNotify, toggleSecret, setGitClient, setGitClientCmd, toggleHook } from './pages/settings.js';
 import { showActivityToast } from './components/activity-toast.js';
 import * as modal from './components/modal.js';
@@ -237,6 +238,7 @@ Object.assign(window, {
   splitBack: viewer.splitBack, splitHome: viewer.splitHome,
   togglePrSplit: split.togglePrSplit, clearVisibleTerm: terminal.clearVisibleTerm, toggleWorkflowRun,
   setPaneView: split.setPaneView, toggleCommitPop, commitAction,
+  setReviewView, histShowCommit,
   // find-in-page bar
   onFindInput: find.onFindInput, onFindKey: find.onFindKey, closeFind: () => find.closeFind(true),
   findNext: () => find.findNext(true), findPrev: () => find.findNext(false),
@@ -249,9 +251,10 @@ Object.assign(window, {
   wfNew, wfDelete, wfSetName, wfSetCli, wfAddStep, wfRemoveStep, wfEditStepCommand, wfEditStepTitle, saveWorkflows,
   loadGitTab, gitTabPick, gitTabShowCommit, gitTabBack, gitTabRemoveWorktree,
   loadLogs, setLogCategory, clearLogs,
-  // openTaskSession is used by inline card onclick; loadTasks is reached via window.loadTasks?.()
-  // from workflow.js's notifyTasksUpdated (avoids a tasks↔workflow import cycle) — keep both.
-  loadTasks, openTaskSession,
+  // openTaskSession is used by inline card onclick; loadTasks/updateTasksBadge are reached via
+  // window.* from workflow.js (notifyTasksUpdated) and sidebar.js (refreshTermBusy) so the running
+  // count stays live off-page, without a tasks↔workflow/sidebar import cycle — keep all three.
+  loadTasks, openTaskSession, updateTasksBadge,
   loadSettings, saveConfig, switchSettingsTab, setReviewSound, previewReviewSound, setActivityNotify, toggleSecret, setGitClient, setGitClientCmd, toggleHook,
   __activityToast: showActivityToast, // main pushes activity toasts here when the app is frontmost
   // project modal

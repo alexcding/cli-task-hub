@@ -289,19 +289,6 @@
 .pg-refresh:hover { background:var(--surface-hover); color:var(--text); }
 .pg-refresh svg { width:15px; height:15px; }
 .pg-empty { padding:24px 16px; text-align:center; color:var(--text-3); font-size:13px; }
-/* Fit diff2html into the Git tab's commit detail: app text color, smaller monospace, no chrome. */
-.gt-layout .d2h-wrapper { color:var(--text); font-family:var(--diff-font,ui-monospace,SFMono-Regular,monospace); font-size:12px; }
-.gt-layout .d2h-file-header { padding:6px 10px; }
-.gt-layout .d2h-file-name { color:var(--text); font-size:12px; }
-/* The app's global `td` rule above (padding:11px 16px; border-bottom; font-size:13.5px) bleeds
-   into diff2html's <td> cells — inflating every row to ~43px and squeezing the line-number
-   column so its old/new numbers wrap and stack. Reset the diff table to diff2html's own sizing. */
-.gt-layout .d2h-diff-table td { padding:0; border-bottom:0; font-size:12px; vertical-align:top; }
-/* diff2html line numbers ship position:absolute with no relative ancestor; flow them so they
-   stay in the scroll, and drop the 8em side padding the absolute layout reserved for them. */
-.gt-layout .d2h-code-linenumber { position:static; }
-.gt-layout .d2h-code-line, .gt-layout .d2h-code-side-line { padding:0 0 0 .5em; width:auto; }
-.gt-layout .d2h-file-wrapper { border-left:0; border-right:0; border-top:0; border-radius:0; margin:0; }
 
 /* ── Commit list rows + branch graph (shared by the Git tab) ── */
 /* height is driven by --pg-row-h, set from ROW_H in git.js so the SVG row geometry and the
@@ -340,19 +327,13 @@
 .pg-parent { color:var(--accent); cursor:pointer; }
 .pg-parent:hover { text-decoration:underline; }
 .pg-cd-message { margin:0 12px 12px; padding:10px; background:var(--bg); border:1px solid var(--border); border-radius:6px; font-family:var(--diff-font,ui-monospace,SFMono-Regular,monospace); font-size:11.5px; color:var(--text-2); white-space:pre-wrap; word-break:break-word; }
-.pg-cd-diff { border-top:1px solid var(--border); }
+/* Commit diff renders via diff.js's .diff-table (read-only); the diff font tokens make it match
+   the Changes pane and respond to the font picker + ⌘+/⌘− zoom. */
+.pg-cd-diff { border-top:1px solid var(--border); font:var(--diff-font-size)/1.5 var(--diff-font); }
 
 /* ── Full-width Git tab: branches/worktrees rail + graph/detail ── */
 .gt-layout { display:flex; height:calc(100vh - 150px); min-height:420px; border:1px solid var(--border); border-radius:10px; overflow:hidden; background:var(--surface);
-  /* same diff2html → token mapping as the side panel, so commit diffs match the theme */
-  --d2h-bg-color:var(--surface); --d2h-border-color:var(--border);
-  --d2h-file-header-bg-color:var(--surface-hover); --d2h-file-header-border-color:var(--border);
-  --d2h-line-border-color:var(--border); --d2h-dim-color:var(--text-3);
-  --d2h-ins-bg-color:var(--diff-add-bg); --d2h-ins-border-color:transparent;
-  --d2h-ins-highlight-bg-color:var(--diff-add-gut); --d2h-ins-label-color:var(--diff-add-fg);
-  --d2h-del-bg-color:var(--diff-del-bg); --d2h-del-border-color:transparent;
-  --d2h-del-highlight-bg-color:var(--diff-del-gut); --d2h-del-label-color:var(--diff-del-fg);
-  --d2h-info-bg-color:var(--surface); --d2h-info-border-color:var(--border);
+  /* commit-graph lane palette (consumed by graphSvg's var(--g<n>)) */
   --g0:#3b82f6; --g1:#10b981; --g2:#f59e0b; --g3:#a855f7; --g4:#ef4444; --g5:#14b8a6; --g6:#ec4899; --g7:#84cc16; }
 .gt-side { flex:none; width:260px; border-right:1px solid var(--border); overflow:auto; padding:6px; }
 .gt-main { flex:1; min-width:0; display:flex; flex-direction:column; overflow:hidden; }

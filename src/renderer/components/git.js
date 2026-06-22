@@ -1,53 +1,7 @@
-// Shared git rendering helpers used by the full-width Git tab (views/git-tab.js): the lazy
-// diff2html bundle loader + theme sync, a diff renderer, the commit-graph SVG builder, ref
-// chips, and a date formatter. (TaskHub's older right-hand "glance" panel was removed in
-// favour of the Git tab; these helpers outlived it.)
-import { esc } from '../lib/util.js';
-
-// ── Lazy bundle load (mirrors terminal.js's xterm loader) ───────────────────────────
-// The diff2html UI bundle is ~1 MB (it embeds highlight.js), so it loads on first use, never
-// on app start. A single hljs <link> is injected and its href swapped to match the app theme
-// — both themes style bare `.hljs`, so loading both and toggling `link.disabled` is unreliable
-// (the property doesn't stick before the sheet loads, leaving black backgrounds in light mode).
-let _loaded;
-export function ensureDiff2Html() {
-  if (_loaded) return _loaded;
-  _loaded = new Promise((resolve, reject) => {
-    const css = (id, href) => { const l = document.createElement('link'); l.id = id; l.rel = 'stylesheet'; l.href = href; document.head.appendChild(l); };
-    css('d2h-css', '/vendor/diff2html.min.css');
-    css('hljs-theme', '');
-    syncHljsTheme();
-    new MutationObserver(syncHljsTheme).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
-    const s = document.createElement('script');
-    s.src = '/vendor/diff2html-ui.min.js';
-    s.onload = resolve;
-    s.onerror = () => reject(new Error('diff2html failed to load'));
-    document.head.appendChild(s);
-  });
-  return _loaded;
-}
-
-// Point the single hljs <link> at the theme matching the current app theme.
-function syncHljsTheme() {
-  const link = document.getElementById('hljs-theme');
-  if (!link) return;
-  const dark = document.documentElement.dataset.theme === 'dark';
-  const href = dark ? '/vendor/hljs-github-dark.min.css' : '/vendor/hljs-github.min.css';
-  if (link.getAttribute('href') !== href) link.href = href;
-}
-
-// Render a diff string into a container with diff2html, using TaskHub's narrow-pane settings.
-export function drawDiff(el, diff) {
-  const ui = new window.Diff2HtmlUI(el, diff, {
-    outputFormat: 'line-by-line', // the column is narrow — side-by-side would be cramped
-    drawFileList: false,
-    matching: 'lines',
-    highlight: true,
-    fileContentToggle: false,
-  });
-  ui.draw();
-  ui.highlightCode();
-}
+// Shared git rendering helpers used by the project Git tab + the inline Review history: the
+// commit-graph SVG builder, ref chips, a date formatter, and the commit-list rows. The commit
+// DIFFS render through diff.js's .diff-table renderer (one renderer app-wide) — not diff2html.
+import { esc, fmtDate } from '../lib/util.js';
 
 // ── Commit-graph SVG (per row) ───────────────────────────────────────────────────────
 // Graph geometry (lane/row units → px). ROW_H must match .pg-crow height in index.html so
@@ -83,4 +37,48 @@ export function fmtDateTime(iso) {
   if (!iso) return '';
   const d = new Date(iso);
   return d.toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+}
+
+// ── Commit list rows (shared by the project Git tab + the inline Review history) ─────────
+// A generated initials badge — instant, no network, colour hashed per author NAME so one person
+// always gets the same initials + colour even across several commit emails — is the base; the
+// real GitHub avatar is overlaid (avatarImg) when known, so a missing/failed image shows initials
+// rather than a broken-image flash.
+const _badges = new Map();
+function authorBadge(name, email) {
+  const key = String(name || email || '?').trim().toLowerCase();
+  let b = _badges.get(key);
+  if (b) return b;
+  const words = String(name || email || '?').trim().split(/\s+/).filter(Boolean);
+  const initials = (words.length >= 2 ? words[0][0] + words[1][0] : (words[0] || '?').slice(0, 1)).toUpperCase();
+  let h = 0;
+  for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) | 0;
+  b = { initials, hue: ((h % 360) + 360) % 360 };
+  _badges.set(key, b);
+  return b;
+}
+export function avatarImg(url) {
+  return `<img class="pg-av-img" src="${esc(url)}" alt="" loading="lazy" onerror="this.remove()">`;
+}
+
+// Render the commit rows for a computed graph (the inner HTML of a `--pg-row-h` container).
+// `onclick(sha)` builds each row's handler (callers differ — Git tab vs history), `selected`
+// highlights the open commit, `avatarUrl(c)` resolves a real avatar (else the initials show).
+// `lanes` draws the commit-graph column — off for a single-branch linear list (the inline
+// history is base..HEAD, so the lanes would just be a straight line); `graph` may be null then.
+export function renderCommitRows(commits, graph, { onclick, selected = '', avatarUrl = () => '', lanes = true } = {}) {
+  const w = lanes ? Math.max(1, graph.laneCount) * LANE_W : 0;
+  return commits.map((c, i) => {
+    const { initials, hue } = authorBadge(c.author, c.email);
+    const url = avatarUrl(c);
+    const g = lanes ? graphSvg(graph.rows[i], graph.laneCount, w) : '';
+    const av = `<span class="pg-av" data-sha="${c.sha}" data-name="${esc(c.author || '')}" style="background:hsl(${hue} 52% 47%)" title="${esc(c.author || c.email)}">${esc(initials)}${url ? avatarImg(url) : ''}</span>`;
+    return `<div class="pg-crow${lanes ? '' : ' no-lanes'}${selected && c.sha === selected ? ' sel' : ''}" data-sha="${c.sha}" onclick="${onclick(c.sha)}" title="${esc(c.subject)}">
+      ${g}${av}
+      <div class="pg-crow-main">
+        <div class="pg-crow-subj">${refChips(c.refs)}${esc(c.subject)}</div>
+        <div class="pg-crow-meta">${esc(c.author)} · <span title="${esc(c.date)}">${esc(fmtDate(c.date))}</span> · <span class="pg-sha">${esc(c.short)}</span></div>
+      </div>
+    </div>`;
+  }).join('');
 }

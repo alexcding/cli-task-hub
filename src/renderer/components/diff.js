@@ -9,6 +9,7 @@ import { toast, toastErr } from './toast.js';
 // .mjs (not .js): the package is type:commonjs, and the extension lets node:test
 // import this parser directly while the browser loads it like any other module.
 import { parseDiff, diffPath, hunkBlocks, blockPatch } from '../lib/diff-parse.mjs';
+import { highlightLine, langForPath } from '../lib/highlight.mjs';
 
 // Render guards (idea borrowed from Codex.app's diff viewer): a lockfile-sized file or
 // a huge patch degrades to a stub instead of freezing the renderer on a million rows.
@@ -103,7 +104,27 @@ export async function renderDiffPane(cwd) {
 
 const msg = (text) => `<div class="diff-empty">${text}</div>`;
 
-function render(files, untracked) {
+// Render a parsed diff as the read-only .diff-table view — no discard buttons, no untracked
+// section — for reuse outside the working-changes pane (e.g. the inline commit history). Same
+// markup, so it inherits the diff styles and the --diff-font / --diff-font-size tokens; only a
+// container that sets that font (the caller's) and a collapse click handler are needed.
+export function renderReadOnly(files) {
+  return files.length ? render(files, [], false) : msg('No changes');
+}
+
+// Attach file collapse/expand (header click) to a container holding a renderReadOnly() diff.
+// The working-changes pane wires this itself (in initOnce, alongside discard + the hover frame);
+// read-only consumers (commit history, the project Git tab) call this so they share one behavior.
+export function wireDiffCollapse(el) {
+  if (!el || el._collapseWired) return;
+  el._collapseWired = true;
+  el.addEventListener('click', e => {
+    const head = e.target.closest('.diff-file-head');
+    if (head && !head.classList.contains('diff-untracked-head')) head.parentElement.classList.toggle('collapsed');
+  });
+}
+
+function render(files, untracked, discardable = true) {
   if (!files.length && !untracked.length) return msg('No uncommitted changes');
   const parts = [];
   // Per-file cap alone still allows 100 × 2000 rows in one innerHTML parse; a whole-pane
@@ -111,7 +132,7 @@ function render(files, untracked) {
   let budget = MAX_TOTAL_LINES;
   files.slice(0, MAX_FILES).forEach((f, i) => {
     const lines = f.hunks.reduce((n, h) => n + h.lines.length, 0);
-    parts.push(renderFile(f, i, budget > 0));
+    parts.push(renderFile(f, i, budget > 0, discardable));
     budget -= lines;
   });
   if (files.length > MAX_FILES) parts.push(msg(`… and ${files.length - MAX_FILES} more files — diff truncated`));
@@ -124,7 +145,7 @@ function render(files, untracked) {
 
 const CHEVRON = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>';
 
-function renderFile(f, fi, allow = true) {
+function renderFile(f, fi, allow = true, discardable = true) {
   const badge = { added: 'A', deleted: 'D', renamed: 'R' }[f.status] || '';
   const counts = `<span class="diff-counts">${f.adds ? `<span class="dc-add">+${f.adds}</span>` : ''}${f.dels ? `<span class="dc-del">−${f.dels}</span>` : ''}</span>`;
   const head = `<div class="diff-file-head"><span class="diff-chev">${CHEVRON}</span>` +
@@ -141,10 +162,12 @@ function renderFile(f, fi, allow = true) {
     // Rows are grouped into one <tbody> per change BLOCK (contiguous +/− run) with the
     // context runs in plain tbodys between them. Hovering anywhere in a block reveals
     // its Discard button (pure CSS, tbody:hover) on the block's first row.
+    // Token-highlight the code by the file's language (highlightLine escapes the text itself).
+    const lang = langForPath(diffPath(f));
     const row = l => {
       const cls = l.t === '+' ? 'add' : l.t === '-' ? 'del' : 'ctx';
       return `<tr class="diff-line ${cls}"><td class="dg">${l.oldNo || ''}</td><td class="dg">${l.newNo || ''}</td>` +
-             `<td class="dx"><span class="dm">${l.t === ' ' ? '&nbsp;' : l.t}</span>${esc(l.text)}</td></tr>`;
+             `<td class="dx"><span class="dm">${l.t === ' ' ? '&nbsp;' : l.t}</span>${highlightLine(l.text, lang)}</td></tr>`;
     };
     const groups = f.hunks.map((h, hi) => {
       const ids = hunkBlocks(h);
@@ -157,7 +180,8 @@ function renderFile(f, fi, allow = true) {
       return `<tbody><tr class="diff-hunk"><td class="dg" colspan="2"></td><td class="dx">${esc(h.header)}</td></tr></tbody>` +
         segs.map(s => {
           const rows = s.lines.map(row);
-          if (s.id === null) return `<tbody>${rows.join('')}</tbody>`;
+          // Read-only callers (commit history) get plain blocks — no per-block Discard.
+          if (!discardable || s.id === null) return `<tbody>${rows.join('')}</tbody>`;
           rows[0] = rows[0].replace('</td></tr>',
             `<button class="hunk-discard" data-f="${fi}" data-h="${hi}" data-b="${s.id}" title="Revert this block in the file">Discard</button></td></tr>`);
           return `<tbody class="diff-block">${rows.join('')}</tbody>`;
