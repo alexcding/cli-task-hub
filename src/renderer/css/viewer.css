@@ -64,7 +64,7 @@ body.viewing-term #split-toggle-term { display:none; }
 .folder-chip[hidden], .folder-add[hidden] { display:none; }
 body.viewing-tab main { display:none; }
 .tab-group { display:flex; align-items:center; gap:3px; }
-.tab-group-label { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.4px; color:var(--text-3); padding:0 3px; flex-shrink:0; }
+.tab-group-label { font-size:13px; font-weight:500; letter-spacing:.3px; color:var(--text-3); padding:0 3px; flex-shrink:0; }
 .tab-ic { display:inline-flex; flex-shrink:0; position:relative; }
 .tab-ic svg { display:block; width:20px; height:20px; }
 .tab-ic img { display:block; width:20px; height:20px; border-radius:50%; object-fit:cover; }
@@ -324,13 +324,12 @@ body.resizing .split-body webview { pointer-events:none; }
 body.pr-split .split-body .find-bar { right: calc(100% - var(--pr-split, 60%) + 8px); }
 
 /* Open tabs render as nav rows under GitHub / Jira group labels. */
-#opentabs-nav .tab-group { display:block; margin-top:6px; }
-#opentabs-nav .tab-group-label { display:block; padding:6px 8px 2px; }
-/* 7px padding + 1px transparent top/bottom border = same 8px footprint, so row spacing is unchanged.
-   background-clip:padding-box keeps the highlight off the border, insetting it 1px top/bottom so
-   adjacent highlighted rows show a gap between their backgrounds. */
-.opentab { position:relative; display:flex; align-items:center; gap:8px; width:100%; padding:7px 10px; border:1px solid transparent; border-left-width:0; border-right-width:0; background-clip:padding-box; border-radius:var(--rs); color:var(--text); font-size:13.5px; font-weight:500; cursor:pointer; }
-.opentab:hover { background-color:var(--surface-hover); color:var(--text); }
-.opentab.active { background-color:var(--surface-hover); color:var(--text); }
+/* Sidebar section headers (Mine/Review) share the exact box of the Projects label (.nav-label)
+   so all three section headers line up identically. */
+#opentabs-nav .tab-group { display:block; margin-top:4px; }
+#opentabs-nav .tab-group-label { display:block; padding:10px 8px 4px; }
+/* Box, text, and hover/active highlight all come from the shared `.nav-btn, .opentab` rule in
+   layout.css (sidebar rows are one component) — only .opentab's own extras live here. */
+.opentab { position:relative; }
 .opentab .tab-title { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .opentab:hover .tab-x { opacity:1; }

@@ -9,15 +9,22 @@ aside { width:var(--sidebar-w); background:var(--surface); border-right:1px soli
 .logo-icon { width:24px;height:24px; background:var(--accent); border-radius:7px; display:flex;align-items:center;justify-content:center; flex-shrink:0; }
 .logo-text { font-size:15px; font-weight:650; letter-spacing:-.2px; }
 nav { padding:8px; flex:1; overflow-y:auto; }
-.nav-label { font-size:11px; font-weight:600; color:var(--text-3); text-transform:uppercase; letter-spacing:.5px; padding:10px 8px 4px; }
-/* 5px padding + 1px transparent top/bottom border = same 6px footprint as before, so row spacing is
-   unchanged. background-clip:padding-box keeps the highlight off the border, insetting it 1px
-   top/bottom — so an active row and its hovered neighbour show a gap between highlights. */
-.nav-btn { display:flex; align-items:center; gap:9px; width:100%; padding:5px 10px; border:1px solid transparent; border-left-width:0; border-right-width:0; background:none; background-clip:padding-box; border-radius:var(--rs); color:var(--text); font-size:13.5px; font-weight:500; cursor:pointer; text-align:left; transition:background .12s,color .12s; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.nav-btn:hover { background-color:var(--surface-hover); color:var(--text); }
-.nav-btn.active { background-color:var(--surface-hover); color:var(--text); }
-.nav-btn .icon { width:16px; height:16px; display:flex; align-items:center; justify-content:center; flex-shrink:0; color:color-mix(in srgb, var(--text-2), var(--text-3)); }
-.nav-btn .icon svg { width:16px; height:16px; display:block; stroke-width:1.5; }
+.nav-label { font-size:13px; font-weight:500; color:var(--text-3); letter-spacing:.3px; padding:10px 8px 4px; }
+/* Sidebar rows: nav buttons (.nav-btn) and open-link rows (.opentab) are the same component, so
+   everything they share — box, text, and the hover/active highlight — is defined ONCE here and is
+   the single source of truth; neither can drift from the other and there is no per-element text rule
+   left to silently override. Each element adds only its own extras (.nav-btn just below; .opentab's
+   position:relative + .tab-title/.tab-x live in viewer.css). The 1px transparent top/bottom border +
+   background-clip:padding-box inset the highlight 1px so an active row and its hovered neighbour show
+   a gap, while keeping the same row footprint. */
+.nav-btn, .opentab { display:flex; align-items:center; gap:8px; width:100%; padding:7px 10px; border:1px solid transparent; border-left-width:0; border-right-width:0; background-clip:padding-box; border-radius:var(--rs); cursor:pointer; font-family:inherit; font-size:14px; font-weight:400; color:color-mix(in srgb, var(--text-2) 75%, var(--text)); -webkit-font-smoothing:auto; }
+.nav-btn:hover, .nav-btn.active, .opentab:hover, .opentab.active { background-color:var(--surface-hover); color:var(--text); }
+/* background-color (not the `background` shorthand) so the button's UA background is cleared
+   without resetting the shared rule's background-clip:padding-box — that clip is what insets the
+   highlight, and `background:none` here would silently revert it (losing the 1px gap). */
+.nav-btn { background-color:transparent; text-align:left; transition:background .12s,color .12s; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.nav-btn .icon { width:16px; height:16px; display:flex; align-items:center; justify-content:center; flex-shrink:0; color:var(--text); }
+.nav-btn .icon svg { width:16px; height:16px; display:block; stroke-width:1.25; }
 /* Running-task count, pushed to the row's right edge. Hidden when empty (0 tasks → no badge). */
 .nav-count { margin-left:auto; flex-shrink:0; min-width:18px; height:18px; padding:0 5px; border-radius:99px; background:var(--accent); color:#fff; font-size:11px; font-weight:600; line-height:18px; text-align:center; }
 .nav-count:empty { display:none; }
@@ -65,4 +72,4 @@ html.native-mac .logo-icon, html.native-mac .logo-text { display:none; }
    than match the 52px content toolbar. Trim it + the first header's padding so "Overview"
    sits just below the close buttons, like a standard macOS sidebar. No stray separator. */
 html.native-mac .sidebar-logo { height:30px; border-bottom:none; }
-html.native-mac nav > .nav-btn:first-child { margin-top:4px; }
+html.native-mac nav > .nav-btn:first-child { margin-top:8px; }
