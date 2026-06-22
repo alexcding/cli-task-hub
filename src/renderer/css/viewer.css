@@ -326,10 +326,10 @@ body.pr-split .split-body .find-bar { right: calc(100% - var(--pr-split, 60%) + 
 /* Open tabs render as nav rows under GitHub / Jira group labels. */
 #opentabs-nav .tab-group { display:block; margin-top:6px; }
 #opentabs-nav .tab-group-label { display:block; padding:6px 8px 2px; }
-/* 6px padding + 2px transparent top/bottom border = same 8px footprint, so row spacing is unchanged.
-   background-clip:padding-box keeps the highlight off the border, insetting it 2px top/bottom so
-   adjacent highlighted rows show a clear gap between their backgrounds. */
-.opentab { position:relative; display:flex; align-items:center; gap:8px; width:100%; padding:6px 10px; border:2px solid transparent; border-left-width:0; border-right-width:0; background-clip:padding-box; border-radius:var(--rs); color:var(--text-2); font-size:13px; font-weight:500; cursor:pointer; }
+/* 7px padding + 1px transparent top/bottom border = same 8px footprint, so row spacing is unchanged.
+   background-clip:padding-box keeps the highlight off the border, insetting it 1px top/bottom so
+   adjacent highlighted rows show a gap between their backgrounds. */
+.opentab { position:relative; display:flex; align-items:center; gap:8px; width:100%; padding:7px 10px; border:1px solid transparent; border-left-width:0; border-right-width:0; background-clip:padding-box; border-radius:var(--rs); color:var(--text); font-size:13.5px; font-weight:500; cursor:pointer; }
 .opentab:hover { background-color:var(--surface-hover); color:var(--text); }
 .opentab.active { background-color:var(--surface-hover); color:var(--text); }
 .opentab .tab-title { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
