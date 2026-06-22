@@ -4,7 +4,6 @@
 import { ROUTES } from '/shared/routes.mjs';
 import { api, apiJson } from '../services/api.js';
 import { esc } from '../lib/util.js';
-import { ICON } from '../lib/icons.js';
 import { toast, toastErr } from './toast.js';
 import { parseDiff } from '../lib/diff-parse.mjs';
 import { refreshDiff, diffCwd } from './diff.js';
@@ -56,7 +55,7 @@ async function fill(cwd) {
   const canPush = _meta.ahead === null ? true : _meta.ahead > 0; // null = no upstream yet → first push
   pop().innerHTML = `
     <div class="cp-head">
-      <span class="cp-branch" title="${esc(_meta.branch)}">${ICON.branch}<span>${esc(_meta.branch)}</span></span>
+      <span class="cp-branch" title="${esc(_meta.branch)}"><span>${esc(_meta.branch)}</span></span>
       <span class="cp-counts">${_meta.adds ? `<span class="dc-add">+${_meta.adds}</span>` : ''}${_meta.dels ? `<span class="dc-del">−${_meta.dels}</span>` : ''}</span>
     </div>
     <textarea id="cp-msg" placeholder="Commit message (leave blank to auto-fill)…" rows="3" spellcheck="false"></textarea>

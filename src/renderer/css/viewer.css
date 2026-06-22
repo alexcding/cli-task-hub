@@ -49,13 +49,22 @@ body.viewing-term #split-toggle-term { display:none; }
 .split-title img { flex-shrink:0; width:16px; height:16px; border-radius:50%; object-fit:cover; }
 /* Workspace/worktree folder chip — bottom-left of the terminal pane (in .pane-foot); opens the
    folder in the configured git client, else reveals in Finder. Terminal view only (.pf-term). */
-.folder-chip { flex-shrink:0; max-width:240px; display:inline-flex; align-items:center; gap:5px; padding:7px 12px; background:none; border:none; border-radius:6px; color:var(--text-2); font:inherit; font-size:12px; font-weight:500; cursor:pointer; }
-.folder-chip:hover { background:var(--surface-hover); color:var(--text); }
-.folder-chip .fc-ic { flex-shrink:0; display:inline-flex; }
-.folder-chip svg { flex-shrink:0; width:15px; height:15px; }
-/* When a git client is configured the glyph is that client's brand mark (an <img>). */
-.folder-chip .fc-ic img { flex-shrink:0; width:15px; height:15px; display:block; border-radius:3px; object-fit:contain; }
-.folder-chip .fc-text { min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+/* Outlined segmented control (like .wf-group): the chip owns the border/corners; the icon half
+   (opens the git client) and the name half (reveals in Finder) sit inside it, split by a hairline. */
+.folder-chip { flex-shrink:0; max-width:240px; display:inline-flex; align-items:center; border:1px solid var(--border); border-radius:8px; overflow:hidden;
+  color:var(--text-2); font:inherit; font-size:12px; font-weight:500; }
+.folder-chip:hover { border-color:var(--border-focus); }
+.folder-chip .fc-ic, .folder-chip .fc-text { display:inline-flex; align-items:center; border:none; background:none; cursor:pointer; color:inherit; font:inherit; padding:7px 10px; }
+.folder-chip .fc-ic { flex-shrink:0; }
+.folder-chip .fc-ic svg { flex-shrink:0; width:16px; height:16px; display:block; }
+/* When a git client is configured the glyph is that client's brand mark (an <img>). Sized 18px —
+   a touch larger than the 16px workflow play glyph to optically match it, since brand logos bake
+   in their own padding and read smaller than an edge-to-edge stroke icon at the same box size. */
+.folder-chip .fc-ic img { flex-shrink:0; width:18px; height:18px; display:block; border-radius:3px; object-fit:contain; }
+.folder-chip .fc-text { border-left:1px solid var(--border); min-width:0; flex:1; }
+.folder-chip .fc-text:first-child { border-left:none; }  /* no git client → name is the sole segment */
+.folder-chip .fc-text span { min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.folder-chip .fc-ic:hover, .folder-chip .fc-text:hover { background:var(--surface-hover); color:var(--text); }
 /* Worktree tabs: tint the glyph with the accent so it's distinguishable at a glance. (A brand
    <img> can't take the tint; the worktree state still shows in the chip's title.) */
 .folder-chip.is-worktree .fc-ic { color:var(--accent); }
@@ -186,6 +195,10 @@ body.pr-split .pane-foot, body.viewing-term .pane-foot { display:flex; }
 .pf-btn svg { display:block; flex-shrink:0; }
 .pf-btn.on { color:var(--accent); background:var(--accent-bg); }
 .pf-btn .cb-label { font-weight:600; }
+/* Commit button wears the same outline as the folder chip / workflow group: a border that
+   highlights on hover, rather than the flat fill the other foot buttons use. */
+#commit-btn { border:1px solid var(--border); }
+#commit-btn:hover { border-color:var(--border-focus); }
 /* .pf-btn sets display:inline-flex, which overrides the UA [hidden] rule — hide explicitly
    (refreshWorkflowBtn toggles #term-workflow's hidden attr by workflow availability). */
 .pf-btn[hidden] { display:none; }
@@ -262,7 +275,6 @@ body.pr-split .split-body .history-pane { left:var(--pr-split, 60%); }
 .cp-loading { padding:14px; color:var(--text-3); font-size:13px; text-align:center; }
 .cp-head { display:flex; align-items:center; gap:8px; padding:4px 4px 8px; }
 .cp-branch { display:inline-flex; align-items:center; gap:6px; min-width:0; flex:1; font-size:13px; font-weight:600; color:var(--text); }
-.cp-branch svg { flex-shrink:0; color:var(--text-3); }
 .cp-branch span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .cp-counts { display:flex; gap:6px; flex-shrink:0; font:600 12px "SF Mono","SFMonoServed",Menlo,monospace; }
 #cp-msg { width:100%; box-sizing:border-box; resize:none; border:none; outline:none; background:none; color:var(--text); font:13px/1.5 -apple-system,BlinkMacSystemFont,sans-serif; padding:2px 4px; }

@@ -275,15 +275,23 @@ async function updateFolderChip(force = false) {
   const gc = state.gitClient || {};
   const gcOn = !!(gc.id && gc.cmd);
   const gcIcon = gcOn ? gitClientIcon(gc.id) : '';
-  el.title = gcOn
-    ? `${isWorktree ? 'Worktree — ' : ''}Open ${name} in ${gitClientLabel(gc.id)} — right-click to reveal in Finder`
-    : (isWorktree ? 'Worktree — reveal in Finder (right-click for more) — ' : 'Reveal in Finder — ') + info.path;
+  // Two segments: the icon opens the configured git client (a deeplink), the name reveals in Finder.
+  const icTitle = gcOn ? `Open in ${gitClientLabel(gc.id)}` : 'Reveal in Finder';
+  const nameTitle = (isWorktree ? 'Worktree — reveal in Finder — ' : 'Reveal in Finder — ') + info.path;
   // Keep the worktree state on the chip even when a brand <img> replaces the glyph: the accent
   // tint targets the stroke glyph, and an accent ring marks the img (see .is-worktree CSS), so a
   // worktree stays distinguishable from a main checkout regardless of which icon is shown.
   el.classList.toggle('is-worktree', isWorktree);
-  const glyph = gcIcon ? `<img src="${gcIcon}" alt="">` : (isWorktree ? ICON.worktree : ICON.folder);
-  el.innerHTML = `<span class="fc-ic">${glyph}</span><span class="fc-text">${esc(name)}</span>`;
+  // Icon half only when a git client is configured — its sole job is the deeplink. With no client
+  // it would be a folder glyph that just reveals in Finder, duplicating the name half, so drop it.
+  // A configured client without a brand mark (Custom deeplink, unknown id) falls back to the
+  // folder/worktree glyph rather than an empty <img>.
+  const mark = gcIcon ? `<img src="${gcIcon}" alt="">` : (isWorktree ? ICON.worktree : ICON.folder);
+  const glyph = gcOn
+    ? `<button type="button" class="fc-ic" onclick="folderChipClick()" title="${esc(icTitle)}">${mark}</button>`
+    : '';
+  el.innerHTML = glyph
+    + `<button type="button" class="fc-text" onclick="openTabFolder()" title="${esc(nameTitle)}"><span>${esc(name)}</span></button>`;
   el.hidden = false;
 }
 

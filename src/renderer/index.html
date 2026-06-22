@@ -456,7 +456,7 @@
                opens it in the chosen git client (Settings → Appearance) wearing its mark, else reveals
                in Finder; right-click for both. Terminal view only (.pf-term hides it in Review).
                Filled by updateFolderChip. -->
-          <button class="folder-chip pf-term" id="split-folder" hidden onclick="folderChipClick()" oncontextmenu="return folderMenu(event)"></button>
+          <div class="folder-chip pf-term" id="split-folder" hidden oncontextmenu="return folderMenu(event)"></div>
           <!-- Review sub-view switch: the working diff (current changes) vs the branch's commit
                history. Both always reachable — neither is a toggle you have to turn off. -->
           <div class="seg-tabs review-switch pf-diff">
