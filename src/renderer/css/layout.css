@@ -26,7 +26,7 @@ nav { padding:8px; flex:1; overflow-y:auto; }
 .nav-btn .icon { width:16px; height:16px; display:flex; align-items:center; justify-content:center; flex-shrink:0; color:var(--text); }
 .nav-btn .icon svg { width:16px; height:16px; display:block; stroke-width:1.25; }
 /* Running-task count, pushed to the row's right edge. Hidden when empty (0 tasks → no badge). */
-.nav-count { margin-left:auto; flex-shrink:0; min-width:18px; height:18px; padding:0 5px; border-radius:99px; background:var(--accent); color:#fff; font-size:11px; font-weight:600; line-height:18px; text-align:center; }
+.nav-count { margin-left:auto; flex-shrink:0; min-width:18px; height:18px; padding:0 5px; border-radius:99px; background:var(--surface-hover); color:var(--text-3); font-size:11px; font-weight:600; line-height:18px; text-align:center; }
 .nav-count:empty { display:none; }
 .nav-add { background:none;border:none;color:var(--text-3);cursor:pointer;padding:2px;line-height:0;border-radius:4px;transition:color .12s,background .12s;display:inline-flex; }
 .nav-add:hover { color:var(--text);background:var(--surface-hover); }
