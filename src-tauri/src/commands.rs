@@ -214,3 +214,25 @@ pub fn wcv_eval(app: tauri::AppHandle, id: String, js: String) {
     let _ = webview.eval(&js);
   }
 }
+
+// Create an embedded-viewer child webview (PR/Jira tab) in Rust — the bridge.js wcv.create path —
+// so we can attach on_new_window: a link that wants a NEW window (target=_blank, window.open, or
+// the WKWebView context menu's "Open Link in New Window") is DENIED a native window and instead
+// opened as a tab in the renderer (window.__openTab). Created off-screen at 1×1; the shim's bounds
+// loop moves it on-screen (preserving the fast off-screen-create load path).
+#[tauri::command]
+pub fn wcv_create(window: tauri::Window, id: String, url: String) -> Result<(), String> {
+  let parsed: tauri::Url = url.parse().map_err(|e| format!("bad url: {e}"))?;
+  let app = window.app_handle().clone();
+  let builder = tauri::webview::WebviewBuilder::new(&id, tauri::WebviewUrl::External(parsed)).on_new_window(move |u, _features| {
+    if let Some(w) = app.get_webview_window("main") {
+      let url = serde_json::to_string(&u.to_string()).unwrap_or_else(|_| "\"\"".into());
+      let _ = w.eval(&format!("window.__openTab&&window.__openTab({url},\"\",\"github\",\"\")"));
+    }
+    tauri::webview::NewWindowResponse::Deny
+  });
+  window
+    .add_child(builder, tauri::LogicalPosition::new(-32000.0, -32000.0), tauri::LogicalSize::new(1.0, 1.0))
+    .map(|_| ())
+    .map_err(|e| e.to_string())
+}
