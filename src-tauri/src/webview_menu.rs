@@ -78,9 +78,11 @@ define_class!(
             return;
           }
           if let (Some(app), Ok(arg)) = (APP.get(), serde_json::to_string(&url)) {
-            match app.get_webview_window("main") {
+            // The renderer is the webview labelled "main". get_webview_window() returns None once the
+            // window hosts child webviews (multiwebview), so target the webview by label directly.
+            match app.get_webview("main") {
               Some(w) => { let _ = w.eval(&format!("window.__openTab&&window.__openTab({arg},\"\",\"github\",\"\")")); log::info!("[webview-menu] opened tab"); }
-              None => log::warn!("[webview-menu] no main window"),
+              None => log::warn!("[webview-menu] no main webview"),
             }
           }
         });
