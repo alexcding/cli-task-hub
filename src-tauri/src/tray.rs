@@ -181,9 +181,9 @@ fn truncate(s: &str, max: usize) -> String {
   if s.chars().count() <= max {
     s.to_string()
   } else {
-    let mut out: String = s.chars().take(max - 1).collect();
-    out.push('…');
-    out
+    let out: String = s.chars().take(max - 1).collect();
+    // trim trailing space before the ellipsis (matches Electron's .trimEnd() + '…')
+    format!("{}…", out.trim_end())
   }
 }
 
