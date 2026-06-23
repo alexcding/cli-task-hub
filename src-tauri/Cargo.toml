@@ -44,6 +44,8 @@ png = "0.18.1"
 objc2 = "0.6"
 objc2-foundation = "0.3"
 objc2-web-kit = "0.3"
+objc2-app-kit = "0.3"
+block2 = "0.6"
 
 # Vendored muda with the 18px menu-item icon cap removed (vendor/muda) so the tray can show the
 # full-size usage panel as a single menu row — see vendor/muda PATCHED comment.

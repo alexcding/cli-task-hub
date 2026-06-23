@@ -214,6 +214,14 @@
           });
           wv.once('tauri://error', function (e) { console.warn('[wcv] create error', id, e); });
           views[id] = { wv: wv, rect: null };
+          // Record the hovered link on right-click so the native "Open Link in New Tab" menu item
+          // (webview_menu.rs) can read it back via evaluateJavaScript. Injected once the webview is
+          // created; persists across the embedded page's (SPA/Turbo) navigations.
+          wv.once('tauri://created', function () {
+            setTimeout(function () {
+              invoke('wcv_eval', { id: id, js: "if(!window.__thInstalled){window.__thInstalled=1;document.addEventListener('contextmenu',function(e){var a=e.target&&e.target.closest&&e.target.closest('a');window.__thLink=(a&&a.href)||'';},true);}" });
+            }, 300);
+          });
         } catch (e) { console.warn('[wcv] create failed', e); }
       }
       // Each tab keeps its OWN webview. Hide an inactive one by parking it OFF-SCREEN rather than
