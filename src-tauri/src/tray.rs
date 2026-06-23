@@ -57,6 +57,37 @@ struct Pr {
   review_pending: Option<bool>,
 }
 
+#[derive(Deserialize, Clone, Default)]
+#[serde(rename_all = "camelCase")]
+struct UsageWin {
+  #[serde(default)]
+  used_pct: Option<f64>,
+}
+
+#[derive(Deserialize, Clone, Default)]
+struct Limits {
+  #[serde(default)]
+  session: Option<UsageWin>,
+  #[serde(default)]
+  weekly: Option<UsageWin>,
+}
+
+#[derive(Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct Usage {
+  #[serde(default)]
+  limits: Option<Limits>,
+  #[serde(default)]
+  codex_limits: Option<Limits>,
+}
+
+#[derive(Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct Settings {
+  #[serde(default)]
+  usage_agent: Option<String>,
+}
+
 // What a clicked menu item does: open `url` as a tab; if `viewed` is set, also POST it acknowledged.
 #[derive(Clone)]
 struct Action {
@@ -100,7 +131,7 @@ fn pr_group(p: &Pr) -> String {
   if review { "review".into() } else { "mine".into() }
 }
 
-fn build_menu(app: &AppHandle, tabs: &[Tab], prs: &[Pr]) -> tauri::Result<Menu<Wry>> {
+fn build_menu(app: &AppHandle, tabs: &[Tab], prs: &[Pr], usage: &Usage, settings: &Settings) -> tauri::Result<Menu<Wry>> {
   use std::collections::HashMap as Map;
   let pr_by_url: Map<&str, &Pr> = prs.iter().map(|p| (p.url.as_str(), p)).collect();
   let tab_group = |t: &Tab| -> String {
@@ -164,6 +195,24 @@ fn build_menu(app: &AppHandle, tabs: &[Tab], prs: &[Pr]) -> tauri::Result<Menu<W
     b = b.item(&MenuItemBuilder::with_id("none", "Nothing to review or open").enabled(false).build(app)?);
   }
 
+  // Claude/Codex plan usage for the selected agent (same data as the dashboard widget). The
+  // Electron tray rendered HTML→image bars; a native menu can't, so we show the headline numbers
+  // as text rows — click any to open the full widget on the dashboard.
+  let agent = settings.usage_agent.as_deref().unwrap_or("claude");
+  let limits = if agent == "codex" { usage.codex_limits.clone() } else { usage.limits.clone() };
+  if let Some(lim) = limits {
+    let left = |w: &Option<UsageWin>| w.as_ref().and_then(|x| x.used_pct).map(|p| (100.0 - p).round() as i64);
+    let s = left(&lim.session);
+    let wk = left(&lim.weekly);
+    if s.is_some() || wk.is_some() {
+      b = b.separator();
+      let label = if agent == "codex" { "Codex usage" } else { "Claude usage" };
+      b = b.item(&MenuItemBuilder::with_id(format!("h{seq}"), label).enabled(false).build(app)?);
+      if let Some(p) = s { b = b.text("usage:session", format!("Session — {p}% left")); }
+      if let Some(p) = wk { b = b.text("usage:weekly", format!("Weekly — {p}% left")); }
+    }
+  }
+
   b = b.separator().text("quit", "Quit TaskHub");
   b.build()
 }
@@ -198,6 +247,12 @@ fn on_event(app: &AppHandle, id: &str) {
       crate::terminals::kill_all(app);
       app.exit(0);
     }
+    _ if id.starts_with("usage:") => {
+      crate::show_main(app);
+      if let Some(w) = app.get_webview_window("main") {
+        let _ = w.eval("window.showPage && window.showPage('dashboard')");
+      }
+    }
     _ => {
       let action = app.state::<TrayTabs>().0.lock().unwrap().get(id).cloned();
       if let Some(a) = action {
@@ -216,11 +271,13 @@ fn has_pending_review(prs: &[Pr]) -> bool {
 fn refresh(app: &AppHandle) {
   let tabs = curl_json::<TabsResp>("/api/tabs").tabs;
   let prs = curl_json::<Vec<Pr>>("/api/prs/tray");
+  let usage = curl_json::<Usage>("/api/usage");
+  let settings = curl_json::<Settings>("/api/settings");
   let review = has_pending_review(&prs);
   let app = app.clone();
   let _ = app.clone().run_on_main_thread(move || {
     if let Some(tray) = app.tray_by_id("main") {
-      if let Ok(menu) = build_menu(&app, &tabs, &prs) {
+      if let Ok(menu) = build_menu(&app, &tabs, &prs, &usage, &settings) {
         let _ = tray.set_menu(Some(menu));
       }
       let icon = if review {
@@ -234,7 +291,7 @@ fn refresh(app: &AppHandle) {
 }
 
 pub fn setup(app: &AppHandle) -> tauri::Result<()> {
-  let menu = build_menu(app, &[], &[])?; // initial Open/Quit; the refresh loop fills the body
+  let menu = build_menu(app, &[], &[], &Usage::default(), &Settings::default())?; // initial; refresh fills the body
   let tray = TrayIconBuilder::with_id("main")
     .icon(tauri::include_image!("icons/tray-idle.png")) // white checkmark — matches the Electron tray glyph
     .tooltip("TaskHub")
