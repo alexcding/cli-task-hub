@@ -40,6 +40,36 @@
     }, false); // bubble: the app's own oncontextmenu handlers (popupMenu) run first
   })();
 
+  // ── Avatar caching (no flicker) ───────────────────────────────────────────────
+  // WKWebView re-fetches + re-decodes GitHub avatar <img>s on every card re-render (Chromium served
+  // them from its image cache; WKWebView flickers). Rewrite github.com/<login>.png → the avatar://
+  // scheme, served from the Rust avatar cache (avatars.rs) so re-renders are instant. Frozen
+  // data-URI srcs (tabs) and already-rewritten srcs don't match, so they're left alone.
+  (function () {
+    var RE = /^https?:\/\/github\.com\/([^/?#]+)\.png/i;
+    function rewrite(img) {
+      var s = img.getAttribute('src');
+      var m = s && RE.exec(s);
+      if (m) img.src = 'avatar://a/' + m[1];
+    }
+    function scan(node) {
+      if (node.tagName === 'IMG') rewrite(node);
+      else if (node.querySelectorAll) {
+        var list = node.querySelectorAll('img');
+        for (var i = 0; i < list.length; i++) rewrite(list[i]);
+      }
+    }
+    new MutationObserver(function (muts) {
+      for (var i = 0; i < muts.length; i++) {
+        var m = muts[i];
+        if (m.type === 'attributes') { if (m.target.tagName === 'IMG') rewrite(m.target); continue; }
+        for (var j = 0; j < m.addedNodes.length; j++) {
+          if (m.addedNodes[j].nodeType === 1) scan(m.addedNodes[j]);
+        }
+      }
+    }).observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ['src'] });
+  })();
+
   // ── Lightweight DOM context menu (M5) ─────────────────────────────────────────
   // The Electron build drew tab / folder-chip right-click menus natively. We draw them in the page
   // instead — same contract (resolve the chosen action id, or null if dismissed) so viewer.js is

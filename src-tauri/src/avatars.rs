@@ -80,6 +80,28 @@ pub fn warm(login: &str) {
   }
 }
 
+// Raw avatar bytes (PNG/JPEG, as GitHub serves them) for the renderer's <img>, cached so WKWebView
+// re-renders don't re-fetch (the `avatar://` scheme in lib.rs serves these). Separate from the
+// tray's processed-RGBA cache above — the renderer wants the original image, rounded by CSS.
+static RAW: LazyLock<Mutex<HashMap<String, Option<Vec<u8>>>>> = LazyLock::new(|| Mutex::new(HashMap::new()));
+
+pub fn avatar_raw(login: &str) -> Option<Vec<u8>> {
+  if login.is_empty() {
+    return None;
+  }
+  if let Some(cached) = RAW.lock().unwrap().get(login) {
+    return cached.clone();
+  }
+  let bytes = std::process::Command::new("curl")
+    .args(["-fsSL", "--max-time", "5", &format!("https://github.com/{login}.png?size=80")])
+    .output()
+    .ok()
+    .filter(|o| o.status.success() && !o.stdout.is_empty())
+    .map(|o| o.stdout);
+  RAW.lock().unwrap().insert(login.to_string(), bytes.clone());
+  bytes
+}
+
 // Final icon: cached circular avatar + a corner CI dot (ringed in the menu-bg color). Approved PRs
 // show the green dot unless CI is failing. None → no avatar cached (caller uses a plain text row).
 pub fn avatar_icon(login: &str, ci_status: Option<&str>, ci_conclusion: Option<&str>, approved: bool, dark: bool) -> Option<(Vec<u8>, u32, u32)> {

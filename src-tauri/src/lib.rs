@@ -140,6 +140,30 @@ fn open_main_window(app: &tauri::AppHandle) -> tauri::Result<()> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   let app = tauri::Builder::default()
+    // avatar://a/<login> → the cached raw GitHub avatar bytes (avatars.rs). Lets the renderer's
+    // <img>s load from a local cache instead of re-fetching github.com on every re-render — which
+    // WKWebView does (unlike Chromium), causing the avatar flicker. Async so the first-fetch curl
+    // doesn't block the scheme thread.
+    .register_asynchronous_uri_scheme_protocol("avatar", |_ctx, request, responder| {
+      let uri = request.uri().to_string();
+      std::thread::spawn(move || {
+        let login = uri.rsplit('/').next().unwrap_or("").split(['?', '#']).next().unwrap_or("");
+        let resp = match avatars::avatar_raw(login) {
+          Some(bytes) => {
+            let ct = if bytes.starts_with(&[0xFF, 0xD8]) { "image/jpeg" } else { "image/png" };
+            tauri::http::Response::builder()
+              .status(200)
+              .header("Content-Type", ct)
+              .header("Cache-Control", "public, max-age=604800")
+              .body(bytes)
+          }
+          None => tauri::http::Response::builder().status(404).body(Vec::new()),
+        };
+        if let Ok(resp) = resp {
+          responder.respond(resp);
+        }
+      });
+    })
     .plugin(tauri_plugin_shell::init())
     .plugin(tauri_plugin_dialog::init())
     .plugin(tauri_plugin_opener::init())
