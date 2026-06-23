@@ -79,46 +79,66 @@ impl Canvas {
   }
 }
 
-// One Session/Weekly group: title, bar (track + accent fill to `left`% + 50/75% gridmarks), label.
-fn group(cv: &mut Canvas, font: &FontVec, y: i32, title: &str, left: i64, accent: [u8; 3], dark: bool) {
-  let text_c = if dark { [0xe8, 0xe8, 0xe8] } else { [0x16, 0x18, 0x1d] };
-  let track_c = if dark { [255, 255, 255] } else { [0, 0, 0] };
-  let track_a = if dark { 0.14 } else { 0.10 };
-  let mark_a = if dark { 0.22 } else { 0.20 };
-  let pad = 6;
-  let bar_w = cv.w - pad * 2;
-  let bar_y = y + 20;
-  let bar_h = 6;
-
-  cv.text(font, pad as f32, (y + 12) as f32, title, 13.0, text_c);
-  // track
-  cv.fill(pad, bar_y, bar_w, bar_h, track_c, track_a);
-  // accent fill to `left`%
-  let fill_w = (bar_w as f32 * (left.clamp(0, 100) as f32) / 100.0).round() as i32;
-  cv.fill(pad, bar_y, fill_w, bar_h, accent, 1.0);
-  // 50% / 75% gridmarks
-  for frac in [0.5_f32, 0.75] {
-    let mx = pad + (bar_w as f32 * frac) as i32;
-    cv.fill(mx, bar_y, 1, bar_h, track_c, mark_a);
+fn measure(font: &FontVec, s: &str, px: f32) -> f32 {
+  let sf = font.as_scaled(PxScale::from(px));
+  let mut w = 0.0;
+  let mut prev: Option<GlyphId> = None;
+  for ch in s.chars() {
+    let id = sf.glyph_id(ch);
+    if let Some(p) = prev {
+      w += sf.kern(p, id);
+    }
+    w += sf.h_advance(id);
+    prev = Some(id);
   }
-  cv.text(font, pad as f32, (bar_y + bar_h + 13) as f32, &format!("{left}% left"), 12.0, text_c);
+  w
 }
 
+// muda forces menu-item icons to 18px tall, so the two-group panel won't fit. We render a compact
+// SINGLE-LINE strip — "Session [bar] 45%   Weekly [bar] 70%" — at 2× (36px tall) so it stays crisp
+// when macOS scales it to 18px. Bars fill to % remaining in the agent accent, with 50/75% gridmarks.
 pub fn render(session_left: Option<i64>, weekly_left: Option<i64>, accent: [u8; 3], dark: bool) -> Option<(Vec<u8>, u32, u32)> {
   let font = load_font()?;
-  let w = 290i32;
-  let group_h = 46;
-  let groups: Vec<(&str, i64)> = [("Session", session_left), ("Weekly", weekly_left)]
+  let segs: Vec<(&str, i64)> = [("Session", session_left), ("Weekly", weekly_left)]
     .into_iter()
     .filter_map(|(t, v)| v.map(|n| (t, n)))
     .collect();
-  if groups.is_empty() {
+  if segs.is_empty() {
     return None;
   }
-  let h = 6 + group_h * groups.len() as i32;
+
+  let h = 36i32; // 2× of muda's 18px row height
+  let baseline = 24.0f32;
+  let font_px = 21.0f32;
+  let (bar_w, bar_h, bar_y) = (150.0f32, 11i32, 12i32);
+  let text_c = if dark { [0xe8, 0xe8, 0xe8] } else { [0x16, 0x18, 0x1d] };
+  let track_c = if dark { [255, 255, 255] } else { [0, 0, 0] };
+  let track_a = if dark { 0.16 } else { 0.12 };
+  let mark_a = if dark { 0.24 } else { 0.22 };
+
+  // Two passes: measure total width, then draw.
+  let seg_width = |t: &str, left: i64| measure(&font, t, font_px) + 8.0 + bar_w + 8.0 + measure(&font, &format!("{left}%"), font_px) + 24.0;
+  let total: f32 = 12.0 + segs.iter().map(|(t, l)| seg_width(t, *l)).sum::<f32>();
+  let w = total.ceil() as i32 + 4;
+
   let mut cv = Canvas::new(w, h);
-  for (i, (title, left)) in groups.iter().enumerate() {
-    group(&mut cv, &font, 4 + i as i32 * group_h, title, *left, accent, dark);
+  let mut x = 12.0f32;
+  for (title, left) in &segs {
+    cv.text(&font, x, baseline, title, font_px, text_c);
+    x += measure(&font, title, font_px) + 8.0;
+
+    let bx = x as i32;
+    cv.fill(bx, bar_y, bar_w as i32, bar_h, track_c, track_a);
+    let fw = (bar_w * (*left).clamp(0, 100) as f32 / 100.0) as i32;
+    cv.fill(bx, bar_y, fw, bar_h, accent, 1.0);
+    for frac in [0.5f32, 0.75] {
+      cv.fill(bx + (bar_w * frac) as i32, bar_y, 1, bar_h, track_c, mark_a);
+    }
+    x += bar_w + 8.0;
+
+    let pct = format!("{left}%");
+    cv.text(&font, x, baseline, &pct, font_px, text_c);
+    x += measure(&font, &pct, font_px) + 24.0;
   }
   Some((cv.buf, w as u32, h as u32))
 }
