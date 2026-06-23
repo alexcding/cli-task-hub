@@ -1,0 +1,14 @@
+{
+  "$schema": "../gen/schemas/remote-schema.json",
+  "identifier": "remote-renderer",
+  "description": "The renderer is served by the local Node backend over HTTP, which Tauri treats as a remote origin. Grant that trusted local origin access to the IPC layer so window.taskhub.* (custom app commands) works. Scoped to the local backend only.",
+  "windows": ["main"],
+  "remote": {
+    "urls": ["http://localhost:3000", "http://127.0.0.1:3000"]
+  },
+  "permissions": [
+    "core:default",
+    "core:webview:default",
+    "core:window:default"
+  ]
+}

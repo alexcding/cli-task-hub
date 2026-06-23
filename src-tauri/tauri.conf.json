@@ -1,0 +1,29 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "productName": "TaskHub",
+  "version": "1.0.0",
+  "identifier": "tv.accedo.taskhub",
+  "build": {
+    "frontendDist": "../src/renderer",
+    "devUrl": "http://localhost:3000",
+    "beforeDevCommand": "node src/server/app.js"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["app", "dmg"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
+  }
+}

@@ -19,6 +19,7 @@ import { hideDiffPane } from './diff.js';
 import { attachFind, closeFind } from './find.js';
 import { renderContentTabs, playTabIn, playTabOut, markActiveTab } from './content-tabs.js';
 import { ensureEditor, disposeEditor, saveEditor, focusEditor, gotoLine } from './editor.js';
+import { createWcvShim } from './wcv-shim.js';
 
 let _tabSeq = 0;
 let _linkSeq = 0;
@@ -86,6 +87,11 @@ export function createTab(url, title, kind, meta = {}) {
 // use the default session so they share your GitHub/Jira login cookies AND get the
 // X-Frame-Options stripping applied to session.defaultSession in tray.js (allowFraming).
 function createWebviewEl() {
+  // Tauri build: there's no Electron <webview> tag. Return a child-WKWebview shim that mimics
+  // the webview API (createWcvShim handles framing natively — top-level browse context, so no
+  // X-Frame-Options/CSP stripping needed). The Electron path below is unchanged.
+  if (window.__TAURI__ && window.taskhub?.wcv) return createWcvShim();
+
   const wv = document.createElement('webview');
   wv.setAttribute('webpreferences', 'backgroundThrottling=yes');
   wv.setAttribute('allowpopups', '');

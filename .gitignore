@@ -36,3 +36,6 @@ build/icon.iconset/
 
 # Claude Code local worktrees (embedded git repos — never commit)
 .claude/worktrees/
+
+# Runtime artifact: the port the dev server bound to
+.server-port
