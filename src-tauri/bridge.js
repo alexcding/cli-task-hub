@@ -159,36 +159,33 @@
       function lpos(x, y) { return new (T().dpi.LogicalPosition)(x, y); }
       function lsize(w, h) { return new (T().dpi.LogicalSize)(w, h); }
 
-      function create(id, url, rect) {
+      function create(id, url) {
         if (views[id]) return;
-        // Create at the real on-screen size/position and VISIBLE so WKWebView loads at full priority
-        // and lays out at the right viewport (a hidden/1x1 webview throttles its initial load). The
-        // tab is active when it's first created, so showing it immediately is correct.
-        var r = rect && rect.width > 1 ? rect : { x: OFF, y: OFF, width: 1024, height: 768 };
+        // Create OFF-SCREEN at 1x1 (the original fast path); the shim's bounds() moves it on-screen.
         try {
           var wv = new (T().webview.Webview)(T().window.getCurrentWindow(), id, {
-            url: url,
-            x: Math.round(r.x), y: Math.round(r.y),
-            width: Math.round(r.width), height: Math.round(r.height),
+            url: url, x: OFF, y: OFF, width: 1, height: 1,
           });
           wv.once('tauri://error', function (e) { console.warn('[wcv] create error', id, e); });
-          views[id] = { wv: wv, rect: r };
+          views[id] = { wv: wv, rect: null };
         } catch (e) { console.warn('[wcv] create failed', e); }
       }
-      // Each tab keeps its OWN webview, alive and positioned; switching tabs just hides one and
-      // shows another (no off-screen move, no reload) so there's no flash. Position is kept current
-      // even while hidden, so show() is instant.
+      // Each tab keeps its OWN webview. Hide an inactive one by parking it OFF-SCREEN rather than
+      // webview.hide() — a hidden WKWebView throttles its load (causing a multi-second blank on a
+      // still-loading tab), whereas off-screen keeps loading at full priority. The active one sits
+      // at its real rect. (Trade-off: a brief flash on switch; addressed separately.)
       function bounds(id, rect, visible) {
         var rec = views[id];
         if (!rec) return;
         try {
-          if (rect && rect.width > 1 && rect.height > 1) {
+          if (visible && rect && rect.width > 1 && rect.height > 1) {
             rec.rect = rect;
             rec.wv.setPosition(lpos(Math.round(rect.x), Math.round(rect.y)));
             rec.wv.setSize(lsize(Math.round(rect.width), Math.round(rect.height)));
+          } else {
+            rec.wv.setPosition(lpos(OFF, OFF));
+            rec.wv.setSize(lsize(1, 1));
           }
-          if (visible && rect && rect.width > 1 && rect.height > 1) rec.wv.show();
-          else rec.wv.hide();
         } catch (e) { /* webview may be mid-teardown */ }
       }
       function destroy(id) {
@@ -197,9 +194,8 @@
         delete views[id];
         try { rec.wv.close(); } catch (e) {}
       }
-      // JS Webview has no navigate(url) — recreate at the same id + last known rect (so it reloads
-      // visible at the right size, not throttled). Rarely used (home button).
-      function navigate(id, url) { var rect = views[id] && views[id].rect; destroy(id); create(id, url, rect); }
+      // JS Webview has no navigate(url) — recreate at the same id; the shim re-pushes bounds next frame.
+      function navigate(id, url) { destroy(id); create(id, url); }
       function reload(id) { try { views[id] && views[id].wv.reload(); } catch (e) {} }
 
       // Back/forward/stop/find — driven by injecting JS into the child webview (history.back(),

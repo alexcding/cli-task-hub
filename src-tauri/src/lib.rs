@@ -191,7 +191,9 @@ pub fn run() {
 
       open_main_window(app.handle())?;
       tray::setup(app.handle())?;
-      viewer::start_title_watch(app.handle());
+      // TEMP (diagnostic): the main-thread title poll is disabled to confirm it's what makes the
+      // initial webview load take ~10s. Re-enable with a lighter design once confirmed.
+      // viewer::start_title_watch(app.handle());
       Ok(())
     })
     .build(tauri::generate_context!())
