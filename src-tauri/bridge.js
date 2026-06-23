@@ -207,15 +207,14 @@
 
       function create(id, url) {
         if (views[id]) return;
-        // Created in Rust (commands::wcv_create) — off-screen at 1x1, the original fast path — so it
-        // can attach on_new_window (open-in-new-window links → our tabs). We grab the JS handle via
-        // getByLabel afterwards for bounds()/reload()/destroy(); until it resolves the view stays
-        // parked off-screen, so there's nothing to position yet.
-        views[id] = { wv: null, rect: null };
-        invoke('wcv_create', { id: id, url: url })
-          .then(function () { return T().webview.Webview.getByLabel(id); })
-          .then(function (wv) { if (views[id]) views[id].wv = wv; })
-          .catch(function (e) { console.warn('[wcv] create failed', id, e); });
+        // Create OFF-SCREEN at 1x1 (the original fast path); the shim's bounds() moves it on-screen.
+        try {
+          var wv = new (T().webview.Webview)(T().window.getCurrentWindow(), id, {
+            url: url, x: OFF, y: OFF, width: 1, height: 1,
+          });
+          wv.once('tauri://error', function (e) { console.warn('[wcv] create error', id, e); });
+          views[id] = { wv: wv, rect: null };
+        } catch (e) { console.warn('[wcv] create failed', e); }
       }
       // Each tab keeps its OWN webview. Hide an inactive one by parking it OFF-SCREEN rather than
       // webview.hide() — a hidden WKWebView throttles its load (causing a multi-second blank on a
@@ -223,7 +222,7 @@
       // at its real rect. (Trade-off: a brief flash on switch; addressed separately.)
       function bounds(id, rect, visible) {
         var rec = views[id];
-        if (!rec || !rec.wv) return;   // handle not resolved yet → still parked off-screen
+        if (!rec) return;
         try {
           if (visible && rect && rect.width > 1 && rect.height > 1) {
             rec.rect = rect;
@@ -239,9 +238,7 @@
         var rec = views[id];
         if (!rec) return;
         delete views[id];
-        // Close via the cached handle, or fetch it (created+destroyed before getByLabel resolved).
-        if (rec.wv) { try { rec.wv.close(); } catch (e) {} }
-        else { T().webview.Webview.getByLabel(id).then(function (wv) { if (wv) try { wv.close(); } catch (e) {} }).catch(noop); }
+        try { rec.wv.close(); } catch (e) {}
       }
       // JS Webview has no navigate(url) — recreate at the same id; the shim re-pushes bounds next frame.
       function navigate(id, url) { destroy(id); create(id, url); }

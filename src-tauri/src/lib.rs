@@ -182,8 +182,6 @@ pub fn run() {
       commands::preview_sound,
       commands::get_usage,
       commands::wcv_eval,
-      commands::wcv_create,
-      commands::dbg_log,
       commands::fetch_avatar,
       terminals::term_create,
       terminals::term_write,
