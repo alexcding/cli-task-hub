@@ -170,7 +170,6 @@ pub fn render(groups: &[Group], accent: [u8; 3], dark: bool) -> Option<(Vec<u8>,
   let track_a = if dark { 0.16 } else { 0.12 };
   let mark_a = if dark { 0.26 } else { 0.22 };
   let pace_c = [0x16, 0xa3, 0x4a]; // green
-  let _ = muted_c;
 
   let mut cv = Canvas::new(w, h);
   let bar_w = w as f32 - lpad - rpad;
@@ -200,7 +199,18 @@ pub fn render(groups: &[Group], accent: [u8; 3], dark: bool) -> Option<(Vec<u8>,
       cv.fill(center - core / 2, bar_y, core, bar_h, pace_c, 1.0);
     }
 
-    cv.text(&font, lpad, (bar_y + bar_h) as f32 + 14.0 * s, &g.data, data_px, text_c, false, 0.45 * s);
+    // Data line: "N% left · reserve" in the label color, "· resets in …" muted (like Electron).
+    let tracking = 0.45 * s;
+    let data_y = (bar_y + bar_h) as f32 + 14.0 * s;
+    match g.data.find(" · resets in") {
+      Some(idx) => {
+        let (main, rest) = g.data.split_at(idx);
+        cv.text(&font, lpad, data_y, main, data_px, text_c, false, tracking);
+        let mw = measure(&font, main, data_px) + tracking * main.chars().count() as f32;
+        cv.text(&font, lpad + mw, data_y, rest, data_px, muted_c, false, tracking);
+      }
+      None => cv.text(&font, lpad, data_y, &g.data, data_px, text_c, false, tracking),
+    }
   }
   Some((cv.buf, w as u32, h as u32))
 }
