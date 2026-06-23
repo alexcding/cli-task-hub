@@ -4,6 +4,7 @@
 // Tauri-specific work lives here, in commands.rs (window.taskhub.* native methods) and
 // terminals.rs (PTYs).
 
+mod avatars;
 mod commands;
 mod terminals;
 mod tray;

@@ -38,6 +38,20 @@ struct TabsResp {
 }
 
 #[derive(Deserialize, Clone, Default)]
+struct Author {
+  #[serde(default)]
+  login: String,
+}
+
+#[derive(Deserialize, Clone, Default)]
+struct Ci {
+  #[serde(default)]
+  status: Option<String>,
+  #[serde(default)]
+  conclusion: Option<String>,
+}
+
+#[derive(Deserialize, Clone, Default)]
 #[serde(rename_all = "camelCase")]
 struct Pr {
   url: String,
@@ -55,6 +69,12 @@ struct Pr {
   awaiting_my_review: Option<bool>,
   #[serde(default)]
   review_pending: Option<bool>,
+  #[serde(default)]
+  author: Option<Author>,
+  #[serde(default)]
+  ci: Option<Ci>,
+  #[serde(default)]
+  review_decision: Option<String>,
 }
 
 #[derive(Deserialize, Clone, Default)]
@@ -183,8 +203,30 @@ fn pr_group(p: &Pr) -> String {
   if review { "review".into() } else { "mine".into() }
 }
 
+// Build a GitHub PR row's author-avatar icon (with CI dot), or None for a plain row.
+fn gh_icon(pr: Option<&Pr>, dark: bool) -> Option<tauri::image::Image<'static>> {
+  let pr = pr?;
+  let login = pr.author.as_ref().map(|a| a.login.clone()).unwrap_or_default();
+  if login.is_empty() {
+    return None;
+  }
+  let st = pr.ci.as_ref().and_then(|c| c.status.as_deref());
+  let cc = pr.ci.as_ref().and_then(|c| c.conclusion.as_deref());
+  let approved = pr.review_decision.as_deref() == Some("APPROVED");
+  crate::avatars::avatar_icon(&login, st, cc, approved, dark).map(|(rgba, w, h)| tauri::image::Image::new_owned(rgba, w, h))
+}
+
+fn jira_img() -> Option<tauri::image::Image<'static>> {
+  crate::avatars::jira_icon().map(|(rgba, w, h)| tauri::image::Image::new_owned(rgba, w, h))
+}
+
 fn build_menu(app: &AppHandle, tabs: &[Tab], prs: &[Pr], usage: &Usage, settings: &Settings) -> tauri::Result<Menu<Wry>> {
   use std::collections::HashMap as Map;
+  let dark = app
+    .get_webview_window("main")
+    .and_then(|w| w.theme().ok())
+    .map(|t| t == tauri::Theme::Dark)
+    .unwrap_or(true);
   let pr_by_url: Map<&str, &Pr> = prs.iter().map(|p| (p.url.as_str(), p)).collect();
   let tab_group = |t: &Tab| -> String {
     match pr_by_url.get(t.url.as_str()) {
@@ -210,7 +252,7 @@ fn build_menu(app: &AppHandle, tabs: &[Tab], prs: &[Pr], usage: &Usage, settings
 
   let mut b = MenuBuilder::new(app).text("open", "Open TaskHub").separator();
 
-  // Review requested (PRs awaiting my review I haven't opened yet).
+  // Review requested (PRs awaiting my review I haven't opened yet) — with author avatar + CI dot.
   if !pending.is_empty() {
     any = true;
     b = b.item(&MenuItemBuilder::with_id(format!("h{seq}"), "Review requested").enabled(false).build(app)?);
@@ -219,13 +261,17 @@ fn build_menu(app: &AppHandle, tabs: &[Tab], prs: &[Pr], usage: &Usage, settings
       let id = format!("rev:{seq}");
       seq += 1;
       let title = format!("PR #{} {}", p.number, p.title);
-      b = b.text(&id, truncate(&title, 40));
+      let label = truncate(&title, 40);
+      b = match gh_icon(Some(p), dark) {
+        Some(icon) => b.item(&tauri::menu::IconMenuItemBuilder::with_id(&id, label).icon(icon).build(app)?),
+        None => b.text(&id, label),
+      };
       map.insert(id, Action { url: p.url.clone(), title, kind: "github".into(), group: pr_group(p), viewed: Some((p.repo.clone(), p.number)) });
     }
     b = b.separator();
   }
 
-  // Open-tab sections, grouped like the sidebar.
+  // Open-tab sections, grouped like the sidebar, with avatars (GitHub) / the Jira mark.
   for (label, group) in [("Mine", &mine), ("Review", &review_tabs), ("Jira", &jira)] {
     if group.is_empty() {
       continue;
@@ -237,7 +283,12 @@ fn build_menu(app: &AppHandle, tabs: &[Tab], prs: &[Pr], usage: &Usage, settings
       let id = format!("tab:{seq}");
       seq += 1;
       let title = if t.title.trim().is_empty() { t.url.clone() } else { t.title.clone() };
-      b = b.text(&id, truncate(&title, 40));
+      let row = truncate(&title, 40);
+      let icon = if t.kind == "jira" { jira_img() } else { gh_icon(pr_by_url.get(t.url.as_str()).copied(), dark) };
+      b = match icon {
+        Some(img) => b.item(&tauri::menu::IconMenuItemBuilder::with_id(&id, row).icon(img).build(app)?),
+        None => b.text(&id, row),
+      };
       let grp = if t.kind == "jira" { t.category.clone() } else { tab_group(t) };
       map.insert(id, Action { url: t.url.clone(), title, kind: t.kind.clone(), group: grp, viewed: None });
     }
@@ -263,11 +314,6 @@ fn build_menu(app: &AppHandle, tabs: &[Tab], prs: &[Pr], usage: &Usage, settings
     .collect();
     if !groups.is_empty() {
       b = b.separator();
-      let dark = app
-        .get_webview_window("main")
-        .and_then(|w| w.theme().ok())
-        .map(|t| t == tauri::Theme::Dark)
-        .unwrap_or(true);
       match crate::usage_image::render(&groups, crate::usage_image::accent(agent), dark) {
         Some((rgba, w, h)) => {
           let image = tauri::image::Image::new_owned(rgba, w, h);
@@ -345,6 +391,12 @@ fn refresh(app: &AppHandle) {
   let prs = curl_json::<Vec<Pr>>("/api/prs/tray");
   let usage = curl_json::<Usage>("/api/usage");
   let settings = curl_json::<Settings>("/api/settings");
+  // Warm the avatar cache here (worker thread) so build_menu reads it without blocking the main thread.
+  for p in &prs {
+    if let Some(a) = &p.author {
+      crate::avatars::warm(&a.login);
+    }
+  }
   let review = has_pending_review(&prs);
   let app = app.clone();
   let _ = app.clone().run_on_main_thread(move || {
