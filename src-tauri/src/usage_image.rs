@@ -57,24 +57,29 @@ impl Canvas {
       }
     }
   }
-  fn text(&mut self, font: &FontVec, x: f32, baseline: f32, s: &str, px: f32, c: [u8; 3]) {
+  fn text(&mut self, font: &FontVec, x: f32, baseline: f32, s: &str, px: f32, c: [u8; 3], bold: bool) {
+    // Faux-bold by stamping each glyph twice with a sub-pixel x offset (ab_glyph can't synthesize
+    // weight, and SF's variable default reads light at small sizes).
+    let offsets: &[f32] = if bold { &[0.0, 0.7] } else { &[0.0] };
     let sf = font.as_scaled(PxScale::from(px));
-    let mut pen = x;
-    let mut prev: Option<GlyphId> = None;
-    for ch in s.chars() {
-      let id = sf.glyph_id(ch);
-      if let Some(p) = prev {
-        pen += sf.kern(p, id);
+    for &dx in offsets {
+      let mut pen = x + dx;
+      let mut prev: Option<GlyphId> = None;
+      for ch in s.chars() {
+        let id = sf.glyph_id(ch);
+        if let Some(p) = prev {
+          pen += sf.kern(p, id);
+        }
+        let glyph = id.with_scale_and_position(PxScale::from(px), ab_glyph::point(pen, baseline));
+        if let Some(o) = font.outline_glyph(glyph) {
+          let bb = o.px_bounds();
+          o.draw(|gx, gy, cov| {
+            self.blend(bb.min.x as i32 + gx as i32, bb.min.y as i32 + gy as i32, c, cov);
+          });
+        }
+        pen += sf.h_advance(id);
+        prev = Some(id);
       }
-      let glyph = id.with_scale_and_position(PxScale::from(px), ab_glyph::point(pen, baseline));
-      if let Some(o) = font.outline_glyph(glyph) {
-        let bb = o.px_bounds();
-        o.draw(|gx, gy, cov| {
-          self.blend(bb.min.x as i32 + gx as i32, bb.min.y as i32 + gy as i32, c, cov);
-        });
-      }
-      pen += sf.h_advance(id);
-      prev = Some(id);
     }
   }
 }
@@ -98,11 +103,13 @@ pub fn render(groups: &[Group], accent: [u8; 3], dark: bool) -> Option<(Vec<u8>,
     return None;
   }
   let font = load_font()?;
-  let s = 2.0f32; // 2× scale (device px); displayed at half via the patched muda(None) sizing
-  let w = (300.0 * s) as i32;
-  let pad = 12.0 * s;
-  let group_h = (52.0 * s) as i32;
-  let h = (10.0 * s) as i32 + group_h * groups.len() as i32;
+  // Match the Electron panel (usage-image.js CSS) in LOGICAL px, rendered at 2× (the patched muda
+  // halves it back, so it displays at these exact logical sizes, crisp on retina).
+  let s = 2.0f32;
+  let w = (310.0 * s) as i32; // CSS body width 310px
+  let pad = 3.0 * s;
+  let group_h = (56.0 * s) as i32; // title(~20) + 7 + bar(6) + 6 + data(~17) + 13 margin
+  let h = (8.0 * s) as i32 + group_h * groups.len() as i32;
 
   let text_c = if dark { [0xe8, 0xe8, 0xe8] } else { [0x16, 0x18, 0x1d] };
   let muted_c = if dark { [0x8a, 0x8a, 0x8a] } else { [0x92, 0x98, 0xa3] };
@@ -114,25 +121,44 @@ pub fn render(groups: &[Group], accent: [u8; 3], dark: bool) -> Option<(Vec<u8>,
 
   let mut cv = Canvas::new(w, h);
   let bar_w = w as f32 - pad * 2.0;
-  let bar_h = (7.0 * s) as i32;
+  let bar_h = (6.0 * s) as i32; // CSS bar height 6px
   for (i, g) in groups.iter().enumerate() {
     let gy = (6.0 * s) as i32 + group_h * i as i32;
-    cv.text(&font, pad, gy as f32 + 15.0 * s, &g.title, 14.0 * s, text_c);
+    cv.text(&font, pad, gy as f32 + 13.5 * s, &g.title, 13.5 * s, text_c, true); // title 13.5px, weight 500
 
-    let bar_y = gy + (24.0 * s) as i32;
+    let bar_y = gy + (22.0 * s) as i32;
     let bx = pad as i32;
     cv.fill(bx, bar_y, bar_w as i32, bar_h, track_c, track_a);
     let fw = (bar_w * g.left.clamp(0, 100) as f32 / 100.0) as i32;
     cv.fill(bx, bar_y, fw, bar_h, accent, 1.0);
     for frac in [0.5f32, 0.75] {
-      cv.fill(bx + (bar_w * frac) as i32, bar_y, (1.0 * s) as i32, bar_h, track_c, mark_a);
+      cv.fill(bx + (bar_w * frac) as i32, bar_y, (1.0 * s).max(1.0) as i32, bar_h, track_c, mark_a);
     }
     if let Some(p) = g.pace_left {
       let px = bx + (bar_w * (p.clamp(0.0, 100.0) as f32) / 100.0) as i32;
       cv.fill(px - s as i32, bar_y - (1.0 * s) as i32, (2.0 * s) as i32, bar_h + (2.0 * s) as i32, pace_c, 1.0);
     }
 
-    cv.text(&font, pad, (bar_y + bar_h) as f32 + 15.0 * s, &g.data, 12.5 * s, text_c);
+    cv.text(&font, pad, (bar_y + bar_h) as f32 + 14.0 * s, &g.data, 12.0 * s, text_c, false); // data 12px
   }
   Some((cv.buf, w as u32, h as u32))
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  #[test]
+  fn preview() {
+    let groups = vec![
+      Group { title: "Session".into(), left: 45, pace_left: Some(60.0), data: "45% left · 12% in reserve · resets in 2h 30m".into() },
+      Group { title: "Weekly".into(), left: 70, pace_left: Some(55.0), data: "70% left · 15% in reserve · resets in 4d 3h".into() },
+    ];
+    let (rgba, w, h) = render(&groups, ACCENT_CLAUDE, true).expect("render");
+    let f = std::fs::File::create("/tmp/usage_preview.png").unwrap();
+    let mut e = png::Encoder::new(std::io::BufWriter::new(f), w, h);
+    e.set_color(png::ColorType::Rgba);
+    e.set_depth(png::BitDepth::Eight);
+    e.write_header().unwrap().write_image_data(&rgba).unwrap();
+    eprintln!("wrote /tmp/usage_preview.png {w}x{h}");
+  }
 }

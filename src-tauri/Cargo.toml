@@ -47,3 +47,6 @@ objc2-web-kit = "0.3"
 # full-size usage panel as a single menu row — see vendor/muda PATCHED comment.
 [patch.crates-io]
 muda = { path = "vendor/muda" }
+
+[dev-dependencies]
+png = "0.18.1"
