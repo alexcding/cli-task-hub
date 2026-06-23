@@ -159,15 +159,20 @@
       function lpos(x, y) { return new (T().dpi.LogicalPosition)(x, y); }
       function lsize(w, h) { return new (T().dpi.LogicalSize)(w, h); }
 
-      function create(id, url) {
+      function create(id, url, rect) {
         if (views[id]) return;
+        // Create at the real on-screen size/position and VISIBLE so WKWebView loads at full priority
+        // and lays out at the right viewport (a hidden/1x1 webview throttles its initial load). The
+        // tab is active when it's first created, so showing it immediately is correct.
+        var r = rect && rect.width > 1 ? rect : { x: OFF, y: OFF, width: 1024, height: 768 };
         try {
           var wv = new (T().webview.Webview)(T().window.getCurrentWindow(), id, {
-            url: url, x: OFF, y: OFF, width: 1, height: 1,
+            url: url,
+            x: Math.round(r.x), y: Math.round(r.y),
+            width: Math.round(r.width), height: Math.round(r.height),
           });
           wv.once('tauri://error', function (e) { console.warn('[wcv] create error', id, e); });
-          try { wv.hide(); } catch (e) {}   // stay hidden until the shim's first bounds() shows it
-          views[id] = { wv: wv };
+          views[id] = { wv: wv, rect: r };
         } catch (e) { console.warn('[wcv] create failed', e); }
       }
       // Each tab keeps its OWN webview, alive and positioned; switching tabs just hides one and
@@ -178,6 +183,7 @@
         if (!rec) return;
         try {
           if (rect && rect.width > 1 && rect.height > 1) {
+            rec.rect = rect;
             rec.wv.setPosition(lpos(Math.round(rect.x), Math.round(rect.y)));
             rec.wv.setSize(lsize(Math.round(rect.width), Math.round(rect.height)));
           }
@@ -191,8 +197,9 @@
         delete views[id];
         try { rec.wv.close(); } catch (e) {}
       }
-      // JS Webview has no navigate(url) — recreate at the same id; the shim re-pushes bounds next frame.
-      function navigate(id, url) { destroy(id); create(id, url); }
+      // JS Webview has no navigate(url) — recreate at the same id + last known rect (so it reloads
+      // visible at the right size, not throttled). Rarely used (home button).
+      function navigate(id, url) { var rect = views[id] && views[id].rect; destroy(id); create(id, url, rect); }
       function reload(id) { try { views[id] && views[id].wv.reload(); } catch (e) {} }
 
       // Back/forward/stop/find — driven by injecting JS into the child webview (history.back(),

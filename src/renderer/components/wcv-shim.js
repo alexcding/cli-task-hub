@@ -60,8 +60,12 @@ export function createWcvShim() {
   function load(url) {
     if (!url) return;
     el.src = url;                                   // find.js gates on wv.src; expose the current URL
-    if (!created) { created = true; wcv.create(id, url); startLoop(); }
-    else wcv.navigate(id, url);
+    if (!created) {
+      created = true;
+      const r = el.getBoundingClientRect();         // create at the real rect so it loads at full size/priority
+      wcv.create(id, url, { x: r.x, y: r.y, width: r.width, height: r.height });
+      startLoop();
+    } else wcv.navigate(id, url);
     lastKey = '';                                   // force a reposition on the next frame
     // No native did-stop-loading yet, so synthesize one shortly after load so viewer.js clears
     // its per-tab loading state (the spinner sits behind the native webview regardless).
