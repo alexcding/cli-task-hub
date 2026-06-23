@@ -85,6 +85,21 @@ impl Canvas {
 }
 
 
+fn measure(font: &FontVec, s: &str, px: f32) -> f32 {
+  let sf = font.as_scaled(PxScale::from(px));
+  let mut w = 0.0;
+  let mut prev: Option<GlyphId> = None;
+  for ch in s.chars() {
+    let id = sf.glyph_id(ch);
+    if let Some(p) = prev {
+      w += sf.kern(p, id);
+    }
+    w += sf.h_advance(id);
+    prev = Some(id);
+  }
+  w
+}
+
 // One plan-limit group to draw: title, bar fill = `left`% remaining, optional green pace tick at
 // `pace_left`%, and a pre-formatted data line ("45% left · 12% in reserve · resets in 2h").
 pub struct Group {
@@ -103,12 +118,22 @@ pub fn render(groups: &[Group], accent: [u8; 3], dark: bool) -> Option<(Vec<u8>,
     return None;
   }
   let font = load_font()?;
-  // Match the Electron panel (usage-image.js CSS) in LOGICAL px, rendered at 2× (the patched muda
-  // halves it back, so it displays at these exact logical sizes, crisp on retina).
+  // Rendered at 2× (the patched muda halves it back → crisp at logical size on retina).
   let s = 2.0f32;
-  let w = (310.0 * s) as i32; // CSS body width 310px
-  let pad = 3.0 * s;
-  let group_h = (56.0 * s) as i32; // title(~20) + 7 + bar(6) + 6 + data(~17) + 13 margin
+  // Match the macOS menu text: SF (SFNS) at ~14pt. Title gets a touch of weight (faux-bold) as a
+  // section header; data is regular, like the menu rows.
+  let title_px = 14.0 * s;
+  let data_px = 14.0 * s;
+  let pad = 4.0 * s;
+  // Auto-size width to the widest line (+ a sensible min) so the panel is exactly as wide as its
+  // text — no excess that would stretch the whole menu.
+  let mut content = 170.0 * s;
+  for g in groups {
+    content = content.max(measure(&font, &g.title, title_px));
+    content = content.max(measure(&font, &g.data, data_px));
+  }
+  let w = (content + pad * 2.0).ceil() as i32;
+  let group_h = (56.0 * s) as i32; // title + bar + data + spacing
   let h = (8.0 * s) as i32 + group_h * groups.len() as i32;
 
   let text_c = if dark { [0xe8, 0xe8, 0xe8] } else { [0x16, 0x18, 0x1d] };
@@ -124,9 +149,9 @@ pub fn render(groups: &[Group], accent: [u8; 3], dark: bool) -> Option<(Vec<u8>,
   let bar_h = (6.0 * s) as i32; // CSS bar height 6px
   for (i, g) in groups.iter().enumerate() {
     let gy = (6.0 * s) as i32 + group_h * i as i32;
-    cv.text(&font, pad, gy as f32 + 13.5 * s, &g.title, 13.5 * s, text_c, true); // title 13.5px, weight 500
+    cv.text(&font, pad, gy as f32 + 14.0 * s, &g.title, title_px, text_c, true);
 
-    let bar_y = gy + (22.0 * s) as i32;
+    let bar_y = gy + (23.0 * s) as i32;
     let bx = pad as i32;
     cv.fill(bx, bar_y, bar_w as i32, bar_h, track_c, track_a);
     let fw = (bar_w * g.left.clamp(0, 100) as f32 / 100.0) as i32;
@@ -139,7 +164,7 @@ pub fn render(groups: &[Group], accent: [u8; 3], dark: bool) -> Option<(Vec<u8>,
       cv.fill(px - s as i32, bar_y - (1.0 * s) as i32, (2.0 * s) as i32, bar_h + (2.0 * s) as i32, pace_c, 1.0);
     }
 
-    cv.text(&font, pad, (bar_y + bar_h) as f32 + 14.0 * s, &g.data, 12.0 * s, text_c, false); // data 12px
+    cv.text(&font, pad, (bar_y + bar_h) as f32 + 15.0 * s, &g.data, data_px, text_c, false);
   }
   Some((cv.buf, w as u32, h as u32))
 }
