@@ -3,8 +3,8 @@
 // child webview or a terminal (a renderer keydown never hears those keys). Each custom item
 // dispatches an action to the renderer's window.__shortcut (handleShortcut in app.js); the
 // predefined items (copy/paste/quit/…) use their native roles.
-use tauri::menu::{AboutMetadata, MenuBuilder, MenuItemBuilder, SubmenuBuilder};
-use tauri::{AppHandle, Manager};
+use tauri::menu::{AboutMetadata, MenuBuilder, MenuItem, MenuItemBuilder, SubmenuBuilder};
+use tauri::{AppHandle, Manager, Wry};
 
 // Run a shortcut action in the renderer (opening/focusing the window for navigation actions).
 pub fn dispatch(app: &AppHandle, action: &str) {
@@ -18,8 +18,15 @@ pub fn dispatch(app: &AppHandle, action: &str) {
 }
 
 pub fn setup(app: &AppHandle) -> tauri::Result<()> {
-  // id = "sc:<action>"; the action is dispatched to the renderer on click.
-  let mi = |id: &str, label: &str, accel: &str| MenuItemBuilder::with_id(format!("sc:{id}"), label).accelerator(accel).build(app);
+  // id = "sc:<action>"; the action is dispatched to the renderer on click. A bad accelerator
+  // string must NOT abort the whole menu (an unparseable accel would otherwise drop the entire
+  // app menu) — fall back to the item without its accelerator and log it.
+  let mi = |id: &str, label: &str, accel: &str| -> tauri::Result<MenuItem<Wry>> {
+    MenuItemBuilder::with_id(format!("sc:{id}"), label).accelerator(accel).build(app).or_else(|e| {
+      log::warn!("[menu] unsupported accelerator '{accel}' for '{label}': {e}");
+      MenuItemBuilder::with_id(format!("sc:{id}"), label).build(app)
+    })
+  };
 
   let app_menu = SubmenuBuilder::new(app, "TaskHub")
     .about(Some(AboutMetadata::default()))
@@ -65,7 +72,7 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
     .item(&mi("pane:toggleTerm", "Toggle Terminal Panel", "Cmd+J")?)
     .item(&mi("pane:toggleView", "Switch Terminal / Changes", "Shift+Cmd+D")?)
     .separator()
-    .item(&mi("font:bigger", "Bigger Font", "Cmd+Plus")?)
+    .item(&mi("font:bigger", "Bigger Font", "Cmd+=")?)
     .item(&mi("font:smaller", "Smaller Font", "Cmd+Minus")?)
     .item(&mi("font:reset", "Reset Font Size", "Cmd+0")?)
     .separator()
