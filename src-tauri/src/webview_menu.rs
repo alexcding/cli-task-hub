@@ -61,22 +61,26 @@ define_class!(
     #[unsafe(method(openLinkInTab:))]
     fn open_link_in_tab(&self, sender: &NSMenuItem) {
       unsafe {
+        log::info!("[webview-menu] openLinkInTab clicked");
         let obj: Option<Retained<AnyObject>> = msg_send![sender, representedObject];
-        let Some(obj) = obj else { return };
+        let Some(obj) = obj else { log::warn!("[webview-menu] no representedObject (webview)"); return };
         let wk: &WKWebView = &*(Retained::as_ptr(&obj) as *const WKWebView);
         let js = NSString::from_str("window.__thLink||''");
-        let handler = RcBlock::new(move |result: *mut AnyObject, _err: *mut NSError| {
+        let handler = RcBlock::new(move |result: *mut AnyObject, err: *mut NSError| {
           if result.is_null() {
+            log::warn!("[webview-menu] __thLink eval returned null (err={})", !err.is_null());
             return;
           }
           let s: &NSString = &*(result as *const NSString);
           let url = s.to_string();
+          log::info!("[webview-menu] __thLink = {:?}", url);
           if !url.starts_with("http") {
             return;
           }
           if let (Some(app), Ok(arg)) = (APP.get(), serde_json::to_string(&url)) {
-            if let Some(w) = app.get_webview_window("main") {
-              let _ = w.eval(&format!("window.__openTab&&window.__openTab({arg},\"\",\"github\",\"\")"));
+            match app.get_webview_window("main") {
+              Some(w) => { let _ = w.eval(&format!("window.__openTab&&window.__openTab({arg},\"\",\"github\",\"\")")); log::info!("[webview-menu] opened tab"); }
+              None => log::warn!("[webview-menu] no main window"),
             }
           }
         });
