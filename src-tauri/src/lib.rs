@@ -6,6 +6,7 @@
 
 mod avatars;
 mod commands;
+mod menu;
 mod terminals;
 mod tray;
 mod usage_image;
@@ -165,6 +166,13 @@ pub fn run() {
       terminals::term_attach,
       terminals::term_foreground,
     ])
+    .on_menu_event(|app, event| {
+      // App-menu accelerators: dispatch the "sc:<action>" id to the renderer's __shortcut.
+      // Tray menu ids (no "sc:" prefix) are handled by the tray's own handler and ignored here.
+      if let Some(action) = event.id().as_ref().strip_prefix("sc:") {
+        menu::dispatch(app, action);
+      }
+    })
     .on_window_event(|window, event| {
       // Menu-bar app: a window close hides it (tray keeps the app alive); only the tray's Quit
       // (which sets QUITTING) actually exits.
@@ -193,6 +201,10 @@ pub fn run() {
 
       open_main_window(app.handle())?;
       tray::setup(app.handle())?;
+      // App menu + keyboard accelerators (non-fatal: a bad accelerator must not block launch).
+      if let Err(e) = menu::setup(app.handle()) {
+        log::error!("[menu] app menu setup failed: {e}");
+      }
       // TEMP (diagnostic): the main-thread title poll is disabled to confirm it's what makes the
       // initial webview load take ~10s. Re-enable with a lighter design once confirmed.
       // viewer::start_title_watch(app.handle());
