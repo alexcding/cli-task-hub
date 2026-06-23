@@ -62,6 +62,58 @@ struct Pr {
 struct UsageWin {
   #[serde(default)]
   used_pct: Option<f64>,
+  #[serde(default)]
+  resets_at: Option<serde_json::Value>, // Claude: ISO string; Codex: unix seconds
+}
+
+const SESSION_MS: i64 = 5 * 3_600_000;
+const WEEK_MS: i64 = 7 * 86_400_000;
+
+fn fmt_until(ms: i64) -> Option<String> {
+  let m = ms / 60_000;
+  if m <= 0 {
+    return None;
+  }
+  let (d, h, mm) = (m / 1440, (m % 1440) / 60, m % 60);
+  Some(if d > 0 {
+    format!("{d}d {h}h")
+  } else if h > 0 {
+    format!("{h}h {mm:02}m")
+  } else {
+    format!("{mm}m")
+  })
+}
+
+fn parse_reset_ms(v: &serde_json::Value) -> Option<i64> {
+  match v {
+    serde_json::Value::Number(n) => n.as_f64().map(|x| if x > 1e12 { x as i64 } else { (x * 1000.0) as i64 }),
+    serde_json::Value::String(s) => chrono::DateTime::parse_from_rfc3339(s).ok().map(|d| d.timestamp_millis()),
+    _ => None,
+  }
+}
+
+// Derived stats for one plan window — mirrors limitStats in usage-image.js: bar fills to `left`
+// (% remaining), pace tick at `paceLeft`, and a data line "N% left · reserve · resets in …".
+fn group_for(title: &str, win: &Option<UsageWin>, win_ms: i64, now: i64) -> Option<crate::usage_image::Group> {
+  let w = win.as_ref()?;
+  let used = w.used_pct?;
+  let left = (100.0 - used).round() as i64;
+  let reset_ms = w.resets_at.as_ref().and_then(parse_reset_ms);
+  let pace_left = reset_ms.map(|end| {
+    let elapsed = (100.0 - (end - now) as f64 / win_ms as f64 * 100.0).clamp(0.0, 100.0);
+    100.0 - elapsed
+  });
+  let mut data = format!("{left}% left");
+  if let Some(pl) = pace_left {
+    let reserve = (left as f64 - pl).round() as i64;
+    data += &if reserve >= 0 { format!(" · {reserve}% in reserve") } else { format!(" · {}% over pace", -reserve) };
+  }
+  if let Some(end) = reset_ms {
+    if let Some(u) = fmt_until(end - now) {
+      data += &format!(" · resets in {u}");
+    }
+  }
+  Some(crate::usage_image::Group { title: title.to_string(), left, pace_left, data })
 }
 
 #[derive(Deserialize, Clone, Default)]
@@ -195,41 +247,40 @@ fn build_menu(app: &AppHandle, tabs: &[Tab], prs: &[Pr], usage: &Usage, settings
     b = b.item(&MenuItemBuilder::with_id("none", "Nothing to review or open").enabled(false).build(app)?);
   }
 
-  // Claude/Codex plan usage for the selected agent (same data as the dashboard widget). The
-  // Electron tray rendered HTML→image bars; a native menu can't, so we show the headline numbers
-  // as text rows — click any to open the full widget on the dashboard.
+  // Claude/Codex plan usage for the selected agent — the full panel as one image menu row (same
+  // layout + stats as the Electron tray / dashboard widget). The vendored muda (18px cap removed)
+  // lets the row grow to the image.
   let agent = settings.usage_agent.as_deref().unwrap_or("claude");
   let limits = if agent == "codex" { usage.codex_limits.clone() } else { usage.limits.clone() };
   if let Some(lim) = limits {
-    let left = |w: &Option<UsageWin>| w.as_ref().and_then(|x| x.used_pct).map(|p| (100.0 - p).round() as i64);
-    let s = left(&lim.session);
-    let wk = left(&lim.weekly);
-    if s.is_some() || wk.is_some() {
-      // muda caps each menu-item icon at 18px, so we stack one image row per window (Session, then
-      // Weekly) to get the panel height back. Each row is a full bar + label, rendered at 2×.
+    let now = chrono::Utc::now().timestamp_millis();
+    let groups: Vec<crate::usage_image::Group> = [
+      group_for("Session", &lim.session, SESSION_MS, now),
+      group_for("Weekly", &lim.weekly, WEEK_MS, now),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+    if !groups.is_empty() {
+      b = b.separator();
       let dark = app
         .get_webview_window("main")
         .and_then(|w| w.theme().ok())
         .map(|t| t == tauri::Theme::Dark)
         .unwrap_or(true);
-      let acc = crate::usage_image::accent(agent);
-      let mut started = false;
-      let mut text_fallback = false;
-      for (title, left) in [("Session", s), ("Weekly", wk)] {
-        let Some(left) = left else { continue };
-        match crate::usage_image::render_row(title, left, acc, dark) {
-          Some((rgba, w, h)) => {
-            if !started { b = b.separator(); started = true; }
-            let image = tauri::image::Image::new_owned(rgba, w, h);
-            b = b.item(&tauri::menu::IconMenuItemBuilder::with_id(format!("usage:{title}"), "").icon(image).build(app)?);
-          }
-          None => text_fallback = true,
+      match crate::usage_image::render(&groups, crate::usage_image::accent(agent), dark) {
+        Some((rgba, w, h)) => {
+          let image = tauri::image::Image::new_owned(rgba, w, h);
+          b = b.item(&tauri::menu::IconMenuItemBuilder::with_id("usage:open", "").icon(image).build(app)?);
         }
-      }
-      if text_fallback {
-        if !started { b = b.separator(); }
-        if let Some(p) = s { b = b.text("usage:session", format!("Session — {p}% left")); }
-        if let Some(p) = wk { b = b.text("usage:weekly", format!("Weekly — {p}% left")); }
+        None => {
+          // No font → text fallback.
+          let label = if agent == "codex" { "Codex usage" } else { "Claude usage" };
+          b = b.item(&MenuItemBuilder::with_id("uhdr", label).enabled(false).build(app)?);
+          for g in &groups {
+            b = b.text(format!("usage:{}", g.title), format!("{} — {}", g.title, g.data));
+          }
+        }
       }
     }
   }

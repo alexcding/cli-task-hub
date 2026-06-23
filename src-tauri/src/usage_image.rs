@@ -79,52 +79,60 @@ impl Canvas {
   }
 }
 
-fn measure(font: &FontVec, s: &str, px: f32) -> f32 {
-  let sf = font.as_scaled(PxScale::from(px));
-  let mut w = 0.0;
-  let mut prev: Option<GlyphId> = None;
-  for ch in s.chars() {
-    let id = sf.glyph_id(ch);
-    if let Some(p) = prev {
-      w += sf.kern(p, id);
-    }
-    w += sf.h_advance(id);
-    prev = Some(id);
-  }
-  w
+
+// One plan-limit group to draw: title, bar fill = `left`% remaining, optional green pace tick at
+// `pace_left`%, and a pre-formatted data line ("45% left · 12% in reserve · resets in 2h").
+pub struct Group {
+  pub title: String,
+  pub left: i64,
+  pub pace_left: Option<f64>,
+  pub data: String,
 }
 
-// muda caps each menu-item icon at 18px tall, so we render ONE window (Session OR Weekly) per row
-// — "Session [====bar====] 45% left" — at 2× (36px → crisp at 18px). The tray stacks two of these
-// rows to recreate the Electron panel's height. Bar fills to % remaining in the agent accent, with
-// 50/75% gridmarks.
-pub fn render_row(title: &str, left: i64, accent: [u8; 3], dark: bool) -> Option<(Vec<u8>, u32, u32)> {
+// Render the full Session/Weekly usage panel to an RGBA image — the same layout as the Electron
+// tray's HTML panel (usage-image.js): stacked groups, each a title + bar (accent fill to % left,
+// 50/75% gridmarks, green pace tick) + data line. With the vendored muda (18px cap removed) this
+// shows full-size as one menu row. Rendered at 2× for crispness.
+pub fn render(groups: &[Group], accent: [u8; 3], dark: bool) -> Option<(Vec<u8>, u32, u32)> {
+  if groups.is_empty() {
+    return None;
+  }
   let font = load_font()?;
-  let h = 36i32; // 2× of muda's 18px row height
-  let baseline = 24.0f32;
-  let font_px = 21.0f32;
-  let (bar_w, bar_h, bar_y) = (230.0f32, 12i32, 11i32);
+  let s = 2.0f32; // 2× scale (device px); displayed at half via the patched muda(None) sizing
+  let w = (300.0 * s) as i32;
+  let pad = 12.0 * s;
+  let group_h = (52.0 * s) as i32;
+  let h = (10.0 * s) as i32 + group_h * groups.len() as i32;
+
   let text_c = if dark { [0xe8, 0xe8, 0xe8] } else { [0x16, 0x18, 0x1d] };
+  let muted_c = if dark { [0x8a, 0x8a, 0x8a] } else { [0x92, 0x98, 0xa3] };
   let track_c = if dark { [255, 255, 255] } else { [0, 0, 0] };
   let track_a = if dark { 0.16 } else { 0.12 };
-  let mark_a = if dark { 0.24 } else { 0.22 };
-
-  // Fixed label column so the two stacked rows align (Session/Weekly bars start at the same x).
-  let label_col = 86.0f32;
-  let pct = format!("{left}% left");
-  let w = (10.0 + label_col + bar_w + 10.0 + measure(&font, &pct, font_px) + 10.0).ceil() as i32;
+  let mark_a = if dark { 0.26 } else { 0.22 };
+  let pace_c = [0x16, 0xa3, 0x4a]; // green
+  let _ = muted_c;
 
   let mut cv = Canvas::new(w, h);
-  cv.text(&font, 10.0, baseline, title, font_px, text_c);
+  let bar_w = w as f32 - pad * 2.0;
+  let bar_h = (7.0 * s) as i32;
+  for (i, g) in groups.iter().enumerate() {
+    let gy = (6.0 * s) as i32 + group_h * i as i32;
+    cv.text(&font, pad, gy as f32 + 15.0 * s, &g.title, 14.0 * s, text_c);
 
-  let bx = (10.0 + label_col) as i32;
-  cv.fill(bx, bar_y, bar_w as i32, bar_h, track_c, track_a);
-  let fw = (bar_w * left.clamp(0, 100) as f32 / 100.0) as i32;
-  cv.fill(bx, bar_y, fw, bar_h, accent, 1.0);
-  for frac in [0.5f32, 0.75] {
-    cv.fill(bx + (bar_w * frac) as i32, bar_y, 1, bar_h, track_c, mark_a);
+    let bar_y = gy + (24.0 * s) as i32;
+    let bx = pad as i32;
+    cv.fill(bx, bar_y, bar_w as i32, bar_h, track_c, track_a);
+    let fw = (bar_w * g.left.clamp(0, 100) as f32 / 100.0) as i32;
+    cv.fill(bx, bar_y, fw, bar_h, accent, 1.0);
+    for frac in [0.5f32, 0.75] {
+      cv.fill(bx + (bar_w * frac) as i32, bar_y, (1.0 * s) as i32, bar_h, track_c, mark_a);
+    }
+    if let Some(p) = g.pace_left {
+      let px = bx + (bar_w * (p.clamp(0.0, 100.0) as f32) / 100.0) as i32;
+      cv.fill(px - s as i32, bar_y - (1.0 * s) as i32, (2.0 * s) as i32, bar_h + (2.0 * s) as i32, pace_c, 1.0);
+    }
+
+    cv.text(&font, pad, (bar_y + bar_h) as f32 + 15.0 * s, &g.data, 12.5 * s, text_c);
   }
-
-  cv.text(&font, (bx + bar_w as i32 + 10) as f32, baseline, &pct, font_px, text_c);
   Some((cv.buf, w as u32, h as u32))
 }

@@ -34,6 +34,7 @@ tauri-plugin-notification = "2.3.3"
 tauri-plugin-updater = "2.10.1"
 tokio = { version = "1", features = ["time"] }
 ab_glyph = "0.2.32"
+chrono = { version = "0.4.45", default-features = false, features = ["clock"] }
 
 # macOS-only: read WKWebView title/URL/nav-state from the embedded viewer (typed objc2 bindings,
 # versions matched to what Tauri/wry already pull). Used by viewer.rs.
@@ -41,3 +42,8 @@ ab_glyph = "0.2.32"
 objc2 = "0.6"
 objc2-foundation = "0.3"
 objc2-web-kit = "0.3"
+
+# Vendored muda with the 18px menu-item icon cap removed (vendor/muda) so the tray can show the
+# full-size usage panel as a single menu row — see vendor/muda PATCHED comment.
+[patch.crates-io]
+muda = { path = "vendor/muda" }
