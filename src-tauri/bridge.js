@@ -166,21 +166,23 @@
             url: url, x: OFF, y: OFF, width: 1, height: 1,
           });
           wv.once('tauri://error', function (e) { console.warn('[wcv] create error', id, e); });
+          try { wv.hide(); } catch (e) {}   // stay hidden until the shim's first bounds() shows it
           views[id] = { wv: wv };
         } catch (e) { console.warn('[wcv] create failed', e); }
       }
+      // Each tab keeps its OWN webview, alive and positioned; switching tabs just hides one and
+      // shows another (no off-screen move, no reload) so there's no flash. Position is kept current
+      // even while hidden, so show() is instant.
       function bounds(id, rect, visible) {
         var rec = views[id];
         if (!rec) return;
         try {
-          var show = visible && rect && rect.width > 1 && rect.height > 1;
-          if (show) {
+          if (rect && rect.width > 1 && rect.height > 1) {
             rec.wv.setPosition(lpos(Math.round(rect.x), Math.round(rect.y)));
             rec.wv.setSize(lsize(Math.round(rect.width), Math.round(rect.height)));
-          } else {
-            rec.wv.setPosition(lpos(OFF, OFF));
-            rec.wv.setSize(lsize(1, 1));
           }
+          if (visible && rect && rect.width > 1 && rect.height > 1) rec.wv.show();
+          else rec.wv.hide();
         } catch (e) { /* webview may be mid-teardown */ }
       }
       function destroy(id) {
