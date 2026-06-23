@@ -246,9 +246,10 @@ pub fn run() {
       // Native curated context menu on the embedded webviews (swizzles WKWebView's willOpenMenu).
       #[cfg(target_os = "macos")]
       webview_menu::install(app.handle().clone());
-      // TEMP (diagnostic): the main-thread title poll is disabled to confirm it's what makes the
-      // initial webview load take ~10s. Re-enable with a lighter design once confirmed.
-      // viewer::start_title_watch(app.handle());
+      // Poll embedded webviews for title/URL/nav state → live tab titles + Back/Forward enablement.
+      // (The cold-load time is GitHub/network-bound, not this — confirmed: load stayed slow with it
+      // off — so it's safe to run.)
+      viewer::start_title_watch(app.handle());
       Ok(())
     })
     .build(tauri::generate_context!())

@@ -8,7 +8,6 @@
 // run_on_main_thread; only the sleep happens on the worker thread.
 
 #[cfg(target_os = "macos")]
-#[allow(dead_code)] // dormant: re-enable in lib.rs setup once redesigned off the load path
 pub fn start_title_watch(app: &tauri::AppHandle) {
   use std::collections::HashMap;
   use std::sync::{Arc, Mutex};
@@ -36,7 +35,6 @@ pub fn start_title_watch(app: &tauri::AppHandle) {
 }
 
 #[cfg(target_os = "macos")]
-#[allow(dead_code)]
 fn read_and_emit(
   app: &tauri::AppHandle,
   last: &std::sync::Mutex<std::collections::HashMap<String, String>>,
