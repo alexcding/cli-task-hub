@@ -170,6 +170,11 @@ pub fn run() {
         }
       });
     })
+    // Single-instance: a second launch focuses the existing window instead of starting a rival
+    // process (which would fight over port 3000 / the data dir). Must be the FIRST plugin.
+    .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+      show_main(app);
+    }))
     .plugin(tauri_plugin_shell::init())
     .plugin(tauri_plugin_dialog::init())
     .plugin(tauri_plugin_opener::init())

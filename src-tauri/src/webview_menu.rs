@@ -85,6 +85,33 @@ define_class!(
         let _: () = msg_send![wk, evaluateJavaScript: &*js, completionHandler: &*handler];
       }
     }
+
+    // "Open Link in Browser": same captured link (window.__thLink), but open it externally in the
+    // default browser instead of a tab. representedObject is the WKWebView.
+    #[unsafe(method(openLinkExternal:))]
+    fn open_link_external(&self, sender: &NSMenuItem) {
+      unsafe {
+        let obj: Option<Retained<AnyObject>> = msg_send![sender, representedObject];
+        let Some(obj) = obj else { return };
+        let wk: &WKWebView = &*(Retained::as_ptr(&obj) as *const WKWebView);
+        let js = NSString::from_str("window.__thLink||''");
+        let handler = RcBlock::new(move |result: *mut AnyObject, _err: *mut NSError| {
+          if result.is_null() {
+            return;
+          }
+          let s: &NSString = &*(result as *const NSString);
+          let url = s.to_string();
+          if !url.starts_with("http") {
+            return;
+          }
+          if let Some(u) = NSURL::URLWithString(&NSString::from_str(&url)) {
+            let ws = NSWorkspace::sharedWorkspace();
+            let _: bool = msg_send![&ws, openURL: &*u];
+          }
+        });
+        let _: () = msg_send![wk, evaluateJavaScript: &*js, completionHandler: &*handler];
+      }
+    }
   }
 );
 
@@ -145,13 +172,23 @@ fn curate(webview: &AnyObject, menu: &NSMenu) {
     // can read the hovered link via evaluateJavaScript.
     if !target.is_null() {
       let tgt = &*(target as *const NSObject);
-      for item in menu.itemArray().iter() {
+      let mut after: Option<isize> = None;
+      for (i, item) in menu.itemArray().iter().enumerate() {
         if item_identifier(&item).as_deref() == Some("WKMenuItemIdentifierOpenLink") {
           item.setTitle(&NSString::from_str("Open Link in New Tab"));
           item.setTarget(Some(tgt));
           item.setAction(Some(sel!(openLinkInTab:)));
           item.setRepresentedObject(Some(webview));
+          after = Some(i as isize + 1);
         }
+      }
+      // Right after it: "Open Link in Browser" (same captured link, opened externally).
+      if let Some(i) = after {
+        let empty = NSString::from_str("");
+        let ext = NSMenuItem::initWithTitle_action_keyEquivalent(NSMenuItem::alloc(mtm), &NSString::from_str("Open Link in Browser"), Some(sel!(openLinkExternal:)), &empty);
+        ext.setTarget(Some(tgt));
+        ext.setRepresentedObject(Some(webview));
+        menu.insertItem_atIndex(&ext, i);
       }
     }
     // Append: ─── Open Page in Browser (opens the current page URL externally).
