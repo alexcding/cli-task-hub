@@ -130,21 +130,18 @@ pub fn install() {
   let target: Retained<MenuTarget> = unsafe { msg_send![MenuTarget::alloc(), init] };
   TARGET.store(Retained::into_raw(target), Ordering::Release);
 
-  let cls = class!(WKWebView);
+  // WebKit shows its context menu on an internal subview that inherits NSView's willOpenMenu (it
+  // does NOT override it on WKWebView), so swizzle NSView's. This is app-global, but safe: curate()
+  // no-ops unless the menu carries WebKit's item identifiers, and the main renderer suppresses its
+  // own native menu in JS — so in practice only the embedded webviews are affected.
+  let cls = class!(NSView);
   let sel = sel!(willOpenMenu:withEvent:);
-  // Only swizzle if WKWebView defines the method ITSELF (don't accidentally swizzle NSView for all
-  // views). instance_method returns inherited methods too, so confirm the superclass differs.
   let Some(method) = cls.instance_method(sel) else {
-    log::warn!("[webview-menu] WKWebView has no willOpenMenu:withEvent: — skipping");
+    log::warn!("[webview-menu] NSView has no willOpenMenu:withEvent: — skipping");
     return;
   };
-  let super_has = cls.superclass().and_then(|s| s.instance_method(sel)).map(|m| m as *const _) ;
-  if super_has == Some(method as *const _) {
-    log::warn!("[webview-menu] willOpenMenu is inherited (not WKWebView's own) — skipping to avoid global swizzle");
-    return;
-  }
   let new_imp: unsafe extern "C" fn(*mut AnyObject, Sel, *mut AnyObject, *mut AnyObject) = will_open_menu;
   let old = unsafe { method.set_implementation(std::mem::transmute(new_imp)) };
   ORIGINAL.store(old as *mut c_void, Ordering::Release);
-  log::info!("[webview-menu] installed (curated WKWebView context menu)");
+  log::info!("[webview-menu] installed (NSView willOpenMenu swizzle; curated for WebKit menus only)");
 }
