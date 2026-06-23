@@ -181,6 +181,30 @@ pub fn get_usage() -> Usage {
   Usage { total_kb, total_cpu, breakdown }
 }
 
+// Fetch a PR author's GitHub avatar as a base64 data URI so the renderer can freeze it onto a tab
+// (survives reloads). Returns null on any failure — the tab falls back to the live avatar URL.
+// `login` is validated to GitHub's handle charset so it's safe to interpolate into the shell.
+#[tauri::command]
+pub fn fetch_avatar(login: String) -> Option<String> {
+  if login.is_empty() || !login.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
+    return None;
+  }
+  let out = std::process::Command::new("sh")
+    .arg("-c")
+    .arg(format!("curl -fsSL --max-time 5 'https://github.com/{login}.png?size=64' | base64"))
+    .output()
+    .ok()?;
+  if !out.status.success() {
+    return None;
+  }
+  // Strip the line wrapping `base64` adds — a data URI must be a single token.
+  let b64: String = String::from_utf8_lossy(&out.stdout).split_whitespace().collect();
+  if b64.is_empty() {
+    return None;
+  }
+  Some(format!("data:image/png;base64,{b64}"))
+}
+
 // Evaluate JS inside an embedded child webview (the M6 viewer). Backs the viewer's back/forward,
 // stop, and find-in-page — driven from bridge.js via window.find() / history.back() rather than
 // native objc2 glue. No-op if the webview id isn't found.

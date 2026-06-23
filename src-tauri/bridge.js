@@ -128,7 +128,7 @@
       if (ctx.isWorktree) { items.push({ separator: true }); items.push({ id: 'delete', label: 'Delete Worktree…' }); }
       return popupMenu(items);
     },
-    fetchAvatar: function () { return Promise.resolve(null); }, // (falls back to live avatar URL)
+    fetchAvatar: function (login) { return invoke('fetch_avatar', { login: login }); },
     getUsage: function () { return invoke('get_usage'); },     // M7 (sysinfo, host process)
     pathForFile: function () { return ''; },              // M4 follow-up (Tauri drag-drop carries paths)
 

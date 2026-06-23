@@ -6,10 +6,9 @@
 
 mod commands;
 mod terminals;
+mod tray;
 
 use std::sync::atomic::{AtomicBool, Ordering};
-use tauri::menu::{MenuBuilder, MenuItemBuilder};
-use tauri::tray::TrayIconBuilder;
 use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
 
 // The local backend's origin. The renderer (and all its absolute /api, /events, /css, /shared
@@ -20,7 +19,7 @@ const BACKEND_URL: &str = "http://localhost:3000";
 // TaskHub is a menu-bar app: it exits ONLY via the tray's Quit. Every other close trigger
 // (red button, ⌘W with no tab) hides the window and leaves the tray + backend running. This flag
 // marks the one sanctioned exit so the window CloseRequested handler can tell them apart.
-static QUITTING: AtomicBool = AtomicBool::new(false);
+pub(crate) static QUITTING: AtomicBool = AtomicBool::new(false);
 
 // In a packaged build the Node runtime ships as the `taskhub-node` sidecar and the backend
 // source + node_modules ride along as bundle.resources (see tauri.conf.json). We spawn
@@ -101,7 +100,7 @@ fn wait_for_backend() {
   log::warn!("backend did not become ready within ~10s; loading window anyway");
 }
 
-fn show_main(app: &tauri::AppHandle) {
+pub(crate) fn show_main(app: &tauri::AppHandle) {
   if let Some(w) = app.get_webview_window("main") {
     let _ = w.show();
     let _ = w.set_focus();
@@ -133,34 +132,6 @@ fn open_main_window(app: &tauri::AppHandle) -> tauri::Result<()> {
   Ok(())
 }
 
-// Menu-bar tray (M5). MVP: Open + Quit, with the quit-only-from-tray invariant. The Electron tray's
-// dynamic body (open tabs, pending reviews, usage readout) and the custom mono/template icon are
-// follow-ups — see docs/TAURI-PORT.md M5.
-fn setup_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
-  let open_i = MenuItemBuilder::with_id("open", "Open TaskHub").build(app)?;
-  let quit_i = MenuItemBuilder::with_id("quit", "Quit TaskHub").build(app)?;
-  let menu = MenuBuilder::new(app).items(&[&open_i, &quit_i]).build()?;
-
-  let mut tray = TrayIconBuilder::with_id("main")
-    .tooltip("TaskHub")
-    .menu(&menu)
-    .show_menu_on_left_click(true)
-    .on_menu_event(|app, event| match event.id().as_ref() {
-      "open" => show_main(app),
-      "quit" => {
-        QUITTING.store(true, Ordering::SeqCst);
-        terminals::kill_all(app);
-        app.exit(0);
-      }
-      _ => {}
-    });
-  if let Some(icon) = app.default_window_icon() {
-    tray = tray.icon(icon.clone());
-  }
-  tray.build(app)?;
-  Ok(())
-}
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   let app = tauri::Builder::default()
@@ -170,6 +141,7 @@ pub fn run() {
     .plugin(tauri_plugin_notification::init())
     .plugin(tauri_plugin_updater::Builder::new().build())
     .manage(terminals::Terminals::default())
+    .manage(tray::TrayTabs::default())
     .invoke_handler(tauri::generate_handler![
       commands::platform,
       commands::set_theme,
@@ -181,6 +153,7 @@ pub fn run() {
       commands::preview_sound,
       commands::get_usage,
       commands::wcv_eval,
+      commands::fetch_avatar,
       terminals::term_create,
       terminals::term_write,
       terminals::term_resize,
@@ -216,7 +189,7 @@ pub fn run() {
       }
 
       open_main_window(app.handle())?;
-      setup_tray(app.handle())?;
+      tray::setup(app.handle())?;
       Ok(())
     })
     .build(tauri::generate_context!())
