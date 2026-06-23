@@ -153,6 +153,7 @@ pub fn run() {
       commands::open_in_git_client,
       commands::preview_sound,
       commands::get_usage,
+      commands::wcv_eval,
       terminals::term_create,
       terminals::term_write,
       terminals::term_resize,

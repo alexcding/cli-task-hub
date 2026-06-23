@@ -5,7 +5,7 @@
 // embedded viewer (wcv.*), tray refresh, avatar fetch and usage are later milestones — those
 // are stubbed in bridge.js until then.
 use serde::Serialize;
-use tauri::WebviewWindow;
+use tauri::{Manager, WebviewWindow};
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_opener::OpenerExt;
 
@@ -127,33 +127,66 @@ struct UsageRow {
 }
 
 #[derive(Serialize, Clone)]
-#[serde(rename_all = "camelCase")]
 pub struct Usage {
+  // Field names match what the renderer reads (settings.js): totalKB / totalCPU.
+  #[serde(rename = "totalKB")]
   total_kb: u64,
+  #[serde(rename = "totalCPU")]
   total_cpu: f32,
   breakdown: Vec<UsageRow>,
 }
 
-// RAM + CPU for the Tauri host process, for the Settings live readout. CPU needs two samples a
-// short interval apart. NOTE (M7): the Electron build summed every TaskHub process (host + backend
-// + PTYs); this reports the host only — summing the backend sidecar + PTY tree is a follow-up.
+// RAM + CPU summed over the whole TaskHub process tree (the host + every descendant — in a packaged
+// build that's the backend node sidecar and the PTY shells), for the Settings live readout. CPU
+// needs two samples a short interval apart.
 #[tauri::command]
 pub fn get_usage() -> Usage {
+  use std::collections::{HashMap, HashSet, VecDeque};
   use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System};
-  let pid = Pid::from_u32(std::process::id());
-  let mut sys = System::new();
-  let only = &[pid][..];
-  sys.refresh_processes_specifics(ProcessesToUpdate::Some(only), true, ProcessRefreshKind::everything());
-  std::thread::sleep(sysinfo::MINIMUM_CPU_UPDATE_INTERVAL);
-  sys.refresh_processes_specifics(ProcessesToUpdate::Some(only), true, ProcessRefreshKind::everything());
 
-  let (kb, cpu) = match sys.process(pid) {
-    Some(p) => (p.memory() / 1024, p.cpu_usage()),
-    None => (0, 0.0),
-  };
-  Usage {
-    total_kb: kb,
-    total_cpu: cpu,
-    breakdown: vec![UsageRow { label: "TaskHub".into(), kb, cpu }],
+  let mut sys = System::new();
+  sys.refresh_processes_specifics(ProcessesToUpdate::All, true, ProcessRefreshKind::everything());
+  std::thread::sleep(sysinfo::MINIMUM_CPU_UPDATE_INTERVAL);
+  sys.refresh_processes_specifics(ProcessesToUpdate::All, true, ProcessRefreshKind::everything());
+
+  // Build a parent → children map, then BFS the subtree rooted at our own pid.
+  let mut kids: HashMap<Pid, Vec<Pid>> = HashMap::new();
+  for (pid, proc_) in sys.processes() {
+    if let Some(parent) = proc_.parent() {
+      kids.entry(parent).or_default().push(*pid);
+    }
+  }
+  let me = Pid::from_u32(std::process::id());
+  let mut seen: HashSet<Pid> = HashSet::new();
+  let mut queue: VecDeque<Pid> = VecDeque::from([me]);
+
+  let mut total_kb = 0u64;
+  let mut total_cpu = 0f32;
+  let mut breakdown = Vec::new();
+  while let Some(pid) = queue.pop_front() {
+    if !seen.insert(pid) {
+      continue;
+    }
+    if let Some(proc_) = sys.process(pid) {
+      let kb = proc_.memory() / 1024;
+      let cpu = proc_.cpu_usage();
+      total_kb += kb;
+      total_cpu += cpu;
+      breakdown.push(UsageRow { label: proc_.name().to_string_lossy().into_owned(), kb, cpu });
+    }
+    if let Some(children) = kids.get(&pid) {
+      queue.extend(children);
+    }
+  }
+  Usage { total_kb, total_cpu, breakdown }
+}
+
+// Evaluate JS inside an embedded child webview (the M6 viewer). Backs the viewer's back/forward,
+// stop, and find-in-page — driven from bridge.js via window.find() / history.back() rather than
+// native objc2 glue. No-op if the webview id isn't found.
+#[tauri::command]
+pub fn wcv_eval(app: tauri::AppHandle, id: String, js: String) {
+  if let Some(webview) = app.get_webview(&id) {
+    let _ = webview.eval(&js);
   }
 }

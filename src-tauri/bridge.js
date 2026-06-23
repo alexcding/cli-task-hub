@@ -178,10 +178,27 @@
       function navigate(id, url) { destroy(id); create(id, url); }
       function reload(id) { try { views[id] && views[id].wv.reload(); } catch (e) {} }
 
+      // Back/forward/stop/find — driven by injecting JS into the child webview (history.back(),
+      // window.find()) rather than native objc2. No match-count (window.find doesn't expose one).
+      function evalIn(id, js) { if (views[id]) invoke('wcv_eval', { id: id, js: js }); }
+      function nav(id, action, url) {
+        if (action === 'back') evalIn(id, 'history.back()');
+        else if (action === 'forward') evalIn(id, 'history.forward()');
+        else if (action === 'stop') evalIn(id, 'window.stop()');
+        else if (action === 'home' && url) evalIn(id, 'location.assign(' + JSON.stringify(url) + ')');
+      }
+      function find(id, text, findNext, forward) {
+        if (!text) return;
+        var js = (findNext ? '' : '(window.getSelection&&window.getSelection().removeAllRanges());') +
+          'window.find(' + JSON.stringify(text) + ',false,' + (forward ? 'false' : 'true') + ',true)';
+        evalIn(id, js);
+      }
+      function stopFind(id) { evalIn(id, '(window.getSelection&&window.getSelection().removeAllRanges())'); }
+
       return {
         create: create, load: navigate, navigate: navigate, bounds: bounds,
         destroy: destroy, reload: reload,
-        nav: noop, find: noop, stopFind: noop,   // deferred (native glue)
+        nav: nav, find: find, stopFind: stopFind,
         onEvent: function () { return noop; },
       };
     })(),

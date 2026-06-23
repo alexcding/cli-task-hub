@@ -37,8 +37,8 @@ deps (`@tauri-apps/cli`, `@tauri-apps/api`).
 | 3 | Backend as a packaged Node sidecar | 🟢 implemented (official self-contained node + resources, spawn+wait in release), compiles both profiles — `tauri build` + launch verification owed |
 | 4 | Terminals — PTY host (Rust `portable-pty`) + bridge | 🟢 code complete, compiles — runtime test owed |
 | 5 | Tray + menu, notifications, updater | 🟢 tray Open/Quit + quit-only invariant; tab/folder context menus (in-page); notification plugin — dynamic tray body + updater config deferred |
-| 6 | Embedded GitHub/Jira viewer — child WKWebview over a shim div (the hard part) | ✅ MVP **verified** — PRs embed in-app; find/back-fwd deferred (see below) |
-| 7 | macOS chrome polish (traffic-light inset), resource-usage readout (`sysinfo`) | 🟢 `getUsage` (host process) done; traffic-light inset + full-tree usage deferred |
+| 6 | Embedded GitHub/Jira viewer — child WKWebview over a shim div (the hard part) | ✅ PRs embed; back/fwd/stop + find-in-page via JS injection (no match-count). Live title/favicon deferred (objc2) |
+| 7 | macOS chrome polish (traffic-light inset), resource-usage readout (`sysinfo`) | 🟢 `getUsage` = full process tree; traffic-light inset deferred (objc2) |
 
 ## Bridge surface to re-implement (Milestone 2+)
 

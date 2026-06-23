@@ -47,6 +47,7 @@ export function createWcvShim() {
 
   function load(url) {
     if (!url) return;
+    el.src = url;                                   // find.js gates on wv.src; expose the current URL
     if (!created) { created = true; wcv.create(id, url); startLoop(); }
     else wcv.navigate(id, url);
     lastKey = '';                                   // force a reposition on the next frame
@@ -61,13 +62,15 @@ export function createWcvShim() {
   el.setAttribute = (name, value) => { if (name === 'src') load(value); else origSetAttribute(name, value); };
   el.loadURL = load;                                // home button (viewer.js) calls this directly
   el.reload = () => wcv.reload(id);
-  el.stop = () => {};                               // deferred
-  el.canGoBack = () => false;                       // deferred (needs native nav history)
-  el.canGoForward = () => false;
-  el.goBack = () => {};
-  el.goForward = () => {};
-  el.findInPage = () => {};                         // deferred
-  el.stopFindInPage = () => {};
+  el.stop = () => wcv.nav(id, 'stop');
+  // Back/forward run via injected history.back()/forward(); we can't read history depth across the
+  // webview boundary, so report navigable and let the call no-op at the ends.
+  el.canGoBack = () => true;
+  el.canGoForward = () => true;
+  el.goBack = () => wcv.nav(id, 'back');
+  el.goForward = () => wcv.nav(id, 'forward');
+  el.findInPage = (text, opts) => wcv.find(id, text, opts && opts.findNext, !opts || opts.forward !== false);
+  el.stopFindInPage = () => wcv.stopFind(id);
 
   // Tear down the native webview when the shim leaves the DOM (closeTab / closeLink / disposeLink).
   const origRemove = el.remove.bind(el);
