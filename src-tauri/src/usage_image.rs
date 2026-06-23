@@ -80,9 +80,10 @@ impl Canvas {
       }
     }
   }
-  fn text(&mut self, font: &FontVec, x: f32, baseline: f32, s: &str, px: f32, c: [u8; 3], bold: bool) {
+  fn text(&mut self, font: &FontVec, x: f32, baseline: f32, s: &str, px: f32, c: [u8; 3], bold: bool, tracking: f32) {
     // Faux-bold by stamping each glyph twice with a sub-pixel x offset (ab_glyph can't synthesize
-    // weight, and SF's variable default reads light at small sizes).
+    // weight, and SF's variable default reads light at small sizes). `tracking` adds letter spacing
+    // (px per glyph) to approximate SF Pro's looser Text-optical-size spacing at small sizes.
     let offsets: &[f32] = if bold { &[0.0, 0.7] } else { &[0.0] };
     let sf = font.as_scaled(PxScale::from(px));
     for &dx in offsets {
@@ -100,7 +101,7 @@ impl Canvas {
             self.blend(bb.min.x as i32 + gx as i32, bb.min.y as i32 + gy as i32, c, cov);
           });
         }
-        pen += sf.h_advance(id);
+        pen += sf.h_advance(id) + tracking;
         prev = Some(id);
       }
     }
@@ -176,7 +177,7 @@ pub fn render(groups: &[Group], accent: [u8; 3], dark: bool) -> Option<(Vec<u8>,
   let bar_h = (6.0 * s) as i32; // CSS bar height 6px
   for (i, g) in groups.iter().enumerate() {
     let gy = (2.0 * s) as i32 + i as i32 * (group_h + inter);
-    cv.text(&font, lpad, gy as f32 + 12.0 * s, &g.title, title_px, text_c, false);
+    cv.text(&font, lpad, gy as f32 + 12.0 * s, &g.title, title_px, text_c, false, 0.0);
 
     let bar_y = gy + (17.0 * s) as i32;
     let bx = lpad as i32;
@@ -199,7 +200,7 @@ pub fn render(groups: &[Group], accent: [u8; 3], dark: bool) -> Option<(Vec<u8>,
       cv.fill(center - core / 2, bar_y, core, bar_h, pace_c, 1.0);
     }
 
-    cv.text(&font, lpad, (bar_y + bar_h) as f32 + 14.0 * s, &g.data, data_px, text_c, false);
+    cv.text(&font, lpad, (bar_y + bar_h) as f32 + 14.0 * s, &g.data, data_px, text_c, false, 0.45 * s);
   }
   Some((cv.buf, w as u32, h as u32))
 }
