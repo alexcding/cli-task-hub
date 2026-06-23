@@ -181,7 +181,7 @@ pub fn get_usage(app: tauri::AppHandle) -> Usage {
 
   // The embedded pages run in macOS-managed WebKit content processes that aren't in our subtree;
   // add each one explicitly (pid via WKWebView._webProcessIdentifier) so they're counted + listed.
-  for (title, pid) in crate::viewer::webview_pids(&app) {
+  for pid in crate::viewer::webview_pids(&app) {
     let p = Pid::from_u32(pid as u32);
     if !seen.insert(p) {
       continue;
@@ -191,8 +191,7 @@ pub fn get_usage(app: tauri::AppHandle) -> Usage {
       let cpu = proc_.cpu_usage();
       total_kb += kb;
       total_cpu += cpu;
-      let label = if title.trim().is_empty() { "Web Content".to_string() } else { format!("Web — {title}") };
-      breakdown.push(UsageRow { label, kb, cpu });
+      breakdown.push(UsageRow { label: "Web Content".to_string(), kb, cpu });
     }
   }
 
