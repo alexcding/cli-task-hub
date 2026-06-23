@@ -152,14 +152,14 @@ pub fn render(groups: &[Group], accent: [u8; 3], dark: bool) -> Option<(Vec<u8>,
   let lpad = 2.0 * s;
   let rpad = 6.0 * s;
   // Fixed width wide enough to fill the row, but at least as wide as the longest data line.
-  let mut content = 320.0 * s;
+  let mut content = 268.0 * s;
   for g in groups {
     content = content.max(measure(&font, &g.title, title_px));
     content = content.max(measure(&font, &g.data, data_px));
   }
   let w = (content + lpad + rpad).ceil() as i32;
-  let group_h = (56.0 * s) as i32; // title + bar + data + spacing
-  let h = (8.0 * s) as i32 + group_h * groups.len() as i32;
+  let group_h = (42.0 * s) as i32; // title + bar + data (tight top/bottom group padding)
+  let h = (2.0 * s) as i32 + group_h * groups.len() as i32;
 
   let text_c = if dark { [255, 255, 255] } else { [0, 0, 0] }; // default menu label color
   let muted_c = if dark { [0x8a, 0x8a, 0x8a] } else { [0x92, 0x98, 0xa3] };
@@ -173,10 +173,10 @@ pub fn render(groups: &[Group], accent: [u8; 3], dark: bool) -> Option<(Vec<u8>,
   let bar_w = w as f32 - lpad - rpad;
   let bar_h = (6.0 * s) as i32; // CSS bar height 6px
   for (i, g) in groups.iter().enumerate() {
-    let gy = (6.0 * s) as i32 + group_h * i as i32;
-    cv.text(&font, lpad, gy as f32 + 15.0 * s, &g.title, title_px, text_c, false);
+    let gy = (2.0 * s) as i32 + group_h * i as i32;
+    cv.text(&font, lpad, gy as f32 + 12.0 * s, &g.title, title_px, text_c, false);
 
-    let bar_y = gy + (23.0 * s) as i32;
+    let bar_y = gy + (17.0 * s) as i32;
     let bx = lpad as i32;
     // Rounded (pill) track + accent fill — border-radius:3px in the Electron CSS.
     cv.fill_round(bx, bar_y, bar_w as i32, bar_h, track_c, track_a);
@@ -197,7 +197,7 @@ pub fn render(groups: &[Group], accent: [u8; 3], dark: bool) -> Option<(Vec<u8>,
       cv.fill(center - core / 2, bar_y, core, bar_h, pace_c, 1.0);
     }
 
-    cv.text(&font, lpad, (bar_y + bar_h) as f32 + 15.0 * s, &g.data, data_px, text_c, false);
+    cv.text(&font, lpad, (bar_y + bar_h) as f32 + 14.0 * s, &g.data, data_px, text_c, false);
   }
   Some((cv.buf, w as u32, h as u32))
 }

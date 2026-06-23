@@ -261,7 +261,7 @@ fn build_menu(app: &AppHandle, tabs: &[Tab], prs: &[Pr], usage: &Usage, settings
       let id = format!("rev:{seq}");
       seq += 1;
       let title = format!("PR #{} {}", p.number, p.title);
-      let label = truncate(&title, 40);
+      let label = truncate(&title, 32);
       b = match gh_icon(Some(p), dark) {
         Some(icon) => b.item(&tauri::menu::IconMenuItemBuilder::with_id(&id, label).icon(icon).build(app)?),
         None => b.text(&id, label),
@@ -283,7 +283,7 @@ fn build_menu(app: &AppHandle, tabs: &[Tab], prs: &[Pr], usage: &Usage, settings
       let id = format!("tab:{seq}");
       seq += 1;
       let title = if t.title.trim().is_empty() { t.url.clone() } else { t.title.clone() };
-      let row = truncate(&title, 40);
+      let row = truncate(&title, 32);
       let icon = if t.kind == "jira" { jira_img() } else { gh_icon(pr_by_url.get(t.url.as_str()).copied(), dark) };
       b = match icon {
         Some(img) => b.item(&tauri::menu::IconMenuItemBuilder::with_id(&id, row).icon(img).build(app)?),
