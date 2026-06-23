@@ -94,9 +94,11 @@ fn maybe_notify_activity(app: &AppHandle, ev: &Value) {
   if ACTIVITY_OFF.load(Ordering::Relaxed) {
     return;
   }
-  let focused = app.get_webview_window("main").and_then(|w| w.is_focused().ok()).unwrap_or(false);
+  // get_webview("main") + .window(): get_webview_window returns None once an embedded tab is open.
+  let main = app.get_webview("main");
+  let focused = main.as_ref().and_then(|w| w.window().is_focused().ok()).unwrap_or(false);
   if focused {
-    if let Some(w) = app.get_webview_window("main") {
+    if let Some(w) = &main {
       let _ = w.eval(&format!("window.__activityToast&&window.__activityToast({})", ev));
     }
   } else {

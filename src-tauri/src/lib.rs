@@ -108,9 +108,13 @@ fn wait_for_backend() {
 }
 
 pub(crate) fn show_main(app: &tauri::AppHandle) {
-  if let Some(w) = app.get_webview_window("main") {
-    let _ = w.show();
-    let _ = w.set_focus();
+  // Target the "main" WEBVIEW's window, not get_webview_window(): once the window hosts child
+  // webviews (an embedded tab is open) it's a multiwebview window and get_webview_window returns
+  // None — so show/focus (and the tray/menu/notify evals) would silently no-op.
+  if let Some(w) = app.get_webview("main") {
+    let win = w.window();
+    let _ = win.show();
+    let _ = win.set_focus();
   }
 }
 

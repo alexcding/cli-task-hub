@@ -11,7 +11,7 @@ pub fn dispatch(app: &AppHandle, action: &str) {
   if action.starts_with("nav:") || action == "project:new" {
     crate::show_main(app);
   }
-  if let Some(w) = app.get_webview_window("main") {
+  if let Some(w) = app.get_webview("main") {
     let js = format!("window.__shortcut&&window.__shortcut({})", serde_json::to_string(action).unwrap_or_else(|_| "\"\"".into()));
     let _ = w.eval(&js);
   }

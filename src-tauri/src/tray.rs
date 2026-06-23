@@ -229,8 +229,8 @@ fn jira_img() -> Option<tauri::image::Image<'static>> {
 fn build_menu(app: &AppHandle, tabs: &[Tab], prs: &[Pr], usage: &Usage, settings: &Settings) -> tauri::Result<Menu<Wry>> {
   use std::collections::HashMap as Map;
   let dark = app
-    .get_webview_window("main")
-    .and_then(|w| w.theme().ok())
+    .get_webview("main")
+    .and_then(|w| w.window().theme().ok())
     .map(|t| t == tauri::Theme::Dark)
     .unwrap_or(true);
   let pr_by_url: Map<&str, &Pr> = prs.iter().map(|p| (p.url.as_str(), p)).collect();
@@ -343,7 +343,7 @@ fn build_menu(app: &AppHandle, tabs: &[Tab], prs: &[Pr], usage: &Usage, settings
 
 fn open_action(app: &AppHandle, a: &Action) {
   crate::show_main(app);
-  if let Some(w) = app.get_webview_window("main") {
+  if let Some(w) = app.get_webview("main") {
     let js = format!(
       "window.__openTab&&window.__openTab({},{},{},{})",
       jstr(&a.url), jstr(&a.title), jstr(&a.kind), jstr(&a.group)
@@ -373,7 +373,7 @@ fn on_event(app: &AppHandle, id: &str) {
     }
     _ if id.starts_with("usage:") => {
       crate::show_main(app);
-      if let Some(w) = app.get_webview_window("main") {
+      if let Some(w) = app.get_webview("main") {
         let _ = w.eval("window.showPage && window.showPage('dashboard')");
       }
     }
