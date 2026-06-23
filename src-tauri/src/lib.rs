@@ -236,7 +236,7 @@ pub fn run() {
       notify::start_stream(app.handle());
       // Native curated context menu on the embedded webviews (swizzles WKWebView's willOpenMenu).
       #[cfg(target_os = "macos")]
-      webview_menu::install();
+      webview_menu::install(app.handle().clone());
       // TEMP (diagnostic): the main-thread title poll is disabled to confirm it's what makes the
       // initial webview load take ~10s. Re-enable with a lighter design once confirmed.
       // viewer::start_title_watch(app.handle());

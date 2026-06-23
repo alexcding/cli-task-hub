@@ -4191,6 +4191,7 @@ name = "taskhub"
 version = "1.0.0"
 dependencies = [
  "ab_glyph",
+ "block2",
  "chrono",
  "image",
  "log",

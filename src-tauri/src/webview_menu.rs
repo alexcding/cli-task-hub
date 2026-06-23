@@ -13,12 +13,19 @@
 
 use std::ffi::c_void;
 use std::sync::atomic::{AtomicPtr, Ordering};
+use std::sync::OnceLock;
 
+use block2::RcBlock;
 use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, NSObject, NSObjectProtocol, Sel};
 use objc2::{class, define_class, msg_send, sel, AllocAnyThread, MainThreadOnly};
 use objc2_app_kit::{NSMenu, NSMenuItem, NSWorkspace};
-use objc2_foundation::{MainThreadMarker, NSString, NSURL};
+use objc2_foundation::{MainThreadMarker, NSError, NSString, NSURL};
+use objc2_web_kit::WKWebView;
+use tauri::Manager;
+
+// App handle, stored at install(), so a menu action can reach the renderer (open a tab).
+static APP: OnceLock<tauri::AppHandle> = OnceLock::new();
 
 // The original -[WKWebView willOpenMenu:withEvent:] IMP, saved when we swizzle so our replacement
 // can call through to it (WebKit populates the menu there) before curating.
@@ -45,6 +52,35 @@ define_class!(
         let url: &NSURL = &*(Retained::as_ptr(&obj) as *const NSURL);
         let ws = NSWorkspace::sharedWorkspace();
         let _: bool = msg_send![&ws, openURL: url];
+      }
+    }
+
+    // "Open Link in New Tab": representedObject is the WKWebView. The hovered link's URL was
+    // captured into window.__thLink by a contextmenu listener (injected from bridge.js); read it
+    // back via evaluateJavaScript and open it as a tab in the renderer (window.__openTab).
+    #[unsafe(method(openLinkInTab:))]
+    fn open_link_in_tab(&self, sender: &NSMenuItem) {
+      unsafe {
+        let obj: Option<Retained<AnyObject>> = msg_send![sender, representedObject];
+        let Some(obj) = obj else { return };
+        let wk: &WKWebView = &*(Retained::as_ptr(&obj) as *const WKWebView);
+        let js = NSString::from_str("window.__thLink||''");
+        let handler = RcBlock::new(move |result: *mut AnyObject, _err: *mut NSError| {
+          if result.is_null() {
+            return;
+          }
+          let s: &NSString = &*(result as *const NSString);
+          let url = s.to_string();
+          if !url.starts_with("http") {
+            return;
+          }
+          if let (Some(app), Ok(arg)) = (APP.get(), serde_json::to_string(&url)) {
+            if let Some(w) = app.get_webview_window("main") {
+              let _ = w.eval(&format!("window.__openTab&&window.__openTab({arg},\"\",\"github\",\"\")"));
+            }
+          }
+        });
+        let _: () = msg_send![wk, evaluateJavaScript: &*js, completionHandler: &*handler];
       }
     }
   }
@@ -102,6 +138,21 @@ fn curate(webview: &AnyObject, menu: &NSMenu) {
         menu.removeItem(&item);
       }
     }
+    let target = TARGET.load(Ordering::Acquire);
+    // Relabel "Open Link" → "Open Link in New Tab" and route it to our action (opens in a tab
+    // instead of navigating the embedded view). representedObject = the WKWebView so the action
+    // can read the hovered link via evaluateJavaScript.
+    if !target.is_null() {
+      let tgt = &*(target as *const NSObject);
+      for item in menu.itemArray().iter() {
+        if item_identifier(&item).as_deref() == Some("WKMenuItemIdentifierOpenLink") {
+          item.setTitle(&NSString::from_str("Open Link in New Tab"));
+          item.setTarget(Some(tgt));
+          item.setAction(Some(sel!(openLinkInTab:)));
+          item.setRepresentedObject(Some(webview));
+        }
+      }
+    }
     // Append: ─── Open Page in Browser (opens the current page URL externally).
     let url: Option<Retained<NSURL>> = msg_send![webview, URL];
     if let Some(url) = url {
@@ -123,7 +174,8 @@ fn curate(webview: &AnyObject, menu: &NSMenu) {
 
 // Swizzle -[WKWebView willOpenMenu:withEvent:] once. Safe to call multiple times (no-ops after the
 // first). Must run on the main thread (Tauri setup does).
-pub fn install() {
+pub fn install(app: tauri::AppHandle) {
+  let _ = APP.set(app);
   if !ORIGINAL.load(Ordering::Acquire).is_null() {
     return;
   }
