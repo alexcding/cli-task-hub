@@ -61,28 +61,24 @@ define_class!(
     #[unsafe(method(openLinkInTab:))]
     fn open_link_in_tab(&self, sender: &NSMenuItem) {
       unsafe {
-        log::info!("[webview-menu] openLinkInTab clicked");
         let obj: Option<Retained<AnyObject>> = msg_send![sender, representedObject];
-        let Some(obj) = obj else { log::warn!("[webview-menu] no representedObject (webview)"); return };
+        let Some(obj) = obj else { return };
         let wk: &WKWebView = &*(Retained::as_ptr(&obj) as *const WKWebView);
         let js = NSString::from_str("window.__thLink||''");
-        let handler = RcBlock::new(move |result: *mut AnyObject, err: *mut NSError| {
+        let handler = RcBlock::new(move |result: *mut AnyObject, _err: *mut NSError| {
           if result.is_null() {
-            log::warn!("[webview-menu] __thLink eval returned null (err={})", !err.is_null());
             return;
           }
           let s: &NSString = &*(result as *const NSString);
           let url = s.to_string();
-          log::info!("[webview-menu] __thLink = {:?}", url);
           if !url.starts_with("http") {
             return;
           }
           if let (Some(app), Ok(arg)) = (APP.get(), serde_json::to_string(&url)) {
             // The renderer is the webview labelled "main". get_webview_window() returns None once the
             // window hosts child webviews (multiwebview), so target the webview by label directly.
-            match app.get_webview("main") {
-              Some(w) => { let _ = w.eval(&format!("window.__openContentTab&&window.__openContentTab({arg})")); log::info!("[webview-menu] opened content tab"); }
-              None => log::warn!("[webview-menu] no main webview"),
+            if let Some(w) = app.get_webview("main") {
+              let _ = w.eval(&format!("window.__openContentTab&&window.__openContentTab({arg})"));
             }
           }
         });
@@ -133,7 +129,6 @@ fn curate(webview: &AnyObject, menu: &NSMenu) {
     let items = menu.itemArray();
     // Guard: only touch menus that are actually WebKit context menus (carry WK identifiers).
     let is_wk = items.iter().any(|it| item_identifier(&it).map(|s| s.starts_with("WKMenuItemIdentifier")).unwrap_or(false));
-    log::info!("[webview-menu] willOpenMenu fired: {} items, is_wk={}", items.len(), is_wk);
     if !is_wk {
       return;
     }
