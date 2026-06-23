@@ -94,51 +94,37 @@ fn measure(font: &FontVec, s: &str, px: f32) -> f32 {
   w
 }
 
-// muda forces menu-item icons to 18px tall, so the two-group panel won't fit. We render a compact
-// SINGLE-LINE strip — "Session [bar] 45%   Weekly [bar] 70%" — at 2× (36px tall) so it stays crisp
-// when macOS scales it to 18px. Bars fill to % remaining in the agent accent, with 50/75% gridmarks.
-pub fn render(session_left: Option<i64>, weekly_left: Option<i64>, accent: [u8; 3], dark: bool) -> Option<(Vec<u8>, u32, u32)> {
+// muda caps each menu-item icon at 18px tall, so we render ONE window (Session OR Weekly) per row
+// — "Session [====bar====] 45% left" — at 2× (36px → crisp at 18px). The tray stacks two of these
+// rows to recreate the Electron panel's height. Bar fills to % remaining in the agent accent, with
+// 50/75% gridmarks.
+pub fn render_row(title: &str, left: i64, accent: [u8; 3], dark: bool) -> Option<(Vec<u8>, u32, u32)> {
   let font = load_font()?;
-  let segs: Vec<(&str, i64)> = [("Session", session_left), ("Weekly", weekly_left)]
-    .into_iter()
-    .filter_map(|(t, v)| v.map(|n| (t, n)))
-    .collect();
-  if segs.is_empty() {
-    return None;
-  }
-
   let h = 36i32; // 2× of muda's 18px row height
   let baseline = 24.0f32;
   let font_px = 21.0f32;
-  let (bar_w, bar_h, bar_y) = (150.0f32, 11i32, 12i32);
+  let (bar_w, bar_h, bar_y) = (230.0f32, 12i32, 11i32);
   let text_c = if dark { [0xe8, 0xe8, 0xe8] } else { [0x16, 0x18, 0x1d] };
   let track_c = if dark { [255, 255, 255] } else { [0, 0, 0] };
   let track_a = if dark { 0.16 } else { 0.12 };
   let mark_a = if dark { 0.24 } else { 0.22 };
 
-  // Two passes: measure total width, then draw.
-  let seg_width = |t: &str, left: i64| measure(&font, t, font_px) + 8.0 + bar_w + 8.0 + measure(&font, &format!("{left}%"), font_px) + 24.0;
-  let total: f32 = 12.0 + segs.iter().map(|(t, l)| seg_width(t, *l)).sum::<f32>();
-  let w = total.ceil() as i32 + 4;
+  // Fixed label column so the two stacked rows align (Session/Weekly bars start at the same x).
+  let label_col = 86.0f32;
+  let pct = format!("{left}% left");
+  let w = (10.0 + label_col + bar_w + 10.0 + measure(&font, &pct, font_px) + 10.0).ceil() as i32;
 
   let mut cv = Canvas::new(w, h);
-  let mut x = 12.0f32;
-  for (title, left) in &segs {
-    cv.text(&font, x, baseline, title, font_px, text_c);
-    x += measure(&font, title, font_px) + 8.0;
+  cv.text(&font, 10.0, baseline, title, font_px, text_c);
 
-    let bx = x as i32;
-    cv.fill(bx, bar_y, bar_w as i32, bar_h, track_c, track_a);
-    let fw = (bar_w * (*left).clamp(0, 100) as f32 / 100.0) as i32;
-    cv.fill(bx, bar_y, fw, bar_h, accent, 1.0);
-    for frac in [0.5f32, 0.75] {
-      cv.fill(bx + (bar_w * frac) as i32, bar_y, 1, bar_h, track_c, mark_a);
-    }
-    x += bar_w + 8.0;
-
-    let pct = format!("{left}%");
-    cv.text(&font, x, baseline, &pct, font_px, text_c);
-    x += measure(&font, &pct, font_px) + 24.0;
+  let bx = (10.0 + label_col) as i32;
+  cv.fill(bx, bar_y, bar_w as i32, bar_h, track_c, track_a);
+  let fw = (bar_w * left.clamp(0, 100) as f32 / 100.0) as i32;
+  cv.fill(bx, bar_y, fw, bar_h, accent, 1.0);
+  for frac in [0.5f32, 0.75] {
+    cv.fill(bx + (bar_w * frac) as i32, bar_y, 1, bar_h, track_c, mark_a);
   }
+
+  cv.text(&font, (bx + bar_w as i32 + 10) as f32, baseline, &pct, font_px, text_c);
   Some((cv.buf, w as u32, h as u32))
 }

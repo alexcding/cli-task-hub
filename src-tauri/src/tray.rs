@@ -205,29 +205,31 @@ fn build_menu(app: &AppHandle, tabs: &[Tab], prs: &[Pr], usage: &Usage, settings
     let s = left(&lim.session);
     let wk = left(&lim.weekly);
     if s.is_some() || wk.is_some() {
-      b = b.separator();
-      // Render the bars+labels panel to an image and show it as one menu row (like the Electron
-      // tray). Fall back to text rows if rendering fails (no font).
+      // muda caps each menu-item icon at 18px, so we stack one image row per window (Session, then
+      // Weekly) to get the panel height back. Each row is a full bar + label, rendered at 2×.
       let dark = app
         .get_webview_window("main")
         .and_then(|w| w.theme().ok())
         .map(|t| t == tauri::Theme::Dark)
         .unwrap_or(true);
-      let img = crate::usage_image::render(s, wk, crate::usage_image::accent(agent), dark)
-        .map(|(rgba, w, h)| tauri::image::Image::new_owned(rgba, w, h));
-      match img {
-        Some(image) => {
-          let item = tauri::menu::IconMenuItemBuilder::with_id("usage:open", "")
-            .icon(image)
-            .build(app)?;
-          b = b.item(&item);
+      let acc = crate::usage_image::accent(agent);
+      let mut started = false;
+      let mut text_fallback = false;
+      for (title, left) in [("Session", s), ("Weekly", wk)] {
+        let Some(left) = left else { continue };
+        match crate::usage_image::render_row(title, left, acc, dark) {
+          Some((rgba, w, h)) => {
+            if !started { b = b.separator(); started = true; }
+            let image = tauri::image::Image::new_owned(rgba, w, h);
+            b = b.item(&tauri::menu::IconMenuItemBuilder::with_id(format!("usage:{title}"), "").icon(image).build(app)?);
+          }
+          None => text_fallback = true,
         }
-        None => {
-          let label = if agent == "codex" { "Codex usage" } else { "Claude usage" };
-          b = b.item(&MenuItemBuilder::with_id(format!("h{seq}"), label).enabled(false).build(app)?);
-          if let Some(p) = s { b = b.text("usage:session", format!("Session — {p}% left")); }
-          if let Some(p) = wk { b = b.text("usage:weekly", format!("Weekly — {p}% left")); }
-        }
+      }
+      if text_fallback {
+        if !started { b = b.separator(); }
+        if let Some(p) = s { b = b.text("usage:session", format!("Session — {p}% left")); }
+        if let Some(p) = wk { b = b.text("usage:weekly", format!("Weekly — {p}% left")); }
       }
     }
   }
