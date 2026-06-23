@@ -22,20 +22,53 @@ const BACKEND_URL: &str = "http://localhost:3000";
 // marks the one sanctioned exit so the window CloseRequested handler can tell them apart.
 static QUITTING: AtomicBool = AtomicBool::new(false);
 
-// In a packaged build the Node backend ships as a sidecar binary and we spawn it on startup.
-// In dev, `beforeDevCommand` in tauri.conf.json already runs `node src/server/app.js`, so the
-// Rust side only spawns it for release builds.
+// In a packaged build the Node runtime ships as the `taskhub-node` sidecar and the backend
+// source + node_modules ride along as bundle.resources (see tauri.conf.json). We spawn
+// `node <resources>/src/server/app.js` with the backend's port + a writable data dir. In dev,
+// `beforeDevCommand` already runs `node src/server/app.js`, so this is release-only.
 #[cfg(not(debug_assertions))]
 fn start_backend(handle: &tauri::AppHandle) {
   use tauri_plugin_shell::ShellExt;
-  match handle.shell().sidecar("taskhub-server") {
+
+  let resources = match handle.path().resource_dir() {
+    Ok(p) => p,
+    Err(e) => { log::error!("no resource dir: {e}"); return; }
+  };
+  let app_js = resources.join("src/server/app.js");
+  let data_dir = handle
+    .path()
+    .app_data_dir()
+    .map(|d| d.to_string_lossy().into_owned())
+    .unwrap_or_default();
+
+  match handle.shell().sidecar("taskhub-node") {
     Ok(cmd) => {
+      let cmd = cmd
+        .arg(app_js.to_string_lossy().to_string())
+        .env("PORT", "3000")
+        .env("TASKHUB_DATA_DIR", data_dir);
       if let Err(e) = cmd.spawn() {
-        log::error!("failed to spawn TaskHub backend sidecar: {e}");
+        log::error!("failed to spawn TaskHub backend: {e}");
       }
     }
-    Err(e) => log::error!("TaskHub backend sidecar not configured: {e}"),
+    Err(e) => log::error!("taskhub-node sidecar not configured: {e}"),
   }
+}
+
+// Wait (release only) for the backend to accept connections before loading the window, so the
+// renderer doesn't hit a connection error on a cold start. Plain TCP probe — no HTTP client dep.
+#[cfg(not(debug_assertions))]
+fn wait_for_backend() {
+  use std::net::{SocketAddr, TcpStream};
+  use std::time::Duration;
+  let addr: SocketAddr = "127.0.0.1:3000".parse().unwrap();
+  for _ in 0..100 {
+    if TcpStream::connect_timeout(&addr, Duration::from_millis(200)).is_ok() {
+      return;
+    }
+    std::thread::sleep(Duration::from_millis(100));
+  }
+  log::warn!("backend did not become ready within ~10s; loading window anyway");
 }
 
 fn show_main(app: &tauri::AppHandle) {
@@ -65,12 +98,8 @@ fn open_main_window(app: &tauri::AppHandle) -> tauri::Result<()> {
       .hidden_title(true);
   }
 
-  let window = builder.build()?;
-
-  // Open the WKWebView inspector automatically in dev so the console is right there.
-  #[cfg(debug_assertions)]
-  window.open_devtools();
-
+  builder.build()?;
+  // (No auto-opened devtools — use right-click → Inspect Element in a debug build if needed.)
   Ok(())
 }
 
@@ -152,7 +181,10 @@ pub fn run() {
       }
 
       #[cfg(not(debug_assertions))]
-      start_backend(app.handle());
+      {
+        start_backend(app.handle());
+        wait_for_backend();
+      }
 
       open_main_window(app.handle())?;
       setup_tray(app.handle())?;

@@ -1,27 +1,33 @@
 #!/usr/bin/env bash
-# M3 — build the Node backend as a packaged sidecar for `tauri build`.  ⚠️ NOT YET WORKING.
+# M3 — provide the Node backend's runtime for `tauri build`.
 #
-# FINDING (2026): `bun build --compile` produces a single binary but FAILS AT RUNTIME with
-# "No such built-in module: node:sqlite" — the backend (src/server/database/*) uses Node's
-# built-in SQLite, which bun does not implement. So a bun single-file binary is a dead end.
+# The backend uses Node's built-in node:sqlite, so the sidecar must be REAL Node (bun's
+# --compile fails: "No such built-in module: node:sqlite"). We ship the node binary itself as
+# Tauri's externalBin; the server source + node_modules ride along as bundle.resources, and the
+# Rust host spawns `node <resources>/src/server/app.js` in release (see start_backend in lib.rs).
 #
-# Two viable approaches (need a real `tauri build` + launch to verify, hence not wired into
-# beforeBuildCommand / externalBin yet):
+# We download the OFFICIAL node binary (self-contained — links only system frameworks, verified),
+# NOT the Homebrew one (a 67K launcher needing @rpath/libnode + /opt/homebrew dylibs that aren't
+# in the .app). The version matches the local `node` so behavior matches dev.
 #
-#   A. Ship real Node as the sidecar (simplest, ~heavy):
-#      - cp "$(command -v node)" "src-tauri/binaries/taskhub-node-$(rustc -Vv|sed -n 's/host: //p')"
-#        and declare it in tauri.conf.json bundle.externalBin.
-#      - Bundle src/server + src/shared + src/renderer via bundle.resources.
-#      - In lib.rs start_backend(): spawn the node sidecar with the resource path to
-#        server/app.js as its arg (real Node → node:sqlite works). Verify the server's static/
-#        path resolution works from the bundled (read-only) resource dir; data dir already honors
-#        TASKHUB_DATA_DIR → userData.
-#
-#   B. Node SEA (single-executable-application): esbuild-bundle src/server into one CJS file,
-#      then `node --experimental-sea-config` + postject into a copied node binary. Smaller, more
-#      moving parts; confirm node:sqlite + the .mjs shared contracts survive bundling.
-#
-# Until one is implemented + verified, `tauri build` ships without a backend; `tauri dev` is
-# unaffected (beforeDevCommand runs `node src/server/app.js`).
-echo "M3 sidecar packaging is not implemented — see comments in this script." >&2
-exit 1
+# Tauri resolves externalBin "binaries/taskhub-node" to the target-triple-suffixed file.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+TRIPLE="$(rustc -Vv | sed -n 's/^host: //p')"
+DEST="src-tauri/binaries/taskhub-node-${TRIPLE}"
+VER="$(node --version)"                       # e.g. v26.3.1
+case "$(uname -m)" in arm64) NARCH=arm64 ;; *) NARCH=x64 ;; esac
+PKG="node-${VER}-darwin-${NARCH}"
+URL="https://nodejs.org/dist/${VER}/${PKG}.tar.gz"
+
+mkdir -p src-tauri/binaries
+TMP="$(mktemp -d)"
+trap 'rm -rf "$TMP"' EXIT
+echo "[build-sidecar] downloading self-contained Node ${VER} (${NARCH})…"
+curl -fsSL "$URL" -o "$TMP/node.tgz"
+tar -xzf "$TMP/node.tgz" -C "$TMP"
+rm -f "$DEST"                                 # the source node is read-only; cp can't overwrite it
+cp "$TMP/${PKG}/bin/node" "$DEST"
+chmod +x "$DEST"
+echo "[build-sidecar] wrote self-contained Node → ${DEST} ($(du -h "$DEST" | cut -f1))"

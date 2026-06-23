@@ -12,6 +12,82 @@
   var invoke = function (cmd, args) { return window.__TAURI__.core.invoke(cmd, args); };
   var noop = function () {};
 
+  // ── Lightweight DOM context menu (M5) ─────────────────────────────────────────
+  // The Electron build drew tab / folder-chip right-click menus natively. We draw them in the page
+  // instead — same contract (resolve the chosen action id, or null if dismissed) so viewer.js is
+  // unchanged. Themed with the app's CSS tokens. These anchors are renderer-drawn chrome (not over
+  // the embedded webview), so the DOM menu shows correctly above them.
+  var _cursor = { x: 0, y: 0 };
+  window.addEventListener('contextmenu', function (e) { _cursor = { x: e.clientX, y: e.clientY }; }, true);
+
+  // ── Native window drag ────────────────────────────────────────────────────────
+  // -webkit-app-region:drag (Electron/Chromium) is ignored by WKWebView, so the hiddenInset top
+  // band stopped dragging the window. Reimplement it: a left mousedown on a top bar — but not on
+  // an interactive control — starts a native window drag (double-click toggles maximize, like a
+  // real title bar).
+  var NODRAG = 'button,a,input,textarea,select,svg,[role=button],.ctab,.ctab-add,.ctab-input,.split-btn,.ctabs';
+  function inDragBar(t) { return t && t.closest && !t.closest(NODRAG) && t.closest('.topbar, .split-bar, .sidebar-logo'); }
+  window.addEventListener('mousedown', function (e) {
+    if (e.button !== 0 || !inDragBar(e.target)) return;
+    try {
+      var r = window.__TAURI__.window.getCurrentWindow().startDragging();
+      if (r && r.catch) r.catch(function (err) { console.warn('[drag] startDragging rejected', err); });
+    } catch (err) { console.warn('[drag] startDragging threw', err); }
+  }, true);
+  window.addEventListener('dblclick', function (e) {
+    if (!inDragBar(e.target)) return;
+    try { window.__TAURI__.window.getCurrentWindow().toggleMaximize(); } catch (err) {}
+  }, true);
+
+  function popupMenu(items) {
+    return new Promise(function (resolve) {
+      var menu = document.createElement('div');
+      menu.setAttribute('role', 'menu');
+      menu.style.cssText = 'position:fixed;z-index:99999;min-width:180px;padding:4px;border-radius:8px;' +
+        'background:var(--surface,#1e1e1e);border:1px solid var(--border,#3a3a3a);' +
+        'box-shadow:0 8px 24px rgba(0,0,0,.35);font:13px -apple-system,system-ui,sans-serif;color:var(--text,#eee);';
+      var done = false;
+      function cleanup() {
+        menu.remove();
+        document.removeEventListener('mousedown', onDocDown, true);
+        document.removeEventListener('keydown', onKey, true);
+      }
+      function close(val) { if (done) return; done = true; cleanup(); resolve(val); }
+      function onDocDown(e) { if (!menu.contains(e.target)) close(null); }
+      function onKey(e) { if (e.key === 'Escape') close(null); }
+
+      items.forEach(function (it) {
+        if (it.separator) {
+          var sep = document.createElement('div');
+          sep.style.cssText = 'height:1px;margin:4px 6px;background:var(--border,#3a3a3a);';
+          menu.appendChild(sep);
+          return;
+        }
+        var row = document.createElement('div');
+        row.textContent = it.label;
+        var disabled = it.enabled === false;
+        row.style.cssText = 'padding:5px 10px;border-radius:5px;cursor:default;white-space:nowrap;' + (disabled ? 'opacity:.4;' : '');
+        if (!disabled) {
+          row.addEventListener('mouseenter', function () { row.style.background = 'var(--surface-hover,#333)'; });
+          row.addEventListener('mouseleave', function () { row.style.background = 'transparent'; });
+          row.addEventListener('mousedown', function (e) { e.preventDefault(); });
+          row.addEventListener('click', function () { close(it.id); });
+        }
+        menu.appendChild(row);
+      });
+
+      document.body.appendChild(menu);
+      var x = Math.min(_cursor.x, window.innerWidth - menu.offsetWidth - 6);
+      var y = Math.min(_cursor.y, window.innerHeight - menu.offsetHeight - 6);
+      menu.style.left = Math.max(4, x) + 'px';
+      menu.style.top = Math.max(4, y) + 'px';
+      setTimeout(function () {
+        document.addEventListener('mousedown', onDocDown, true);
+        document.addEventListener('keydown', onKey, true);
+      }, 0);
+    });
+  }
+
   window.taskhub = {
     // Sync platform string in Electron's vocabulary (this is the macOS build).
     platform: 'darwin',
@@ -25,9 +101,33 @@
     closeWindow: function () { return invoke('close_window'); },
 
     // ── Not yet ported — stubbed so the data UI runs; see docs/TAURI-PORT.md milestones ──
-    refreshTray: noop,                                    // M5 (tray)
-    tabMenu: function () { return Promise.resolve(null); },   // M5 (native context menu)
-    folderMenu: function () { return Promise.resolve(null); }, // M5
+    refreshTray: noop,                                    // M5 — dynamic tray body deferred
+
+    // Tab right-click: open/copy handled here (matches Electron, where main did them); only
+    // 'close' (or null) is returned for the renderer to act on.
+    tabMenu: function (url) {
+      var u = String(url || '');
+      var isHttp = /^https?:\/\//i.test(u);
+      return popupMenu([
+        { id: 'open', label: 'Open Link in Browser', enabled: isHttp },
+        { id: 'copy', label: 'Copy Link', enabled: !!u },
+        { separator: true },
+        { id: 'close', label: 'Close Tab' },
+      ]).then(function (action) {
+        if (action === 'open') { invoke('open_external', { url: u }); return null; }
+        if (action === 'copy') { try { navigator.clipboard.writeText(u); } catch (e) {} return null; }
+        return action; // 'close' | null
+      });
+    },
+    // Folder-chip right-click: the renderer acts on 'client' | 'finder' | 'delete' | null.
+    folderMenu: function (ctx) {
+      ctx = ctx || {};
+      var items = [];
+      if (ctx.hasClient) items.push({ id: 'client', label: 'Open in ' + (ctx.clientLabel || 'git client') });
+      items.push({ id: 'finder', label: 'Reveal in Finder' });
+      if (ctx.isWorktree) { items.push({ separator: true }); items.push({ id: 'delete', label: 'Delete Worktree…' }); }
+      return popupMenu(items);
+    },
     fetchAvatar: function () { return Promise.resolve(null); }, // (falls back to live avatar URL)
     getUsage: function () { return invoke('get_usage'); },     // M7 (sysinfo, host process)
     pathForFile: function () { return ''; },              // M4 follow-up (Tauri drag-drop carries paths)

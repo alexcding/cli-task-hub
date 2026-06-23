@@ -34,10 +34,10 @@ deps (`@tauri-apps/cli`, `@tauri-apps/api`).
 |---|------|--------|
 | 1 | Tauri window renders the UI via the existing backend | ✅ done — Rust compiles, server serves :3000, window points at it |
 | 2 | `window.taskhub.*` bridge (core methods) | ✅ done — remote-origin IPC **verified at runtime** (`invoke('platform')` → `"darwin"`) |
-| 3 | Backend as a packaged Node sidecar (bundle node, `externalBin`, spawn in release) | ⛔ blocked — bun fails on `node:sqlite`; needs real-Node bundling (see below). `tauri dev` unaffected |
+| 3 | Backend as a packaged Node sidecar | 🟢 implemented (official self-contained node + resources, spawn+wait in release), compiles both profiles — `tauri build` + launch verification owed |
 | 4 | Terminals — PTY host (Rust `portable-pty`) + bridge | 🟢 code complete, compiles — runtime test owed |
-| 5 | Tray + menu, notifications, updater | 🟢 MVP (tray Open/Quit + quit-only invariant, plugins wired), compiles — context menus + dynamic tray deferred |
-| 6 | Embedded GitHub/Jira viewer — child WKWebview over a shim div (the hard part) | 🟡 MVP built, compiles — runtime test owed; find/back-fwd deferred (see below) |
+| 5 | Tray + menu, notifications, updater | 🟢 tray Open/Quit + quit-only invariant; tab/folder context menus (in-page); notification plugin — dynamic tray body + updater config deferred |
+| 6 | Embedded GitHub/Jira viewer — child WKWebview over a shim div (the hard part) | ✅ MVP **verified** — PRs embed in-app; find/back-fwd deferred (see below) |
 | 7 | macOS chrome polish (traffic-light inset), resource-usage readout (`sysinfo`) | 🟢 `getUsage` (host process) done; traffic-light inset + full-tree usage deferred |
 
 ## Bridge surface to re-implement (Milestone 2+)
@@ -129,13 +129,48 @@ short interval apart for CPU), shape `{ totalKb, totalCpu, breakdown }` for the 
 *Deferred:* summing the full TaskHub process tree (host + backend sidecar + PTYs), the traffic-light
 fine-inset (needs objc2), and `fetchAvatar` (returns null → renderer falls back to the live avatar URL).
 
-## Milestone 3 — backend sidecar (BLOCKED, finding recorded)
+## Milestone 3 — backend sidecar (implemented)
 
-`bun build --compile` of `src/server/app.js` builds, but the binary dies at runtime with
-**`No such built-in module: node:sqlite`** — the backend uses Node's built-in SQLite, which bun
-doesn't implement. So a bun single-file binary can't be the sidecar. The fix needs **real Node**:
-either ship the `node` binary as `externalBin` + `src/server`/`src/shared`/`src/renderer` as
-`bundle.resources` and spawn it in release (`start_backend` in `lib.rs` is already stubbed for this),
-or Node SEA (esbuild-bundle → postject). Both need a full `tauri build` + launch to verify, so the
-`externalBin`/`beforeBuildCommand` wiring is intentionally left out for now (it would otherwise break
-`cargo check`, which validates `externalBin` paths). Details in `scripts/build-sidecar.sh`.
+`bun build --compile` was a dead end (`No such built-in module: node:sqlite` — the backend uses
+Node's built-in SQLite, which bun doesn't implement). Homebrew's `node` is also unusable as a
+sidecar — it's a 67K launcher needing `@rpath/libnode` + a dozen `/opt/homebrew` dylibs absent from
+the `.app`. The **official** node binary, however, is self-contained (138M, links only system
+frameworks — verified), so:
+
+- `scripts/build-sidecar.sh` (run via `beforeBuildCommand`) downloads the official node matching the
+  local `node --version` and writes it to `src-tauri/binaries/taskhub-node-<triple>` (gitignored).
+- `tauri.conf.json`: `bundle.externalBin = ["binaries/taskhub-node"]`; `bundle.resources` ships
+  `src/server`, `src/shared`, `src/renderer`, and `node_modules` (so `app.js`'s `../shared` /
+  `../renderer` resolve and `require('express')` etc. resolve by walking up to `<resources>/node_modules`).
+- `lib.rs start_backend()` (release only) spawns the `taskhub-node` sidecar with arg
+  `<resources>/src/server/app.js`, `PORT=3000`, and `TASKHUB_DATA_DIR=<app_data_dir>` (datadir.js
+  falls back to a read-only path otherwise — it degrades gracefully outside Electron). `wait_for_backend()`
+  TCP-probes `127.0.0.1:3000` (≤10s) before the window loads, so a cold start doesn't show a connection error.
+
+Compiles in both debug and release. *Verification owed:* `bunx tauri build` then launch the `.app` —
+confirm the backend boots (data dir under `~/Library/Application Support/tv.accedo.taskhub`) and the
+UI loads. *Note:* the bundled server still runs its dev file-watcher (it keys "packaged" off Electron's
+`app.asar`, absent here) — harmless on read-only resources, but a `TASKHUB_PACKAGED` guard would be tidier.
+
+## Runtime fixes found while testing in `tauri dev` / packaged
+
+- **Remote-origin permissions are per-command.** `core:webview:default` / `core:window:default` do
+  NOT include the action commands. Creating child webviews and dragging the window failed silently
+  (caught in JS) until `capabilities/remote.json` added `core:webview:allow-create-webview` +
+  `allow-set-webview-position`/`size` + `allow-webview-close`, and `core:window:allow-start-dragging`
+  + `allow-toggle-maximize`. Pattern: any new `window.taskhub.*` that calls a core command needs its
+  explicit `allow-*` permission on the remote capability.
+- **Window dragging.** `-webkit-app-region: drag` is Chromium-only (ignored by WKWebView). Reimplemented
+  in `bridge.js`: mousedown on `.topbar` / `.sidebar-logo` / `.split-bar` (minus interactive controls)
+  → `getCurrentWindow().startDragging()`; dblclick → `toggleMaximize()`. Has a small unavoidable latency
+  vs Electron's compositor-level app-region.
+- **Updater plugin** must NOT be initialized without a `plugins.updater` config block (endpoints +
+  pubkey) — it panics at startup. Deferred (commented out in `lib.rs`).
+- **Data dir.** Electron stores under `~/Library/Application Support/TaskHub` (product name); Tauri uses
+  `tv.accedo.taskhub` (identifier). They don't share. Existing data was migrated by copying
+  `taskhub.db` + `data.db` across. `beforeDevCommand` now sets `TASKHUB_DATA_DIR` to the Tauri dir so
+  dev + packaged agree.
+- **Port.** Dev server and the packaged backend both bind `:3000`, so they can't run at once.
+  `beforeDevCommand` frees `:3000` first (kills the holder), mirroring `dev.sh`.
+- **M3 verified in practice:** the packaged app's sidecar backend ran and created its DB — so the
+  real-node sidecar approach works end-to-end.
