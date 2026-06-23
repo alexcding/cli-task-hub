@@ -36,7 +36,7 @@ deps (`@tauri-apps/cli`, `@tauri-apps/api`).
 | 2 | `window.taskhub.*` bridge (core methods) | ✅ done — remote-origin IPC **verified at runtime** (`invoke('platform')` → `"darwin"`) |
 | 3 | Backend as a packaged Node sidecar | 🟢 implemented (official self-contained node + resources, spawn+wait in release), compiles both profiles — `tauri build` + launch verification owed |
 | 4 | Terminals — PTY host (Rust `portable-pty`) + bridge | 🟢 code complete, compiles — runtime test owed |
-| 5 | Tray + menu, notifications, updater | 🟢 tray Open/Quit + quit-only invariant; tab/folder context menus (in-page); notification plugin — dynamic tray body + updater config deferred |
+| 5 | Tray + menu, notifications, updater | 🟢 tray Open/Quit + quit-only; tab/folder context menus; notification plugin; **updater wired** (GitHub Releases, signed, auto-check) — needs a signed release to consume. Dynamic tray body deferred |
 | 6 | Embedded GitHub/Jira viewer — child WKWebview over a shim div (the hard part) | ✅ PRs embed; back/fwd/stop + find-in-page via JS injection (no match-count). Live title/favicon deferred (objc2) |
 | 7 | macOS chrome polish (traffic-light inset), resource-usage readout (`sysinfo`) | 🟢 `getUsage` = full process tree; traffic-light inset deferred (objc2) |
 
@@ -174,3 +174,23 @@ UI loads. *Note:* the bundled server still runs its dev file-watcher (it keys "p
   `beforeDevCommand` frees `:3000` first (kills the holder), mirroring `dev.sh`.
 - **M3 verified in practice:** the packaged app's sidecar backend ran and created its DB — so the
   real-node sidecar approach works end-to-end.
+
+## Updater (wired — to GitHub Releases, mirroring the Electron channel)
+
+Auto-update from `github.com/alexcding/cli-task-hub` releases, same as the Electron build:
+- `tauri.conf.json` → `plugins.updater.endpoints` = `…/releases/latest/download/latest.json`,
+  `pubkey` = the minisign public key; `bundle.createUpdaterArtifacts = true`.
+- `lib.rs setup_auto_updates()` (release only): `updater().check()` on startup + every 6h →
+  `download_and_install` → applies on next launch.
+- **Signing keypair** generated at `~/.tauri/taskhub-updater.key` (+ `.pub`) — **kept out of the
+  repo; never commit it.** Only the public key lives in `tauri.conf.json`.
+
+To cut a release the updater will consume:
+1. Sign the build: `export TAURI_SIGNING_PRIVATE_KEY="$(cat ~/.tauri/taskhub-updater.key)"`
+   (no password — key was generated with `--ci`), then `bunx tauri build`.
+2. Upload the produced updater artifacts (`*.app.tar.gz` + `*.app.tar.gz.sig`) **and** a
+   `latest.json` manifest to a GitHub release. Easiest is the `tauri-action` GitHub Action, which
+   generates `latest.json` automatically; otherwise hand-write it ({ version, notes, pub_date,
+   platforms: { "darwin-aarch64": { signature, url } } }).
+3. The app checks `releases/latest/download/latest.json`, verifies the signature against the
+   pubkey, and self-updates. (Unsigned/ad-hoc builds simply won't update — verification fails, logged.)

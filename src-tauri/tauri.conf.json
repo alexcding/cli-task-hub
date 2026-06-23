@@ -16,9 +16,18 @@
       "csp": null
     }
   },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://github.com/alexcding/cli-task-hub/releases/latest/download/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDZFQTdFQzIzQUUxMDQ5NTIKUldSU1NSQ3VJK3luYnZGRlRSOElCNDNWekJxekZzd2RUMTNtQ1FPY3pqcklENmFVWkpjWWFnTWUK"
+    }
+  },
   "bundle": {
     "active": true,
     "targets": ["app", "dmg"],
+    "createUpdaterArtifacts": true,
     "externalBin": ["binaries/taskhub-node"],
     "resources": {
       "../src/server": "src/server",

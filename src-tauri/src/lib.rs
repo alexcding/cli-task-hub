@@ -55,6 +55,36 @@ fn start_backend(handle: &tauri::AppHandle) {
   }
 }
 
+// Auto-update from GitHub Releases (release builds only), mirroring the Electron build: check on
+// startup, then every 6h (a menu-bar app rarely quits), download + install in the background. The
+// update applies on next launch. Endpoints + pubkey are in tauri.conf.json (plugins.updater);
+// builds must be signed (TAURI_SIGNING_PRIVATE_KEY) and ship latest.json for this to find anything.
+#[cfg(not(debug_assertions))]
+fn setup_auto_updates(handle: &tauri::AppHandle) {
+  use tauri_plugin_updater::UpdaterExt;
+  let handle = handle.clone();
+  tauri::async_runtime::spawn(async move {
+    loop {
+      match handle.updater() {
+        Ok(updater) => match updater.check().await {
+          Ok(Some(update)) => {
+            log::info!("[updater] {} available — downloading", update.version);
+            if let Err(e) = update.download_and_install(|_, _| {}, || {}).await {
+              log::error!("[updater] install failed: {e}");
+            } else {
+              log::info!("[updater] update installed; applies on next launch");
+            }
+          }
+          Ok(None) => {}
+          Err(e) => log::error!("[updater] check failed: {e}"),
+        },
+        Err(e) => log::error!("[updater] not configured: {e}"),
+      }
+      tokio::time::sleep(std::time::Duration::from_secs(6 * 60 * 60)).await;
+    }
+  });
+}
+
 // Wait (release only) for the backend to accept connections before loading the window, so the
 // renderer doesn't hit a connection error on a cold start. Plain TCP probe — no HTTP client dep.
 #[cfg(not(debug_assertions))]
@@ -138,10 +168,7 @@ pub fn run() {
     .plugin(tauri_plugin_dialog::init())
     .plugin(tauri_plugin_opener::init())
     .plugin(tauri_plugin_notification::init())
-    // NOTE: the updater plugin is intentionally NOT initialized yet — it panics at startup unless
-    // `plugins.updater` (endpoints + minisign pubkey) is configured, which needs a real release
-    // feed + signing key. Deferred with the rest of M5 (see docs/TAURI-PORT.md). Re-add
-    // `.plugin(tauri_plugin_updater::Builder::new().build())` once that config exists.
+    .plugin(tauri_plugin_updater::Builder::new().build())
     .manage(terminals::Terminals::default())
     .invoke_handler(tauri::generate_handler![
       commands::platform,
@@ -185,6 +212,7 @@ pub fn run() {
       {
         start_backend(app.handle());
         wait_for_backend();
+        setup_auto_updates(app.handle());
       }
 
       open_main_window(app.handle())?;
