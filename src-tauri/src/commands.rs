@@ -215,6 +215,13 @@ pub fn wcv_eval(app: tauri::AppHandle, id: String, js: String) {
   }
 }
 
+// Diagnostic sink: the renderer reports a message back to the Rust log file (so I can read
+// renderer-side outcomes from ~/Library/Logs/tv.accedo.taskhub/TaskHub.log without the devtools).
+#[tauri::command]
+pub fn dbg_log(msg: String) {
+  log::info!("[dbg] {msg}");
+}
+
 // Create an embedded-viewer child webview (PR/Jira tab) in Rust — the bridge.js wcv.create path —
 // so we can attach on_new_window: a link that wants a NEW window (target=_blank, window.open, or
 // the WKWebView context menu's "Open Link in New Window") is DENIED a native window and instead
@@ -228,7 +235,12 @@ pub fn wcv_create(window: tauri::Window, id: String, url: String) -> Result<(), 
     log::info!("[wcv] on_new_window fired → {u}");
     if let Some(w) = app.get_webview_window("main") {
       let url = serde_json::to_string(&u.to_string()).unwrap_or_else(|_| "\"\"".into());
-      let _ = w.eval(&format!("window.__openContentTab&&window.__openContentTab({url})"));
+      // Self-diagnosing eval: report back (to the Rust log) whether the renderer hook exists and
+      // what openWebLink returned, so the failure point is visible in the log file.
+      let js = format!(
+        "(function(u){{try{{var I=window.__TAURI__.core.invoke;if(typeof window.__openContentTab!=='function'){{I('dbg_log',{{msg:'__openContentTab MISSING (stale renderer?)'}});return;}}var r=window.__openContentTab(u);I('dbg_log',{{msg:'__openContentTab ran, returned '+r}});}}catch(e){{window.__TAURI__.core.invoke('dbg_log',{{msg:'openContentTab threw: '+e}});}}}})({url})"
+      );
+      let _ = w.eval(&js);
     }
     tauri::webview::NewWindowResponse::Deny
   });
