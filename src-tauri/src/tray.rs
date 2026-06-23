@@ -116,15 +116,16 @@ fn refresh(app: &AppHandle) {
 
 pub fn setup(app: &AppHandle) -> tauri::Result<()> {
   let menu = build_menu(app, &[])?; // initial Open/Quit; the refresh loop fills in tabs
-  let mut tray = TrayIconBuilder::with_id("main")
+  // Embed the icon at compile time so the tray ALWAYS has one — app.default_window_icon() is None
+  // in dev, which would build a blank/invisible tray item. (Mono template icon is a follow-up.)
+  TrayIconBuilder::with_id("main")
+    .icon(tauri::include_image!("icons/32x32.png"))
+    .icon_as_template(false)
     .tooltip("TaskHub")
     .menu(&menu)
     .show_menu_on_left_click(true)
-    .on_menu_event(|app, event| on_event(app, event.id().as_ref()));
-  if let Some(icon) = app.default_window_icon() {
-    tray = tray.icon(icon.clone());
-  }
-  tray.build(app)?;
+    .on_menu_event(|app, event| on_event(app, event.id().as_ref()))
+    .build(app)?;
 
   // Refresh the open-tab list periodically (the menu only needs to be current when opened).
   let app = app.clone();
