@@ -70,6 +70,8 @@ struct Pr {
   #[serde(default)]
   review_pending: Option<bool>,
   #[serde(default)]
+  requested_at: Option<String>,
+  #[serde(default)]
   author: Option<Author>,
   #[serde(default)]
   ci: Option<Ci>,
@@ -158,6 +160,10 @@ struct Usage {
 struct Settings {
   #[serde(default)]
   usage_agent: Option<String>,
+  #[serde(default)]
+  review_sound: Option<String>,
+  #[serde(default)]
+  activity_notify: Option<String>,
 }
 
 // What a clicked menu item does: open `url` as a tab; if `viewed` is set, also POST it acknowledged.
@@ -384,9 +390,38 @@ fn has_pending_review(prs: &[Pr]) -> bool {
   prs.iter().any(|p| p.state == "OPEN" && p.category == "review" && p.review_pending.unwrap_or(false))
 }
 
+// Notify + play a sound for any review-category PR pending a request we haven't announced yet —
+// the port of notifications.js detectReviewChanges. State (seeded flag + notified map) lives in
+// notify.rs; runs on the refresh worker thread (notifications/afplay off the main thread is fine).
+fn detect_review_changes(app: &AppHandle, prs: &[Pr], sound: Option<&str>) {
+  let key = |p: &Pr| format!("{}#{}", p.repo, p.number);
+  // Stable marker for "this exact request": its timestamp, or a constant when none is supplied.
+  let marker = |p: &Pr| p.requested_at.clone().filter(|s| !s.is_empty()).unwrap_or_else(|| "pending".into());
+  let pending: Vec<&Pr> = prs.iter().filter(|p| p.category == "review" && p.review_pending.unwrap_or(false)).collect();
+
+  let mut map = crate::notify::NOTIFIED_AT.lock().unwrap();
+  let fresh: Vec<&Pr> = pending.iter().copied().filter(|p| map.get(&key(p)).map(|m| *m != marker(p)).unwrap_or(true)).collect();
+
+  if crate::notify::REVIEW_SEEDED.load(Ordering::SeqCst) && !fresh.is_empty() {
+    for p in &fresh {
+      crate::notify::notify_native(app, "Review requested", &format!("PR #{} {}", p.number, p.title));
+    }
+    crate::notify::play_review_sound(sound); // one sound per cycle, even if several arrive at once
+  }
+
+  // Remember what we've announced for every pending PR; drop PRs no longer pending so a later
+  // re-request re-alerts and the map stays bounded.
+  let current: std::collections::HashSet<String> = pending.iter().map(|p| key(p)).collect();
+  for p in &pending {
+    map.insert(key(p), marker(p));
+  }
+  map.retain(|k, _| current.contains(k));
+  crate::notify::REVIEW_SEEDED.store(true, Ordering::SeqCst);
+}
+
 // Reread tabs + PR snapshot and re-arm the menu + icon. Menu/tray mutations run on the main thread.
 // The icon shows a bronze review dot when reviews are pending (matches the Electron tray).
-fn refresh(app: &AppHandle) {
+pub(crate) fn refresh(app: &AppHandle) {
   let tabs = curl_json::<TabsResp>("/api/tabs").tabs;
   let prs = curl_json::<Vec<Pr>>("/api/prs/tray");
   let usage = curl_json::<Usage>("/api/usage");
@@ -397,6 +432,9 @@ fn refresh(app: &AppHandle) {
       crate::avatars::warm(&a.login);
     }
   }
+  // Notifications: mirror the Appearance toggle for activity, and announce newly-requested reviews.
+  crate::notify::ACTIVITY_OFF.store(settings.activity_notify.as_deref() == Some("off"), Ordering::SeqCst);
+  detect_review_changes(app, &prs, settings.review_sound.as_deref());
   let review = has_pending_review(&prs);
   let app = app.clone();
   let _ = app.clone().run_on_main_thread(move || {

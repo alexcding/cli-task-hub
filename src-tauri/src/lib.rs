@@ -7,6 +7,7 @@
 mod avatars;
 mod commands;
 mod menu;
+mod notify;
 mod terminals;
 mod tray;
 mod usage_image;
@@ -205,6 +206,8 @@ pub fn run() {
       if let Err(e) = menu::setup(app.handle()) {
         log::error!("[menu] app menu setup failed: {e}");
       }
+      // SSE stream → activity notifications + tray refresh on sync.
+      notify::start_stream(app.handle());
       // TEMP (diagnostic): the main-thread title poll is disabled to confirm it's what makes the
       // initial webview load take ~10s. Re-enable with a lighter design once confirmed.
       // viewer::start_title_watch(app.handle());
