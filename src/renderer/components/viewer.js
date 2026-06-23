@@ -813,6 +813,15 @@ export function initTrayBridge() {
     openInSplit(url, title, kind, { category });
   };
   // Host hook (Tauri): a link inside the embedded webview wanting a new window opens as a new
-  // content (top) tab in the current context; fall back to a sidebar tab if none is active.
-  window.__openContentTab = (url) => { if (!openWebLink(url)) window.__openTab(url, '', 'github', ''); };
+  // content (top) tab in the current context. Falls back to a sidebar tab if there's no active
+  // context OR openWebLink throws — so a link always lands somewhere even if the content-tab path
+  // misbehaves (the host logs the error via dbg_log).
+  window.__openContentTab = (url) => {
+    try { if (openWebLink(url)) return; }
+    catch (e) {
+      // Report the real error (with stack) to the Rust log so the content-tab path can be fixed.
+      try { window.__TAURI__?.core?.invoke?.('dbg_log', { msg: 'openWebLink threw: ' + (e && e.stack || e) }); } catch {}
+    }
+    window.__openTab(url, '', 'github', '');
+  };
 }
