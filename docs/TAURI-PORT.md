@@ -112,9 +112,11 @@ global registry that outlives the window (matches Electron). Commands `term_{cre
 kill,list,attach,foreground}`; output streams as global `term://data` / `term://exit` events that
 `bridge.js` fans out to the per-id callbacks the renderer registered. UTF-8 is decoded on whole-
 codepoint boundaries (incomplete trailing bytes held over) so chunks never split mid-character; a
-256 KB rolling tail backs `attach` replay. *Deferred:* `term_foreground` always reports at-prompt
-(portable-pty doesn't expose the PTY's foreground process), and `pathForFile` (terminal drag-drop
-paths) still returns '' — Tauri carries dropped-file paths via its own drag-drop event, not the DOM.
+256 KB rolling tail backs `attach` replay. **Terminal file drop** works via Tauri's window-level
+drag-drop event (bridge resolves the terminal under the cursor by `data-term-id` and hands it the
+paths — the DOM drop gets no files under Tauri). *Deferred:* `term_foreground` always reports
+at-prompt (portable-pty doesn't expose the PTY's foreground process — needs libc on the master fd);
+pasting a Finder-copied *file* still can't resolve a path (WKWebView has no `File.path`).
 
 **M5 — Tray + plugins** (`lib.rs`): a menu-bar tray (Open TaskHub / Quit) with the **quit-only-from-
 tray** invariant preserved — a window close hides the window (`CloseRequested` → `prevent_close` +

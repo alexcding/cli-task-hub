@@ -20,6 +20,21 @@
   var _cursor = { x: 0, y: 0 };
   window.addEventListener('contextmenu', function (e) { _cursor = { x: e.clientX, y: e.clientY }; }, true);
 
+  // ── Terminal file drop ────────────────────────────────────────────────────────
+  // Tauri captures OS file drops at the window level (the DOM drop event gets no files), so resolve
+  // the terminal under the drop point (terminal.js tags each with data-term-id) and hand it the
+  // absolute paths. Position is physical px → divide by DPR for elementFromPoint.
+  try {
+    window.__TAURI__.webview.getCurrentWebview().onDragDropEvent(function (e) {
+      var p = e && e.payload;
+      if (!p || p.type !== 'drop' || !p.paths || !p.paths.length) return;
+      var dpr = window.devicePixelRatio || 1;
+      var el = document.elementFromPoint(p.position.x / dpr, p.position.y / dpr);
+      var term = el && el.closest ? el.closest('[data-term-id]') : null;
+      if (term && window.__taskhubTermDrop) window.__taskhubTermDrop(term.dataset.termId, p.paths);
+    });
+  } catch (e) { /* webview drag-drop unavailable */ }
+
   // ── Native window drag ────────────────────────────────────────────────────────
   // -webkit-app-region:drag (Electron/Chromium) is ignored by WKWebView, so the hiddenInset top
   // band stopped dragging the window. Reimplement it: a left mousedown on a top bar — but not on

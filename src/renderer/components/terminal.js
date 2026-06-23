@@ -50,6 +50,16 @@ function insertTermPaths(entry, paths) {
   return true;
 }
 
+// Tauri build: the OS file-drop is captured by Tauri (the DOM `drop` above gets no files), so the
+// bridge resolves the terminal under the cursor and hands the dropped paths here. (Electron uses the
+// DOM drop + pathForFile path above; this hook is inert there.)
+if (typeof window !== 'undefined' && window.__TAURI__) {
+  window.__taskhubTermDrop = (id, paths) => {
+    const entry = state.terms.get(id);
+    if (entry) insertTermPaths(entry, paths);
+  };
+}
+
 // Finder → terminal path entry: drop a file/folder (or paste one copied in Finder) and its
 // absolute path is typed at the prompt. webUtils.getPathForFile (via the preload) resolves
 // the path; it returns '' for clipboard image bytes that aren't a real file.
@@ -61,6 +71,7 @@ function insertTermPaths(entry, paths) {
 // forward \x16 to the PTY, letting Claude Code grab the still-present clipboard image. (Plain
 // Ctrl+V already reaches the PTY as \x16 via xterm, so that path works without us.)
 function wireTermDnd(el, entry, term) {
+  el.dataset.termId = entry.id;   // lets the Tauri bridge route a window-level file drop to this PTY
   el.addEventListener('dragover', e => { e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'; });
   el.addEventListener('drop', e => {
     const files = [...(e.dataTransfer?.files || [])];
