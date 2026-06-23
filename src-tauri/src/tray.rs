@@ -207,16 +207,28 @@ fn on_event(app: &AppHandle, id: &str) {
   }
 }
 
-// Reread tabs + PR snapshot and re-arm the menu. Menu/tray mutations run on the main thread.
+fn has_pending_review(prs: &[Pr]) -> bool {
+  prs.iter().any(|p| p.state == "OPEN" && p.category == "review" && p.review_pending.unwrap_or(false))
+}
+
+// Reread tabs + PR snapshot and re-arm the menu + icon. Menu/tray mutations run on the main thread.
+// The icon shows a bronze review dot when reviews are pending (matches the Electron tray).
 fn refresh(app: &AppHandle) {
   let tabs = curl_json::<TabsResp>("/api/tabs").tabs;
   let prs = curl_json::<Vec<Pr>>("/api/prs/tray");
+  let review = has_pending_review(&prs);
   let app = app.clone();
   let _ = app.clone().run_on_main_thread(move || {
-    if let Ok(menu) = build_menu(&app, &tabs, &prs) {
-      if let Some(tray) = app.tray_by_id("main") {
+    if let Some(tray) = app.tray_by_id("main") {
+      if let Ok(menu) = build_menu(&app, &tabs, &prs) {
         let _ = tray.set_menu(Some(menu));
       }
+      let icon = if review {
+        tauri::include_image!("icons/tray-review.png")
+      } else {
+        tauri::include_image!("icons/tray-idle.png")
+      };
+      let _ = tray.set_icon(Some(icon));
     }
   });
 }
@@ -224,7 +236,7 @@ fn refresh(app: &AppHandle) {
 pub fn setup(app: &AppHandle) -> tauri::Result<()> {
   let menu = build_menu(app, &[], &[])?; // initial Open/Quit; the refresh loop fills the body
   let tray = TrayIconBuilder::with_id("main")
-    .icon(tauri::include_image!("icons/tray.png")) // grayscale glyph — distinct from the color app icon
+    .icon(tauri::include_image!("icons/tray-idle.png")) // white checkmark — matches the Electron tray glyph
     .tooltip("TaskHub")
     .menu(&menu)
     .show_menu_on_left_click(true)
