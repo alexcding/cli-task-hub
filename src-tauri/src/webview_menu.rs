@@ -91,6 +91,7 @@ fn curate(webview: &AnyObject, menu: &NSMenu) {
     let items = menu.itemArray();
     // Guard: only touch menus that are actually WebKit context menus (carry WK identifiers).
     let is_wk = items.iter().any(|it| item_identifier(&it).map(|s| s.starts_with("WKMenuItemIdentifier")).unwrap_or(false));
+    log::info!("[webview-menu] willOpenMenu fired: {} items, is_wk={}", items.len(), is_wk);
     if !is_wk {
       return;
     }
