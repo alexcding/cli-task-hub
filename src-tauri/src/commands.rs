@@ -225,9 +225,10 @@ pub fn wcv_create(window: tauri::Window, id: String, url: String) -> Result<(), 
   let parsed: tauri::Url = url.parse().map_err(|e| format!("bad url: {e}"))?;
   let app = window.app_handle().clone();
   let builder = tauri::webview::WebviewBuilder::new(&id, tauri::WebviewUrl::External(parsed)).on_new_window(move |u, _features| {
+    log::info!("[wcv] on_new_window fired → {u}");
     if let Some(w) = app.get_webview_window("main") {
       let url = serde_json::to_string(&u.to_string()).unwrap_or_else(|_| "\"\"".into());
-      let _ = w.eval(&format!("window.__openTab&&window.__openTab({url},\"\",\"github\",\"\")"));
+      let _ = w.eval(&format!("window.__openContentTab&&window.__openContentTab({url})"));
     }
     tauri::webview::NewWindowResponse::Deny
   });

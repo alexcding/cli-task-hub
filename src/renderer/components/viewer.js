@@ -229,6 +229,30 @@ export function addLink() {
   playTabIn(link.id);        // grow the new tab in
 }
 
+// Open a URL as a new content (top horizontal) tab in the ACTIVE context, loaded immediately —
+// not the inline-address blank tab `addLink` makes. Used by the host when a link inside the
+// embedded webview asks to open in a new window (target=_blank / window.open / the WKWebView
+// context menu's "Open Link in New Window"); see commands::wcv_create → window.__openContentTab.
+// Focuses an existing matching tab instead of duplicating. Returns false when there's no active
+// viewer tab, so the caller can fall back to a sidebar tab.
+export function openWebLink(url) {
+  if (!url) return false;
+  const tab = activeTab();
+  if (!tab) return false;
+  tab.links = tab.links || [];
+  const existing = tab.links.find(l => l.kind === 'web' && l.url === url);
+  if (existing) { setActiveLink(existing.id); return true; }
+  const link = makeWebLink();
+  link.editing = false; link.url = url; link.title = url; link.home = url;
+  tab.links.push(link);
+  tab.activeLink = link.id;
+  paintLeft(tab);              // builds + loads the link's webview
+  renderContentTabs(true);
+  playTabIn(link.id);
+  saveTabs();
+  return true;
+}
+
 // Re-enter URL editing on an existing tab.
 export function editLink(id) {
   const { link } = linkById(id);
@@ -788,4 +812,7 @@ export function initTrayBridge() {
     if (existing && category && existing.category !== category) { existing.category = category; saveTabs(); }
     openInSplit(url, title, kind, { category });
   };
+  // Host hook (Tauri): a link inside the embedded webview wanting a new window opens as a new
+  // content (top) tab in the current context; fall back to a sidebar tab if none is active.
+  window.__openContentTab = (url) => { if (!openWebLink(url)) window.__openTab(url, '', 'github', ''); };
 }
