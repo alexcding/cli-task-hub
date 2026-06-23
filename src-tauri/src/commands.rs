@@ -140,7 +140,7 @@ pub struct Usage {
 // build that's the backend node sidecar and the PTY shells), for the Settings live readout. CPU
 // needs two samples a short interval apart.
 #[tauri::command]
-pub fn get_usage() -> Usage {
+pub fn get_usage(app: tauri::AppHandle) -> Usage {
   use std::collections::{HashMap, HashSet, VecDeque};
   use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System};
 
@@ -178,6 +178,24 @@ pub fn get_usage() -> Usage {
       queue.extend(children);
     }
   }
+
+  // The embedded pages run in macOS-managed WebKit content processes that aren't in our subtree;
+  // add each one explicitly (pid via WKWebView._webProcessIdentifier) so they're counted + listed.
+  for (title, pid) in crate::viewer::webview_pids(&app) {
+    let p = Pid::from_u32(pid as u32);
+    if !seen.insert(p) {
+      continue;
+    }
+    if let Some(proc_) = sys.process(p) {
+      let kb = proc_.memory() / 1024;
+      let cpu = proc_.cpu_usage();
+      total_kb += kb;
+      total_cpu += cpu;
+      let label = if title.trim().is_empty() { "Web Content".to_string() } else { format!("Web — {title}") };
+      breakdown.push(UsageRow { label, kb, cpu });
+    }
+  }
+
   Usage { total_kb, total_cpu, breakdown }
 }
 

@@ -78,5 +78,49 @@ fn read_and_emit(
   }
 }
 
+// (title, content-process pid) for each embedded webview. macOS WKWebView runs each page in a
+// separate `com.apple.WebKit.WebContent` process that the system parents to launchd — NOT a child
+// of our app — so get_usage's subtree walk misses it. We read each webview's content-process pid
+// via the private -[WKWebView _webProcessIdentifier] and feed those pids in explicitly so the
+// embedded pages show up in Settings → System Resource Usage. WKWebView must be touched on the
+// main thread (with_webview), so collect there and hand the pids back over a channel.
+#[cfg(target_os = "macos")]
+pub fn webview_pids(app: &tauri::AppHandle) -> Vec<(String, i32)> {
+  use objc2::msg_send;
+  use objc2_web_kit::WKWebView;
+  use std::sync::{Arc, Mutex};
+  use std::time::Duration;
+  use tauri::Manager;
+
+  let out = Arc::new(Mutex::new(Vec::<(String, i32)>::new()));
+  let (tx, rx) = std::sync::mpsc::channel();
+  let (app2, out2) = (app.clone(), out.clone());
+  let _ = app.run_on_main_thread(move || {
+    for (label, webview) in app2.webviews() {
+      if !label.starts_with("wcv") {
+        continue;
+      }
+      let out3 = out2.clone();
+      let _ = webview.with_webview(move |platform| unsafe {
+        let wk: &WKWebView = &*(platform.inner().cast::<WKWebView>());
+        let pid: i32 = msg_send![wk, _webProcessIdentifier];
+        if pid > 0 {
+          let title = wk.title().map(|s| s.to_string()).unwrap_or_default();
+          out3.lock().unwrap().push((title, pid));
+        }
+      });
+    }
+    let _ = tx.send(());
+  });
+  let _ = rx.recv_timeout(Duration::from_secs(2));
+  let v = out.lock().unwrap().clone();
+  v
+}
+
 #[cfg(not(target_os = "macos"))]
 pub fn start_title_watch(_app: &tauri::AppHandle) {}
+
+#[cfg(not(target_os = "macos"))]
+pub fn webview_pids(_app: &tauri::AppHandle) -> Vec<(String, i32)> {
+  Vec::new()
+}
