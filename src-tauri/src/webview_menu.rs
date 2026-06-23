@@ -19,7 +19,7 @@ use block2::RcBlock;
 use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, NSObject, NSObjectProtocol, Sel};
 use objc2::{class, define_class, msg_send, sel, AllocAnyThread, MainThreadOnly};
-use objc2_app_kit::{NSMenu, NSMenuItem, NSWorkspace};
+use objc2_app_kit::{NSMenu, NSMenuItem, NSPasteboard, NSPasteboardTypeString, NSWorkspace};
 use objc2_foundation::{MainThreadMarker, NSError, NSString, NSURL};
 use objc2_web_kit::WKWebView;
 use tauri::Manager;
@@ -112,6 +112,32 @@ define_class!(
         let _: () = msg_send![wk, evaluateJavaScript: &*js, completionHandler: &*handler];
       }
     }
+
+    // "Copy Image Address": the right-clicked <img> src was captured into window.__thImg; read it
+    // back and put it on the pasteboard (the native "Copy Image" copies pixels, not the URL).
+    #[unsafe(method(copyImageAddress:))]
+    fn copy_image_address(&self, sender: &NSMenuItem) {
+      unsafe {
+        let obj: Option<Retained<AnyObject>> = msg_send![sender, representedObject];
+        let Some(obj) = obj else { return };
+        let wk: &WKWebView = &*(Retained::as_ptr(&obj) as *const WKWebView);
+        let js = NSString::from_str("window.__thImg||''");
+        let handler = RcBlock::new(move |result: *mut AnyObject, _err: *mut NSError| {
+          if result.is_null() {
+            return;
+          }
+          let s: &NSString = &*(result as *const NSString);
+          let url = s.to_string();
+          if url.is_empty() {
+            return;
+          }
+          let pb = NSPasteboard::generalPasteboard();
+          pb.clearContents();
+          let _: bool = pb.setString_forType(&NSString::from_str(&url), NSPasteboardTypeString);
+        });
+        let _: () = msg_send![wk, evaluateJavaScript: &*js, completionHandler: &*handler];
+      }
+    }
   }
 );
 
@@ -189,6 +215,20 @@ fn curate(webview: &AnyObject, menu: &NSMenu) {
         ext.setTarget(Some(tgt));
         ext.setRepresentedObject(Some(webview));
         menu.insertItem_atIndex(&ext, i);
+      }
+      // On an image (the menu kept Copy Image): add "Copy Image Address" after it.
+      let mut img_after: Option<isize> = None;
+      for (i, item) in menu.itemArray().iter().enumerate() {
+        if item_identifier(&item).as_deref() == Some("WKMenuItemIdentifierCopyImage") {
+          img_after = Some(i as isize + 1);
+        }
+      }
+      if let Some(i) = img_after {
+        let empty = NSString::from_str("");
+        let it = NSMenuItem::initWithTitle_action_keyEquivalent(NSMenuItem::alloc(mtm), &NSString::from_str("Copy Image Address"), Some(sel!(copyImageAddress:)), &empty);
+        it.setTarget(Some(tgt));
+        it.setRepresentedObject(Some(webview));
+        menu.insertItem_atIndex(&it, i);
       }
     }
     // Append: ─── Open Page in Browser (opens the current page URL externally).
