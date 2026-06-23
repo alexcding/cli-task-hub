@@ -122,7 +122,7 @@ pub fn render(groups: &[Group], accent: [u8; 3], dark: bool) -> Option<(Vec<u8>,
   let s = 2.0f32;
   // Match the macOS menu text: SF (SFNS) at ~14pt. Title gets a touch of weight (faux-bold) as a
   // section header; data is regular, like the menu rows.
-  let title_px = 14.0 * s;
+  let title_px = 16.0 * s;
   let data_px = 14.0 * s;
   // Small left inset so the content sits near the menu's text leading; bars then span the rest of
   // the width so they FILL the row (like Electron) rather than stopping at the data-text width.
@@ -151,7 +151,7 @@ pub fn render(groups: &[Group], accent: [u8; 3], dark: bool) -> Option<(Vec<u8>,
   let bar_h = (6.0 * s) as i32; // CSS bar height 6px
   for (i, g) in groups.iter().enumerate() {
     let gy = (6.0 * s) as i32 + group_h * i as i32;
-    cv.text(&font, lpad, gy as f32 + 14.0 * s, &g.title, title_px, text_c, true);
+    cv.text(&font, lpad, gy as f32 + 15.0 * s, &g.title, title_px, text_c, false);
 
     let bar_y = gy + (23.0 * s) as i32;
     let bx = lpad as i32;
