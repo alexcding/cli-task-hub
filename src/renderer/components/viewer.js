@@ -229,6 +229,28 @@ export function addLink() {
   playTabIn(link.id);        // grow the new tab in
 }
 
+// Open a URL as a new content (top horizontal) tab in the ACTIVE context, loaded immediately —
+// the same kind of tab `+` creates, but pre-filled and shown. Used by the embedded webview's
+// "Open Link in New Tab" (webview_menu.rs → window.__openContentTab). Focuses an existing match
+// instead of duplicating. Returns false when there's no active viewer tab.
+export function openWebLink(url) {
+  if (!url) return false;
+  const tab = activeTab();
+  if (!tab) return false;
+  tab.links = tab.links || [];
+  const existing = tab.links.find(l => l.kind === 'web' && l.url === url);
+  if (existing) { setActiveLink(existing.id); return true; }
+  const link = makeWebLink();
+  link.editing = false; link.url = url; link.title = url; link.home = url;
+  tab.links.push(link);
+  tab.activeLink = link.id;
+  paintLeft(tab);            // builds + loads the link's webview
+  renderContentTabs(true);
+  playTabIn(link.id);
+  saveTabs();
+  return true;
+}
+
 // Re-enter URL editing on an existing tab.
 export function editLink(id) {
   const { link } = linkById(id);
@@ -787,5 +809,11 @@ export function initTrayBridge() {
     const existing = state.tabs.find(t => t.url === url);
     if (existing && category && existing.category !== category) { existing.category = category; saveTabs(); }
     openInSplit(url, title, kind, { category });
+  };
+  // Host hook (Tauri): "Open Link in New Tab" in the embedded webview → a new content (top) tab in
+  // the current context. Falls back to a sidebar tab if there's no active context or it throws.
+  window.__openContentTab = (url) => {
+    try { if (openWebLink(url)) return; } catch (e) { console.warn('[openContentTab]', e); }
+    window.__openTab(url, '', 'github', '');
   };
 }

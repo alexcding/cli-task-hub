@@ -81,7 +81,7 @@ define_class!(
             // The renderer is the webview labelled "main". get_webview_window() returns None once the
             // window hosts child webviews (multiwebview), so target the webview by label directly.
             match app.get_webview("main") {
-              Some(w) => { let _ = w.eval(&format!("window.__openTab&&window.__openTab({arg},\"\",\"github\",\"\")")); log::info!("[webview-menu] opened tab"); }
+              Some(w) => { let _ = w.eval(&format!("window.__openContentTab&&window.__openContentTab({arg})")); log::info!("[webview-menu] opened content tab"); }
               None => log::warn!("[webview-menu] no main webview"),
             }
           }
