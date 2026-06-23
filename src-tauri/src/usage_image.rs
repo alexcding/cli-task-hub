@@ -57,6 +57,29 @@ impl Canvas {
       }
     }
   }
+  // Horizontal capsule (pill): rounded left/right ends, radius = h/2, anti-aliased.
+  fn fill_round(&mut self, x: i32, y: i32, w: i32, h: i32, c: [u8; 3], a: f32) {
+    if w <= 0 || h <= 0 {
+      return;
+    }
+    let (wf, hf) = (w as f32, h as f32);
+    let r = hf / 2.0;
+    for yy in 0..h {
+      for xx in 0..w {
+        let px = xx as f32 + 0.5;
+        let py = yy as f32 + 0.5;
+        let cov = if px >= r && px <= wf - r {
+          1.0
+        } else {
+          let cx = if px < r { r } else { wf - r };
+          (r - ((px - cx).powi(2) + (py - hf / 2.0).powi(2)).sqrt() + 0.5).clamp(0.0, 1.0)
+        };
+        if cov > 0.0 {
+          self.blend(x + xx, y + yy, c, a * cov);
+        }
+      }
+    }
+  }
   fn text(&mut self, font: &FontVec, x: f32, baseline: f32, s: &str, px: f32, c: [u8; 3], bold: bool) {
     // Faux-bold by stamping each glyph twice with a sub-pixel x offset (ab_glyph can't synthesize
     // weight, and SF's variable default reads light at small sizes).
@@ -155,15 +178,23 @@ pub fn render(groups: &[Group], accent: [u8; 3], dark: bool) -> Option<(Vec<u8>,
 
     let bar_y = gy + (23.0 * s) as i32;
     let bx = lpad as i32;
-    cv.fill(bx, bar_y, bar_w as i32, bar_h, track_c, track_a);
-    let fw = (bar_w * g.left.clamp(0, 100) as f32 / 100.0) as i32;
-    cv.fill(bx, bar_y, fw, bar_h, accent, 1.0);
+    // Rounded (pill) track + accent fill — border-radius:3px in the Electron CSS.
+    cv.fill_round(bx, bar_y, bar_w as i32, bar_h, track_c, track_a);
+    let fw = (bar_w * g.left.clamp(0, 100) as f32 / 100.0).round() as i32;
+    cv.fill_round(bx, bar_y, fw, bar_h, accent, 1.0);
+    // 50% / 75% gridmarks.
     for frac in [0.5f32, 0.75] {
       cv.fill(bx + (bar_w * frac) as i32, bar_y, (1.0 * s).max(1.0) as i32, bar_h, track_c, mark_a);
     }
+    // Pace tick: a green core flanked by track-color gaps (the Electron `s` notch), full bar height.
     if let Some(p) = g.pace_left {
-      let px = bx + (bar_w * (p.clamp(0.0, 100.0) as f32) / 100.0) as i32;
-      cv.fill(px - s as i32, bar_y - (1.0 * s) as i32, (2.0 * s) as i32, bar_h + (2.0 * s) as i32, pace_c, 1.0);
+      let center = bx + (bar_w * (p.clamp(0.0, 100.0) as f32) / 100.0) as i32;
+      let core = (3.0 * s) as i32;
+      let gap = (2.0 * s) as i32;
+      let gap_c = if dark { [70, 70, 72] } else { [214, 216, 220] };
+      cv.fill(center - core / 2 - gap, bar_y, gap, bar_h, gap_c, 1.0);
+      cv.fill(center + core / 2, bar_y, gap, bar_h, gap_c, 1.0);
+      cv.fill(center - core / 2, bar_y, core, bar_h, pace_c, 1.0);
     }
 
     cv.text(&font, lpad, (bar_y + bar_h) as f32 + 15.0 * s, &g.data, data_px, text_c, false);
