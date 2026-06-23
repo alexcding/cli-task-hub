@@ -138,7 +138,7 @@ pub fn render(groups: &[Group], accent: [u8; 3], dark: bool) -> Option<(Vec<u8>,
   let group_h = (56.0 * s) as i32; // title + bar + data + spacing
   let h = (8.0 * s) as i32 + group_h * groups.len() as i32;
 
-  let text_c = if dark { [0xe8, 0xe8, 0xe8] } else { [0x16, 0x18, 0x1d] };
+  let text_c = if dark { [255, 255, 255] } else { [0, 0, 0] }; // default menu label color
   let muted_c = if dark { [0x8a, 0x8a, 0x8a] } else { [0x92, 0x98, 0xa3] };
   let track_c = if dark { [255, 255, 255] } else { [0, 0, 0] };
   let track_a = if dark { 0.16 } else { 0.12 };
