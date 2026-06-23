@@ -12,6 +12,34 @@
   var invoke = function (cmd, args) { return window.__TAURI__.core.invoke(cmd, args); };
   var noop = function () {};
 
+  // ── Native-app feel (WKWebView) ───────────────────────────────────────────────
+  // WKWebView, like a browser, lets you select arbitrary UI text and pops a page context menu on
+  // right-click — both read wrong for a native app. Electron suppressed these from the main process;
+  // we do it here (Tauri-only — the shared renderer is untouched). Default-deny, opting back in:
+  //   • Text selection: off on the chrome; on for form fields, the Monaco editor, the xterm
+  //     terminal, diff code cells (.dc), and anything tagged .selectable.
+  //   • Context menu: the native page menu is suppressed everywhere except text fields (so cut/
+  //     copy/paste still works); the app draws its own menus via popupMenu below.
+  (function () {
+    var css =
+      'html,body{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;}' +
+      'input,textarea,select,[contenteditable],[contenteditable] *,' +
+      '.monaco-editor,.monaco-editor *,.xterm,.xterm *,.dc,.selectable,.selectable *' +
+      '{-webkit-user-select:text;user-select:text;}';
+    var inject = function () {
+      var s = document.createElement('style');
+      s.textContent = css;
+      (document.head || document.documentElement).appendChild(s);
+    };
+    if (document.head || document.documentElement) inject();
+    else document.addEventListener('DOMContentLoaded', inject);
+    window.addEventListener('contextmenu', function (e) {
+      var t = e.target;
+      if (t && t.closest && t.closest('input,textarea,[contenteditable]')) return; // native editing menu
+      e.preventDefault();
+    }, false); // bubble: the app's own oncontextmenu handlers (popupMenu) run first
+  })();
+
   // ── Lightweight DOM context menu (M5) ─────────────────────────────────────────
   // The Electron build drew tab / folder-chip right-click menus natively. We draw them in the page
   // instead — same contract (resolve the chosen action id, or null if dismissed) so viewer.js is
