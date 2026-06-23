@@ -152,14 +152,16 @@ pub fn render(groups: &[Group], accent: [u8; 3], dark: bool) -> Option<(Vec<u8>,
   let lpad = 2.0 * s;
   let rpad = 6.0 * s;
   // Fixed width wide enough to fill the row, but at least as wide as the longest data line.
-  let mut content = 268.0 * s;
+  let mut content = 240.0 * s;
   for g in groups {
     content = content.max(measure(&font, &g.title, title_px));
     content = content.max(measure(&font, &g.data, data_px));
   }
   let w = (content + lpad + rpad).ceil() as i32;
-  let group_h = (42.0 * s) as i32; // title + bar + data (tight top/bottom group padding)
-  let h = (2.0 * s) as i32 + group_h * groups.len() as i32;
+  let group_h = (40.0 * s) as i32; // one group's content (title + bar + data), tight
+  let inter = (12.0 * s) as i32; // gap BETWEEN groups (Session ↔ Weekly)
+  let n = groups.len() as i32;
+  let h = (4.0 * s) as i32 + group_h * n + inter * (n - 1);
 
   let text_c = if dark { [255, 255, 255] } else { [0, 0, 0] }; // default menu label color
   let muted_c = if dark { [0x8a, 0x8a, 0x8a] } else { [0x92, 0x98, 0xa3] };
@@ -173,7 +175,7 @@ pub fn render(groups: &[Group], accent: [u8; 3], dark: bool) -> Option<(Vec<u8>,
   let bar_w = w as f32 - lpad - rpad;
   let bar_h = (6.0 * s) as i32; // CSS bar height 6px
   for (i, g) in groups.iter().enumerate() {
-    let gy = (2.0 * s) as i32 + group_h * i as i32;
+    let gy = (2.0 * s) as i32 + i as i32 * (group_h + inter);
     cv.text(&font, lpad, gy as f32 + 12.0 * s, &g.title, title_px, text_c, false);
 
     let bar_y = gy + (17.0 * s) as i32;
