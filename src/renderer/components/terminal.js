@@ -6,18 +6,23 @@ import { codeFontStack, loadScript } from '../lib/util.js';
 import { agentOutput } from '../lib/terminal-tail.mjs';
 import { termTheme } from '../services/theme.js';
 import { renderTabs, refreshTermBusy } from './sidebar.js';
-import { ensurePanelOpen, hideAllPanes, showSplitLoading, updateNavButtons, closeSplit, activateTab as activateWebTab } from './viewer.js';
+import { ensurePanelOpen, hideAllPanes, updateNavButtons, closeSplit, activateTab as activateWebTab } from './viewer.js';
 import { clearPrLayout } from './split.js';
 
 // Load the vendored xterm bundle + addons once, on first use (keeps it off the
 // initial page load). Resolves when window.Terminal / FitAddon / WebglAddon exist.
 let _xtReady = null;
+// xterm.js + addons are UMD — if Monaco's AMD loader has set a global define() with `.amd`,
+// they'd register as anonymous AMD modules instead of setting window.Terminal/FitAddon. Drop
+// the marker immediately before EACH script evaluates (not once up front) so a Monaco load
+// running concurrently can't re-install it in the gap. Monaco doesn't need the marker.
+const loadUmd = src => { try { if (window.define) delete window.define.amd; } catch {} return loadScript(src); };
 export function loadXterm() {
   if (_xtReady) return _xtReady;
   _xtReady = (async () => {
     const css = document.createElement('link'); css.rel = 'stylesheet'; css.href = '/vendor/xterm.css'; document.head.appendChild(css);
-    await loadScript('/vendor/xterm.js');
-    await Promise.all([loadScript('/vendor/xterm-addon-fit.js'), loadScript('/vendor/xterm-addon-webgl.js')]);
+    await loadUmd('/vendor/xterm.js');
+    await Promise.all([loadUmd('/vendor/xterm-addon-fit.js'), loadUmd('/vendor/xterm-addon-webgl.js')]);
     await ensureTermFont(); // load SF Mono (if present) before xterm measures glyph width
   })();
   return _xtReady;
@@ -348,7 +353,6 @@ export function activateTerminal(id) {
   t.el.style.display = '';
   document.body.classList.add('viewing-term'); // hide the webview-only toolbar buttons
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
-  showSplitLoading(false);
   updateNavButtons();
   fitTerm(t);
   t.term.focus();

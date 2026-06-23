@@ -75,7 +75,7 @@ export const timeAgo = s => {
 };
 
 // Lazy-load a vendored script once and resolve when it's executed. Shared by the lazy
-// loaders for the big vendor bundles (xterm in terminal.js, CodeMirror in editor.js) so
+// loaders for the big vendor bundles (xterm in terminal.js, Monaco in editor.js) so
 // the dynamic-<script> dance lives in one place. The caller dedupes/caches the promise.
 export const loadScript = src => new Promise((res, rej) => {
   const s = document.createElement('script');

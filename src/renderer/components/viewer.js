@@ -24,9 +24,12 @@ let _tabSeq = 0;
 let _linkSeq = 0;
 
 // A file link's url is `file://<absolute path>`; recover the path for the editor + API.
+// decodeURI is the exact inverse of fileUrl's encodeURI (decodeURIComponent would over-decode
+// reserved chars like # and ? that encodeURI leaves intact, mangling such paths).
 export function pathFromUrl(url) {
   if (!url) return '';
-  return url.startsWith('file://') ? decodeURIComponent(url.slice('file://'.length)) : url;
+  if (!url.startsWith('file://')) return url;
+  try { return decodeURI(url.slice('file://'.length)); } catch { return url.slice('file://'.length); }
 }
 // Build the `file://` url that keys a file link (dedupe within a context + persistence).
 export const fileUrl = p => 'file://' + encodeURI(p);
@@ -67,7 +70,7 @@ export function createTab(url, title, kind, meta = {}) {
 
   const wv = createWebviewEl();
   tab.wv = wv;
-  wv.addEventListener('did-stop-loading', () => { tab.loaded = true; if (id === state.activeTabId && !tab.activeLink) showSplitLoading(false); });
+  wv.addEventListener('did-stop-loading', () => { tab.loaded = true; });
   // Keep the Back button's enabled state in sync as the user navigates within the tab.
   const onNav = () => { if (id === state.activeTabId && !tab.activeLink) updateNavButtons(); };
   wv.addEventListener('did-navigate', onNav);
@@ -89,6 +92,11 @@ function createWebviewEl() {
   wv.style.display = 'none';
   document.getElementById('split-body').appendChild(wv);
   attachFind(wv);   // route this webview's native find results to the find bar while it's active
+  // A clicked file:// link inside the page can't render in a webview (Chromium ERR_FILE_NOT_FOUND);
+  // intercept it and open the file in the code editor instead.
+  wv.addEventListener('will-navigate', e => {
+    if (e.url && e.url.startsWith('file://')) { try { e.preventDefault(); } catch {} try { wv.stop(); } catch {} openFileTab(pathFromUrl(e.url)); }
+  });
   return wv;
 }
 
@@ -133,7 +141,7 @@ function makeFileLink(p) {
 function buildLinkWebview(link) {
   const wv = createWebviewEl();
   link.wv = wv;
-  wv.addEventListener('did-stop-loading', () => { link.loaded = true; if (linkShown(link)) showSplitLoading(false); });
+  wv.addEventListener('did-stop-loading', () => { link.loaded = true; });
   const onNav = () => { if (linkShown(link)) updateNavButtons(); };
   // Persist URL/title via the debounced saver — a chatty SPA fires many nav/title events, and
   // each saveTabs() is a full /api/tabs PUT serializing every tab. Coalesce the bursts.
@@ -186,12 +194,6 @@ export function activeLeftWebview() {
   if (t.activeLink) return (t.links || []).find(l => l.id === t.activeLink)?.wv || null;
   return t.wv || null;
 }
-function activeLeftLoaded() {
-  const t = activeTab();
-  if (!t) return true;
-  if (t.activeLink) { const l = (t.links || []).find(x => x.id === t.activeLink); return l ? (l.kind === 'file' || l.loaded) : true; }
-  return t.loaded;
-}
 
 // Switch which horizontal tab is shown in the left pane. linkId null = the default PR tab.
 // Deliberately does NOT call openPrPanel/clearPrLayout — the right split view stays put.
@@ -221,12 +223,21 @@ export function addLink() {
   playTabIn(link.id);        // grow the new tab in
 }
 
-// Re-enter URL editing on an existing tab (double-click its chip).
+// Re-enter URL editing on an existing tab.
 export function editLink(id) {
   const { link } = linkById(id);
   if (!link) return;
   link.editing = true;
   renderContentTabs();
+}
+
+// Click an extra tab: focus it if it isn't focused; a click on the ALREADY-focused tab enters
+// inline URL/path editing — single click, like a browser address bar (no double-click).
+export function ctabClick(id) {
+  const { tab, link } = linkById(id);
+  if (!tab || !link) return;
+  if (tab.activeLink === id) editLink(id);
+  else setActiveLink(id);
 }
 
 // Common web TLDs — used to tell a bare host (github.com/x) from a filename (README.md).
@@ -238,6 +249,7 @@ const WEB_TLD = /\.(?:com|org|net|io|dev|app|ai|gov|edu|co|sh|me|info|xyz|cloud|
 //  • http(s):// → web as-is.   • leading / ~ ./ ../ or www. → file/web by prefix.
 //  • host with a known web TLD (github.com/x) → web with https://.   • everything else → file.
 function classifyInput(v) {
+  if (/^file:\/\//i.test(v)) return { kind: 'file', value: pathFromUrl(v) };  // file:// → clean local path
   if (/^https?:\/\//i.test(v)) return { kind: 'web', value: v };
   if (/^(\/|~|\.\.?\/)/.test(v)) return { kind: 'file', value: v };
   if (/^www\./i.test(v)) return { kind: 'web', value: 'https://' + v };
@@ -319,7 +331,7 @@ export function ctabMenu(e, id) {
   ]);
 }
 
-// Save a file tab (its save button → here; ⌘S is handled inside CodeMirror).
+// Save a file tab (its save button → here; ⌘S is handled inside Monaco).
 export function saveLinkFile(id) {
   const { link } = linkById(id);
   if (link) saveEditor(link);
@@ -433,7 +445,6 @@ export function activateTab(id) {
   document.getElementById('split').hidden = false;
   document.body.classList.add('viewing-tab');
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active')); // a tab is the view now
-  showSplitLoading(cur ? !activeLeftLoaded() : false);
   updateNavButtons();
   // PR ↔ terminal split: the right panel is per-tab (`prSplit`, default OFF). It belongs to the
   // CONTEXT (the default tab), not to which horizontal link is showing — switching links won't
@@ -511,9 +522,8 @@ export function splitHome() {
   const link = t.activeLink ? (t.links || []).find(l => l.id === t.activeLink) : null;
   const home = link ? (link.home || link.url) : t.url;
   if (!home) return;
-  try { showSplitLoading(true); wv.loadURL(home); } catch {}
+  try { wv.loadURL(home); } catch {}
 }
-export function showSplitLoading(on) { document.getElementById('split-loading').hidden = !on; }
 // Grey out Back when the shown webview has no history to go back to.
 export function updateNavButtons() { const wv = activeLeftWebview(); const b = document.getElementById('split-back'); if (b) { let can = false; try { can = !!(wv && wv.canGoBack()); } catch {} b.disabled = !can; } }
 

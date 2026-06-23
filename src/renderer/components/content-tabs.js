@@ -65,8 +65,8 @@ function linkChipHtml(t, l) {
     ? `<button class="ctab-btn ctab-save" title="Save (⌘S)" onclick="event.stopPropagation();saveLinkFile('${l.id}')">${ICON.save}</button>`
     : '';
   return `<div class="ctab ${active ? 'active' : ''} ${dirty ? 'dirty' : ''}" data-id="${l.id}"
-        onclick="setActiveLink('${l.id}')" oncontextmenu="return ctabMenu(event,'${l.id}')"
-        ondblclick="editLink('${l.id}')" title="${esc(l.url || '')}">
+        onclick="ctabClick('${l.id}')" oncontextmenu="return ctabMenu(event,'${l.id}')"
+        title="${esc(l.url || '')}">
      ${linkIcon(l)}
      <span class="ctab-title">${esc(l.title || l.url || '')}</span>
      ${save}<button class="ctab-btn ctab-x" title="Close tab" onclick="event.stopPropagation();closeLink('${l.id}')">${ICON.close}</button>

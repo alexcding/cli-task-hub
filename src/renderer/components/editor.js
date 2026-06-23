@@ -1,108 +1,140 @@
-// Embedded code editor for `file` tabs. A CodeMirror 6 view per file tab, lazy-built on
-// first activation. The vendored bundle (src/renderer/vendor/codemirror.js — a single
-// IIFE exposing window.CM6) loads once on first use, mirroring how terminal.js loads
-// xterm. File content is read/written over the local API (/api/file); dirty state drives
-// the save affordance on the tab strip. The editor pane (tab.ed) is created in
-// viewer.js's createTab and shown/hidden alongside webview tabs.
+// Embedded code editor for `file` tabs — Monaco (the VS Code editor). The vendored AMD
+// distribution (src/renderer/vendor/monaco/vs) loads once on first use via Monaco's own
+// loader; each file tab gets a Monaco editor + model. File content is read/written over the
+// local API (/api/file); dirty state drives the save affordance on the content-tab bar. The
+// editor pane (tab.ed) is created in viewer.js and shown/hidden alongside webview tabs.
+//
+// `tab` here is any object with { kind:'file', path, ed (pane div), edView, _edModel,
+// _savedVersion, readOnly, dirty, _pendingLine } — a viewer tab OR a per-context file link.
 import { ROUTES } from '/shared/routes.mjs';
 import { api, apiJson } from '../services/api.js';
-import { esc, basename, loadScript } from '../lib/util.js';
+import { state } from '../stores/store.js';
+import { esc, basename, loadScript, codeFontStack } from '../lib/util.js';
+import { XCODE_LIGHT, XCODE_DARK } from '../lib/monaco-xcode-theme.mjs';
 import { toast, toastErr } from './toast.js';
 
-// Load the vendored CM6 global once. Resolves to window.CM6 (the bundle's exports).
-let _cmReady = null;
-function loadCM() {
-  if (!_cmReady) _cmReady = loadScript('/vendor/codemirror.js').then(() => window.CM6);
-  return _cmReady;
+// The shared "Code font" setting (Settings → Appearance — the same family+size that drives the
+// git diff view) also styles the editor. state.fonts.diff is that setting (kind kept as 'diff').
+const codeFont = () => ({ fontFamily: codeFontStack(state.fonts.diff.family), fontSize: state.fonts.diff.size });
+
+// Load the vendored Monaco once via its AMD loader. Resolves to the global `monaco`. On
+// failure the memo is cleared so a transient first-load error doesn't brick the editor for
+// the whole session — the next open retries.
+let _monaco = null;
+function loadMonaco() {
+  if (_monaco) return _monaco;
+  _monaco = buildMonaco().catch(e => { _monaco = null; throw e; });
+  return _monaco;
+}
+function buildMonaco() {
+  return new Promise((resolve, reject) => {
+    // Self-host the language workers: a data: URL that importScripts workerMain with the right
+    // baseUrl (the standard self-host pattern). Same-origin loopback, so this is allowed.
+    const base = location.origin + '/vendor/monaco/';
+    window.MonacoEnvironment = {
+      getWorkerUrl: () => 'data:text/javascript;charset=utf-8,' + encodeURIComponent(
+        `self.MonacoEnvironment={baseUrl:'${base}'};importScripts('${base}vs/base/worker/workerMain.js');`),
+    };
+    const css = document.createElement('link');
+    css.rel = 'stylesheet';
+    css.href = '/vendor/monaco/vs/editor/editor.main.css';
+    document.head.appendChild(css);
+    loadScript('/vendor/monaco/vs/loader.js').then(() => {
+      window.require.config({ paths: { vs: '/vendor/monaco/vs' } });
+      window.require(['vs/editor/editor.main'], () => {
+        // Monaco's loader sets a global define() with `.amd`. Drop the marker so our UMD vendor
+        // libs (xterm, loaded lazily) still take their global branch instead of registering as
+        // anonymous AMD modules. Monaco's own lazy language loads use define() directly and don't
+        // need the marker.
+        try { delete window.define.amd; } catch {}
+        // Register the converted XCode Modern themes (light + dark).
+        try {
+          window.monaco.editor.defineTheme('xcode-light', XCODE_LIGHT);
+          window.monaco.editor.defineTheme('xcode-dark', XCODE_DARK);
+        } catch {}
+        resolve(window.monaco);
+      }, reject);
+    }).catch(reject);
+  });
 }
 
-// Map a file extension to a CM6 language extension (highlighting). Unknown types get no
-// language (plain text) rather than failing — the editor still opens.
-function languageFor(file, CM) {
-  const ext = (file.split('.').pop() || '').toLowerCase();
-  if (['js', 'jsx', 'mjs', 'cjs', 'ts', 'tsx'].includes(ext))
-    return CM.javascript({ typescript: ext.startsWith('ts'), jsx: ext.endsWith('x') });
-  if (ext === 'json') return CM.json();
-  if (['html', 'htm', 'xml'].includes(ext)) return CM.html();
-  if (ext === 'css') return CM.cssLang();
-  if (['md', 'markdown'].includes(ext)) return CM.markdown();
-  return [];
+// App theme → the converted XCode Modern Monaco theme.
+const monacoTheme = () => (document.documentElement.getAttribute('data-theme') === 'dark' ? 'xcode-dark' : 'xcode-light');
+
+// Re-skin open editors when the app theme toggles (theme.js calls this). Monaco's theme is
+// global, so one setTheme covers every open editor; no-op until Monaco has loaded.
+export function applyEditorTheme() {
+  try { window.monaco?.editor.setTheme(monacoTheme()); } catch {}
 }
 
-// Recompute dirty (doc differs from what's on disk) and refresh the tab strip + titlebar
-// if it flipped — the save affordance keys off tab.dirty. Short-circuit on doc length first
-// so the common keystroke (which changes length) skips materializing the whole doc to a
-// string — important for large files (toString of an up-to-5MB doc per keystroke is costly).
-function recomputeDirty(tab) {
-  const doc = tab.edView.state.doc;
-  const dirty = doc.length !== tab.savedLen || doc.toString() !== tab.savedDoc;
-  if (dirty !== tab.dirty) { tab.dirty = dirty; window.__refreshTabs?.(); }
+// Monaco language id for a path, from its own registered extensions/filenames (covers every
+// language it ships — Swift, Go, Rust, …). Falls back to plaintext.
+function languageId(monaco, file) {
+  const ext = '.' + (file.split('.').pop() || '').toLowerCase();
+  const base = (file.split('/').pop() || '').toLowerCase();
+  const langs = monaco.languages.getLanguages();
+  const hit = langs.find(l =>
+    (l.extensions || []).some(e => e.toLowerCase() === ext) ||
+    (l.filenames || []).some(f => f.toLowerCase() === base));
+  return hit ? hit.id : 'plaintext';
 }
 
-// Build (or no-op if already built) the CodeMirror view for a file tab. Fetches the file,
-// then mounts an editor into tab.ed. On error, renders the message in the pane instead.
+// Build (or no-op if already built) the Monaco editor for a file tab. Fetches the file, then
+// mounts the editor into tab.ed. On error, renders the message in the pane instead.
 export async function ensureEditor(tab) {
   if (!tab || tab.kind !== 'file' || tab.edView || tab._edLoading) return;
   tab._edLoading = true;
-  let CM;
-  try { CM = await loadCM(); }
-  catch (e) { tab._edLoading = false; renderError(tab, e.message); return; }
+
+  // The tab can be closed during either await; if so its pane is detached (disposeLink ran
+  // while edView was still null, so it couldn't dispose anything). Bail before creating an
+  // editor that nothing would ever dispose. `alive` re-checks after each await.
+  const alive = () => tab.kind === 'file' && tab.ed && tab.ed.isConnected && !tab.edView;
+
+  let monaco;
+  try { monaco = await loadMonaco(); }
+  catch { tab._edLoading = false; if (alive()) renderError(tab, 'Editor failed to load'); return; }
+  if (!alive()) { tab._edLoading = false; return; }
 
   let data;
   try { data = await api(ROUTES.FILE + '?path=' + encodeURIComponent(tab.path)); }
-  catch (e) { tab._edLoading = false; renderError(tab, e.message || 'Could not open file'); return; }
+  catch (e) { tab._edLoading = false; if (alive()) renderError(tab, e.message || 'Could not open file'); return; }
+  if (!alive()) { tab._edLoading = false; return; }
 
-  tab.savedDoc = data.content;
-  tab.savedLen = data.content.length;
   tab.readOnly = !!data.readOnly;
   tab.dirty = false;
 
-  // Follow the app theme (not always dark): dark → One Dark (bg + its own highlight style);
-  // light → CM6's default light surface + the default highlight style. Only ONE highlight
-  // style is added per theme — adding defaultHighlightStyle *and* oneDark put the light style
-  // at higher precedence (earlier = higher in CM6), painting dark text on the dark bg.
-  const dark = document.documentElement.getAttribute('data-theme') === 'dark';
-  const themeExts = dark
-    ? [CM.oneDark]
-    : [CM.syntaxHighlighting(CM.defaultHighlightStyle, { fallback: true })];
-
-  const extensions = [
-    CM.lineNumbers(),
-    CM.highlightActiveLineGutter(),
-    CM.highlightSpecialChars(),
-    CM.history(),
-    CM.foldGutter(),
-    CM.drawSelection(),
-    CM.indentOnInput(),
-    CM.bracketMatching(),
-    CM.closeBrackets(),
-    CM.autocompletion(),
-    CM.highlightActiveLine(),
-    CM.highlightSelectionMatches(),
-    CM.keymap.of([
-      // ⌘S saves; preventDefault so the browser's Save-page dialog never appears.
-      { key: 'Mod-s', preventDefault: true, run: () => { saveEditor(tab); return true; } },
-      ...CM.closeBracketsKeymap, ...CM.defaultKeymap, ...CM.searchKeymap,
-      ...CM.historyKeymap, ...CM.foldKeymap, ...CM.completionKeymap, CM.indentWithTab,
-    ]),
-    languageFor(tab.path, CM),
-    ...themeExts,
-    CM.EditorState.readOnly.of(tab.readOnly),
-    CM.EditorView.editable.of(!tab.readOnly),
-    CM.EditorView.updateListener.of(u => { if (u.docChanged) recomputeDirty(tab); }),
-    // Fill the pane; the scroller owns the vertical scrollbar on the right.
-    CM.EditorView.theme({ '&': { height: '100%' }, '.cm-scroller': { overflow: 'auto' } }),
-  ];
+  // No file URI on the model — a URI is global, so two tabs on the same path would share (and
+  // double-dispose) one model. Own model per tab; set the language explicitly instead.
+  const model = monaco.editor.createModel(data.content, languageId(monaco, tab.path));
+  tab._edModel = model;
+  // Dirty tracking via the alternative version id (an int that returns to the saved value on
+  // undo) — no full-document string materialization/compare per keystroke.
+  tab._savedVersion = model.getAlternativeVersionId();
 
   tab.ed.innerHTML = '';
-  tab.edView = new CM.EditorView({
-    state: CM.EditorState.create({ doc: data.content, extensions }),
-    parent: tab.ed,
+  tab.edView = monaco.editor.create(tab.ed, {
+    model,
+    theme: monacoTheme(),
+    readOnly: tab.readOnly,
+    automaticLayout: true,            // tracks the pane size (split drag / window resize)
+    minimap: { enabled: false },      // marginal value in a narrow split pane; saves paint cost
+    scrollBeyondLastLine: false,
+    tabSize: 2,
+    renderWhitespace: 'selection',
+    ...codeFont(),                    // shared Code font (family + size)
   });
+  // ⌘S saves (Monaco owns the keybinding inside the editor).
+  tab.edView.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => saveEditor(tab));
+  // Dirty = current version differs from the last saved version; flip the tab's save affordance.
+  model.onDidChangeContent(() => {
+    const dirty = model.getAlternativeVersionId() !== tab._savedVersion;
+    if (dirty !== tab.dirty) { tab.dirty = dirty; window.__refreshTabs?.(); }
+  });
+
   tab._edLoading = false;
   tab.loaded = true;
-  window.__refreshTabs?.();          // refresh the tab bar (loading → read-only/dirty)
-  if (tab.ed && tab.ed.style.display !== 'none') focusEditor(tab); // focus if this is the shown pane
+  window.__refreshTabs?.();
+  if (tab.ed && tab.ed.style.display !== 'none') focusEditor(tab);
   if (tab._pendingLine) { gotoLine(tab, tab._pendingLine); tab._pendingLine = 0; }
 }
 
@@ -112,33 +144,31 @@ function renderError(tab, msg) {
   window.__refreshTabs?.();
 }
 
-// Focus the editor (called when its tab activates) so typing goes straight to it.
+// Focus the editor (called when its tab activates).
 export function focusEditor(tab) {
   try { tab?.edView?.focus(); } catch {}
 }
 
-// Jump to a 1-based line (from a terminal file:line link) — scroll it into view + place
-// the cursor there.
+// Jump to a 1-based line (from a terminal file:line link) — reveal it + place the cursor.
 export function gotoLine(tab, line) {
-  const view = tab?.edView;
-  if (!view || !line) { if (tab) tab._pendingLine = line; return; }
+  const ed = tab?.edView;
+  if (!ed || !line) { if (tab) tab._pendingLine = line; return; }
   try {
-    const ln = Math.max(1, Math.min(line, view.state.doc.lines));
-    const pos = view.state.doc.line(ln).from;
-    view.dispatch({ selection: { anchor: pos }, scrollIntoView: true });
-    view.focus();
+    ed.revealLineInCenter(line);
+    ed.setPosition({ lineNumber: line, column: 1 });
+    ed.focus();
   } catch {}
 }
 
-// Save the file tab's content to disk, then clear dirty. ⌘S and the tab's save button
-// both route here. No-op for a read-only file or a clean buffer.
+// Save the file tab's content to disk, then clear dirty. ⌘S and the tab's save button route here.
 export async function saveEditor(tab) {
   if (!tab || tab.kind !== 'file' || !tab.edView || tab.readOnly || !tab.dirty) return;
-  const content = tab.edView.state.doc.toString();
+  const content = tab.edView.getValue();
   try {
     await apiJson(ROUTES.FILE, 'PUT', { path: tab.path, content });
-    tab.savedDoc = content;
-    tab.savedLen = content.length;
+    // New saved baseline = the version we just wrote, so later edits (and undo back to it)
+    // compute dirty correctly.
+    tab._savedVersion = tab._edModel?.getAlternativeVersionId();
     tab.dirty = false;
     toast('Saved ' + basename(tab.path));
     window.__refreshTabs?.();
@@ -147,8 +177,17 @@ export async function saveEditor(tab) {
   }
 }
 
-// Tear down a file tab's editor (on tab close). The pane element is removed by the caller.
+// Re-apply the Code font to every open editor (called when the setting changes in Settings).
+export function applyCodeFont() {
+  const f = codeFont();
+  for (const tab of state.tabs) for (const l of (tab.links || [])) {
+    if (l.edView) { try { l.edView.updateOptions(f); } catch {} }
+  }
+}
+
+// Tear down a file tab's editor + model (on tab close). The pane element is removed by the caller.
 export function disposeEditor(tab) {
-  try { tab?.edView?.destroy(); } catch {}
-  if (tab) tab.edView = null;
+  try { tab?.edView?.dispose(); } catch {}
+  try { tab?._edModel?.dispose(); } catch {}
+  if (tab) { tab.edView = null; tab._edModel = null; }
 }

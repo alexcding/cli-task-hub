@@ -9,6 +9,7 @@ import { apiJson } from './api.js';
 import { toastErr } from '../components/toast.js';
 import { codeFontStack, esc } from '../lib/util.js';
 import { fitTerm, visibleTerm } from '../components/terminal.js';
+import { applyCodeFont } from '../components/editor.js';
 
 export const FONT_MIN = 9, FONT_MAX = 24;
 const KINDS = ['term', 'diff'];
@@ -85,7 +86,9 @@ export function applyFonts(changed = null) {
     const label = document.getElementById(`${kind}-font-size-val`);
     if (label) label.textContent = size + ' px';
   }
-  if (changed === 'diff') return;                    // diff font is CSS-only — no xterm work
+  // The Code font (kind 'diff') also styles open Monaco editors — push it to them.
+  if (changed === 'diff' || changed === null) applyCodeFont();
+  if (changed === 'diff') return;                    // otherwise diff font is CSS-only — no xterm work
   const fam = codeFontStack(state.fonts.term.family), size = state.fonts.term.size;
   for (const t of state.terms.values()) {
     try { t.term.options.fontFamily = fam; t.term.options.fontSize = size; } catch {}

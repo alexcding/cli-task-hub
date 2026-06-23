@@ -176,11 +176,11 @@
 ✓ 26 tests passed <span class="fp-add">(834ms)</span></div>
             <div class="card-pad theme-row" style="border-top:1px solid var(--border)">
               <div>
-                <div class="theme-row-title">Diff font</div>
-                <div class="theme-row-sub">The Changes pane (git diff)</div>
+                <div class="theme-row-title">Code font</div>
+                <div class="theme-row-sub">The code editor &amp; the Changes pane (git diff)</div>
               </div>
               <div class="font-controls">
-                <select id="diff-font-family" onchange="setFontFamily('diff', this.value)" aria-label="Diff font family">
+                <select id="diff-font-family" onchange="setFontFamily('diff', this.value)" aria-label="Code font family">
                   <option value="">SF Mono (default)</option>
                   <option value="Menlo">Menlo</option>
                   <option value="Monaco">Monaco</option>
@@ -189,7 +189,7 @@
                   <option value="Source Code Pro">Source Code Pro</option>
                   <option value="Courier New">Courier New</option>
                 </select>
-                <div class="font-size-ctl" role="group" aria-label="Diff font size">
+                <div class="font-size-ctl" role="group" aria-label="Code font size">
                   <button onclick="bumpFontSize('diff', -1)" title="Smaller (⌘−)" aria-label="Smaller">−</button>
                   <span class="fs-val" id="diff-font-size-val">12 px</span>
                   <button onclick="bumpFontSize('diff', 1)" title="Bigger (⌘+)" aria-label="Bigger">+</button>
@@ -375,7 +375,7 @@
   </main>
 
   <!-- Embedded viewer: shows the active tab's page in an Electron webview (or a local file
-       in the CodeMirror editor). The left content pane carries a Safari-compact horizontal
+       in the Monaco editor). The left content pane carries a Safari-compact horizontal
        tab bar (content-tabs.js); the sidebar's vertical tabs are a separate, unmirrored set. -->
   <div id="split" class="split" hidden>
     <div class="split-bar">
@@ -427,7 +427,6 @@
       </button>
     </div>
     <div class="split-body" id="split-body">
-      <div class="split-loading" id="split-loading" hidden><div class="spinner"></div> Loading…</div>
       <!-- Find-in-page (⌘F): drives Chromium's native find inside the active webview
            (find.js → webview.findInPage). ⌘G / ⇧⌘G or the chevrons step matches. -->
       <div class="find-bar" id="find-bar" hidden>

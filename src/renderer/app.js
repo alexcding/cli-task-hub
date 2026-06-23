@@ -141,7 +141,6 @@ function handleShortcut(action) {
       // not just the default tab's — otherwise ⌘R reloads a hidden webview.
       const wv = viewer.activeLeftWebview();
       if (wv && wv.src) {
-        viewer.showSplitLoading(true);
         try { wv.reload(); } catch {}
       } else {
         refreshActivePage();
@@ -234,7 +233,7 @@ Object.assign(window, {
   // sidebar / tabs
   activateTab: viewer.activateTab, closeTab: viewer.closeTab, tabMenu,
   // Safari-compact horizontal content tabs (per-context web/file links)
-  setActiveLink: viewer.setActiveLink, addLink: viewer.addLink, editLink: viewer.editLink,
+  setActiveLink: viewer.setActiveLink, addLink: viewer.addLink, editLink: viewer.editLink, ctabClick: viewer.ctabClick,
   ctabInputKey: viewer.ctabInputKey, ctabInputBlur: viewer.ctabInputBlur,
   closeLink: viewer.closeLink, closeOtherLinks: viewer.closeOtherLinks, ctabMenu: viewer.ctabMenu,
   saveLinkFile: viewer.saveLinkFile, openFileTab: viewer.openFileTab,

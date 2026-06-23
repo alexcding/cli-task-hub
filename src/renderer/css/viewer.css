@@ -154,16 +154,11 @@ body.viewing-tab main { display:none; }
 .ctab-add:hover { background:var(--surface-hover); color:var(--text); }
 .ctab-add svg { width:22px; height:22px; stroke-width:1.6; display:block; }
 
-/* Editor pane (a file tab) — fills the left content region like a webview; CodeMirror
-   paints inside. Follows the same --pr-split width as webviews when the right split is open. */
+/* Editor pane (a file tab) — fills the left content region like a webview; Monaco paints
+   inside (its own theme/scrollbar). Follows the same --pr-split width when the right split is open. */
 .editor-pane { position:absolute; inset:0; overflow:hidden; background:var(--surface); }
 body.pr-split .split-body .editor-pane { width:var(--pr-split, 60%); }
-.editor-pane .cm-editor { height:100%; }
-.editor-pane .cm-scroller { overflow:auto; font-family:var(--code-font, ui-monospace, 'SFMonoServed', Menlo, monospace); }
-/* Visible right-side scrollbar (the macOS overlay one auto-hides; show a persistent track). */
-.editor-pane .cm-scroller::-webkit-scrollbar { width:12px; height:12px; }
-.editor-pane .cm-scroller::-webkit-scrollbar-thumb { background:var(--border); border-radius:6px; border:3px solid transparent; background-clip:content-box; }
-.editor-pane .cm-scroller::-webkit-scrollbar-thumb:hover { background:var(--border-focus); background-clip:content-box; }
+.editor-pane .monaco-editor { position:absolute; inset:0; }
 .editor-err { padding:22px 24px; color:var(--danger); font-size:13px; }
 /* SF Mono copy served from Terminal.app (/sf-mono) under a DISTINCT family name so it
    never shadows a system-installed "SF Mono". 404s harmlessly when the folder is absent. */
@@ -220,7 +215,7 @@ body.pr-split .split-body .diff-pane { left:var(--pr-split, 60%); }
    pane in split mode), so it never blocks the webview or the rest of the window. */
 .diff-confirm { position:absolute; inset:0; z-index:20; display:flex; align-items:center; justify-content:center; padding:16px; background:rgba(0,0,0,.32); }
 /* display:flex above overrides the UA [hidden]{display:none}, so el.hidden alone won't
-   hide it — without this the dark overlay sits on the pane permanently (cf. split-loading). */
+   hide it — without this the dark overlay sits on the pane permanently. */
 .diff-confirm[hidden] { display:none; }
 body.pr-split .split-body .diff-confirm { left:var(--pr-split, 60%); }
 .diff-confirm-card { width:min(340px,100%); background:var(--surface); border:1px solid var(--border); border-radius:12px; box-shadow:0 12px 32px rgba(0,0,0,.22),0 2px 8px rgba(0,0,0,.10); padding:16px; }
@@ -419,11 +414,6 @@ body.pr-split .split-body .history-pane { left:var(--pr-split, 60%); }
 .diff-stub code { background:var(--surface-hover); padding:1px 5px; border-radius:4px; }
 .diff-untracked-head { cursor:default; color:var(--text-2); }
 .diff-untracked { padding:2px 12px 2px 30px; color:var(--diff-add-fg); border-top:1px solid var(--border); }
-.split-loading { position:absolute; inset:0; z-index:2; display:flex; align-items:center; justify-content:center; background:var(--bg); color:var(--text-3); font-size:13px; gap:8px; }
-.split-loading[hidden] { display:none; }
-/* The spinner covers the webview's page load only — in split mode confine it to the
-   webview's left --pr-split fraction so the terminal/diff pane on the right stays visible. */
-body.pr-split .split-body .split-loading { right:auto; width:var(--pr-split, 60%); }
 /* While dragging the sidebar, disable webview pointer events so a full-width page
    doesn't swallow the mouse and the resize tracks reliably. */
 body.resizing .split-body webview { pointer-events:none; }

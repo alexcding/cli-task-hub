@@ -2,6 +2,7 @@ import { ROUTES } from '/shared/routes.mjs';
 import { state } from '../stores/store.js';
 import { api } from './api.js';
 import { toastErr } from '../components/toast.js';
+import { applyEditorTheme } from '../components/editor.js';
 
 // ── Terminal theme ────────────────────────────────────────────────────────────
 // Terminals always match the system light/dark setting — no separate preference.
@@ -36,6 +37,7 @@ export function applyAppTheme() {
   document.documentElement.setAttribute('data-theme', appThemeMode());
   document.querySelectorAll('#theme-toggle .theme-opt').forEach(b =>
     b.classList.toggle('active', b.dataset.themeOpt === _appThemePref));
+  applyEditorTheme();   // re-skin open Monaco editors (their theme is global, set at create time)
 }
 
 export async function setAppTheme(value) {
