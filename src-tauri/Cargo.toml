@@ -33,3 +33,10 @@ sysinfo = "0.36.1"
 tauri-plugin-notification = "2.3.3"
 tauri-plugin-updater = "2.10.1"
 tokio = { version = "1", features = ["time"] }
+
+# macOS-only: read WKWebView title/URL/nav-state from the embedded viewer (typed objc2 bindings,
+# versions matched to what Tauri/wry already pull). Used by viewer.rs.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-foundation = "0.3"
+objc2-web-kit = "0.3"

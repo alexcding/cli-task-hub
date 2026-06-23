@@ -214,7 +214,13 @@
         create: create, load: navigate, navigate: navigate, bounds: bounds,
         destroy: destroy, reload: reload,
         nav: nav, find: find, stopFind: stopFind,
-        onEvent: function () { return noop; },
+        // Page nav/title events come from the Rust WKWebView poll (viewer.rs) as `wcv://event`.
+        onEvent: function (cb) {
+          var off = noop;
+          window.__TAURI__.event.listen('wcv://event', function (e) { cb(e.payload); })
+            .then(function (u) { off = u; });
+          return function () { off(); };
+        },
       };
     })(),
 

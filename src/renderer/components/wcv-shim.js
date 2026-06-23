@@ -24,6 +24,18 @@ export function createWcvShim() {
   let created = false;
   let raf = 0;
   let lastKey = '';
+  let canBack = false;
+  let canFwd = false;
+
+  // Native nav/title events from the Rust WKWebView poll (viewer.rs), re-dispatched as the
+  // <webview>-shaped DOM events viewer.js/find.js already listen for.
+  const offEvent = wcv.onEvent((e) => {
+    if (!e || e.id !== id) return;
+    if (typeof e.canGoBack === 'boolean') canBack = e.canGoBack;
+    if (typeof e.canGoForward === 'boolean') canFwd = e.canGoForward;
+    if (e.url) { el.src = e.url; const ev = new Event('did-navigate'); ev.url = e.url; el.dispatchEvent(ev); }
+    if (e.title) { const ev = new Event('page-title-updated'); ev.title = e.title; el.dispatchEvent(ev); }
+  });
 
   // Shown ⇔ displayed and laid out (offsetParent null ⇒ this or an ancestor is display:none).
   const isVisible = () => el.style.display !== 'none' && el.offsetParent !== null;
@@ -63,10 +75,9 @@ export function createWcvShim() {
   el.loadURL = load;                                // home button (viewer.js) calls this directly
   el.reload = () => wcv.reload(id);
   el.stop = () => wcv.nav(id, 'stop');
-  // Back/forward run via injected history.back()/forward(); we can't read history depth across the
-  // webview boundary, so report navigable and let the call no-op at the ends.
-  el.canGoBack = () => true;
-  el.canGoForward = () => true;
+  // Back/forward state comes from the native poll (viewer.rs) via the event above.
+  el.canGoBack = () => canBack;
+  el.canGoForward = () => canFwd;
   el.goBack = () => wcv.nav(id, 'back');
   el.goForward = () => wcv.nav(id, 'forward');
   el.findInPage = (text, opts) => wcv.find(id, text, opts && opts.findNext, !opts || opts.forward !== false);
@@ -74,7 +85,7 @@ export function createWcvShim() {
 
   // Tear down the native webview when the shim leaves the DOM (closeTab / closeLink / disposeLink).
   const origRemove = el.remove.bind(el);
-  el.remove = () => { stopLoop(); wcv.destroy(id); origRemove(); };
+  el.remove = () => { stopLoop(); offEvent(); wcv.destroy(id); origRemove(); };
 
   return el;
 }

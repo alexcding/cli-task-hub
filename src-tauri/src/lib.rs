@@ -7,6 +7,7 @@
 mod commands;
 mod terminals;
 mod tray;
+mod viewer;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
@@ -190,6 +191,7 @@ pub fn run() {
 
       open_main_window(app.handle())?;
       tray::setup(app.handle())?;
+      viewer::start_title_watch(app.handle());
       Ok(())
     })
     .build(tauri::generate_context!())
