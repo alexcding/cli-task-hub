@@ -7,6 +7,7 @@
 mod commands;
 mod terminals;
 mod tray;
+mod usage_image;
 mod viewer;
 
 use std::sync::atomic::{AtomicBool, Ordering};
