@@ -17,6 +17,10 @@
     "core:webview:allow-webview-close",
     "core:window:default",
     "core:window:allow-start-dragging",
-    "core:window:allow-toggle-maximize"
+    "core:window:allow-toggle-maximize",
+    "core:menu:default",
+    "core:menu:allow-new",
+    "core:menu:allow-append",
+    "core:menu:allow-popup"
   ]
 }

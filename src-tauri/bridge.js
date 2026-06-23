@@ -82,52 +82,40 @@
     try { window.__TAURI__.window.getCurrentWindow().toggleMaximize(); } catch (err) {}
   }, true);
 
+  // Native macOS context menu (muda via window.__TAURI__.menu). Same contract as the old DOM menu —
+  // resolves the chosen item id, or null if dismissed — so tabMenu/folderMenu are unchanged. On
+  // macOS popup() is modal (returns after the menu closes); item clicks fire their `action`. We
+  // resolve from the action when one fires, else null shortly after popup() returns (dismissed).
   function popupMenu(items) {
     return new Promise(function (resolve) {
-      var menu = document.createElement('div');
-      menu.setAttribute('role', 'menu');
-      menu.style.cssText = 'position:fixed;z-index:99999;min-width:180px;padding:4px;border-radius:8px;' +
-        'background:var(--surface,#1e1e1e);border:1px solid var(--border,#3a3a3a);' +
-        'box-shadow:0 8px 24px rgba(0,0,0,.35);font:13px -apple-system,system-ui,sans-serif;color:var(--text,#eee);';
-      var done = false;
-      function cleanup() {
-        menu.remove();
-        document.removeEventListener('mousedown', onDocDown, true);
-        document.removeEventListener('keydown', onKey, true);
-      }
-      function close(val) { if (done) return; done = true; cleanup(); resolve(val); }
-      function onDocDown(e) { if (!menu.contains(e.target)) close(null); }
-      function onKey(e) { if (e.key === 'Escape') close(null); }
-
-      items.forEach(function (it) {
-        if (it.separator) {
-          var sep = document.createElement('div');
-          sep.style.cssText = 'height:1px;margin:4px 6px;background:var(--border,#3a3a3a);';
-          menu.appendChild(sep);
-          return;
+      var settled = false;
+      function pick(v) { if (!settled) { settled = true; resolve(v); } }
+      (async function () {
+        try {
+          var M = window.__TAURI__.menu;
+          var built = [];
+          for (var i = 0; i < items.length; i++) {
+            var it = items[i];
+            if (it.separator) {
+              built.push(await M.PredefinedMenuItem.new({ item: 'Separator' }));
+              continue;
+            }
+            built.push(await M.MenuItem.new({
+              id: String(it.id),
+              text: it.label,
+              enabled: it.enabled !== false,
+              action: (function (id) { return function () { pick(id); }; })(it.id),
+            }));
+          }
+          var menu = await M.Menu.new({ items: built });
+          await menu.popup();
+          // Menu closed: give a click's action event a moment to arrive; if none, it was dismissed.
+          setTimeout(function () { pick(null); }, 150);
+        } catch (e) {
+          console.warn('[menu] native popup failed', e);
+          pick(null);
         }
-        var row = document.createElement('div');
-        row.textContent = it.label;
-        var disabled = it.enabled === false;
-        row.style.cssText = 'padding:5px 10px;border-radius:5px;cursor:default;white-space:nowrap;' + (disabled ? 'opacity:.4;' : '');
-        if (!disabled) {
-          row.addEventListener('mouseenter', function () { row.style.background = 'var(--surface-hover,#333)'; });
-          row.addEventListener('mouseleave', function () { row.style.background = 'transparent'; });
-          row.addEventListener('mousedown', function (e) { e.preventDefault(); });
-          row.addEventListener('click', function () { close(it.id); });
-        }
-        menu.appendChild(row);
-      });
-
-      document.body.appendChild(menu);
-      var x = Math.min(_cursor.x, window.innerWidth - menu.offsetWidth - 6);
-      var y = Math.min(_cursor.y, window.innerHeight - menu.offsetHeight - 6);
-      menu.style.left = Math.max(4, x) + 'px';
-      menu.style.top = Math.max(4, y) + 'px';
-      setTimeout(function () {
-        document.addEventListener('mousedown', onDocDown, true);
-        document.addEventListener('keydown', onKey, true);
-      }, 0);
+      })();
     });
   }
 
