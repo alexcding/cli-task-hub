@@ -53,11 +53,20 @@ function buildMonaco() {
           window.monaco.editor.defineTheme('xcode-dark', XCODE_DARK);
         } catch {}
         // The TS/JS language worker (tsWorker.js, ~5.6MB) is trimmed from the vendored build —
-        // we only need syntax highlighting (Monarch, main-thread), not IntelliSense/diagnostics.
-        // Disable validation so opening a .ts/.js file doesn't try to spawn the missing worker.
+        // we only need syntax highlighting (Monarch grammars, main-thread), not IntelliSense.
+        // Turn OFF every monaco-typescript feature so NO provider (completion/hover/diagnostics/
+        // …) ever registers — that's what would otherwise try to spawn the removed worker.
+        // Highlighting is unaffected (it comes from basic-languages, not the TS service).
         try {
           const ts = window.monaco.languages.typescript;
+          const allOff = {
+            completionItems: false, hovers: false, documentSymbols: false, definitions: false,
+            references: false, documentHighlights: false, rename: false, diagnostics: false,
+            documentRangeFormattingEdits: false, signatureHelp: false, onTypeFormattingEdits: false,
+            codeActions: false, inlayHints: false,
+          };
           for (const d of [ts.typescriptDefaults, ts.javascriptDefaults]) {
+            d.setModeConfiguration(allOff);
             d.setDiagnosticsOptions({ noSemanticValidation: true, noSyntaxValidation: true, noSuggestionDiagnostics: true });
           }
         } catch {}
