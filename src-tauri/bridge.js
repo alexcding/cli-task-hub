@@ -237,8 +237,13 @@
             rec.wv.setPosition(lpos(Math.round(rect.x), Math.round(rect.y)));
             rec.wv.setSize(lsize(Math.round(rect.width), Math.round(rect.height)));
           } else {
+            // Park off-screen but KEEP the last full size — resizing to 1x1 makes WKWebView re-layout
+            // the page to a 1px viewport, so switching back thrashes the viewport and the page
+            // reflows/reloads (loses scroll + re-fetches). Same size off-screen preserves the page.
+            var w = (rec.rect && rec.rect.width) || 1200;
+            var h = (rec.rect && rec.rect.height) || 800;
             rec.wv.setPosition(lpos(OFF, OFF));
-            rec.wv.setSize(lsize(1, 1));
+            rec.wv.setSize(lsize(Math.round(w), Math.round(h)));
           }
         } catch (e) { /* webview may be mid-teardown */ }
       }
