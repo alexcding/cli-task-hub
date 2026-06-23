@@ -250,8 +250,15 @@
       function destroy(id) {
         var rec = views[id];
         if (!rec) return;
+        // Stop playback BEFORE closing: Tauri's webview close() doesn't promptly tear down the
+        // WebContent process, so audio/video (e.g. a YouTube tab) keeps playing. Pause any media and
+        // navigate the page to about:blank (unloads everything), then close on the next tick so the
+        // eval lands while the webview still exists.
+        try {
+          invoke('wcv_eval', { id: id, js: "try{var m=document.querySelectorAll('video,audio');for(var i=0;i<m.length;i++){try{m[i].pause();m[i].muted=true;}catch(e){}}location.replace('about:blank');}catch(e){}" });
+        } catch (e) {}
         delete views[id];
-        try { rec.wv.close(); } catch (e) {}
+        setTimeout(function () { try { rec.wv.close(); } catch (e) {} }, 80);
       }
       // JS Webview has no navigate(url) — recreate at the same id; the shim re-pushes bounds next frame.
       function navigate(id, url) { destroy(id); create(id, url); }
