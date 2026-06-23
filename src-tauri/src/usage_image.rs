@@ -152,7 +152,7 @@ pub fn render(groups: &[Group], accent: [u8; 3], dark: bool) -> Option<(Vec<u8>,
   let lpad = 2.0 * s;
   let rpad = 6.0 * s;
   // Fixed width wide enough to fill the row, but at least as wide as the longest data line.
-  let mut content = 230.0 * s;
+  let mut content = 260.0 * s;
   for g in groups {
     content = content.max(measure(&font, &g.title, title_px));
     content = content.max(measure(&font, &g.data, data_px));
