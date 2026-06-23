@@ -124,15 +124,17 @@ pub fn render(groups: &[Group], accent: [u8; 3], dark: bool) -> Option<(Vec<u8>,
   // section header; data is regular, like the menu rows.
   let title_px = 14.0 * s;
   let data_px = 14.0 * s;
-  let pad = 4.0 * s;
-  // Auto-size width to the widest line (+ a sensible min) so the panel is exactly as wide as its
-  // text — no excess that would stretch the whole menu.
-  let mut content = 170.0 * s;
+  // Small left inset so the content sits near the menu's text leading; bars then span the rest of
+  // the width so they FILL the row (like Electron) rather than stopping at the data-text width.
+  let lpad = 2.0 * s;
+  let rpad = 6.0 * s;
+  // Fixed width wide enough to fill the row, but at least as wide as the longest data line.
+  let mut content = 320.0 * s;
   for g in groups {
     content = content.max(measure(&font, &g.title, title_px));
     content = content.max(measure(&font, &g.data, data_px));
   }
-  let w = (content + pad * 2.0).ceil() as i32;
+  let w = (content + lpad + rpad).ceil() as i32;
   let group_h = (56.0 * s) as i32; // title + bar + data + spacing
   let h = (8.0 * s) as i32 + group_h * groups.len() as i32;
 
@@ -145,14 +147,14 @@ pub fn render(groups: &[Group], accent: [u8; 3], dark: bool) -> Option<(Vec<u8>,
   let _ = muted_c;
 
   let mut cv = Canvas::new(w, h);
-  let bar_w = w as f32 - pad * 2.0;
+  let bar_w = w as f32 - lpad - rpad;
   let bar_h = (6.0 * s) as i32; // CSS bar height 6px
   for (i, g) in groups.iter().enumerate() {
     let gy = (6.0 * s) as i32 + group_h * i as i32;
-    cv.text(&font, pad, gy as f32 + 14.0 * s, &g.title, title_px, text_c, true);
+    cv.text(&font, lpad, gy as f32 + 14.0 * s, &g.title, title_px, text_c, true);
 
     let bar_y = gy + (23.0 * s) as i32;
-    let bx = pad as i32;
+    let bx = lpad as i32;
     cv.fill(bx, bar_y, bar_w as i32, bar_h, track_c, track_a);
     let fw = (bar_w * g.left.clamp(0, 100) as f32 / 100.0) as i32;
     cv.fill(bx, bar_y, fw, bar_h, accent, 1.0);
@@ -164,7 +166,7 @@ pub fn render(groups: &[Group], accent: [u8; 3], dark: bool) -> Option<(Vec<u8>,
       cv.fill(px - s as i32, bar_y - (1.0 * s) as i32, (2.0 * s) as i32, bar_h + (2.0 * s) as i32, pace_c, 1.0);
     }
 
-    cv.text(&font, pad, (bar_y + bar_h) as f32 + 15.0 * s, &g.data, data_px, text_c, false);
+    cv.text(&font, lpad, (bar_y + bar_h) as f32 + 15.0 * s, &g.data, data_px, text_c, false);
   }
   Some((cv.buf, w as u32, h as u32))
 }
