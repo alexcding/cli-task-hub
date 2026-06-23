@@ -1,4 +1,4 @@
-node_modules/
+node_modules
 dist/
 
 # Runtime data — user state, regenerated at runtime (never source)
