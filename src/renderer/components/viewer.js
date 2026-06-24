@@ -72,6 +72,8 @@ export function createTab(url, title, kind, meta = {}) {
   const wv = createWebviewEl();
   tab.wv = wv;
   wv.addEventListener('did-stop-loading', () => { tab.loaded = true; });
+  // Page-load bar: this is the shown webview when its tab is active and no link is overlaid.
+  wireProgress(wv, () => id === state.activeTabId && !tab.activeLink);
   // Keep the Back button's enabled state in sync as the user navigates within the tab.
   const onNav = () => { if (id === state.activeTabId && !tab.activeLink) updateNavButtons(); };
   wv.addEventListener('did-navigate', onNav);
@@ -148,6 +150,7 @@ function buildLinkWebview(link) {
   const wv = createWebviewEl();
   link.wv = wv;
   wv.addEventListener('did-stop-loading', () => { link.loaded = true; });
+  wireProgress(wv, () => linkShown(link));
   const onNav = () => { if (linkShown(link)) updateNavButtons(); };
   // Persist URL/title via the debounced saver — a chatty SPA fires many nav/title events, and
   // each saveTabs() is a full /api/tabs PUT serializing every tab. Coalesce the bursts.
@@ -169,6 +172,7 @@ function buildLinkEditorPane(link) {
 // PR webview), hiding the rest. Does NOT touch the right split view.
 function paintLeft(tab) {
   if (!tab) return;
+  resetWvProgress();   // the shown webview is changing; drop any in-flight bar (a still-loading view re-emits)
   if (tab.wv) tab.wv.style.display = 'none';
   (tab.links || []).forEach(l => { if (l.wv) l.wv.style.display = 'none'; if (l.ed) l.ed.style.display = 'none'; });
   const link = tab.activeLink ? (tab.links || []).find(l => l.id === tab.activeLink) : null;
@@ -177,10 +181,9 @@ function paintLeft(tab) {
       if (!tab.started) { tab.started = true; tab.wv.setAttribute('src', tab.url); }
       tab.wv.style.display = '';
     }
-    return;
-  }
-  if (!link.url) return;                          // blank tab: address field is in the bar; left stays empty
-  if (link.kind === 'file') {
+  } else if (!link.url) {                         // blank tab: address field is in the bar; left stays empty
+    /* nothing to show */
+  } else if (link.kind === 'file') {
     if (!link.ed) buildLinkEditorPane(link);
     link.ed.style.display = '';
     ensureEditor(link);
@@ -554,6 +557,50 @@ export function splitHome() {
 }
 // Grey out Back when the shown webview has no history to go back to.
 export function updateNavButtons() { const wv = activeLeftWebview(); const b = document.getElementById('split-back'); if (b) { let can = false; try { can = !!(wv && wv.canGoBack()); } catch {} b.disabled = !can; } }
+
+// ── Page-load progress bar (inside the active content tab) ───────────────────────────
+// Safari-style: a thin bar along the bottom of the ACTIVE content-tab chip (.ctab-load,
+// clipped to the pill by .ctab's overflow:hidden). We drive two values on the persistent
+// #ctabs element rather than inline styles on a chip — `--load-frac` (0–1, the width) and the
+// `.loading` class (the fade) — so a chip rebuild on a title change can't wipe the progress;
+// CSS reapplies it to whichever chip is .active. It tracks ONLY the shown webview (wireProgress
+// gates on isShown). The Tauri shim feeds WKWebView estimatedProgress (did-progress); the
+// Electron <webview> has no progress event, so there it just runs start→finish.
+let _wvProgressTimer = null;
+const _ctabsEl = () => document.getElementById('ctabs');
+function setWvProgress(p) {
+  const el = _ctabsEl();
+  if (!el) return;
+  if (_wvProgressTimer) { clearTimeout(_wvProgressTimer); _wvProgressTimer = null; }
+  el.classList.add('loading');
+  el.style.setProperty('--load-frac', String(Math.max(0.02, Math.min(1, p))));
+}
+// Snap to full, fade out, then (once invisible) zero the width so the next load grows from the left.
+function finishWvProgress() {
+  const el = _ctabsEl();
+  if (!el) return;
+  if (_wvProgressTimer) { clearTimeout(_wvProgressTimer); _wvProgressTimer = null; }
+  el.classList.add('loading');
+  el.style.setProperty('--load-frac', '1');
+  _wvProgressTimer = setTimeout(() => {
+    el.classList.remove('loading');
+    _wvProgressTimer = setTimeout(() => el.style.setProperty('--load-frac', '0'), 300);
+  }, 200);
+}
+// Hide immediately, no animation — used when the shown webview changes (tab/link switch).
+function resetWvProgress() {
+  const el = _ctabsEl();
+  if (!el) return;
+  if (_wvProgressTimer) { clearTimeout(_wvProgressTimer); _wvProgressTimer = null; }
+  el.classList.remove('loading');
+  el.style.setProperty('--load-frac', '0');
+}
+// Wire a webview's load events to the progress bar, but only while that webview is the shown one.
+function wireProgress(wv, isShown) {
+  wv.addEventListener('did-start-loading', () => { if (isShown()) setWvProgress(0.08); });
+  wv.addEventListener('did-progress', e => { if (isShown()) setWvProgress(e.progress); });
+  wv.addEventListener('did-stop-loading', () => { if (isShown()) finishWvProgress(); });
+}
 
 // Titles: PR/page title in the webview segment. In split mode the pane's name lives on
 // the active view-switch button (segmented control), so the segment title stays empty;

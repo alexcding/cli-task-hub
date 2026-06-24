@@ -46,7 +46,7 @@ fn read_and_emit(
 
   // SAFETY: runs on the main thread (run_on_main_thread); platform.inner() is the WKWebView backing
   // this webview, valid for the duration of this call. Only reads properties.
-  let (title, url, back, fwd) = unsafe {
+  let (title, url, back, fwd, progress, loading) = unsafe {
     let wk: &WKWebView = &*(platform.inner().cast::<WKWebView>());
     let title = wk.title().map(|s| s.to_string()).unwrap_or_default();
     let url = wk
@@ -54,10 +54,11 @@ fn read_and_emit(
       .and_then(|u| u.absoluteString())
       .map(|s| s.to_string())
       .unwrap_or_default();
-    (title, url, wk.canGoBack(), wk.canGoForward())
+    (title, url, wk.canGoBack(), wk.canGoForward(), wk.estimatedProgress(), wk.isLoading())
   };
 
-  let key = format!("{title}\u{1}{url}\u{1}{back}\u{1}{fwd}");
+  // Progress in the key (2dp) so the bar updates as the page loads (Safari-style estimatedProgress).
+  let key = format!("{title}\u{1}{url}\u{1}{back}\u{1}{fwd}\u{1}{loading}\u{1}{progress:.2}");
   let changed = {
     let mut map = last.lock().unwrap();
     if map.get(label).map(String::as_str) == Some(key.as_str()) {
@@ -73,6 +74,7 @@ fn read_and_emit(
       serde_json::json!({
         "id": label, "type": "did-navigate",
         "title": title, "url": url, "canGoBack": back, "canGoForward": fwd,
+        "progress": progress, "loading": loading,
       }),
     );
   }

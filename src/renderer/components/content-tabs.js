@@ -42,6 +42,7 @@ function defaultChipHtml(t) {
         onclick="setActiveLink(null)" title="${esc(t.url || '')}">
      ${defaultIcon(t)}
      <span class="ctab-title">${esc(t.title || '')}</span>
+     <i class="ctab-load"></i>
    </div>`;
 }
 
@@ -70,6 +71,7 @@ function linkChipHtml(t, l) {
      ${linkIcon(l)}
      <span class="ctab-title">${esc(l.title || l.url || '')}</span>
      ${save}<button class="ctab-btn ctab-x" title="Close tab" onclick="event.stopPropagation();closeLink('${l.id}')">${ICON.close}</button>
+     <i class="ctab-load"></i>
    </div>`;
 }
 

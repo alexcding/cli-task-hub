@@ -98,6 +98,13 @@ body.viewing-tab main { display:none; }
 .tab-x::before { content:''; position:absolute; right:100%; top:0; bottom:0; width:18px; background:linear-gradient(90deg,transparent,var(--surface-hover)); }
 .tab-x svg { width:16px; height:16px; display:block; position:relative; }
 .tab-x:hover { background:var(--surface-hover); color:var(--text); }
+/* Safari-style page-load bar — lives INSIDE the active content tab at its bottom edge. .ctab's
+   overflow:hidden + pill radius clip it to the tab's shape. Progress is driven by two values on the
+   persistent #ctabs element (so a chip rebuild on a title change can't wipe it): --load-frac (0–1)
+   for the width and the .loading class for the fade. Only the active chip ever shows it. */
+.ctab-load { position:absolute; left:0; bottom:0; height:1.5px; width:0; background:var(--accent); opacity:0; transition:width .15s ease, opacity .25s ease; pointer-events:none; }
+.ctab.active .ctab-load { width:calc(var(--load-frac, 0) * 100%); }
+#ctabs.loading .ctab.active .ctab-load { opacity:1; }
 .split-body { flex:1; position:relative; background:var(--bg); }
 .split-body webview, .split-body .wcv-shim { position:absolute; inset:0; width:100%; height:100%; border:0; }
 

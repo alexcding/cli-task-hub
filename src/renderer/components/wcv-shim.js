@@ -29,12 +29,19 @@ export function createWcvShim() {
 
   // Native nav/title events from the Rust WKWebView poll (viewer.rs), re-dispatched as the
   // <webview>-shaped DOM events viewer.js/find.js already listen for.
+  let wasLoading = false;
   const offEvent = wcv.onEvent((e) => {
     if (!e || e.id !== id) return;
     if (typeof e.canGoBack === 'boolean') canBack = e.canGoBack;
     if (typeof e.canGoForward === 'boolean') canFwd = e.canGoForward;
     if (e.url) { el.src = e.url; const ev = new Event('did-navigate'); ev.url = e.url; el.dispatchEvent(ev); }
     if (e.title) { const ev = new Event('page-title-updated'); ev.title = e.title; el.dispatchEvent(ev); }
+    // Loading progress (WKWebView estimatedProgress) → the Safari-style toolbar bar in viewer.js.
+    if (typeof e.progress === 'number') { const ev = new Event('did-progress'); ev.progress = e.progress; el.dispatchEvent(ev); }
+    if (typeof e.loading === 'boolean' && e.loading !== wasLoading) {
+      wasLoading = e.loading;
+      el.dispatchEvent(new Event(e.loading ? 'did-start-loading' : 'did-stop-loading'));
+    }
   });
 
   // Shown ⇔ displayed and laid out (offsetParent null ⇒ this or an ancestor is display:none).
@@ -63,9 +70,8 @@ export function createWcvShim() {
     if (!created) { created = true; wcv.create(id, url); startLoop(); }
     else wcv.navigate(id, url);
     lastKey = '';                                   // force a reposition on the next frame
-    // No native did-stop-loading yet, so synthesize one shortly after load so viewer.js clears
-    // its per-tab loading state (the spinner sits behind the native webview regardless).
-    setTimeout(() => { try { el.dispatchEvent(new Event('did-stop-loading')); } catch {} }, 500);
+    // did-start-loading/did-progress/did-stop-loading now come from the viewer.rs poll
+    // (WKWebView isLoading + estimatedProgress), so no synthetic stop is needed here.
   }
 
   // ── <webview>-compatible surface ──────────────────────────────────────────────
