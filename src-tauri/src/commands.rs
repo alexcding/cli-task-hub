@@ -44,20 +44,29 @@ pub fn close_window(window: WebviewWindow) {
 // relayouts in lockstep with the frame instead of lagging the native zoom animation — see glass for
 // the why. zoom_begin sets up the tween (and toggles maximize vs. restore); zoom_apply steps it once
 // per requestAnimationFrame with eased progress t. No-ops off macOS.
+//
+// Resolve the window via the "main" WEBVIEW (app.get_webview), NOT an injected `WebviewWindow` arg:
+// once a PR/Jira tab is open the window is multiwebview, where WebviewWindow injection fails (same
+// reason get_webview_window returns None — see show_main), which silently rejected these commands so
+// zoom did nothing whenever a tab was open.
 #[tauri::command]
-pub fn zoom_begin(window: WebviewWindow) {
+pub fn zoom_begin(app: tauri::AppHandle) {
   #[cfg(target_os = "macos")]
-  crate::glass::zoom_begin(window);
+  if let Some(w) = app.get_webview("main") {
+    crate::glass::zoom_begin(w.window());
+  }
   #[cfg(not(target_os = "macos"))]
-  let _ = window;
+  let _ = app;
 }
 
 #[tauri::command]
-pub fn zoom_apply(window: WebviewWindow, t: f64) {
+pub fn zoom_apply(app: tauri::AppHandle, t: f64) {
   #[cfg(target_os = "macos")]
-  crate::glass::zoom_apply(window, t);
+  if let Some(w) = app.get_webview("main") {
+    crate::glass::zoom_apply(w.window(), t);
+  }
   #[cfg(not(target_os = "macos"))]
-  let _ = (window, t);
+  let _ = (app, t);
 }
 
 // Native folder picker for choosing a project's workspace folder. Resolves to the chosen

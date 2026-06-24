@@ -18,7 +18,7 @@ use objc2_app_kit::{
 };
 use objc2_foundation::{MainThreadMarker, NSProcessInfo};
 use std::sync::Mutex;
-use tauri::WebviewWindow;
+use tauri::{WebviewWindow, Window};
 
 // macOS major version (26 = Tahoe). NSProcessInfo is available on every macOS we run on.
 pub fn macos_major_version() -> isize {
@@ -91,8 +91,10 @@ static ZOOM: Mutex<Option<Zoom>> = Mutex::new(None);
 
 // AppKit must be touched on the main thread, but Tauri runs commands off it, so hop over via
 // run_on_main_thread (re-fetching the NSWindow there — the raw pointer isn't Send). Called from the
-// always-compiled commands::zoom_* shims (this module is macOS-only).
-fn with_ns_window(window: &WebviewWindow, f: impl FnOnce(&NSWindow) + Send + 'static) {
+// always-compiled commands::zoom_* shims (this module is macOS-only). Takes a Window (not a
+// WebviewWindow): the command resolves it via get_webview("main").window(), which — unlike a
+// WebviewWindow command arg — still works once the window is multiwebview (a PR/Jira tab open).
+fn with_ns_window(window: &Window, f: impl FnOnce(&NSWindow) + Send + 'static) {
   let window = window.clone();
   let _ = window.clone().run_on_main_thread(move || {
     match window.ns_window() {
@@ -114,7 +116,7 @@ fn frame_tuple(ns_window: &NSWindow) -> Frame {
 // Decide direction and capture the tween endpoints. Maximize → save the current frame and target the
 // screen's visible (work-area) frame, which excludes the menu bar + Dock. Restore → tween back to the
 // saved frame and forget it.
-pub fn zoom_begin(window: WebviewWindow) {
+pub fn zoom_begin(window: Window) {
   with_ns_window(&window, |ns_window| {
     let cur = frame_tuple(ns_window);
     let mut saved = SAVED_FRAME.lock().unwrap();
@@ -132,7 +134,7 @@ pub fn zoom_begin(window: WebviewWindow) {
 
 // Tween toward the target by eased progress t (sent per requestAnimationFrame by the renderer). The
 // final frame (t ≥ 1) snaps exactly to the target and clears the tween.
-pub fn zoom_apply(window: WebviewWindow, t: f64) {
+pub fn zoom_apply(window: Window, t: f64) {
   with_ns_window(&window, move |ns_window| {
     let mut zoom = ZOOM.lock().unwrap();
     let Some(z) = zoom.as_ref() else { return };
@@ -142,7 +144,7 @@ pub fn zoom_apply(window: WebviewWindow, t: f64) {
     f.origin.y = lerp(z.from.1, z.to.1);
     f.size.width = lerp(z.from.2, z.to.2);
     f.size.height = lerp(z.from.3, z.to.3);
-    unsafe { ns_window.setFrame_display_animate(f, true, false) };
+    ns_window.setFrame_display_animate(f, true, false);
     if t >= 1.0 {
       *zoom = None;
     }

@@ -103,7 +103,14 @@
   // while clicking a tab still selects/reorders it. Listing .ctabs here would kill dragging across
   // the whole tab-bar strip.
   var NODRAG = 'button,a,input,textarea,select,svg,[role=button],.ctab,.ctab-add,.ctab-input,.split-btn';
-  function inDragBar(t) { return t && t.closest && !t.closest(NODRAG) && t.closest('.topbar, .split-bar, .sidebar-logo'); }
+  function inDragBar(t) {
+    if (!t || !t.closest || !t.closest('.topbar, .split-bar, .sidebar-logo')) return false;
+    // The read-only default content pill (.ctab.default — the PR/Jira page tab) drags/zooms like the
+    // bar itself: it can't be closed, reordered, or renamed, and it fills the middle of the chrome
+    // bar, so leaving it in NODRAG made most of that bar dead to double-click. Other tabs stay excluded.
+    if (t.closest('.ctab.default')) return true;
+    return !t.closest(NODRAG);
+  }
   // Arm a potential window-drag on press, but do NOT start it yet. Calling startDragging() on a
   // stationary mousedown enters the OS drag-tracking loop, which swallows the rest of the click
   // sequence — so the second click of a double-click never arrives and dblclick-to-zoom can never
