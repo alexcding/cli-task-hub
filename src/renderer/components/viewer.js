@@ -17,7 +17,7 @@ import { persistTask } from '../services/tasks.js';
 import { refreshWorkflowBtn } from './workflow.js';
 import { hideDiffPane } from './diff.js';
 import { attachFind, closeFind } from './find.js';
-import { renderContentTabs, playTabIn, playTabOut, markActiveTab } from './content-tabs.js';
+import { renderContentTabs, playTabIn, playTabOut, markActiveTab, defaultChipRect, flipDefaultChip, focusCtabInput } from './content-tabs.js';
 import { ensureEditor, disposeEditor, saveEditor, focusEditor, gotoLine } from './editor.js';
 import { createWcvShim } from './wcv-shim.js';
 
@@ -232,7 +232,8 @@ export function addLink() {
   tab.links.push(link);
   tab.activeLink = link.id;
   paintLeft(tab);            // nothing to show yet — the inline input lives in the bar
-  renderContentTabs();       // renders + focuses the input
+  renderContentTabs();
+  focusCtabInput(link.id);   // focus THIS tab's field (explicitly — render no longer auto-focuses)
   playTabIn(link.id);        // grow the new tab in
 }
 
@@ -264,6 +265,7 @@ export function editLink(id) {
   if (!link) return;
   link.editing = true;
   renderContentTabs();
+  focusCtabInput(id);
 }
 
 // Click an extra tab: focus it if it isn't focused; a click on the ALREADY-focused tab enters
@@ -298,7 +300,7 @@ function commitLinkInput(id, raw) {
   const { tab, link } = linkById(id);
   if (!link) return;
   const v = (raw || '').trim();
-  if (!v) { closeLink(id); return; }
+  if (!v) return;            // nothing entered → keep the tab blank; only a real value commits
   const { kind, value } = classifyInput(v);
   // Tear down any element from a prior value (e.g. re-edited tab whose kind changed).
   disposeLink(link); link.wv = null; link.ed = null;
@@ -310,50 +312,61 @@ function commitLinkInput(id, raw) {
   saveTabs();
 }
 
-// Inline-input key handler: Enter commits, Escape cancels (discards a never-loaded blank tab).
+// Inline-input key handler: Enter is the ONLY thing that commits a tab. Escape just leaves
+// editing (a blank tab stays blank — it's fine to leave empty; only ✕ removes a tab).
 export function ctabInputKey(e, id) {
   if (e.key === 'Enter') { e.preventDefault(); commitLinkInput(id, e.target.value); }
   else if (e.key === 'Escape') { e.preventDefault(); cancelLinkInput(id); }
 }
+// Blur/escape never dismiss a tab — an empty tab is allowed. For a tab that already has a url
+// (re-editing), drop back out of editing; a blank tab is simply left as-is.
 export function ctabInputBlur(id) {
   const { link } = linkById(id);
-  if (!link) return;
-  if (!link.url) closeLink(id);                  // a blank tab abandoned without entering anything
-  else if (link.editing) { link.editing = false; renderContentTabs(true); }
+  if (link?.url && link.editing) { link.editing = false; renderContentTabs(true); }
 }
 function cancelLinkInput(id) {
   const { link } = linkById(id);
-  if (!link) return;
-  if (!link.url) closeLink(id);
-  else { link.editing = false; renderContentTabs(true); }
+  if (link?.url && link.editing) { link.editing = false; renderContentTabs(true); }
 }
 
-// Close one extra tab (shrink it out first); fall back to the default tab if it was active.
+// Close one extra tab. Falls back to the default tab if the closed one was active.
 export function closeLink(id) {
   const tab = activeTab();
   if (!tab || !tab.links) return;
   if (!tab.links.some(l => l.id === id)) return;
-  playTabOut(id, () => {
+  // Closing the LAST extra tab flips the bar multi→single (two half pills → one centered 560
+  // pill). The normal shrink-out would let the survivor grow to fill the whole bar as the
+  // closing tab collapses, THEN snap it down to 560 — a visible grow-then-shrink. So for the
+  // 2→1 case, skip the shrink: snapshot the survivor at its half slot NOW, drop the closing tab
+  // at once, and FLIP the survivor straight to its centered single size in one motion.
+  const toSingle = tab.links.length === 1;
+  const remove = () => {
     const j = tab.links.findIndex(l => l.id === id);
     if (j < 0) return;
+    const prevRect = toSingle ? defaultChipRect() : null;
     disposeLink(tab.links[j]);
     tab.links.splice(j, 1);
     if (tab.activeLink === id) { tab.activeLink = null; paintLeft(tab); updateNavButtons(); }
     renderContentTabs(true);
+    if (prevRect) flipDefaultChip(prevRect);
     saveTabs();
-  });
+  };
+  if (toSingle) remove();          // morph the survivor directly; no grow phase
+  else playTabOut(id, remove);     // 3+→2+: shrink it out, siblings reflow to fill (no mode flip)
 }
 
 // "Close other tabs" — drop every extra tab, keep the default. The default can't be closed.
 export function closeOtherLinks() {
   const tab = activeTab();
   if (!tab || !tab.links?.length) return;
+  const prevRect = defaultChipRect();
   tab.links.forEach(disposeLink);
   tab.links = [];
   tab.activeLink = null;
   paintLeft(tab);
   updateNavButtons();
-  renderContentTabs();
+  renderContentTabs(true);
+  flipDefaultChip(prevRect);
   saveTabs();
 }
 

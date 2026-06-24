@@ -48,14 +48,12 @@ function defaultChipHtml(t) {
 
 function linkChipHtml(t, l) {
   const active = t.activeLink === l.id;
-  // A blank (just-added) or being-edited tab is an inline address field — Safari compact:
-  // a magnifier glyph + the field, with a blue focus ring (see .ctab.editing CSS).
+  // A blank (just-added) or being-edited tab is a bare inline address field — just the outlined
+  // pill (the blue focus ring from .ctab.editing) and the input. No magnifier glyph, no placeholder.
   if (l.editing || !l.url) {
-    const magnifier = `<span class="ctab-ic">${ICON.search}</span>`;
-    return `<div class="ctab editing active" data-id="${l.id}">
-       ${magnifier}
+    return `<div class="ctab editing ${active ? 'active' : ''}" data-id="${l.id}">
        <input class="ctab-input" type="text" spellcheck="false" autocomplete="off"
-              placeholder="Search or enter a URL or file path" value="${esc(l.url || '')}"
+              value="${esc(l.url || '')}"
               onkeydown="ctabInputKey(event,'${l.id}')" onblur="ctabInputBlur('${l.id}')">
        <button class="ctab-btn ctab-x" title="Close tab" onmousedown="event.preventDefault()"
                onclick="event.stopPropagation();closeLink('${l.id}')">${ICON.close}</button>
@@ -95,10 +93,16 @@ export function renderContentTabs(force = false) {
   if (el._lastHtml !== html) {
     el.innerHTML = html;
     el._lastHtml = html;
-    // Focus a freshly-rendered inline input (a just-added / being-edited tab).
-    const input = el.querySelector('.ctab.editing .ctab-input');
-    if (input && document.activeElement !== input) input.focus();
   }
+}
+
+// Focus (+ select) a specific tab's inline address field — called EXPLICITLY when a tab is added
+// or re-entered for editing. renderContentTabs no longer auto-focuses: now that blank tabs persist,
+// a blanket focus-on-render grabbed the lingering field on every incidental rebuild (a sibling
+// tab's title/favicon landing), so focus kept jumping to the newest blank tab.
+export function focusCtabInput(id) {
+  const input = document.querySelector(`#ctabs .ctab[data-id="${id}"] .ctab-input`);
+  if (input && document.activeElement !== input) { input.focus(); input.select(); }
 }
 
 // Switch the active chip WITHOUT a full rebuild — just move the .active class on the existing
@@ -125,11 +129,47 @@ export function playTabIn(id) {
 // missed animationend so the tab always closes.
 export function playTabOut(id, done) {
   const el = document.querySelector(`#ctabs .ctab[data-id="${id}"]`);
-  if (!el) { done(); return; }
+  // No element, or reduced motion (the close animation is suppressed, so animationend never
+  // fires and we'd wait out the timeout for nothing) → remove immediately.
+  if (!el || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) { done(); return; }
   let called = false;
   const fin = () => { if (called) return; called = true; done(); };
   el.classList.add('ctab-closing');
   el.addEventListener('animationend', fin, { once: true });
   setTimeout(fin, 290);
+}
+
+// Snapshot the default chip's screen rect — call BEFORE a rebuild that may flip the bar into
+// (or out of) single mode, then pass the result to flipDefaultChip() AFTER the rebuild.
+export function defaultChipRect() {
+  return document.querySelector('#ctabs .ctab.default')?.getBoundingClientRect() || null;
+}
+
+// FLIP the default chip from a prior rect to its new resting place. Closing the last extra tab
+// switches the bar from multi (each pill fills, left-aligned) to single (one wide pill, centered)
+// — two different flex layouts on a freshly-rebuilt element, which otherwise snaps. We morph it:
+// flex-basis carries the WIDTH (real layout, so the pill/text never distort) and a translateX
+// carries the POSITION shift. Both are visual-only — no surrounding layout moves. Reversible:
+// works for single→multi too (e.g. when re-rendered with a new sibling).
+export function flipDefaultChip(prev) {
+  const el = document.querySelector('#ctabs .ctab.default');
+  if (!el || !prev) return;
+  if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+  // Bail if the chip didn't actually move/resize — measure its NATURAL (post-rebuild) rect and
+  // compare to the prior one. (Must read this BEFORE pinning flexBasis, which would force the
+  // width to prev.width and make any width comparison trivially true.)
+  const now = el.getBoundingClientRect();
+  if (Math.abs(prev.left - now.left) < 0.5 && Math.abs(prev.width - now.width) < 0.5) return;
+  el.style.flexBasis = prev.width + 'px';          // First: pin the old width
+  const mid = el.getBoundingClientRect();          //   …and read where that width now sits
+  const dx = prev.left - mid.left;                 //   …then offset back to the old position
+  el.style.transform = `translateX(${dx}px)`;
+  el.getBoundingClientRect();                       // flush the inverted state before transitioning
+  el.style.transition = 'transform .26s cubic-bezier(.32,.72,0,1), flex-basis .26s cubic-bezier(.32,.72,0,1)';
+  el.style.flexBasis = '';                          // Play: settle width back to its CSS size…
+  el.style.transform = 'none';                      //   …and position back to natural
+  const cleanup = () => { el.style.transition = ''; el.style.transform = ''; el.style.flexBasis = ''; };
+  el.addEventListener('transitionend', cleanup, { once: true });
+  setTimeout(cleanup, 340);
 }
 

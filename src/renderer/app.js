@@ -280,6 +280,26 @@ split.initPrDivider();
 initSidebarResize();
 terminal.initTerminals();
 connectStream();
+initWindowFocus();
+
+// Reflect real OS window focus on <body> so the chrome can desaturate when the app isn't
+// frontmost (the native macOS inactive-window look). Tauri's window events are authoritative:
+// they fire only when the WINDOW gains/loses focus, NOT when focus moves into an embedded PR
+// webview — raw `window.blur` can't tell those apart and would dim the chrome on every click
+// into a PR. Off Tauri (plain-browser dev) fall back to window focus/blur. Downstream this only
+// drives COLOR changes (css/viewer.css `body.win-inactive`) — no layout ever shifts.
+function initWindowFocus() {
+  const set = active => document.body.classList.toggle('win-inactive', !active);
+  const ev = window.__TAURI__?.event;
+  if (ev?.listen) {
+    ev.listen('tauri://focus', () => set(true));
+    ev.listen('tauri://blur', () => set(false));
+  } else {
+    window.addEventListener('focus', () => set(true));
+    window.addEventListener('blur', () => set(false));
+  }
+  set(document.hasFocus()); // seed from the current state
+}
 
 // Restore saved web tabs first, then reattach live paired PTYs to matching tabs.
 // The state.tabsReady guard in saveTabs() means a tab opened from the tray before this
