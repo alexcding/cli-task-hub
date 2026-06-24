@@ -70,9 +70,9 @@ treats as a **remote** origin and denies IPC by default. Granted via:
   opener) from Rust, so the renderer never depends on plugin JS globals.
 
 Ported now: `platform`, `setTheme`, `closeWindow`, `chooseFolder`, `openPath`, `openExternal`,
-`openInGitClient`, `previewSound`. Stubbed in `bridge.js` until their milestone: `term.*` (M4),
-`tabMenu`/`folderMenu`/`refreshTray` (M5), `wcv.*` (M6), `getUsage` (M7), `fetchAvatar`,
-`pathForFile` (M4).
+`openInGitClient`, `previewSound`. `tabMenu`/`folderMenu` run via a JS popup in `bridge.js`
+(functional, not native AppKit); `refreshTray` → `refresh_tray` → `tray::refresh`. Still stubbed in
+`bridge.js` until their milestone: `pathForFile` (M4 follow-up — returns `''`).
 
 ⚠️ **Runtime check still owed:** that a remote-origin `invoke` actually reaches a custom app
 command (compiles clean, but only `tauri dev` + a real bridge call confirms the capability is
@@ -125,10 +125,15 @@ pasting a Finder-copied *file* still can't resolve a path (WKWebView has no `Fil
 **M5 — Tray + plugins** (`lib.rs`): a menu-bar tray (Open TaskHub / Quit) with the **quit-only-from-
 tray** invariant preserved — a window close hides the window (`CloseRequested` → `prevent_close` +
 `hide`) and only the tray's Quit sets `QUITTING`, kills terminals, and exits; macOS Dock-reopen shows
-the window again. `tauri-plugin-notification` and `tauri-plugin-updater` are initialized. *Deferred:*
-the dynamic tray body (open tabs / pending reviews), the custom mono/template tray icon, the native
-`tabMenu`/`folderMenu` context menus (still stubbed → no-op right-click), SSE-driven review
-notifications (needs an SSE client + focus check in Rust), and updater endpoints/signing config.
+the window again. `tauri-plugin-notification` and `tauri-plugin-updater` are initialized. The dynamic
+tray body (open-tabs list + PR rows with avatars/CI dots + usage panel) is built; `tabMenu`/`folderMenu`
+run via a JS popup; renderer-initiated refreshes go through `refresh_tray` → `tray::refresh`; SSE-driven
+review + activity notifications are wired (`notify.rs` `curl -N` stream + focus check), including
+**click-to-open** — a body-click opens the PR in a tab (or the Activity page), via
+`mac-notification-sys` `Notification::wait_for_click` (the plugin fire-and-forgets its handle and
+never sets wait_for_click, so notifications go through mac-notification-sys directly — the same crate
+the plugin pulls transitively, not a second system). *Deferred:* the custom mono/template
+tray icon, native AppKit (vs JS popup) tab/folder menus, and updater endpoints/signing config.
 
 **M7 — Usage** (`commands.rs get_usage`): RAM + CPU for the host process via `sysinfo` (two samples a
 short interval apart for CPU), shape `{ totalKb, totalCpu, breakdown }` for the Settings readout.

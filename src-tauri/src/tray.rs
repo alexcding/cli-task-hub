@@ -167,13 +167,14 @@ struct Settings {
 }
 
 // What a clicked menu item does: open `url` as a tab; if `viewed` is set, also POST it acknowledged.
+// pub(crate) so notify.rs can reuse open_action for notification-click → open-PR.
 #[derive(Clone)]
-struct Action {
-  url: String,
-  title: String,
-  kind: String,
-  group: String,
-  viewed: Option<(String, i64)>, // (repo, number) for /api/prs/viewed
+pub(crate) struct Action {
+  pub(crate) url: String,
+  pub(crate) title: String,
+  pub(crate) kind: String,
+  pub(crate) group: String,
+  pub(crate) viewed: Option<(String, i64)>, // (repo, number) for /api/prs/viewed
 }
 
 #[derive(Default)]
@@ -341,7 +342,7 @@ fn build_menu(app: &AppHandle, tabs: &[Tab], prs: &[Pr], usage: &Usage, settings
   b.build()
 }
 
-fn open_action(app: &AppHandle, a: &Action) {
+pub(crate) fn open_action(app: &AppHandle, a: &Action) {
   crate::show_main(app);
   if let Some(w) = app.get_webview("main") {
     let js = format!(
@@ -404,7 +405,11 @@ fn detect_review_changes(app: &AppHandle, prs: &[Pr], sound: Option<&str>) {
 
   if crate::notify::REVIEW_SEEDED.load(Ordering::SeqCst) && !fresh.is_empty() {
     for p in &fresh {
-      crate::notify::notify_native(app, "Review requested", &format!("PR #{} {}", p.number, p.title));
+      let full = format!("PR #{} {}", p.number, p.title);
+      // Clicking opens the PR in a tab (matches Electron's notifyReviewRequested). `pending` is
+      // pre-filtered to category=="review", so the tab lands in the Review group.
+      let click = crate::notify::NotifyClick::OpenTab { url: p.url.clone(), title: full.clone(), category: "review".to_string() };
+      crate::notify::notify_native(app, "Review requested", &full, Some(click));
     }
     crate::notify::play_review_sound(sound); // one sound per cycle, even if several arrive at once
   }

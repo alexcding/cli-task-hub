@@ -15,7 +15,6 @@ use std::time::Duration;
 
 use serde_json::Value;
 use tauri::{AppHandle, Manager};
-use tauri_plugin_notification::NotificationExt;
 
 // activityNotify == 'off' — mirrored from /api/settings on each tray refresh (defaults on/false).
 pub static ACTIVITY_OFF: AtomicBool = AtomicBool::new(false);
@@ -26,10 +25,58 @@ pub static REVIEW_SEEDED: AtomicBool = AtomicBool::new(false);
 // currently-pending reviews don't re-alert on restart (the menu still lists them — server-driven).
 pub static NOTIFIED_AT: LazyLock<Mutex<HashMap<String, String>>> = LazyLock::new(|| Mutex::new(HashMap::new()));
 
-// A native macOS notification (title + body). Clicking activates the app (default OS behavior);
-// per-notification click routing isn't wired (minor vs the Electron build's open-this-PR click).
-pub fn notify_native(app: &AppHandle, title: &str, body: &str) {
-  let _ = app.notification().builder().title(title).body(body).show();
+// What a notification body-click should do — the port of notifications.js's click handlers
+// (openLinkInApp for a PR url, else showPage('activity')).
+#[derive(Clone)]
+pub enum NotifyClick {
+  // Open `url` in the embedded viewer (window.__openTab). `category` lands the restored tab in the
+  // right sidebar group ('review' for review requests, '' for activity — backfilled on a dashboard visit).
+  OpenTab { url: String, title: String, category: String },
+  ShowActivity,
+}
+
+// A native macOS notification (title + body) with an optional body-click action. We use
+// mac-notification-sys directly (not tauri-plugin-notification) because the plugin fire-and-forgets
+// its handle and never sets wait_for_click, so it can't deliver a body-click — see Cargo.toml. It's
+// the same crate the plugin pulls in. `wait_for_click(true)` makes `send()` block this thread until
+// the user clicks or dismisses (the NSUserNotification delegate fires on the main thread, which Tauri
+// pumps), so it runs on its own thread; a click is dispatched back to the main thread to open the tab.
+#[cfg(target_os = "macos")]
+pub fn notify_native(app: &AppHandle, title: &str, body: &str, click: Option<NotifyClick>) {
+  let (app, title, body) = (app.clone(), title.to_string(), body.to_string());
+  let ident = app.config().identifier.clone();
+  std::thread::spawn(move || {
+    // Attribute to Terminal in dev (the host process), to our bundle in prod. set_application is a
+    // process-wide Once; calling it per notification is a cheap no-op after the first.
+    let _ = mac_notification_sys::set_application(if tauri::is_dev() { "com.apple.Terminal" } else { &ident });
+    let mut n = mac_notification_sys::Notification::new();
+    n.title(&title).message(&body).wait_for_click(true);
+    if let Ok(mac_notification_sys::NotificationResponse::Click) = n.send() {
+      if let Some(c) = click {
+        route_click(&app, c);
+      }
+    }
+  });
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn notify_native(_app: &AppHandle, _title: &str, _body: &str, _click: Option<NotifyClick>) {}
+
+// Show + focus the window, then drive the renderer (open a tab / go to Activity) on the main thread.
+// OpenTab reuses the tray's open_action so the window.__openTab contract has one implementation.
+fn route_click(app: &AppHandle, click: NotifyClick) {
+  let app2 = app.clone();
+  let _ = app.run_on_main_thread(move || match click {
+    NotifyClick::OpenTab { url, title, category } => {
+      crate::tray::open_action(&app2, &crate::tray::Action { url, title, kind: "github".into(), group: category, viewed: None });
+    }
+    NotifyClick::ShowActivity => {
+      crate::show_main(&app2);
+      if let Some(w) = app2.get_webview("main") {
+        let _ = w.eval("window.showPage&&window.showPage('activity')");
+      }
+    }
+  });
 }
 
 // The reviewSound setting → a sound file: an absolute path, or the macOS Glass chime for null/'system'.
@@ -102,8 +149,13 @@ fn maybe_notify_activity(app: &AppHandle, ev: &Value) {
       let _ = w.eval(&format!("window.__activityToast&&window.__activityToast({})", ev));
     }
   } else {
-    let (title, body, _url) = activity_message(ev);
-    notify_native(app, &title, &body);
+    let (title, body, url) = activity_message(ev);
+    // Matches notifications.js: a PR url opens the PR in a tab; otherwise the click opens Activity.
+    let click = match url {
+      Some(u) => NotifyClick::OpenTab { url: u, title: title.clone(), category: String::new() },
+      None => NotifyClick::ShowActivity,
+    };
+    notify_native(app, &title, &body, Some(click));
   }
 }
 

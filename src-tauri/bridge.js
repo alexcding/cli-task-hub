@@ -161,8 +161,10 @@
     openInGitClient: function (cmd, path) { return invoke('open_in_git_client', { cmd: cmd, path: path }); },
     closeWindow: function () { return invoke('close_window'); },
 
-    // ── Not yet ported — stubbed so the data UI runs; see docs/TAURI-PORT.md milestones ──
-    refreshTray: noop,                                    // M5 — dynamic tray body deferred
+    // Rebuild the tray now (refresh_tray → tray::refresh) — the renderer fires this after the
+    // usage-agent toggle and review-sound / activity-notify settings, none of which move the PR
+    // snapshot, so the tray's own SSE-sync refresh wouldn't otherwise pick them up.
+    refreshTray: function () { return invoke('refresh_tray'); },
 
     // Tab right-click: open/copy handled here (matches Electron, where main did them); only
     // 'close' (or null) is returned for the renderer to act on.
@@ -219,12 +221,17 @@
           });
           wv.once('tauri://error', function (e) { console.warn('[wcv] create error', id, e); });
           views[id] = { wv: wv, rect: null };
-          // Record the hovered link on right-click so the native "Open Link in New Tab" menu item
-          // (webview_menu.rs) can read it back via evaluateJavaScript. Injected once the webview is
-          // created; persists across the embedded page's (SPA/Turbo) navigations.
+          // Injected once the webview is created; persists across the embedded page's (SPA/Turbo)
+          // navigations (the document survives, so the listener + style stay). Two things:
+          //  1. Record the hovered link/image on right-click so the native "Open Link in New Tab"
+          //     menu item (webview_menu.rs) can read it back via evaluateJavaScript.
+          //  2. Hide GitHub's own Turbo (pjax) progress bar — its blue top-of-page loading line is
+          //     redundant with our in-tab progress bar and reads as a stray loader under the tabs.
+          //     The <style> goes on documentElement (outside <head>/<body>) so Turbo's head/body
+          //     swap doesn't strip it.
           wv.once('tauri://created', function () {
             setTimeout(function () {
-              invoke('wcv_eval', { id: id, js: "if(!window.__thInstalled){window.__thInstalled=1;document.addEventListener('contextmenu',function(e){var t=e.target;var a=t&&t.closest&&t.closest('a');window.__thLink=(a&&a.href)||'';window.__thImg=(t&&t.tagName==='IMG'&&t.src)||'';},true);}" });
+              invoke('wcv_eval', { id: id, js: "if(!window.__thInstalled){window.__thInstalled=1;document.addEventListener('contextmenu',function(e){var t=e.target;var a=t&&t.closest&&t.closest('a');window.__thLink=(a&&a.href)||'';window.__thImg=(t&&t.tagName==='IMG'&&t.src)||'';},true);var s=document.createElement('style');s.textContent='.turbo-progress-bar{display:none!important}';document.documentElement.appendChild(s);}" });
             }, 300);
           });
         } catch (e) { console.warn('[wcv] create failed', e); }
@@ -265,8 +272,15 @@
         delete views[id];
         setTimeout(function () { try { rec.wv.close(); } catch (e) {} }, 80);
       }
-      // JS Webview has no navigate(url) — recreate at the same id; the shim re-pushes bounds next frame.
-      function navigate(id, url) { destroy(id); create(id, url); }
+      // Re-navigate an existing webview IN PLACE via location.assign() (a real top-level navigation),
+      // falling back to create() only when it doesn't exist yet. The old destroy()+create() raced:
+      // destroy() defers wv.close() ~80ms, so create() ran against a still-live label → Tauri's
+      // duplicate-label error → blank/stuck page (the Home button hit this every time).
+      function navigate(id, url) {
+        if (!url) return;
+        if (views[id]) evalIn(id, 'location.assign(' + JSON.stringify(url) + ')');
+        else create(id, url);
+      }
 
       // Back/forward/stop/find/reload — driven by injecting JS into the child webview (history.back(),
       // window.find(), location.reload()) rather than native objc2. The JS Webview has no reload()/

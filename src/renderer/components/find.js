@@ -50,6 +50,7 @@ export function openFind() {
   const b = bar();
   if (!b) return;
   b.hidden = false;
+  document.body.classList.add('find-open'); // trims the webview's bottom so the bar isn't covered
   const i = input();
   i.focus();
   i.select();                          // re-opening selects the prior query for quick replace
@@ -63,6 +64,7 @@ export function openFind() {
 export function closeFind(returnFocus = false) {
   const b = bar();
   if (b) b.hidden = true;
+  document.body.classList.remove('find-open'); // restore the webview's full height
   const wv = targetWv();
   try { wv?.stopFindInPage('clearSelection'); } catch {}
   if (returnFocus) { try { wv?.focus(); } catch {} }

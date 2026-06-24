@@ -4,7 +4,7 @@
    Electron <webview> (the main process strips X-Frame-Options/CSP so framing is
    allowed). Open links live as tabs in the left nav; activating one shows it here,
    replacing <main>. */
-.split { position:relative; min-width:0; min-height:0; height:100vh; flex:1; background:var(--surface); display:flex; flex-direction:column; --foot-h:46px; }
+.split { position:relative; min-width:0; min-height:0; height:100vh; flex:1; background:var(--surface); display:flex; flex-direction:column; --foot-h:46px; --find-h:var(--foot-h); }
 .split[hidden] { display:none; }
 /* The toolbar is two segments — webview controls + terminal controls — that mirror
    the panes below: in split mode the divide sits at the same --pr-split boundary. */
@@ -425,12 +425,19 @@ body.pr-split .split-body .history-pane { left:var(--pr-split, 60%); }
    doesn't swallow the mouse and the resize tracks reliably. */
 body.resizing .split-body webview { pointer-events:none; }
 
-/* Find-in-page bar — floats top-right over the webview, browser-style (see find.js). */
-/* Docked full-width bar at the foot of the split (flow child of #split, after #split-body), so the
-   native embedded webview can't paint over it — split-body shrinks and the webview moves up. */
-.find-bar { flex-shrink:0; display:flex; align-items:center; gap:2px; padding:6px 10px;
+/* Find-in-page bar (see find.js). It can't live inside #split-body — the native embedded WKWebView
+   composites over that pane and would paint over it. So it's an absolute bar pinned to the bottom of
+   #split (out of the column flow, so it does NOT shrink #split-body / push the terminal's foot up);
+   instead body.find-open shrinks ONLY the webview's bottom by --find-h to clear room for it. */
+.find-bar { position:absolute; left:0; bottom:0; width:100%; height:var(--find-h); box-sizing:border-box;
+  z-index:30; display:flex; align-items:center; gap:2px; padding:6px 10px;
   background:var(--surface); border-top:1px solid var(--border); }
 .find-bar[hidden] { display:none; }
+/* In PR-split mode the bar spans only the webview (left, --pr-split) pane, not the terminal/diff. */
+body.pr-split .find-bar { width: var(--pr-split, 60%); }
+/* Make room for the bar by trimming the webview's bottom — the terminal/diff pane (a separate
+   absolutely-positioned element) is untouched, so its foot stays put. */
+body.find-open .split-body webview, body.find-open .split-body .wcv-shim { bottom: var(--find-h); height: auto; }
 .find-bar .find-ic { display:flex; color:var(--text-3); margin:0 2px 0 4px; }
 .find-bar input { flex:1; min-width:0; border:none; background:none; color:var(--text); font-size:13px; padding:4px 2px; outline:none; }
 .find-bar input::placeholder { color:var(--text-3); }

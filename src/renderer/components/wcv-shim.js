@@ -36,12 +36,17 @@ export function createWcvShim() {
     if (typeof e.canGoForward === 'boolean') canFwd = e.canGoForward;
     if (e.url) { el.src = e.url; const ev = new Event('did-navigate'); ev.url = e.url; el.dispatchEvent(ev); }
     if (e.title) { const ev = new Event('page-title-updated'); ev.title = e.title; el.dispatchEvent(ev); }
-    // Loading progress (WKWebView estimatedProgress) → the Safari-style toolbar bar in viewer.js.
-    if (typeof e.progress === 'number') { const ev = new Event('did-progress'); ev.progress = e.progress; el.dispatchEvent(ev); }
+    // Emit the loading transition BEFORE progress so a start sets the loading flag before the first
+    // progress tick, and a stop clears it before any trailing tick.
     if (typeof e.loading === 'boolean' && e.loading !== wasLoading) {
       wasLoading = e.loading;
       el.dispatchEvent(new Event(e.loading ? 'did-start-loading' : 'did-stop-loading'));
     }
+    // Progress (WKWebView estimatedProgress) → the Safari-style toolbar bar — but ONLY while loading.
+    // estimatedProgress stays at 1.0 after a load, so a later poll tick (e.g. a title change) would
+    // otherwise re-fire did-progress(1.0) and re-show the bar; and GitHub's Turbo (pjax) link nav
+    // changes URL/progress without ever setting isLoading, which must not show the bar at all.
+    if (typeof e.progress === 'number' && wasLoading) { const ev = new Event('did-progress'); ev.progress = e.progress; el.dispatchEvent(ev); }
   });
 
   // Shown ⇔ displayed and laid out (offsetParent null ⇒ this or an ancestor is display:none).

@@ -42,6 +42,11 @@ png = "0.18.1"
 # macOS-only: read WKWebView title/URL/nav-state from the embedded viewer (typed objc2 bindings,
 # versions matched to what Tauri/wry already pull). Used by viewer.rs.
 [target.'cfg(target_os = "macos")'.dependencies]
+# Notifications go through this directly (not tauri-plugin-notification) because the plugin
+# fire-and-forgets the handle and never sets wait_for_click, so it can't deliver a body-click.
+# This is the same crate the plugin pulls transitively (cargo unifies to one copy), so it's not a
+# second notification system — just the layer with the click API the plugin doesn't expose.
+mac-notification-sys = "0.6"
 objc2 = "0.6"
 objc2-foundation = "0.3"
 objc2-web-kit = "0.3"
