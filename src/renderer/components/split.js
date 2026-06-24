@@ -6,7 +6,7 @@
 import { ROUTES } from '/shared/routes.mjs';
 import { state, activeTab, projectByRepo, projectByPrUrl, projectByJiraKey } from '../stores/store.js';
 import { api, apiJson } from '../services/api.js';
-import { jiraKeyFromUrl, canSplitTerminal } from '../lib/util.js';
+import { jiraKeyFromUrl, canSplitTerminal, errMsg } from '../lib/util.js';
 import { toastErr } from './toast.js';
 import { createTermView, disposeTerm, fitTerm, visibleTerm } from './terminal.js';
 import { hideDiffPane } from './diff.js';
@@ -107,7 +107,7 @@ export function ensurePrTerminal(tab, cwd0) {
     }
     return tab.termId;
   })()
-    .catch(e => toastErr('Terminal failed: ' + e.message))
+    .catch(e => { console.error('[term] create failed', e); toastErr('Terminal failed: ' + errMsg(e)); })
     .finally(() => { tab._termPromise = null; });
   return tab._termPromise;
 }

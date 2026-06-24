@@ -309,3 +309,20 @@ loadPersistedTasks().then(() => { if (document.querySelector('.page.active')?.id
   populateFontMenus(); // fill the font pickers from this machine's installed fonts (replaces the static fallback)
   loadDashboard(); // renderProjectNav is called inside loadDashboard
 })();
+
+// Drop the boot splash once the chrome has actually painted (rAF×2 = after layout + paint), so the
+// opaque cover hides the transparent-glass launch gap and not a beat longer. The timeout backstops a
+// slow/failed boot so we can never strand the app behind the spinner.
+function hideBootSplash() {
+  const el = document.getElementById('boot-splash');
+  if (!el || el.classList.contains('hide')) return;
+  el.classList.add('hide');
+  // transitionend is the normal removal path; the timeout (> the .25s opacity transition) is a hard
+  // backstop so a dropped/zeroed transition can't strand the invisible overlay in the DOM. remove()
+  // is idempotent, so whichever fires first wins and the other is a no-op.
+  const done = () => el.remove();
+  el.addEventListener('transitionend', done, { once: true });
+  setTimeout(done, 400);
+}
+requestAnimationFrame(() => requestAnimationFrame(hideBootSplash));
+setTimeout(hideBootSplash, 5000);

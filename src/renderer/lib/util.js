@@ -11,6 +11,15 @@ export const escJs = s => esc(String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\
 // Promise that resolves after `ms` — a tiny shared sleep for sequenced UI/terminal steps.
 export const delay = ms => new Promise(r => setTimeout(r, ms));
 
+// Human-readable text for anything thrown/rejected. Tauri commands reject with a plain
+// String (their Result<_, String> Err), which has no `.message` — naively concatenating
+// `e.message` printed "undefined" and swallowed the real Rust error. Prefer the string
+// itself, then an Error's message, then a JSON/toString fallback.
+export const errMsg = e =>
+  typeof e === 'string' ? e
+    : e?.message ? e.message
+    : (() => { try { return JSON.stringify(e); } catch { return String(e); } })();
+
 // Jira ticket link. Base is auto-detected from acli (or a settings override),
 // loaded once at startup into state.jiraBase — never hardcoded.
 export const jiraUrl = key => state.jiraBase ? `${state.jiraBase}/browse/${key}` : '#';

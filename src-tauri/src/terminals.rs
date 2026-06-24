@@ -119,6 +119,13 @@ pub fn term_create(
     Some(ref c) if !c.is_empty() => c.clone(),
     _ => fallback_dir(&app),
   };
+  // Spawning a shell with a non-existent cwd fails deep in portable_pty as a cryptic
+  // "No such file or directory (os error 2)" with no hint which path is missing. Catch it
+  // here so the renderer toast names the directory — usually a worktree that wasn't created
+  // (or was pruned) before we tried to open its terminal.
+  if !std::path::Path::new(&dir).is_dir() {
+    return Err(format!("working directory does not exist: {dir}"));
+  }
   let shell_path = opts
     .shell
     .clone()
@@ -142,7 +149,10 @@ pub fn term_create(
   // TASKHUB_RUN_ID lets an installed Claude/Codex hook ping back tagged with THIS terminal's id.
   cmd.env("TASKHUB_RUN_ID", &id);
 
-  let child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
+  let child = pair
+    .slave
+    .spawn_command(cmd)
+    .map_err(|e| format!("failed to start shell {shell_path} in {dir}: {e}"))?;
   let mut reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
   let writer = pair.master.take_writer().map_err(|e| e.to_string())?;
 

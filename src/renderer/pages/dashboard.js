@@ -26,6 +26,13 @@ export async function loadDashboard() {
   rememberStatuses(sprintSnap.items);
   renderProjectNav(groups);
 
+  // New-project entry point: a [+] in the top-right action bar whenever projects exist (the empty
+  // state below carries its own "New project" button for the zero case). Replaces the old
+  // sidebar-header "+". showPage() clears #topbar-actions on every nav, so this is dashboard-only.
+  document.getElementById('topbar-actions').innerHTML = groups.length
+    ? `<button class="nav-add" title="New project" onclick="openNewProjectModal()">${ICON.plusBox}</button>`
+    : '';
+
   // Flatten open PRs across all projects.
   const openPRs = groups.flatMap(g => (g.prs||[]).filter(p => !p.error && p.state==='OPEN'));
   const mine    = openPRs.filter(p => p.category === PR_CATEGORY.MINE);

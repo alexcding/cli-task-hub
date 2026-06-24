@@ -104,14 +104,56 @@
   // the whole tab-bar strip.
   var NODRAG = 'button,a,input,textarea,select,svg,[role=button],.ctab,.ctab-add,.ctab-input,.split-btn';
   function inDragBar(t) { return t && t.closest && !t.closest(NODRAG) && t.closest('.topbar, .split-bar, .sidebar-logo'); }
+  // Arm a potential window-drag on press, but do NOT start it yet. Calling startDragging() on a
+  // stationary mousedown enters the OS drag-tracking loop, which swallows the rest of the click
+  // sequence — so the second click of a double-click never arrives and dblclick-to-zoom can never
+  // fire. Instead we only startDragging once the pointer actually MOVES (mousemove below); a
+  // stationary single/double click then reaches the dblclick handler normally.
+  var dragArmed = false, downX = 0, downY = 0;
   window.addEventListener('mousedown', function (e) {
-    if (e.button !== 0 || !inDragBar(e.target)) return;
+    dragArmed = e.button === 0 && !!inDragBar(e.target);
+    downX = e.screenX; downY = e.screenY;
+  }, true);
+  window.addEventListener('mousemove', function (e) {
+    if (!dragArmed) return;
+    // Only begin the native drag once the pointer has actually moved a few px. Starting it on the
+    // first pixel meant the tiny hand-jitter between the two clicks of a double-click fired this,
+    // opened the OS drag loop, and swallowed the dblclick — so double-click-to-zoom only worked if
+    // you held perfectly still. The threshold leaves a stationary-ish double-click for the dblclick
+    // handler while a real drag (movement past the threshold) still starts immediately.
+    if (Math.abs(e.screenX - downX) < 4 && Math.abs(e.screenY - downY) < 4) return;
+    dragArmed = false;
     try {
       var r = window.__TAURI__.window.getCurrentWindow().startDragging();
       if (r && r.catch) r.catch(function (err) { console.warn('[drag] startDragging rejected', err); });
     } catch (err) { console.warn('[drag] startDragging threw', err); }
   }, true);
-  // (No double-click-to-maximize on the top band — not wanted here.)
+  window.addEventListener('mouseup', function () { dragArmed = false; }, true);
+  // Double-click the top band (title area, empty toolbar, tab strip) zooms/restores the window, like
+  // a native title bar — but WE clock the animation here with requestAnimationFrame instead of using
+  // the native zoom. Native zoom animates the frame on AppKit's clock, which the WKWebView can't
+  // relayout fast enough to track (the window outruns the view). By stepping the frame ourselves one
+  // rAF at a time (zoom_begin sets up the tween; zoom_apply tweens to eased t), the view lays out for
+  // each step before we ask for the next — they stay in lockstep, exactly like a drag-resize.
+  var zooming = false;
+  function animateZoom() {
+    if (zooming) return;
+    zooming = true;
+    Promise.resolve(invoke('zoom_begin')).then(function () {
+      var start = performance.now(), dur = 240; // ~native zoom duration
+      (function frame(now) {
+        var t = Math.min(1, (now - start) / dur);
+        var eased = 1 - Math.pow(1 - t, 3); // easeOutCubic
+        invoke('zoom_apply', { t: t >= 1 ? 1 : eased });
+        if (t < 1) requestAnimationFrame(frame);
+        else zooming = false;
+      })(start);
+    }).catch(function (err) { console.warn('[zoom] failed', err); zooming = false; });
+  }
+  window.addEventListener('dblclick', function (e) {
+    if (!inDragBar(e.target)) return;
+    animateZoom();
+  }, true);
 
   // Native macOS context menu (muda via window.__TAURI__.menu). Same contract as the old DOM menu —
   // resolves the chosen item id, or null if dismissed — so tabMenu/folderMenu are unchanged. On
@@ -218,6 +260,12 @@
       // full desktop Safari UA so we get the same content a real Safari would. GitHub is fine either
       // way; this only helps the stricter sniffers.
       var SAFARI_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4.1 Safari/605.1.15';
+      // Persistent WKWebsiteDataStore for the embedded PR/Jira pages. On macOS a webview's cookies +
+      // localStorage live in a store keyed by this 16-byte identifier (the Apple replacement for
+      // dataDirectory, which is a no-op here). Without it each child gets a fresh store, so a GitHub
+      // login is forgotten on the next boot. A fixed UUID shared by every child means: log in once,
+      // every PR tab is authenticated, and the session survives restarts. (macOS 14+ / supported.)
+      var DATA_STORE = [122, 63, 28, 32, 155, 78, 77, 138, 191, 97, 46, 92, 138, 13, 79, 147];
       function T() { return window.__TAURI__; }
       function lpos(x, y) { return new (T().dpi.LogicalPosition)(x, y); }
       function lsize(w, h) { return new (T().dpi.LogicalSize)(w, h); }
@@ -228,6 +276,7 @@
         try {
           var wv = new (T().webview.Webview)(T().window.getCurrentWindow(), id, {
             url: url, x: OFF, y: OFF, width: 1, height: 1, userAgent: SAFARI_UA,
+            dataStoreIdentifier: DATA_STORE,
           });
           wv.once('tauri://error', function (e) { console.warn('[wcv] create error', id, e); });
           views[id] = { wv: wv, rect: null };

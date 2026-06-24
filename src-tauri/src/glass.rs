@@ -13,17 +13,12 @@
 // version-gates this; older systems get the NSVisualEffectView vibrancy fallback (lib.rs).
 
 use objc2_app_kit::{
-  NSAutoresizingMaskOptions, NSGlassEffectView, NSGlassEffectViewStyle, NSView, NSWindow,
-  NSWindowButton, NSWindowOrderingMode,
+  NSAutoresizingMaskOptions, NSGlassEffectView, NSGlassEffectViewStyle, NSWindow,
+  NSWindowOrderingMode,
 };
 use objc2_foundation::{MainThreadMarker, NSProcessInfo};
+use std::sync::Mutex;
 use tauri::WebviewWindow;
-
-// Traffic-light inset from the window's top-left — sits the buttons centered in the ~60px sidebar
-// header (layout.css .sidebar-logo), matching the macOS 26 sidebar. Used at window creation and
-// re-applied on every resize.
-pub const TRAFFIC_X: f64 = 20.0;
-pub const TRAFFIC_Y: f64 = 24.0;
 
 // macOS major version (26 = Tahoe). NSProcessInfo is available on every macOS we run on.
 pub fn macos_major_version() -> isize {
@@ -66,44 +61,95 @@ pub fn apply_glass_sidebar(window: &WebviewWindow) -> Result<(), String> {
   Ok(())
 }
 
-// Reposition the native traffic lights to (x, y) from the window's top-left. This mirrors tao's
-// inset_traffic_lights, which Tauri never applies on a webview window: tao runs it from its own
-// content view's drawRect, but our content view is the WKWebView, so that draw never fires. So we
-// drive it ourselves — at window creation and on every resize (macOS rebuilds the titlebar
-// container on resize, snapping the buttons back). Must run on the main thread. Safely no-ops if
-// the titlebar button hierarchy isn't what we expect (e.g. a future macOS layout change).
-pub fn set_traffic_lights(ns_window_ptr: *mut std::ffi::c_void, x: f64, y: f64) {
-  if ns_window_ptr.is_null() {
-    return;
-  }
-  // SAFETY: a valid NSWindow pointer from Tauri; only touched on the main thread.
-  let ns_window: &NSWindow = unsafe { &*(ns_window_ptr as *const NSWindow) };
-  let (close, mini, zoom) = match (
-    ns_window.standardWindowButton(NSWindowButton::CloseButton),
-    ns_window.standardWindowButton(NSWindowButton::MiniaturizeButton),
-    ns_window.standardWindowButton(NSWindowButton::ZoomButton),
-  ) {
-    (Some(c), Some(m), Some(z)) => (c, m, z),
-    _ => return,
-  };
-  // The titlebar container is the buttons' grandparent view. Resizing it taller and pinning it to
-  // the window top is what pushes the buttons down by `y` (tao's exact approach).
-  let container = match unsafe { close.superview().and_then(|v| v.superview()) } {
-    Some(v) => v,
-    None => return,
-  };
+// Double-click-to-zoom that "mimics a drag-resize" instead of NSWindow's native zoom.
+//
+// The native zoom (toggleMaximize / the green button) animates the window frame over ~0.2s on
+// AppKit's own clock. The WKWebView content can't relayout fast enough to track that, so the window
+// outruns the view (the reported "window resizes faster than the view"). A *drag* never shows this,
+// at any speed, because each step is a discrete resize the view lays out for before the next one.
+//
+// So we reproduce a drag: the renderer clocks the animation with requestAnimationFrame and, each
+// frame, sends an eased progress t∈[0,1]; we setFrame…animate:NO to the interpolated frame. Because
+// the renderer drives the step, the view has laid out for the current size before it asks for the
+// next — they stay in lockstep. zoom_begin captures the from/to frames (and toggles maximize vs.
+// restore); zoom_apply tweens and clears the state on the final frame.
+//
+// (origin x/y, width, height) in macOS screen coords — kept in Cocoa space so there's no top-left ↔
+// bottom-left conversion; both frames come straight from NSWindow/NSScreen.
+type Frame = (f64, f64, f64, f64);
 
-  let close_frame = NSView::frame(&close);
-  let title_bar_height = close_frame.size.height + y;
-  let mut bar = NSView::frame(&container);
-  bar.size.height = title_bar_height;
-  bar.origin.y = ns_window.frame().size.height - title_bar_height;
-  container.setFrame(bar);
+// Pre-maximize frame, remembered while maximized so a later restore knows the normal size. None =
+// the window is at its normal size (next zoom maximizes).
+static SAVED_FRAME: Mutex<Option<Frame>> = Mutex::new(None);
 
-  let spacing = NSView::frame(&mini).origin.x - close_frame.origin.x;
-  for (i, button) in [close, mini, zoom].into_iter().enumerate() {
-    let mut origin = NSView::frame(&button).origin;
-    origin.x = x + i as f64 * spacing;
-    button.setFrameOrigin(origin);
-  }
+struct Zoom {
+  from: Frame,
+  to: Frame,
 }
+// The in-flight tween set up by zoom_begin and consumed by zoom_apply.
+static ZOOM: Mutex<Option<Zoom>> = Mutex::new(None);
+
+// AppKit must be touched on the main thread, but Tauri runs commands off it, so hop over via
+// run_on_main_thread (re-fetching the NSWindow there — the raw pointer isn't Send). Called from the
+// always-compiled commands::zoom_* shims (this module is macOS-only).
+fn with_ns_window(window: &WebviewWindow, f: impl FnOnce(&NSWindow) + Send + 'static) {
+  let window = window.clone();
+  let _ = window.clone().run_on_main_thread(move || {
+    match window.ns_window() {
+      Ok(p) if !p.is_null() => {
+        // SAFETY: valid NSWindow pointer from Tauri, used only here on the main thread.
+        let ns_window: &NSWindow = unsafe { &*(p as *const NSWindow) };
+        f(ns_window);
+      }
+      _ => {}
+    }
+  });
+}
+
+fn frame_tuple(ns_window: &NSWindow) -> Frame {
+  let r = ns_window.frame();
+  (r.origin.x, r.origin.y, r.size.width, r.size.height)
+}
+
+// Decide direction and capture the tween endpoints. Maximize → save the current frame and target the
+// screen's visible (work-area) frame, which excludes the menu bar + Dock. Restore → tween back to the
+// saved frame and forget it.
+pub fn zoom_begin(window: WebviewWindow) {
+  with_ns_window(&window, |ns_window| {
+    let cur = frame_tuple(ns_window);
+    let mut saved = SAVED_FRAME.lock().unwrap();
+    let to = if let Some(normal) = saved.take() {
+      normal
+    } else {
+      let Some(screen) = ns_window.screen() else { return };
+      let v = screen.visibleFrame();
+      *saved = Some(cur);
+      (v.origin.x, v.origin.y, v.size.width, v.size.height)
+    };
+    *ZOOM.lock().unwrap() = Some(Zoom { from: cur, to });
+  });
+}
+
+// Tween toward the target by eased progress t (sent per requestAnimationFrame by the renderer). The
+// final frame (t ≥ 1) snaps exactly to the target and clears the tween.
+pub fn zoom_apply(window: WebviewWindow, t: f64) {
+  with_ns_window(&window, move |ns_window| {
+    let mut zoom = ZOOM.lock().unwrap();
+    let Some(z) = zoom.as_ref() else { return };
+    let lerp = |a: f64, b: f64| a + (b - a) * t;
+    let mut f = ns_window.frame();
+    f.origin.x = lerp(z.from.0, z.to.0);
+    f.origin.y = lerp(z.from.1, z.to.1);
+    f.size.width = lerp(z.from.2, z.to.2);
+    f.size.height = lerp(z.from.3, z.to.3);
+    unsafe { ns_window.setFrame_display_animate(f, true, false) };
+    if t >= 1.0 {
+      *zoom = None;
+    }
+  });
+}
+
+// (No custom traffic-light positioning — the buttons sit at macOS's default spot. A hand-rolled inset
+// jittered on resize, and the only jitter-free fix is an NSWindow-delegate wrap; not worth the extra
+// code/library for a small cosmetic gain. The overlay/hidden-title chrome stays; only the lights are
+// left stock.)

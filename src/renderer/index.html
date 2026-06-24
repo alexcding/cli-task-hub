@@ -19,6 +19,18 @@
       if (window.taskhub && window.taskhub.platform === 'darwin') document.documentElement.classList.add('native-mac');
     } catch (e) {}
   </script>
+  <!-- Boot splash: the native window (and macOS 26 glass) paints instantly, but the web content is
+       network-bound and lands a beat later — leaving a bare transparent/glass flash. This opaque
+       cover + spinner fills that gap; app.js fades it out once the first page has painted. Inlined
+       (not in a linked stylesheet) with literal colors so it shows before any CSS request resolves. -->
+  <style>
+    #boot-splash { position:fixed; inset:0; z-index:9999; display:flex; align-items:center; justify-content:center; background:#f6f7f9; transition:opacity .25s ease; }
+    html[data-theme=dark] #boot-splash { background:#161616; }
+    #boot-splash.hide { opacity:0; pointer-events:none; }
+    #boot-splash .spin { width:26px; height:26px; border-radius:50%; border:2.5px solid #e7e9ee; border-top-color:#2563eb; animation:boot-spin .7s linear infinite; }
+    html[data-theme=dark] #boot-splash .spin { border-color:#323232; border-top-color:#4b86f0; }
+    @keyframes boot-spin { to { transform:rotate(360deg); } }
+  </style>
   <link rel="stylesheet" href="/css/tokens.css">
   <link rel="stylesheet" href="/css/layout.css">
   <link rel="stylesheet" href="/css/viewer.css">
@@ -26,6 +38,7 @@
   <link rel="stylesheet" href="/css/pages.css">
 </head>
 <body>
+<div id="boot-splash"><div class="spin"></div></div>
 <div class="layout">
 
   <!-- Sidebar -->
@@ -33,7 +46,7 @@
     <div class="sidebar-logo">
       <div class="logo-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6.5,12.5 10.6,16.6 17.8,8.2"/></svg></div>
       <span class="logo-text">TaskHub</span>
-      <button class="nav-add logo-add" title="New project" onclick="openNewProjectModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="6"/><path d="M12 8.5v7M8.5 12h7"/></svg></button>
+      <!-- New-project "+" moved to the dashboard's top-right action bar (dashboard.js). -->
     </div>
     <nav>
       <button class="nav-btn active" data-page="dashboard" onclick="showPage('dashboard')"><span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="2.5"/><rect x="14" y="3" width="7" height="7" rx="2.5"/><rect x="3" y="14" width="7" height="7" rx="2.5"/><rect x="14" y="14" width="7" height="7" rx="2.5"/></svg></span> Dashboard</button>

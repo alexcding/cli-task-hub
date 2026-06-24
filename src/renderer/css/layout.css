@@ -28,22 +28,13 @@ nav { padding:8px; flex:1; overflow-y:auto; }
 /* Running-task count, pushed to the row's right edge. Hidden when empty (0 tasks → no badge). */
 .nav-count { margin-left:auto; flex-shrink:0; min-width:18px; height:18px; padding:0 5px; border-radius:99px; background:var(--surface-hover); color:var(--text-3); font-size:11px; font-weight:600; line-height:18px; text-align:center; }
 .nav-count:empty { display:none; }
-.nav-add { background:none;border:none;color:var(--text-3);cursor:pointer;padding:2px;line-height:0;border-radius:4px;transition:color .12s,background .12s;display:inline-flex; }
+/* Subtle icon button — the dashboard's top-right "New project" [+] (dashboard.js fills
+   #topbar-actions with it when projects exist). */
+/* Negative right margin pulls the [+] out toward the edge so it lines up with the webview tab bar's
+   "+" (.ctab-add, ~13px from the edge) instead of sitting on the topbar's wider 24px page gutter. */
+.nav-add { background:none;border:none;color:var(--text-3);cursor:pointer;padding:4px;margin-right:-14px;line-height:0;border-radius:6px;transition:color .12s,background .12s;display:inline-flex; }
 .nav-add:hover { color:var(--text);background:var(--surface-hover); }
-.nav-add svg { width:14px;height:14px;display:block; }
-/* "New project" + lives in the top band, pushed to the right edge opposite the
-   macOS traffic lights (which sit at the sidebar's top-left). Bigger than the
-   inline nav "+" it replaced. */
-/* Pulled right onto the same rail as the GitHub CI dot / tab close × below, while
-   staying clear of the sidebar resizer's ~4px right-edge hit zone. */
-.logo-add { margin-left:auto; margin-right:-11px; padding:4px; }
-.logo-add svg { width:19px; height:19px; }
-/* The header is kept short so the nav sits close below the traffic lights; the + can't be centered
-   on the lights by the header height alone, so drop it to the lights' center (native inset y≈24 →
-   center ≈30, see glass::TRAFFIC_Y). A bit larger than the in-page add buttons to read as the
-   sidebar's primary action. */
-html.native-mac .logo-add { transform:translateY(2.5px); }
-html.native-mac .logo-add svg { width:22px; height:22px; }
+.nav-add svg { width:19px;height:19px;display:block; }
 .sidebar-footer { padding:8px; border-top:1px solid var(--border); }
 
 .workarea { margin-left:var(--sidebar-w); flex:1; min-width:0; height:100vh; display:flex; align-items:stretch; }
@@ -96,8 +87,8 @@ html.native-mac .nav-btn.active, html.native-mac .opentab.active { background-co
    nav with the topbar below — like native macOS sidebars leaving room for the controls. */
 html.native-mac .logo-icon, html.native-mac .logo-text { display:none; }
 /* Logo's gone; the spacer just reserves room for the traffic lights (native inset y≈24, see
-   glass::TRAFFIC_Y) and sets how close the first nav row sits below them. 46px clears the lights
-   (~24–40) with a small gap and pulls the menu up tight against the header — matching the macOS 26
-   sidebar reference (rather than the oversized gap a taller header left). */
-html.native-mac .sidebar-logo { height:40px; border-bottom:none; }
+   sets how close the first nav row sits below them. The traffic lights are now stock (top-left,
+   ~7–21px from top), so a 28px spacer clears them with a small gap and pulls the menu up tight
+   against the header — no oversized gap. */
+html.native-mac .sidebar-logo { height:28px; border-bottom:none; }
 html.native-mac nav > .nav-btn:first-child { margin-top:0; }

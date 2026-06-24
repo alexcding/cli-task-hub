@@ -123,14 +123,6 @@ pub(crate) fn show_main(app: &tauri::AppHandle) {
     let win = w.window();
     let _ = win.show();
     let _ = win.set_focus();
-    // Re-apply the traffic-light inset on show. A login launch builds the window hidden (open_main_
-    // window's .visible(!at_login)), where the titlebar may not have been laid out when first
-    // positioned — and showing isn't a resize, so the resize handler wouldn't catch it. Without this
-    // the lights could sit at the default top-left until the first manual resize.
-    #[cfg(target_os = "macos")]
-    if let Ok(ptr) = win.ns_window() {
-      glass::set_traffic_lights(ptr, glass::TRAFFIC_X, glass::TRAFFIC_Y);
-    }
   }
 }
 
@@ -162,9 +154,8 @@ fn open_main_window(app: &tauri::AppHandle) -> tauri::Result<()> {
       .title_bar_style(tauri::TitleBarStyle::Overlay)
       .hidden_title(true)
       .transparent(true);
-    // NB: the builder's .traffic_light_position() is intentionally NOT used — Tauri never applies
-    // it on a webview window (tao drives it from its own view's drawRect, which the WKWebView
-    // suppresses). We position the lights ourselves below (glass::set_traffic_lights) instead.
+    // Traffic lights are left at the macOS default position (stock). A custom inset jittered on
+    // resize and the only jitter-free fix is an NSWindow-delegate wrap — not worth it for the look.
   }
 
   let _window = builder.build()?;
@@ -198,11 +189,6 @@ fn open_main_window(app: &tauri::AppHandle) -> tauri::Result<()> {
       }
     }
 
-    // Inset the traffic lights to sit centered in the taller sidebar header (reapplied on resize in
-    // on_window_event). Done here, not via the builder, which Tauri ignores for webview windows.
-    if let Ok(ptr) = _window.ns_window() {
-      glass::set_traffic_lights(ptr, glass::TRAFFIC_X, glass::TRAFFIC_Y);
-    }
   }
   Ok(())
 }
@@ -258,6 +244,8 @@ pub fn run() {
       commands::platform,
       commands::set_theme,
       commands::close_window,
+      commands::zoom_begin,
+      commands::zoom_apply,
       commands::choose_folder,
       commands::open_path,
       commands::open_external,
@@ -291,14 +279,6 @@ pub fn run() {
         if !QUITTING.load(Ordering::SeqCst) {
           api.prevent_close();
           let _ = window.hide();
-        }
-      }
-      // macOS rebuilds the titlebar container on resize, snapping the traffic lights back to the
-      // top-left — so re-apply our inset every resize to keep them centered in the sidebar header.
-      #[cfg(target_os = "macos")]
-      if let tauri::WindowEvent::Resized(_) = event {
-        if let Ok(ptr) = window.ns_window() {
-          glass::set_traffic_lights(ptr, glass::TRAFFIC_X, glass::TRAFFIC_Y);
         }
       }
     })
