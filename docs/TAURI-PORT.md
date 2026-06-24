@@ -96,10 +96,14 @@ leaking to the external browser) with **Tauri child webviews** (multiwebview).
   Electron path untouched.
 - `viewer.css`: `.wcv-shim` shares the `webview` box rules.
 
-**Deferred (need native objc2/WKWebView glue):** find-in-page (⌘F), back/forward + `canGoBack/Forward`,
-`stop`, and `did-navigate`/`page-title-updated`/`page-favicon-updated` events (tab title/favicon won't
-live-update from the page; PR/Jira tabs keep their given title). Renderer overlays (find bar, loading
-spinner) sit *behind* the native webview — also native-glue territory.
+**Done via JS injection (`bridge.js` `wcv.*` → `wcv_eval`):** find-in-page (⌘F, `window.find` — no
+match count), back/forward + `stop` (`history.*`/`window.stop`), reload (⌘R, `location.reload()` —
+the JS `Webview` has no `reload()`/`navigate()` of its own). `canGoBack/Forward` + `did-navigate`/
+`page-title-updated` come from the `viewer.rs` WKWebView poll (`wcv://event`).
+
+**Still deferred (need native objc2/WKWebView glue):** `page-favicon-updated`, a real find match
+count (WKWebView's public find API doesn't expose one either), and making the find selection render
+focused/blue without stealing focus from the find input.
 
 **Runtime test (owed):** `bunx tauri dev`, click a PR card → it should embed in the left pane instead
 of opening Chrome; resize the sidebar/split and switch tabs → the embedded page should track the pane

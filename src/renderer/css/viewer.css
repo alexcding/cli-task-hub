@@ -426,20 +426,17 @@ body.pr-split .split-body .history-pane { left:var(--pr-split, 60%); }
 body.resizing .split-body webview { pointer-events:none; }
 
 /* Find-in-page bar — floats top-right over the webview, browser-style (see find.js). */
-.find-bar { position:absolute; top:8px; right:8px; z-index:30; display:flex; align-items:center; gap:2px;
-  background:var(--surface); border:1px solid var(--border); border-radius:10px;
-  box-shadow:0 8px 24px rgba(0,0,0,.16), 0 1px 4px rgba(0,0,0,.08); padding:4px 5px; }
+/* Docked full-width bar at the foot of the split (flow child of #split, after #split-body), so the
+   native embedded webview can't paint over it — split-body shrinks and the webview moves up. */
+.find-bar { flex-shrink:0; display:flex; align-items:center; gap:2px; padding:6px 10px;
+  background:var(--surface); border-top:1px solid var(--border); }
 .find-bar[hidden] { display:none; }
 .find-bar .find-ic { display:flex; color:var(--text-3); margin:0 2px 0 4px; }
-.find-bar input { border:none; background:none; color:var(--text); font-size:13px; width:180px; padding:4px 2px; outline:none; }
+.find-bar input { flex:1; min-width:0; border:none; background:none; color:var(--text); font-size:13px; padding:4px 2px; outline:none; }
 .find-bar input::placeholder { color:var(--text-3); }
 .find-count { color:var(--text-3); font-size:12px; font-variant-numeric:tabular-nums; min-width:38px; text-align:right; padding:0 4px; white-space:nowrap; }
 .find-sep { width:1px; align-self:stretch; background:var(--border); margin:3px 3px; }
 .find-bar .split-btn { padding:5px; }
-/* In split mode the webview is the left --pr-split fraction (terminal/diff on the right, like
-   the loading spinner above). Pin the bar to the webview pane's right edge, not split-body's,
-   so it floats over the page content rather than over the terminal. */
-body.pr-split .split-body .find-bar { right: calc(100% - var(--pr-split, 60%) + 8px); }
 
 /* Open tabs render as nav rows under GitHub / Jira group labels. */
 /* Sidebar section headers (Mine/Review) share the exact box of the Projects label (.nav-label)

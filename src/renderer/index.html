@@ -427,23 +427,6 @@
       </button>
     </div>
     <div class="split-body" id="split-body">
-      <!-- Find-in-page (⌘F): drives Chromium's native find inside the active webview
-           (find.js → webview.findInPage). ⌘G / ⇧⌘G or the chevrons step matches. -->
-      <div class="find-bar" id="find-bar" hidden>
-        <span class="find-ic"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg></span>
-        <input id="find-input" type="text" placeholder="Find on page" spellcheck="false" autocomplete="off" oninput="onFindInput(event)" onkeydown="onFindKey(event)">
-        <span class="find-count" id="find-count"></span>
-        <span class="find-sep"></span>
-        <button class="split-btn" title="Previous match (⇧⌘G)" onclick="findPrev()">
-          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 15l-6-6-6 6"/></svg>
-        </button>
-        <button class="split-btn" title="Next match (⌘G)" onclick="findNext()">
-          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
-        </button>
-        <button class="split-btn" title="Close (Esc)" onclick="closeFind()">
-          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
-        </button>
-      </div>
       <!-- Right-pane empty state: a GitHub/Jira tab with no terminal yet shows no Terminal/Review
            tabs — just this New Task button. It creates the branch's worktree (if absent) then opens
            the terminal in it (newTask in viewer.js). Occupies the terminal slot; split.js toggles it. -->
@@ -501,6 +484,24 @@
           </button>
         </div>
       </div>
+    </div>
+    <!-- Find-in-page (⌘F): a full-width bar DOCKED at the bottom of the split (a flow child of
+         #split, not inside #split-body) so it sits in chrome the native embedded webview can't
+         paint over — it pushes the webview up instead. find.js drives the active webview's find. -->
+    <div class="find-bar" id="find-bar" hidden>
+      <span class="find-ic"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg></span>
+      <input id="find-input" type="text" placeholder="Find on page" spellcheck="false" autocomplete="off" oninput="onFindInput(event)" onkeydown="onFindKey(event)">
+      <span class="find-count" id="find-count"></span>
+      <span class="find-sep"></span>
+      <button class="split-btn" title="Previous match (⇧⌘G)" onclick="findPrev()">
+        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 15l-6-6-6 6"/></svg>
+      </button>
+      <button class="split-btn" title="Next match (⌘G)" onclick="findNext()">
+        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+      </button>
+      <button class="split-btn" title="Close (Esc)" onclick="closeFind()">
+        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
     </div>
     <!-- Divider is a child of .split (not .split-body) so it spans the FULL height — through
          the toolbar to the very top — matching the sidebar resizer, instead of stopping at

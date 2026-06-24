@@ -267,11 +267,12 @@
       }
       // JS Webview has no navigate(url) — recreate at the same id; the shim re-pushes bounds next frame.
       function navigate(id, url) { destroy(id); create(id, url); }
-      function reload(id) { try { views[id] && views[id].wv.reload(); } catch (e) {} }
 
-      // Back/forward/stop/find — driven by injecting JS into the child webview (history.back(),
-      // window.find()) rather than native objc2. No match-count (window.find doesn't expose one).
+      // Back/forward/stop/find/reload — driven by injecting JS into the child webview (history.back(),
+      // window.find(), location.reload()) rather than native objc2. The JS Webview has no reload()/
+      // navigate() of its own. No match-count (window.find doesn't expose one).
       function evalIn(id, js) { if (views[id]) invoke('wcv_eval', { id: id, js: js }); }
+      function reload(id) { evalIn(id, 'location.reload()'); }
       function nav(id, action, url) {
         if (action === 'back') evalIn(id, 'history.back()');
         else if (action === 'forward') evalIn(id, 'history.forward()');
