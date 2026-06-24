@@ -242,3 +242,45 @@ pub fn wcv_eval(app: tauri::AppHandle, id: String, js: String) {
 pub fn refresh_tray(app: tauri::AppHandle) {
   std::thread::spawn(move || crate::tray::refresh(&app));
 }
+
+// ── Launch at login ─────────────────────────────────────────────────────────────
+// Back the Settings "Launch at login" toggle. The login-item state is owned by macOS (a
+// LaunchAgent registered by tauri-plugin-autostart), NOT the snapshot DB — so the toggle reads
+// and writes the OS directly rather than persisting a renderer copy that could drift from
+// reality. get() returns the live state (false if it can't be read); set() enables/disables and
+// echoes back the resulting state so the UI reflects what actually took, not what was requested.
+#[tauri::command]
+pub fn autostart_get(app: tauri::AppHandle) -> bool {
+  use tauri_plugin_autostart::ManagerExt;
+  app.autolaunch().is_enabled().unwrap_or(false)
+}
+
+#[tauri::command]
+pub fn autostart_set(app: tauri::AppHandle, enabled: bool) -> Result<bool, String> {
+  use tauri_plugin_autostart::ManagerExt;
+  let mgr = app.autolaunch();
+  // No-op if already in the desired state. Disabling a never-registered LaunchAgent removes a plist
+  // that isn't there (NotFound), which would otherwise surface as a spurious error toast when the
+  // user clicks the already-active "Off" button (the toggle leaves the active option clickable).
+  if mgr.is_enabled().unwrap_or(false) == enabled {
+    return Ok(enabled);
+  }
+  (if enabled { mgr.enable() } else { mgr.disable() }).map_err(|e| e.to_string())?;
+  Ok(mgr.is_enabled().unwrap_or(enabled))
+}
+
+// ── Liquid Glass sidebar width ──────────────────────────────────────────────────
+// The sidebar is user-resizable (renderer drives --sidebar-w), and the macOS 26 Liquid Glass strip
+// (glass.rs) is sized natively to that width so the glass never bleeds into the content area. The
+// renderer calls this on load and whenever the sidebar resizes. AppKit view work must run on the
+// main thread, so we dispatch there. No-op on older macOS / when the glass wasn't applied.
+#[tauri::command]
+pub fn set_sidebar_glass_width(app: tauri::AppHandle, width: f64) {
+  #[cfg(target_os = "macos")]
+  {
+    let app2 = app.clone();
+    let _ = app.run_on_main_thread(move || crate::glass::set_width(&app2, width));
+  }
+  #[cfg(not(target_os = "macos"))]
+  let _ = (app, width);
+}

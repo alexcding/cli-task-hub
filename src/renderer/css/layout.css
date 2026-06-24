@@ -38,11 +38,13 @@ nav { padding:8px; flex:1; overflow-y:auto; }
    staying clear of the sidebar resizer's ~4px right-edge hit zone. */
 .logo-add { margin-left:auto; margin-right:-11px; padding:4px; }
 .logo-add svg { width:19px; height:19px; }
-/* Traffic lights sit at trafficLightPosition {x:16,y:12} (tray.js) → their centers
-   land at y≈18. The 30px native top band centers content at y15, so drop the + 3px
-   to line up vertically with the window buttons. */
-html.native-mac .logo-add { transform:translateY(3px); }
-.sidebar-footer { padding:12px; border-top:1px solid var(--border); }
+/* The header is kept short so the nav sits close below the traffic lights; the + can't be centered
+   on the lights by the header height alone, so drop it to the lights' center (native inset y≈24 →
+   center ≈30, see glass::TRAFFIC_Y). A bit larger than the in-page add buttons to read as the
+   sidebar's primary action. */
+html.native-mac .logo-add { transform:translateY(2.5px); }
+html.native-mac .logo-add svg { width:22px; height:22px; }
+.sidebar-footer { padding:8px; border-top:1px solid var(--border); }
 
 .workarea { margin-left:var(--sidebar-w); flex:1; min-width:0; height:100vh; display:flex; align-items:stretch; }
 main { flex:1; min-width:0; min-height:0; display:flex; flex-direction:column; }
@@ -52,11 +54,41 @@ main { flex:1; min-width:0; min-height:0; display:flex; flex-direction:column; }
    so scrolling one never moves the other. */
 .content { padding:24px; flex:1; min-height:0; overflow-y:auto; overscroll-behavior:contain; }
 
-/* ── macOS native chrome (html.native-mac, set only by the Electron build) ──────────
-   The window uses titleBarStyle:'hiddenInset' (tray.js) so the inset traffic lights sit
-   over the top band and the sidebar + topbar read as one native unified toolbar. The
-   sidebar stays solid (live vibrancy was dropped for performance). Drag regions turn the
-   top band into a real title bar. None of this applies in a plain browser (class never added). */
+/* ── macOS native chrome (html.native-mac, set on the desktop build, platform === 'darwin') ──
+   The window uses an overlay title bar so the inset traffic lights sit over the top band and the
+   sidebar + topbar read as one native unified toolbar. Drag regions turn the top band into a real
+   title bar. None of this applies in a plain browser (class never added). */
+/* Translucent sidebar — the Tauri host makes the window transparent and inserts an
+   NSVisualEffectView (Sidebar material) behind it (lib.rs open_main_window). We paint the content
+   area opaque and leave the sidebar transparent, so the native vibrancy shows ONLY behind the
+   sidebar — the standard macOS sidebar look (Finder/Mail). body must be transparent for the
+   vibrancy to reach the sidebar region (the fixed aside sits over body, not workarea). Gated to
+   native-mac, so a plain browser keeps its opaque sidebar. */
+html.native-mac body { background:transparent; }
+html.native-mac .workarea { background:var(--bg); }
+/* Translucent surface tint over the native glass — fully transparent = pure glass; raising the
+   first percentage makes the sidebar more solid (less glassy). 62% reads as a subtle frost. The
+   color follows --surface, so it adapts to the light/dark theme. */
+html.native-mac aside {
+  background:color-mix(in srgb, var(--surface) 62%, transparent);
+  /* Keep the 1px var(--border) right edge (inherited from the base `aside` rule) so the sidebar
+     separator matches the webview #pr-divider hairline — same color, same weight. */
+  /* Extra blur on top of the native Liquid Glass (whose own blur radius is fixed by macOS). Raise
+     the px to blur more; remove this pair to go back to glass-only. */
+  -webkit-backdrop-filter:blur(18px); backdrop-filter:blur(18px);
+}
+/* Resizer hover: recolor the existing 1px border instead of drawing a second line over it. The
+   base .sidebar-resizer:hover::before adds its own line ~0.5px off the border, so the two read as a
+   thick ~2px double edge next to the glass. Recoloring the single border matches the webview
+   #pr-divider, which is one line that just changes color on hover. */
+html.native-mac .sidebar-resizer:hover::before { background:transparent; }
+html.native-mac aside:has(.sidebar-resizer:hover) { border-right-color:var(--border-focus); }
+/* Sidebar row hover/selection over glass. The default opaque --surface-hover reads as a flat patch
+   sitting on the frosted material; native macOS sidebars use a translucent fill that layers over
+   the glass. Mix toward --text so it stays neutral and theme-correct (dark fill on light, light on
+   dark). Selected is a touch stronger than hover. */
+html.native-mac .nav-btn:hover, html.native-mac .opentab:hover { background-color:color-mix(in srgb, var(--text) 8%, transparent); }
+html.native-mac .nav-btn.active, html.native-mac .opentab.active { background-color:color-mix(in srgb, var(--text) 10%, transparent); }
 /* The top band is draggable like a native toolbar; interactive bits opt back out. */
 html.native-mac .topbar, html.native-mac .sidebar-logo,
 html.native-mac .split-bar { -webkit-app-region:drag; }
@@ -69,8 +101,9 @@ html.native-mac .ctab, html.native-mac .ctab-add, html.native-mac .ctab-input { 
    logo + wordmark there. The 52px bar stays as an empty draggable spacer that aligns the
    nav with the topbar below — like native macOS sidebars leaving room for the controls. */
 html.native-mac .logo-icon, html.native-mac .logo-text { display:none; }
-/* Logo's gone, so the top spacer only needs to clear the traffic lights (~32px) rather
-   than match the 52px content toolbar. Trim it + the first header's padding so "Overview"
-   sits just below the close buttons, like a standard macOS sidebar. No stray separator. */
-html.native-mac .sidebar-logo { height:30px; border-bottom:none; }
-html.native-mac nav > .nav-btn:first-child { margin-top:8px; }
+/* Logo's gone; the spacer just reserves room for the traffic lights (native inset y≈24, see
+   glass::TRAFFIC_Y) and sets how close the first nav row sits below them. 46px clears the lights
+   (~24–40) with a small gap and pulls the menu up tight against the header — matching the macOS 26
+   sidebar reference (rather than the oversized gap a taller header left). */
+html.native-mac .sidebar-logo { height:40px; border-bottom:none; }
+html.native-mac nav > .nav-btn:first-child { margin-top:0; }

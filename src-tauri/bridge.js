@@ -166,6 +166,20 @@
     // snapshot, so the tray's own SSE-sync refresh wouldn't otherwise pick them up.
     refreshTray: function () { return invoke('refresh_tray'); },
 
+    // Launch at login — read/toggle the macOS login-item (a LaunchAgent the host registers). The
+    // OS owns this state, so Settings reads it live (get() → bool) and writes straight back
+    // (set(on) → the resulting bool) with no backend round-trip. Desktop-only: in a plain browser
+    // window.taskhub is undefined and the Settings card stays hidden.
+    autostart: {
+      get: function () { return invoke('autostart_get'); },
+      set: function (enabled) { return invoke('autostart_set', { enabled: !!enabled }); },
+    },
+
+    // Keep the native macOS 26 Liquid Glass sidebar strip (glass.rs) sized to the renderer's
+    // resizable sidebar width, so the glass never bleeds into the content area. The renderer calls
+    // this on load and on every resize. No-op on older macOS (glass not applied).
+    setSidebarGlassWidth: function (width) { return invoke('set_sidebar_glass_width', { width: Math.round(width) }); },
+
     // Tab right-click: open/copy handled here (matches Electron, where main did them); only
     // 'close' (or null) is returned for the renderer to act on.
     tabMenu: function (url) {

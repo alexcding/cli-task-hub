@@ -26,7 +26,7 @@ import { loadScrumboard, setBoardProject, setBoardFilter, setBoardQuery, applyBo
 import { loadLogs, setLogCategory, clearLogs } from './pages/logs.js';
 import { loadTasks, openTaskSession, deleteTaskSession, analyzeSession, updateTasksBadge } from './pages/tasks.js';
 import { loadPersistedTasks } from './services/tasks.js';
-import { loadSettings, saveConfig, switchSettingsTab, setReviewSound, previewReviewSound, setActivityNotify, toggleSecret, setGitClient, setGitClientCmd, toggleHook } from './pages/settings.js';
+import { loadSettings, saveConfig, switchSettingsTab, setReviewSound, previewReviewSound, setActivityNotify, setAutostart, toggleSecret, setGitClient, setGitClientCmd, toggleHook } from './pages/settings.js';
 import { showActivityToast } from './components/activity-toast.js';
 import * as modal from './components/modal.js';
 
@@ -42,6 +42,7 @@ function showPage(name, projectId) {
   // <main> back (the open tabs stay listed in the left nav).
   find.closeFind(); // stop find + clear highlights on the outgoing tab before activeTabId is lost
   document.getElementById('split').hidden = true;
+  viewer.hideAllPanes(); // hide native child webviews now — hiding #split alone leaves them painted over the page until the next rAF (throttled in a debug build)
   document.body.classList.remove('viewing-tab', 'viewing-term', 'pr-split', 'pane-diff');
   state.activeTabId = null; state.activeTermId = null;  // terminals stay alive, just unfocused
   renderTabs();
@@ -263,7 +264,7 @@ Object.assign(window, {
   // window.* from workflow.js (notifyTasksUpdated) and sidebar.js (refreshTermBusy) so the running
   // count stays live off-page, without a tasks↔workflow/sidebar import cycle — keep all three.
   loadTasks, openTaskSession, deleteTaskSession, updateTasksBadge,
-  loadSettings, saveConfig, switchSettingsTab, setReviewSound, previewReviewSound, setActivityNotify, toggleSecret, setGitClient, setGitClientCmd, toggleHook,
+  loadSettings, saveConfig, switchSettingsTab, setReviewSound, previewReviewSound, setActivityNotify, setAutostart, toggleSecret, setGitClient, setGitClientCmd, toggleHook,
   __activityToast: showActivityToast, // main pushes activity toasts here when the app is frontmost
   // project modal
   openNewProjectModal: modal.openNewProjectModal, openEditProjectModal: modal.openEditProjectModal,

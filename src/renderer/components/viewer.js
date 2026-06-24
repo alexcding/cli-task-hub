@@ -192,6 +192,10 @@ function paintLeft(tab) {
     if (!link.started) { link.started = true; link.wv.setAttribute('src', link.url); }
     link.wv.style.display = '';
   }
+  // Push the new visibility to the native child webviews now (Tauri shim) rather than waiting for
+  // the rAF loop, which is throttled while the renderer isn't painting — see wcv-shim el.syncBounds.
+  tab.wv?.syncBounds?.();
+  (tab.links || []).forEach(l => l.wv?.syncBounds?.());
 }
 
 // The webview currently shown in the left pane (default tab's or the active web link's),
@@ -492,8 +496,8 @@ export function activateTab(id) {
 // incoming tab is in diff view.
 export function hideAllPanes() {
   state.tabs.forEach(t => {
-    if (t.wv) t.wv.style.display = 'none';
-    (t.links || []).forEach(l => { if (l.wv) l.wv.style.display = 'none'; if (l.ed) l.ed.style.display = 'none'; });
+    if (t.wv) { t.wv.style.display = 'none'; t.wv.syncBounds?.(); }     // hide native child webview now, not on next rAF
+    (t.links || []).forEach(l => { if (l.wv) { l.wv.style.display = 'none'; l.wv.syncBounds?.(); } if (l.ed) l.ed.style.display = 'none'; });
   });
   for (const t of state.terms.values()) t.el.style.display = 'none';
   hideDiffPane();

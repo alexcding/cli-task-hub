@@ -13,7 +13,9 @@
 .bar-wv { flex:1; }
 .bar-term { display:none; flex:1; min-width:0; border-left:1px solid var(--border); }
 body.pr-split .bar-wv   { flex:none; width:var(--pr-split, 60%); }
-body.pr-split .bar-term { display:flex; }
+/* In split mode the full-height #pr-divider already draws the boundary line through the toolbar,
+   so drop .bar-term's own border-left — otherwise the two sit ~3px apart and read as a double line. */
+body.pr-split .bar-term { display:flex; border-left:none; }
 body.viewing-term .bar-wv   { display:none; }
 body.viewing-term .bar-term { display:flex; border-left:none; }
 /* Terminal toggle is pinned to the far right of the whole toolbar (a direct child of
@@ -55,7 +57,9 @@ body.viewing-term #split-toggle-term { display:none; }
    folder in the configured git client, else reveals in Finder. Terminal view only (.pf-term). */
 /* Outlined segmented control (like .wf-group): the chip owns the border/corners; the icon half
    (opens the git client) and the name half (reveals in Finder) sit inside it, split by a hairline. */
-.folder-chip { flex-shrink:0; max-width:240px; display:inline-flex; align-items:center; border:1px solid var(--border); border-radius:8px; overflow:hidden;
+/* min-width:0 + flex-shrink let the chip yield in a narrow pane (its .fc-text ellipsis-truncates)
+   instead of overflowing its side and overlapping the workflow group on the right. */
+.folder-chip { flex-shrink:1; min-width:0; max-width:240px; display:inline-flex; align-items:center; border:1px solid var(--border); border-radius:16px; overflow:hidden;
   color:var(--text-2); font:inherit; font-size:12px; font-weight:500; }
 .folder-chip:hover { border-color:var(--border-focus); }
 .folder-chip .fc-ic, .folder-chip .fc-text { display:inline-flex; align-items:center; border:none; background:none; cursor:pointer; color:inherit; font:inherit; padding:7px 10px; }
@@ -239,12 +243,17 @@ html[data-theme="dark"]         { --seg-thumb:#3d3d3d; --seg-shadow:0 1px 2px rg
 /* Segmented tabs: equal width — every tab in a group sized to the widest one. inline-grid
    with 1fr columns makes the columns equal; the group shrinks to content so the widest
    tab's label sets the shared width. .seg-tab centers its content in the now-wider cell. */
-.seg-tabs { display:inline-grid; grid-auto-flow:column; grid-auto-columns:1fr; align-items:center; gap:2px; padding:3px; border-radius:10px; background:var(--surface-hover); }
-.seg-tab { display:inline-flex; align-items:center; justify-content:center; gap:6px; min-height:28px; padding:0 16px; border:none; border-radius:7px; background:none; color:var(--text-3); font-size:13px; font-weight:500; line-height:1; cursor:pointer; transition:color .12s,background .12s; }
+.seg-tabs { display:inline-grid; grid-auto-flow:column; grid-auto-columns:1fr; align-items:center; gap:2px; padding:3px; border-radius:19px; background:var(--surface-hover); }
+.seg-tab { display:inline-flex; align-items:center; justify-content:center; gap:6px; min-height:28px; padding:0 16px; border:none; border-radius:16px; background:none; color:var(--text-3); font-size:13px; font-weight:500; line-height:1; cursor:pointer; transition:color .12s,background .12s; }
 .seg-tab svg { display:block; }
 .seg-tab:hover { color:var(--text); }
 .seg-tab.active, .seg-tab.on { background:var(--seg-thumb); color:var(--text); box-shadow:var(--seg-shadow); cursor:default; }
-.pane-switch, .review-switch { flex-shrink:0; }   /* keep the view switches from collapsing */
+.pane-switch { flex-shrink:0; }   /* keep the view switch from collapsing */
+/* The review switch yields in a narrow pane (labels ellipsis-truncate) so it never overlaps the
+   Commit button on the right; at a comfortable width flex-shrink is inert and it stays full size. */
+.review-switch { flex-shrink:1; min-width:0; }
+.review-switch .seg-tab { min-width:0; }
+.review-switch .seg-tab span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 /* The view switch is split-mode only (solo terminals have no tab → no diff), so hide it when
    a terminal is the sole view. Its actions now live in the bottom bar, not the toolbar. */
 body.viewing-term .pane-switch { display:none; }
@@ -260,7 +269,10 @@ body.viewing-term .pane-switch { display:none; }
 body.pr-split .pane-foot { left:var(--pr-split, 60%); }
 body.pr-split .pane-foot, body.viewing-term .pane-foot { display:flex; }
 .pf-side { display:flex; align-items:center; gap:6px; min-width:0; }
-.pf-btn { display:inline-flex; align-items:center; gap:7px; padding:7px 12px; border:none; border-radius:8px;
+/* The right side (Run/picker/Commit) keeps its size; the left side's folder chip is what yields. */
+.pf-right { flex-shrink:0; }
+.pf-left { flex-shrink:1; }
+.pf-btn { display:inline-flex; align-items:center; gap:7px; padding:7px 12px; border:none; border-radius:16px;
   background:none; color:var(--text-2); font:600 12px -apple-system,BlinkMacSystemFont,sans-serif; cursor:pointer; }
 .pf-btn:hover { background:var(--surface-hover); color:var(--text); }
 .pf-btn svg { display:block; flex-shrink:0; }
@@ -282,7 +294,7 @@ body.pr-split .pane-foot, body.viewing-term .pane-foot { display:flex; }
   background-color:var(--surface-hover);
   background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%239298a3' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M6 9l6 6 6-6'/></svg>");
   background-repeat:no-repeat; background-position:right 8px center; background-size:14px;
-  border:1px solid var(--border); border-radius:8px; cursor:pointer; }
+  border:1px solid var(--border); border-radius:16px; cursor:pointer; }
 html[data-theme="dark"] .wf-select {
   background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236e6e6e' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M6 9l6 6 6-6'/></svg>"); }
 .wf-select:hover { color:var(--text); border-color:var(--border-focus); }
@@ -292,7 +304,7 @@ html[data-theme="dark"] .wf-select {
 /* Run + picker as ONE outlined segmented control: the group owns the border/corners; the play
    button and the picker sit inside it, divided by a hairline. When running, the picker is hidden
    and the group is just the (rounded) Stop button. */
-.wf-group { display:inline-flex; align-items:center; border:1px solid var(--border); border-radius:8px; overflow:hidden; }
+.wf-group { display:inline-flex; align-items:center; border:1px solid var(--border); border-radius:16px; overflow:hidden; }
 .wf-group[hidden] { display:none; }
 .wf-group:hover { border-color:var(--border-focus); }
 .wf-group .wf-btn { border-radius:0; }                         /* the group provides the outline */

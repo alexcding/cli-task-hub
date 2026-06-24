@@ -93,6 +93,12 @@ export function createWcvShim() {
   el.goForward = () => wcv.nav(id, 'forward');
   el.findInPage = (text, opts) => wcv.find(id, text, opts && opts.findNext, !opts || opts.forward !== false);
   el.stopFindInPage = () => wcv.stopFind(id);
+  // Force an immediate native reposition/hide instead of waiting for the next rAF frame. The rAF
+  // loop is throttled when the renderer isn't painting (page occluded / Web Inspector open in a
+  // debug build), so a visibility change made then — e.g. navigating from a tab to the Dashboard —
+  // wouldn't hide the native webview and it would linger painted over the page. Callers push the
+  // change synchronously (paintLeft / hideAllPanes) so show/hide never depends on rAF cadence.
+  el.syncBounds = () => pushBounds();
 
   // Tear down the native webview when the shim leaves the DOM (closeTab / closeLink / disposeLink).
   const origRemove = el.remove.bind(el);

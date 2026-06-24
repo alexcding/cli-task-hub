@@ -11,7 +11,7 @@ import { toastErr } from './toast.js';
 import { createTermView, disposeTerm, fitTerm, visibleTerm } from './terminal.js';
 import { hideDiffPane } from './diff.js';
 import { hideHistory, applyReview } from './history.js';
-import { saveTabs, updateTitles } from './viewer.js';
+import { saveTabs, updateTitles, activeLeftWebview } from './viewer.js';
 
 // Resolve a tab's local folder: the matching git checkout if its branch/key is checked
 // out, else the project workspace. GitHub PR → the PR's branch. Jira ticket → the worktree
@@ -114,7 +114,13 @@ export function ensurePrTerminal(tab, cwd0) {
 
 let _prAnimRaf = 0;
 export function stopPrTween() { if (_prAnimRaf) { cancelAnimationFrame(_prAnimRaf); _prAnimRaf = 0; } }
-function setPrSplit(toPct) { document.documentElement.style.setProperty('--pr-split', toPct + '%'); }
+function setPrSplit(toPct) {
+  document.documentElement.style.setProperty('--pr-split', toPct + '%');
+  // The native child webview (Tauri shim) follows the new boundary now rather than on the next rAF
+  // tick (throttled when the renderer isn't painting). Without this it lingers at its old width,
+  // painting over the terminal pane + its foot border until a divider drag forces a reposition.
+  activeLeftWebview()?.syncBounds?.();
+}
 // Slide the `--pr-split` boundary (0–100%) frame-by-frame: the webview width, terminal pane, and
 // divider all derive from this one variable, so animating it opens/closes the whole split as a unit
 // (CSS can't reliably transition a custom property). The callers hide the heavy pane content (a diff
@@ -257,7 +263,14 @@ export function initPrDivider() {
   window.addEventListener('mousemove', e => {
     if (!dragging) return;
     const r = document.getElementById('split-body').getBoundingClientRect();
-    state.prRatio = Math.min(0.85, Math.max(0.2, (e.clientX - r.left) / r.width));
+    // Clamp by PIXEL width, not just ratio: the terminal pane (right) needs room for the foot
+    // buttons (Run/picker/Commit) and the PR pane (left) needs to stay readable. A pure ratio cap
+    // let the terminal shrink to a sliver on a small window, overlapping the foot controls.
+    const MIN_LEFT = 360, MIN_TERM = 300;
+    let ratio = (e.clientX - r.left) / r.width;
+    const lo = MIN_LEFT / r.width, hi = 1 - MIN_TERM / r.width;
+    ratio = lo < hi ? Math.min(hi, Math.max(lo, ratio)) : 0.5;  // window too small for both mins → split evenly
+    state.prRatio = ratio;
     setPrSplit(Math.round(state.prRatio * 100));
   });
   window.addEventListener('mouseup', () => {

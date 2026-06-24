@@ -6,6 +6,8 @@
 
 mod avatars;
 mod commands;
+#[cfg(target_os = "macos")]
+mod glass;
 mod menu;
 mod notify;
 mod terminals;
@@ -115,6 +117,14 @@ pub(crate) fn show_main(app: &tauri::AppHandle) {
     let win = w.window();
     let _ = win.show();
     let _ = win.set_focus();
+    // Re-apply the traffic-light inset on show. A login launch builds the window hidden (open_main_
+    // window's .visible(!at_login)), where the titlebar may not have been laid out when first
+    // positioned — and showing isn't a resize, so the resize handler wouldn't catch it. Without this
+    // the lights could sit at the default top-left until the first manual resize.
+    #[cfg(target_os = "macos")]
+    if let Ok(ptr) = win.ns_window() {
+      glass::set_traffic_lights(ptr, glass::TRAFFIC_X, glass::TRAFFIC_Y);
+    }
   }
 }
 
@@ -124,22 +134,72 @@ pub(crate) fn show_main(app: &tauri::AppHandle) {
 // the Electron build's hiddenInset chrome.
 fn open_main_window(app: &tauri::AppHandle) -> tauri::Result<()> {
   let url: tauri::Url = BACKEND_URL.parse().expect("valid backend URL");
+  // Launched at login (the autostart LaunchAgent passes --autostart): bring the app up quietly in
+  // the tray rather than popping the dashboard to the foreground and stealing focus. The window is
+  // built hidden; the tray menu (or a Dock click → RunEvent::Reopen) reveals it. Any other launch
+  // shows it as usual.
+  let at_login = std::env::args().any(|a| a == "--autostart");
   let mut builder = WebviewWindowBuilder::new(app, "main", WebviewUrl::External(url))
     .title("TaskHub")
     .inner_size(1320.0, 880.0)
     .min_inner_size(720.0, 480.0)
     .resizable(true)
+    .visible(!at_login)
     .initialization_script(include_str!("../bridge.js"));
 
   #[cfg(target_os = "macos")]
   {
+    // Transparent window so the NSVisualEffectView (applied below) shows through wherever the
+    // renderer leaves a region transparent — the sidebar. Needs macOSPrivateApi (set in
+    // tauri.conf.json); fine for our DMG distribution (private APIs only bar App Store submission).
     builder = builder
       .title_bar_style(tauri::TitleBarStyle::Overlay)
-      .hidden_title(true);
+      .hidden_title(true)
+      .transparent(true);
+    // NB: the builder's .traffic_light_position() is intentionally NOT used — Tauri never applies
+    // it on a webview window (tao drives it from its own view's drawRect, which the WKWebView
+    // suppresses). We position the lights ourselves below (glass::set_traffic_lights) instead.
   }
 
-  builder.build()?;
+  let _window = builder.build()?;
   // (No auto-opened devtools — use right-click → Inspect Element in a debug build if needed.)
+
+  // Native translucent sidebar behind the transparent window. The renderer paints the content area
+  // opaque and leaves the sidebar transparent (css: html.native-mac aside), so the material shows
+  // ONLY behind the sidebar — the standard macOS look (Finder/Mail). macOS 26 (Tahoe) uses the new
+  // Liquid Glass material (NSGlassEffectView); older systems get the classic NSVisualEffectView
+  // frost. NSGlassEffectView doesn't exist before macOS 26, so pick at runtime.
+  #[cfg(target_os = "macos")]
+  {
+    // Initial width = the renderer's default sidebar width (250px token); the renderer corrects it
+    // on load via set_sidebar_glass_width once it knows its persisted width.
+    let used_glass = glass::macos_major_version() >= 26
+      && match glass::apply_glass_sidebar(&_window, 250.0) {
+        Ok(()) => true,
+        Err(e) => {
+          log::warn!("[glass] Liquid Glass not applied ({e}); using vibrancy");
+          false
+        }
+      };
+    if !used_glass {
+      // FollowsWindowActiveState dims the vibrancy when the window loses focus, like native sidebars.
+      use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial, NSVisualEffectState};
+      if let Err(e) = apply_vibrancy(
+        &_window,
+        NSVisualEffectMaterial::Sidebar,
+        Some(NSVisualEffectState::FollowsWindowActiveState),
+        None,
+      ) {
+        log::warn!("[vibrancy] sidebar material not applied: {e}");
+      }
+    }
+
+    // Inset the traffic lights to sit centered in the taller sidebar header (reapplied on resize in
+    // on_window_event). Done here, not via the builder, which Tauri ignores for webview windows.
+    if let Ok(ptr) = _window.ns_window() {
+      glass::set_traffic_lights(ptr, glass::TRAFFIC_X, glass::TRAFFIC_Y);
+    }
+  }
   Ok(())
 }
 
@@ -180,6 +240,14 @@ pub fn run() {
     .plugin(tauri_plugin_opener::init())
     .plugin(tauri_plugin_notification::init())
     .plugin(tauri_plugin_updater::Builder::new().build())
+    // Launch-at-login (macOS LaunchAgent). Backs the Settings "Launch at login" toggle; the
+    // login-item state lives in the OS, read/written via commands::autostart_* (ManagerExt).
+    .plugin(tauri_plugin_autostart::init(
+      tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+      // Tag the login-launch with --autostart so open_main_window can come up quietly in the tray
+      // (a menu-bar app shouldn't pop its window to the foreground on every login).
+      Some(vec!["--autostart"]),
+    ))
     .manage(terminals::Terminals::default())
     .manage(tray::TrayTabs::default())
     .invoke_handler(tauri::generate_handler![
@@ -195,6 +263,9 @@ pub fn run() {
       commands::wcv_eval,
       commands::refresh_tray,
       commands::fetch_avatar,
+      commands::autostart_get,
+      commands::autostart_set,
+      commands::set_sidebar_glass_width,
       terminals::term_create,
       terminals::term_write,
       terminals::term_resize,
@@ -219,6 +290,14 @@ pub fn run() {
           let _ = window.hide();
         }
       }
+      // macOS rebuilds the titlebar container on resize, snapping the traffic lights back to the
+      // top-left — so re-apply our inset every resize to keep them centered in the sidebar header.
+      #[cfg(target_os = "macos")]
+      if let tauri::WindowEvent::Resized(_) = event {
+        if let Ok(ptr) = window.ns_window() {
+          glass::set_traffic_lights(ptr, glass::TRAFFIC_X, glass::TRAFFIC_Y);
+        }
+      }
     })
     .setup(|app| {
       if cfg!(debug_assertions) {
@@ -235,6 +314,11 @@ pub fn run() {
         wait_for_backend();
         setup_auto_updates(app.handle());
       }
+
+      // Holds the Liquid Glass sidebar view so the renderer can resize it (macOS 26+). Must be
+      // managed before open_main_window, which applies the glass and stores the handle here.
+      #[cfg(target_os = "macos")]
+      app.manage(glass::SidebarGlass::default());
 
       open_main_window(app.handle())?;
       tray::setup(app.handle())?;

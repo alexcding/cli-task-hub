@@ -28,6 +28,7 @@ export async function loadSettings() {
 
   renderDbInspector(dbinfo);
   initUsage();
+  initAutostart();
   loadHookStatus();
   // CLI detection spawns a process per CLI, so run it lazily — only when the CLIs tab is the one
   // on screen (e.g. returning to Settings with it already active). Switching to it also triggers it.
@@ -217,6 +218,31 @@ export async function setActivityNotify(on) {
     await apiJson(ROUTES.settingsKey('activityNotify'), 'PUT', { value: on ? 'on' : 'off' });
     setActivityNotifyUI(on);           // reflect the toggle only once it's actually persisted
     window.taskhub?.refreshTray?.();   // let the tray re-read the setting now, not on its next tick
+  } catch (e) { toastErr(e.message); }
+}
+
+// ── Launch at login ───────────────────────────────────────────────────────────
+// The login-item state is owned by macOS (a LaunchAgent the host manages), not the settings
+// DB — so we read it live from window.taskhub.autostart and write straight back, with no server
+// round-trip and no mirrored copy to drift. Desktop-only: in a plain browser the bridge is
+// absent, so the card stays hidden (like the usage card).
+function setAutostartUI(on) {
+  document.querySelectorAll('#autostart-toggle .theme-opt')
+    .forEach(b => b.classList.toggle('active', (b.dataset.autostartOpt === 'on') === on));
+}
+
+async function initAutostart() {
+  const card = document.getElementById('autostart-card');
+  if (!card) return;
+  if (!window.taskhub?.autostart) { card.hidden = true; return; } // plain browser — not available
+  try { setAutostartUI(await window.taskhub.autostart.get()); card.hidden = false; }
+  catch { card.hidden = true; } // couldn't read the OS state — don't show a toggle we can't trust
+}
+
+export async function setAutostart(on) {
+  try {
+    // set() echoes back the OS's actual resulting state, so reflect that — not the request.
+    setAutostartUI(await window.taskhub.autostart.set(on));
   } catch (e) { toastErr(e.message); }
 }
 
