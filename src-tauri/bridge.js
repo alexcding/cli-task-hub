@@ -201,6 +201,11 @@
     wcv: (function () {
       var views = {};            // id -> { wv }
       var OFF = -32000;          // park hidden views far off-screen (no paint, no input)
+      // Embedded WKWebView's default UA omits the "Version/<n> Safari/<n>" tokens, so sites that
+      // sniff the UA (Atlassian/Confluence, Jira) serve a "Browser not supported" page. Present a
+      // full desktop Safari UA so we get the same content a real Safari would. GitHub is fine either
+      // way; this only helps the stricter sniffers.
+      var SAFARI_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4.1 Safari/605.1.15';
       function T() { return window.__TAURI__; }
       function lpos(x, y) { return new (T().dpi.LogicalPosition)(x, y); }
       function lsize(w, h) { return new (T().dpi.LogicalSize)(w, h); }
@@ -210,7 +215,7 @@
         // Create OFF-SCREEN at 1x1 (the original fast path); the shim's bounds() moves it on-screen.
         try {
           var wv = new (T().webview.Webview)(T().window.getCurrentWindow(), id, {
-            url: url, x: OFF, y: OFF, width: 1, height: 1,
+            url: url, x: OFF, y: OFF, width: 1, height: 1, userAgent: SAFARI_UA,
           });
           wv.once('tauri://error', function (e) { console.warn('[wcv] create error', id, e); });
           views[id] = { wv: wv, rect: null };
