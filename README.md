@@ -5,7 +5,7 @@ Jira, and the terminal.**
 
 [![macOS](https://img.shields.io/badge/platform-macOS-black)](#quick-start)
 [![Node.js](https://img.shields.io/badge/runtime-Node.js-339933)](#quick-start)
-[![Electron](https://img.shields.io/badge/desktop-Electron-47848f)](#desktop-app)
+[![Tauri](https://img.shields.io/badge/desktop-Tauri-24C8DB)](#desktop-app)
 [![Powered by gh](https://img.shields.io/badge/powered%20by-gh-24292f)](#cli-native)
 [![License: ISC](https://img.shields.io/badge/license-ISC-blue.svg)](#license)
 
@@ -62,20 +62,24 @@ npm run dev
 
 ## Desktop App
 
-Run the tray app in development:
+The desktop shell is a [Tauri](https://tauri.app) (Rust) app. Run it in development:
 
 ```bash
-npm run dev:tray
+bunx tauri dev
 ```
 
-Build the packaged macOS app:
+This starts the local server and opens a native window pointed at it. Build the
+packaged macOS app:
 
 ```bash
-npm run build
+bunx tauri build
 ```
 
-The app is arm64-focused today. Packaged builds use Electron, fork the local
-server, and write user data outside the app bundle.
+The app is arm64-focused today. The Rust host (`src-tauri/`) owns the window,
+tray, menus, terminals, and the embedded PR/Jira viewer; the same Express backend
+runs as a bundled Node sidecar, and user data is written outside the app bundle
+(`~/Library/Application Support/tv.accedo.taskhub`). See
+[docs/TAURI-PORT.md](docs/TAURI-PORT.md) for the host's internals.
 
 ## How It Works
 
@@ -124,9 +128,8 @@ terminal setup.
 | --- | --- |
 | `src/server` | Express API, poller, repositories, local SQLite stores |
 | `src/renderer` | No-build vanilla ES-module web UI |
-| `src/main` | Electron host, tray, native menus, updater, IPC |
-| `src/preload` | Sandboxed bridge exposed as `window.taskhub` |
-| `src/shared` | HTTP routes, IPC channels, shared constants |
+| `src-tauri` | Tauri/Rust host — window, tray, native menus, updater, terminals, embedded viewer; `bridge.js` exposes `window.taskhub` |
+| `src/shared` | HTTP routes + shared constants |
 | `docs` | Architecture notes and project images |
 
 ## Development
@@ -135,9 +138,9 @@ terminal setup.
 npm install
 npm start        # plain local server
 npm run dev      # hot reload server + browser
-npm run dev:tray # Electron tray app
+bunx tauri dev   # the desktop app (Tauri window + backend)
 npm test         # node:test suite
-npm run build    # package the app
+bunx tauri build # package the macOS app
 ```
 
 Useful notes:
@@ -153,9 +156,10 @@ Useful notes:
 
 ## Releasing
 
-`npm run build` creates local packaged artifacts. `npm run release` uses the
-release path in `scripts/build.js` and `electron-builder.config.js` to publish
-GitHub release artifacts for signed/notarized builds.
+`bunx tauri build` creates local packaged artifacts (`.app`/`.dmg`). Auto-update
+is wired to GitHub Releases via `tauri-plugin-updater`; cutting a signed release
+(minisign key + `latest.json` manifest) is described in
+[docs/TAURI-PORT.md](docs/TAURI-PORT.md).
 
 ## Ideas Worth Building
 
