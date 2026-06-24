@@ -229,10 +229,15 @@
           });
         } catch (e) { console.warn('[wcv] create failed', e); }
       }
-      // Each tab keeps its OWN webview. Hide an inactive one by parking it OFF-SCREEN rather than
-      // webview.hide() — a hidden WKWebView throttles its load (causing a multi-second blank on a
-      // still-loading tab), whereas off-screen keeps loading at full priority. The active one sits
-      // at its real rect. (Trade-off: a brief flash on switch; addressed separately.)
+      // Each tab keeps its OWN webview. Visibility uses the native Webview.hide()/show() — the
+      // standard Tauri way — instead of parking off-screen: a hidden webview is fully removed from
+      // the window, so it can NEVER linger painted over another page (the off-screen park it
+      // replaced could, e.g. over the Dashboard after navigating away). While shown, the rAF loop
+      // (wcv-shim.js) keeps its rect synced to the anchor div. Trade-off vs off-screen parking: a
+      // hidden tab's WKWebView throttles, so a background tab that was mid-load resumes (rather than
+      // keeps loading) when shown again — acceptable, and the common case is a fully-loaded page.
+      // bounds() is only called when the rect/visibility actually changes (the shim diffs a key),
+      // so the hide()/show() calls aren't per-frame; rec.hidden de-dupes redundant ones.
       function bounds(id, rect, visible) {
         var rec = views[id];
         if (!rec) return;
@@ -241,14 +246,9 @@
             rec.rect = rect;
             rec.wv.setPosition(lpos(Math.round(rect.x), Math.round(rect.y)));
             rec.wv.setSize(lsize(Math.round(rect.width), Math.round(rect.height)));
-          } else {
-            // Park off-screen but KEEP the last full size — resizing to 1x1 makes WKWebView re-layout
-            // the page to a 1px viewport, so switching back thrashes the viewport and the page
-            // reflows/reloads (loses scroll + re-fetches). Same size off-screen preserves the page.
-            var w = (rec.rect && rec.rect.width) || 1200;
-            var h = (rec.rect && rec.rect.height) || 800;
-            rec.wv.setPosition(lpos(OFF, OFF));
-            rec.wv.setSize(lsize(Math.round(w), Math.round(h)));
+            if (rec.hidden !== false) { rec.hidden = false; rec.wv.show(); }  // position FIRST, then show (no flash)
+          } else if (rec.hidden !== true) {
+            rec.hidden = true; rec.wv.hide();
           }
         } catch (e) { /* webview may be mid-teardown */ }
       }
