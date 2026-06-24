@@ -16,6 +16,8 @@
     "dev": "./dev.sh",
     "dev:app": "./dev.sh --app",
     "dev:tauri": "tauri dev",
+    "build:tauri": "tauri build",
+    "build:tauri:local": "./scripts/build-tauri-local.sh",
     "dev:server": "node --watch src/server/app.js",
     "dev:tray": "electron .",
     "build": "node scripts/build.js",

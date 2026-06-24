@@ -43,11 +43,17 @@ fn start_backend(handle: &tauri::AppHandle) {
     Err(e) => { log::error!("no resource dir: {e}"); return; }
   };
   let app_js = resources.join("src/server/app.js");
+  // Store under ~/Library/Application Support/TaskHub — the SAME dir dev.sh and the old Electron
+  // build use (their product name), NOT the bundle identifier app_data_dir() gives
+  // (…/tv.accedo.taskhub). This keeps one shared store so the packaged app sees the same projects
+  // as dev instead of a separate, diverging database. Created if missing (mirrors dev.sh's mkdir).
   let data_dir = handle
     .path()
-    .app_data_dir()
-    .map(|d| d.to_string_lossy().into_owned())
+    .data_dir()
+    .map(|d| d.join("TaskHub"))
     .unwrap_or_default();
+  let _ = std::fs::create_dir_all(&data_dir);
+  let data_dir = data_dir.to_string_lossy().into_owned();
 
   match handle.shell().sidecar("taskhub-node") {
     Ok(cmd) => {
