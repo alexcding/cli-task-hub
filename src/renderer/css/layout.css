@@ -89,14 +89,8 @@ html.native-mac aside:has(.sidebar-resizer:hover) { border-right-color:var(--bor
    dark). Selected is a touch stronger than hover. */
 html.native-mac .nav-btn:hover, html.native-mac .opentab:hover { background-color:color-mix(in srgb, var(--text) 8%, transparent); }
 html.native-mac .nav-btn.active, html.native-mac .opentab.active { background-color:color-mix(in srgb, var(--text) 10%, transparent); }
-/* The top band is draggable like a native toolbar; interactive bits opt back out. */
-html.native-mac .topbar, html.native-mac .sidebar-logo,
-html.native-mac .split-bar { -webkit-app-region:drag; }
-html.native-mac .topbar button, html.native-mac .topbar input,
-html.native-mac .topbar select, html.native-mac .topbar a,
-html.native-mac .sidebar-logo button,
-html.native-mac .split-bar button,
-html.native-mac .ctab, html.native-mac .ctab-add, html.native-mac .ctab-input { -webkit-app-region:no-drag; }
+/* (Window dragging of the top band is handled natively in src-tauri/bridge.js — WKWebView ignores
+   -webkit-app-region, so there are no drag-region CSS rules here.) */
 /* The window's traffic lights occupy the top-left of the sidebar, so hide the in-app
    logo + wordmark there. The 52px bar stays as an empty draggable spacer that aligns the
    nav with the topbar below — like native macOS sidebars leaving room for the controls. */

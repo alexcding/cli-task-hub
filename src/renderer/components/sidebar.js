@@ -145,20 +145,9 @@ export function renderProjectNav(projects) {
 export function initSidebarResize() {
   const handle = document.getElementById('sidebar-resizer');
   if (!handle) return;
-  let lastGlassW = -1;
-  const setW = w => {
-    const clamped = Math.min(420, Math.max(170, w));
-    document.documentElement.style.setProperty('--sidebar-w', clamped + 'px');
-    // Keep the native macOS 26 Liquid Glass strip (Tauri) matched to the sidebar width, but only
-    // when it actually changes — dedupes redundant IPC when a drag is clamped at min/max or re-sets
-    // the same value. We still sync live during a drag (not just on mouseup): the glass must track
-    // the boundary or a transparent gap briefly shows past its old width.
-    if (clamped !== lastGlassW) { lastGlassW = clamped; window.taskhub?.setSidebarGlassWidth?.(clamped); }
-  };
+  const setW = w => document.documentElement.style.setProperty('--sidebar-w', Math.min(420, Math.max(170, w)) + 'px');
   const saved = parseInt(localStorage.getItem('taskhub.sidebarWidth') || '', 10);
-  // Push the starting width to the native glass even when there's no saved override (it was applied
-  // at a default at launch); setW also sets the CSS var, which is a harmless re-set of the default.
-  setW(saved || parseInt(getComputedStyle(document.documentElement).getPropertyValue('--sidebar-w'), 10) || 250);
+  if (saved) setW(saved);
   let dragging = false, x = 0, raf = 0;
   const apply = () => { raf = 0; setW(x); };
   handle.addEventListener('mousedown', e => { dragging = true; e.preventDefault(); document.body.classList.add('resizing'); });

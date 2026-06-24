@@ -117,7 +117,7 @@ body.viewing-tab main { display:none; }
    closable) + the context's extra web/file tabs + a "+". A new/edited tab is an inline
    address field. A dirty file tab shows a save button. The bar controls the LEFT pane
    only — switching tabs never disturbs the right split view. */
-.ctabs { display:flex; align-items:center; gap:7px; min-width:0; flex:1; margin-left:10px; overflow-x:auto; overflow-y:hidden; height:100%; -webkit-app-region:no-drag; }
+.ctabs { display:flex; align-items:center; gap:7px; min-width:0; flex:1; margin-left:10px; overflow-x:auto; overflow-y:hidden; height:100%; }
 .ctabs::-webkit-scrollbar { height:0; }
 /* Safari-compact pills: every tab fills the bar equally (flex:1), content centered, on a
    flat gray pill. The active tab lifts to a white pill + border; the address-entry tab gets

@@ -98,7 +98,11 @@
   // band stopped dragging the window. Reimplement it: a left mousedown on a top bar — but not on
   // an interactive control — starts a native window drag (double-click toggles maximize, like a
   // real title bar).
-  var NODRAG = 'button,a,input,textarea,select,svg,[role=button],.ctab,.ctab-add,.ctab-input,.split-btn,.ctabs';
+  // NB: the .ctabs CONTAINER is intentionally NOT in NODRAG — only the individual .ctab tabs (and
+  // the +/rename controls) are. That makes the empty toolbar area around the tabs drag the window,
+  // while clicking a tab still selects/reorders it. Listing .ctabs here would kill dragging across
+  // the whole tab-bar strip.
+  var NODRAG = 'button,a,input,textarea,select,svg,[role=button],.ctab,.ctab-add,.ctab-input,.split-btn';
   function inDragBar(t) { return t && t.closest && !t.closest(NODRAG) && t.closest('.topbar, .split-bar, .sidebar-logo'); }
   window.addEventListener('mousedown', function (e) {
     if (e.button !== 0 || !inDragBar(e.target)) return;
@@ -107,10 +111,7 @@
       if (r && r.catch) r.catch(function (err) { console.warn('[drag] startDragging rejected', err); });
     } catch (err) { console.warn('[drag] startDragging threw', err); }
   }, true);
-  window.addEventListener('dblclick', function (e) {
-    if (!inDragBar(e.target)) return;
-    try { window.__TAURI__.window.getCurrentWindow().toggleMaximize(); } catch (err) {}
-  }, true);
+  // (No double-click-to-maximize on the top band — not wanted here.)
 
   // Native macOS context menu (muda via window.__TAURI__.menu). Same contract as the old DOM menu —
   // resolves the chosen item id, or null if dismissed — so tabMenu/folderMenu are unchanged. On
@@ -174,11 +175,6 @@
       get: function () { return invoke('autostart_get'); },
       set: function (enabled) { return invoke('autostart_set', { enabled: !!enabled }); },
     },
-
-    // Keep the native macOS 26 Liquid Glass sidebar strip (glass.rs) sized to the renderer's
-    // resizable sidebar width, so the glass never bleeds into the content area. The renderer calls
-    // this on load and on every resize. No-op on older macOS (glass not applied).
-    setSidebarGlassWidth: function (width) { return invoke('set_sidebar_glass_width', { width: Math.round(width) }); },
 
     // Tab right-click: open/copy handled here (matches Electron, where main did them); only
     // 'close' (or null) is returned for the renderer to act on.

@@ -177,10 +177,8 @@ fn open_main_window(app: &tauri::AppHandle) -> tauri::Result<()> {
   // frost. NSGlassEffectView doesn't exist before macOS 26, so pick at runtime.
   #[cfg(target_os = "macos")]
   {
-    // Initial width = the renderer's default sidebar width (250px token); the renderer corrects it
-    // on load via set_sidebar_glass_width once it knows its persisted width.
     let used_glass = glass::macos_major_version() >= 26
-      && match glass::apply_glass_sidebar(&_window, 250.0) {
+      && match glass::apply_glass_sidebar(&_window) {
         Ok(()) => true,
         Err(e) => {
           log::warn!("[glass] Liquid Glass not applied ({e}); using vibrancy");
@@ -271,7 +269,6 @@ pub fn run() {
       commands::fetch_avatar,
       commands::autostart_get,
       commands::autostart_set,
-      commands::set_sidebar_glass_width,
       terminals::term_create,
       terminals::term_write,
       terminals::term_resize,
@@ -320,11 +317,6 @@ pub fn run() {
         wait_for_backend();
         setup_auto_updates(app.handle());
       }
-
-      // Holds the Liquid Glass sidebar view so the renderer can resize it (macOS 26+). Must be
-      // managed before open_main_window, which applies the glass and stores the handle here.
-      #[cfg(target_os = "macos")]
-      app.manage(glass::SidebarGlass::default());
 
       open_main_window(app.handle())?;
       tray::setup(app.handle())?;

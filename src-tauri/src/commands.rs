@@ -269,18 +269,3 @@ pub fn autostart_set(app: tauri::AppHandle, enabled: bool) -> Result<bool, Strin
   Ok(mgr.is_enabled().unwrap_or(enabled))
 }
 
-// ── Liquid Glass sidebar width ──────────────────────────────────────────────────
-// The sidebar is user-resizable (renderer drives --sidebar-w), and the macOS 26 Liquid Glass strip
-// (glass.rs) is sized natively to that width so the glass never bleeds into the content area. The
-// renderer calls this on load and whenever the sidebar resizes. AppKit view work must run on the
-// main thread, so we dispatch there. No-op on older macOS / when the glass wasn't applied.
-#[tauri::command]
-pub fn set_sidebar_glass_width(app: tauri::AppHandle, width: f64) {
-  #[cfg(target_os = "macos")]
-  {
-    let app2 = app.clone();
-    let _ = app.run_on_main_thread(move || crate::glass::set_width(&app2, width));
-  }
-  #[cfg(not(target_os = "macos"))]
-  let _ = (app, width);
-}
