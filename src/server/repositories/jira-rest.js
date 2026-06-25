@@ -50,14 +50,30 @@ async function ensureVersion(projectKey, name, existing = []) {
 
 // The board's columns in display order, each with the status ids it contains — the Agile
 // board configuration acli can't read. Lets the Scrumboard mirror the web board's column
-// order/grouping. Returns [{ name, statusIds:[…] }]; needs the Jira API token like the
-// other REST calls, so the caller falls back to a category sort when it throws.
+// order/grouping AND its per-status sub-lanes. Returns
+//   [{ name, statusIds:[…], statuses:[{ id, name }] }]
+// — needs the Jira API token like the other REST calls, so the caller falls back to a
+// category sort when it throws. The column config only carries status IDs, so we resolve
+// names from the global status list; without them, empty sub-lanes (no ticket to read a
+// name from) couldn't be labelled. Names are best-effort: a failed lookup leaves them ''.
 async function boardConfig(boardId) {
   const cfg = await call('GET', `/rest/agile/1.0/board/${encodeURIComponent(boardId)}/configuration`);
-  return (cfg?.columnConfig?.columns || []).map(c => ({
+  const cols = (cfg?.columnConfig?.columns || []).map(c => ({
     name: c.name,
     statusIds: (c.statuses || []).map(s => String(s.id)),
   }));
+  if (!cols.length) return cols; // no columns → skip the org-wide status fetch (nothing to name)
+  // Resolve status names from the global status list (the column config carries only ids), so
+  // even empty sub-lanes can be labelled. `/rest/api/3/status` is the flat array [{id,name,…}] —
+  // NOT the paginated `/rest/api/3/statuses/search`. Best-effort: a failed lookup leaves names ''
+  // and the view falls back to names learned from loaded tickets.
+  const nameById = new Map();
+  try {
+    const statuses = await call('GET', '/rest/api/3/status');
+    for (const s of (statuses || [])) if (s?.id != null) nameById.set(String(s.id), s.name || '');
+  } catch { /* names best-effort */ }
+  for (const c of cols) c.statuses = c.statusIds.map(id => ({ id, name: nameById.get(id) || '' }));
+  return cols;
 }
 
 // Add `versionName` to issue `key`'s Fix Version field (additive — keeps any existing versions).

@@ -143,26 +143,46 @@
 .board-col-head { display:flex;align-items:center;gap:7px;padding:0 3px 8px;margin-bottom:10px;border-bottom:1px solid var(--border); }
 .board-col-name { font-size:13px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
 .board-col-count { font-size:12px;color:var(--text-3);font-variant-numeric:tabular-nums;margin-left:auto;flex-shrink:0; }
-/* flex:1 makes the body fill the (stretched) column, so the drop ring/tint covers the whole
-   card area down to the bottom — incl. the empty strip below the last card. min-height keeps
-   a card-less column reachable when the board itself is short. The padding insets the cards
-   from the body edge so the drop ring shows on all four sides instead of hiding behind the
-   full-width cards; it's always present so hovering causes no layout shift. */
-.board-col-body { flex:1;display:flex;flex-direction:column;gap:8px;min-height:42px;border-radius:8px;padding:5px 3px; }
-/* Drop-target highlight while dragging (added by initBoardSort's onMove): ring + tint the
-   full-height card area and light up the column title row, so the landing column reads
-   unmistakably — title included. */
-.board-col-drop .board-col-body { box-shadow:inset 0 0 0 2px var(--accent);background:var(--accent-bg); }
-.board-col-drop .board-col-head { border-bottom-color:var(--accent); }
-.board-col-drop .board-col-name,
-.board-col-drop .board-col-count { color:var(--accent); }
+.board-col-body { flex:1;display:flex;flex-direction:column;gap:8px; }
+/* A status sub-lane within a column. By default the board reads as a flat card list — lane
+   headers hidden, empty lanes collapsed — because showing every status section at rest makes
+   columns far too tall. The sections only MATERIALISE while dragging (initBoardSort toggles
+   `.dragging` on `.board`): then each status becomes a labelled, full-height drop target so you
+   can drop a card onto an exact status, including empty ones. */
+.board-lane { display:flex;flex-direction:column; }
+.board-lane-body { display:flex;flex-direction:column;gap:8px;border-radius:8px; }
+.board-lane-head { display:none;align-items:center;gap:6px;padding:0 3px 5px; }
+/* At rest the lanes collapse into one flat card list, so an empty lane would only contribute a
+   phantom flex gap — drop it from the flow. (It reappears as a drop zone once .dragging is set.) */
+.board:not(.dragging) .board-lane:not(:has(.board-card)) { display:none; }
+/* A status whose name couldn't be resolved (data-status="") can't be a transition target, so an
+   empty one must never appear as a drop zone — not even during a drag, where it would look valid
+   but silently refuse the drop. (The "Other" bucket is name-less too but holds cards, so it stays
+   visible; dropping onto it is rejected with the usual toast.) */
+.board-lane-nostatus:not(:has(.board-card)) { display:none; }
+.board-lane-name { font-size:10.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--text-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+.board-lane-count { font-size:10.5px;color:var(--text-3);font-variant-numeric:tabular-nums;margin-left:auto;flex-shrink:0; }
+/* Dragging: the column becomes an overlay of EQUAL-sized labelled drop zones, one per status, so
+   every target is the same easy size regardless of how many cards it holds. The resting cards
+   stand aside (hidden) — only the dragged card's ghost shows, marking where it'll land. flex:1 1 0
+   gives every lane an equal share of the column height; the dashed box reads as a drop target. */
+.board.dragging .board-col-body { gap:8px; }
+.board.dragging .board-lane { flex:1 1 0; }
+.board.dragging .board-lane-head { display:flex; }
+.board.dragging .board-lane-body { flex:1;min-height:40px;padding:6px;border:1px dashed var(--border);border-radius:8px;justify-content:center;transition:background .12s,box-shadow .12s,border-color .12s; }
+.board.dragging .board-lane-body > .board-card:not(.board-card-ghost) { display:none; }
+/* Drop-target highlight (added by initBoardSort's onMove): ring + tint the hovered zone and light
+   up its label, so the landing status reads unmistakably. */
+.board-lane-drop .board-lane-body { border-style:solid;box-shadow:inset 0 0 0 2px var(--accent);background:var(--accent-bg); }
+.board-lane-drop .board-lane-name,
+.board-lane-drop .board-lane-count { color:var(--accent); }
 /* Flat card: outlined tile (no shadow), separated from the grey board by border + color;
    border-focus on hover, matching the dashboard / task cards. */
 .board-card { position:relative;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:11px 12px;cursor:grab;transition:border-color .15s; }
 .board-card:hover { border-color:var(--border-focus); }
 .board-card:active { cursor:grabbing; }
 /* SortableJS drop-placeholder (ghostClass): an accent-ringed dashed slot showing where the
-   dragged card will land in the target column. */
+   dragged card will land in the target lane. */
 .board-card-ghost { opacity:.5;border:1px dashed var(--accent);background:var(--accent-bg); }
 .board-card-ghost > * { visibility:hidden; }
 /* Meta row sits at the BOTTOM (summary is the hero on top): type icon · key · priority,
@@ -173,7 +193,7 @@
 .board-card-key { font-size:12px;font-weight:500;font-variant-numeric:tabular-nums;color:var(--text-2);text-decoration:none;white-space:nowrap; }
 .board-card-key:hover { color:var(--text);text-decoration:underline; }
 .board-av { margin-left:auto;flex-shrink:0;width:20px;height:20px;padding:0;border:none;border-radius:50%;background:var(--surface-hover);color:var(--text-2);font-size:9px;font-weight:700;line-height:1;font-family:inherit;display:inline-flex;align-items:center;justify-content:center;cursor:pointer; }
-.board-av:hover { box-shadow:0 0 0 2px var(--accent); }
+.board-av:hover { box-shadow:0 0 0 1px var(--border-focus); }
 .board-av-empty { background:none;border:1px dashed var(--border-focus);color:var(--text-3); }
 /* My own ticket: tint the avatar with the same accent background as the dashboard's Jira
    capsule (.badge-jira), so "I'm the assignee" reads at a glance. */

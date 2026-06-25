@@ -278,17 +278,24 @@ let _boardSortables = [];
 // next sync; the post-drag render (onEnd → doTransition) catches up.
 let _boardDragging = false;
 
-// Ring/tint whichever column the drag is currently over. Cleared on drop/cancel (onEnd) and
-// before each move so only one column lights up at a time.
+// Ring/tint whichever status lane the drag is currently over. Cleared on drop/cancel (onEnd)
+// and before each move so only one lane lights up at a time.
 function clearColHighlight() {
-  document.querySelectorAll('.board-col-drop').forEach(el => el.classList.remove('board-col-drop'));
+  document.querySelectorAll('.board-lane-drop').forEach(el => el.classList.remove('board-lane-drop'));
 }
 
 function initBoardSort() {
+  // Reaching a fresh board build means no drag is mid-flight, so clear any stale drag state here.
+  // This is the recovery hatch if a drag ever ends without onEnd firing: a missed onEnd would
+  // otherwise leave _boardDragging stuck (freezing SSE refresh) and the board stuck in its
+  // exploded `.dragging` layout — any subsequent render (a move, a project/filter switch) now
+  // unsticks it. The loadScrumboard guard makes onEnd reliable; this is the backstop.
+  _boardDragging = false;
+  document.querySelector('#scrumboard-body .board')?.classList.remove('dragging');
   _boardSortables.forEach(s => s.destroy());
   _boardSortables = [];
   if (typeof Sortable === 'undefined') return;
-  document.querySelectorAll('#scrumboard-body .board-col-body').forEach(body => {
+  document.querySelectorAll('#scrumboard-body .board-lane-body').forEach(body => {
     _boardSortables.push(new Sortable(body, {
       group: 'board',
       draggable: '.board-card',
@@ -306,22 +313,30 @@ function initBoardSort() {
       ghostClass: 'board-card-ghost',                // the drop-placeholder shown in the target column
       // Light up the column under the pointer as the card moves over it (replaces the old
       // HTML5 dragover highlight). Returning nothing leaves the move allowed.
-      onStart() { _boardDragging = true; },           // freeze board re-renders for the duration (see _boardDragging)
+      // Freeze board re-renders for the duration (see _boardDragging) and flip the board into
+      // drag mode: CSS turns each column into equal-sized per-status drop zones (.dragging).
+      onStart() { _boardDragging = true; document.querySelector('#scrumboard-body .board')?.classList.add('dragging'); },
       onMove(evt) {
         clearColHighlight();
-        evt.to?.closest('.board-col')?.classList.add('board-col-drop');
+        evt.to?.closest('.board-lane')?.classList.add('board-lane-drop');
       },
-      onEnd(evt) { _boardDragging = false; clearColHighlight(); onBoardDrop(evt); },
+      onEnd(evt) {
+        _boardDragging = false;
+        document.querySelector('#scrumboard-body .board')?.classList.remove('dragging');
+        clearColHighlight();
+        onBoardDrop(evt);
+      },
     }));
   });
 }
 
-// A card was dropped. `from`/`to` are the column bodies; same list ⇒ no status change. The
-// target column carries its status on data-status/-id (blank for a never-seen empty column,
-// which can't be a transition target). doTransition re-renders the board from state, which
-// rebuilds the DOM Sortable mutated — so a rejected drop just snaps back on re-render.
+// A card was dropped. `from`/`to` are the status-lane bodies; same lane ⇒ no status change
+// (incl. dropping back where it started, even within the same column). The target lane carries
+// its status on data-status/-id (blank for the "Other" bucket, which can't be a transition
+// target). doTransition re-renders the board from state, which rebuilds the DOM Sortable
+// mutated — so a rejected drop just snaps back on re-render.
 function onBoardDrop(evt) {
-  // Same column ⇒ no status change, but a sync may have been skipped mid-drag — re-render to catch up.
+  // Same lane ⇒ no status change, but a sync may have been skipped mid-drag — re-render to catch up.
   if (evt.from === evt.to) { queueMicrotask(renderScrumboard); return; }
   // Capture off the event now — Sortable reuses/clears it after onEnd returns.
   const key = evt.item.dataset.key;
@@ -337,43 +352,56 @@ function onBoardDrop(evt) {
   });
 }
 
-// Columns in board order. Prefer the board's configured columns (snap.columns groups
-// status ids into ordered, named columns — exactly mirrors the web board). When that's
-// unavailable (no API token), fall back to grouping by status name, ordered by workflow
-// category (To Do → In Progress → Done).
+// Columns in board order, each split into per-status sub-lanes — exactly mirroring the web
+// board (a "To Do" column holds "Ready for Dev", "In Specification", … as labelled lanes).
+// Prefer the board's configured columns (snap.columns groups status ids into ordered, named
+// columns + carries each status's name). When that's unavailable (no API token), fall back to
+// grouping by status name, ordered by workflow category (To Do → In Progress → Done).
 //
-// Each column carries a drop target: `status` (the status NAME acli transitions into — it
-// transitions by name, not column) and `statusId` (so the optimistic re-column moves the
-// card's id, which is how configured columns bucket). In the name-grouped fallback both come
-// straight from the status. For configured columns they're the first of the column's status
-// ids that actually appears on the board, resolved against an id→name map built from loaded
-// items — both blank when none appear (an empty, never-seen column), so a drop there is
-// rejected with a toast. The "Other" bucket has no single target, so it's never a drop site.
+// Shape: [{ name, lanes: [{ status, statusId, items }], total, multi }]. Each LANE is a drop
+// target: `status` is the status NAME acli transitions into (it transitions by name, not column)
+// and `statusId` re-columns the card optimistically. A lane is rendered even with no items (an
+// empty status you can drag into); its name comes from cfg.statuses, falling back to a loaded
+// ticket, else ''. `total` (card count) and `multi` (>1 lane ⇒ show sub-lane headers) are
+// precomputed so the renderer stays pure presentation. The "Other" bucket collects statuses no
+// column claims; its single lane has no status, so it's not a drop target.
 function buildColumns(items, cfg) {
+  let cols;
   if (Array.isArray(cfg) && cfg.length) {
-    const nameOf = new Map();                // statusId -> status name (from loaded items)
-    for (const it of items) if (it.statusId != null) nameOf.set(String(it.statusId), it.status || '');
-    const colOf = new Map();                 // statusId -> column index
-    cfg.forEach((c, i) => (c.statusIds || []).forEach(id => colOf.set(String(id), i)));
-    const cols = cfg.map(c => {
-      const id = (c.statusIds || []).map(String).find(sid => nameOf.has(sid)) || '';
-      return { name: c.name, status: id ? nameOf.get(id) : '', statusId: id, items: [] };
-    });
-    const other = { name: 'Other', status: '', statusId: '', items: [] };
+    const nameOf = new Map();                // statusId -> status name
+    for (const c of cfg) for (const s of (c.statuses || [])) if (s.id != null) nameOf.set(String(s.id), s.name || '');
+    // Loaded tickets fill any name the config didn't carry (older cached snapshot, or a status
+    // the global list missed).
+    for (const it of items) if (it.statusId != null && !nameOf.get(String(it.statusId))) nameOf.set(String(it.statusId), it.status || '');
+    const laneOf = new Map();                // statusId -> lane object, for bucketing
+    cols = cfg.map(c => ({
+      name: c.name,
+      lanes: (c.statusIds || []).map(id => {
+        const lane = { statusId: String(id), status: nameOf.get(String(id)) || '', items: [] };
+        laneOf.set(String(id), lane);
+        return lane;
+      }),
+    }));
+    const other = { name: 'Other', lanes: [{ statusId: '', status: '', items: [] }] };
+    for (const it of items) (laneOf.get(String(it.statusId)) || other.lanes[0]).items.push(it);
+    if (other.lanes[0].items.length) cols.push(other);
+  } else {
+    // Fallback: one column per status, a single lane that IS the column (no sub-lane header).
+    const map = new Map();
     for (const it of items) {
-      const idx = colOf.get(String(it.statusId));
-      (idx === undefined ? other : cols[idx]).items.push(it);
+      const name = it.status || '—';
+      if (!map.has(name)) map.set(name, { name, cat: it.statusCategory || '',
+        lanes: [{ status: it.status || '', statusId: it.statusId != null ? String(it.statusId) : '', items: [] }] });
+      map.get(name).lanes[0].items.push(it);
     }
-    return other.items.length ? [...cols, other] : cols;
+    cols = [...map.values()].sort((a, b) =>
+      (CAT_RANK[a.cat] ?? 1) - (CAT_RANK[b.cat] ?? 1) || a.name.localeCompare(b.name));
   }
-  const map = new Map();
-  for (const it of items) {
-    const name = it.status || '—';
-    if (!map.has(name)) map.set(name, { name, status: it.status || '', statusId: it.statusId != null ? String(it.statusId) : '', cat: it.statusCategory || '', items: [] });
-    map.get(name).items.push(it);
+  for (const c of cols) {
+    c.total = c.lanes.reduce((n, l) => n + l.items.length, 0);
+    c.multi = c.lanes.length > 1; // single-status columns (and the fallback) show no sub-lane header
   }
-  return [...map.values()].sort((a, b) =>
-    (CAT_RANK[a.cat] ?? 1) - (CAT_RANK[b.cat] ?? 1) || a.name.localeCompare(b.name));
+  return cols;
 }
 
 // Render the board from the cached snapshot (on load and after a status change). The
@@ -382,7 +410,10 @@ function buildColumns(items, cfg) {
 export function renderScrumboard() {
   const el = document.getElementById('scrumboard-body');
   if (!el) return;
-  if (_boardDragging) return; // don't rebuild the DOM mid-drag — it would destroy the live Sortable instance
+  // Mid-drag rebuilds are prevented upstream at loadScrumboard (the SSE-refresh entry); no other
+  // caller reaches here during a drag (doTransition fires post-onEnd; project/filter switches need
+  // a click). So we DON'T hard-block on _boardDragging here — that would make a stuck flag
+  // un-recoverable (initBoardSort, which clears it, would never run). See initBoardSort.
   const snap = state.boardSnap || { items: [] };
   // Overlay any optimistic drag/move still awaiting server confirmation so the card shows in
   // its new column even right after a sync re-read the (stale) snapshot.
@@ -415,10 +446,16 @@ export function renderScrumboard() {
       <div class="board-col">
         <div class="board-col-head">
           <span class="board-col-name">${esc(col.name)}</span>
-          <span class="board-col-count">${col.items.length}</span>
+          <span class="board-col-count">${col.total}</span>
         </div>
-        <div class="board-col-body" data-status="${esc(col.status)}" data-status-id="${esc(col.statusId)}">
-          ${col.items.map(it => boardCard(it, mineKeys.has(it.key))).join('')}
+        <div class="board-col-body">
+          ${col.lanes.map(lane => `
+            <div class="board-lane${lane.status ? '' : ' board-lane-nostatus'}">
+              ${col.multi ? `<div class="board-lane-head"><span class="board-lane-name">${esc(lane.status || '—')}</span><span class="board-lane-count">${lane.items.length}</span></div>` : ''}
+              <div class="board-lane-body" data-status="${esc(lane.status)}" data-status-id="${esc(lane.statusId)}">
+                ${lane.items.map(it => boardCard(it, mineKeys.has(it.key))).join('')}
+              </div>
+            </div>`).join('')}
         </div>
       </div>`).join('')}
   </div>`;
