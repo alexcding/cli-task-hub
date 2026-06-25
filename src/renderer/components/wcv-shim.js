@@ -26,6 +26,7 @@ export function createWcvShim() {
   let lastKey = '';
   let canBack = false;
   let canFwd = false;
+  let lastGoodUrl = '';   // last http(s) page — where we bounce back to if a non-web nav slips through
 
   // Native nav/title events from the Rust WKWebView poll (viewer.rs), re-dispatched as the
   // <webview>-shaped DOM events viewer.js/find.js already listen for.
@@ -34,7 +35,16 @@ export function createWcvShim() {
     if (!e || e.id !== id) return;
     if (typeof e.canGoBack === 'boolean') canBack = e.canGoBack;
     if (typeof e.canGoForward === 'boolean') canFwd = e.canGoForward;
-    if (e.url) { el.src = e.url; const ev = new Event('did-navigate'); ev.url = e.url; el.dispatchEvent(ev); }
+    // The embedded viewer is a web browser for GitHub/Jira — it must never render local files or
+    // other non-web schemes. Electron's <webview> intercepts these via will-navigate; the native
+    // WKWebView has no such hook, so a clicked file:// link (e.g. a worktree path) navigates it to
+    // local content. Bounce any non-http(s) nav back to the last good page and don't surface it as
+    // a real navigation (no URL-bar/tab update, no persistence).
+    if (e.url && !/^(https?:|about:blank)/i.test(e.url)) {
+      if (lastGoodUrl) wcv.navigate(id, lastGoodUrl); else wcv.nav(id, 'stop');
+      return;
+    }
+    if (e.url) { if (/^https?:/i.test(e.url)) lastGoodUrl = e.url; el.src = e.url; const ev = new Event('did-navigate'); ev.url = e.url; el.dispatchEvent(ev); }
     if (e.title) { const ev = new Event('page-title-updated'); ev.title = e.title; el.dispatchEvent(ev); }
     // Emit the loading transition BEFORE progress so a start sets the loading flag before the first
     // progress tick, and a stop clears it before any trailing tick.
@@ -71,6 +81,7 @@ export function createWcvShim() {
 
   function load(url) {
     if (!url) return;
+    if (/^https?:/i.test(url)) lastGoodUrl = url;   // a known-good page to bounce back to (see onEvent)
     el.src = url;                                   // find.js gates on wv.src; expose the current URL
     if (!created) { created = true; wcv.create(id, url); startLoop(); }
     else wcv.navigate(id, url);

@@ -804,7 +804,8 @@ export async function newTask(cli = '') {
     if (cli) await launchCli(tab.termId, cwd, cli);
     // Track the task durably — it now survives tab close / terminal death / app restart (Tasks page).
     persistTask({ url: tab.url, kind: tab.kind, title: tab.title, repo: tab.repo || '', branch,
-      jiraKey: tab.kind === 'jira' ? key : '', workspace: f.workspace || '', worktree: cwd || '', cli });
+      jiraKey: tab.kind === 'jira' ? key : '', workspace: f.workspace || '', worktree: cwd || '',
+      ...(cli && { cli }) }); // only stamp cli when launching one — plain New Task must not wipe a stored cli
   } catch (e) {
     toastErr('Failed to start task: ' + e.message);
   } finally {
