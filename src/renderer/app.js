@@ -21,8 +21,7 @@ import { loadProjectPage, projShowSection, reloadProjectPRs, loadProjectWebhooks
   wfNew, wfDelete, wfSetName, wfSetCli, wfAddStep, wfRemoveStep, wfEditStepCommand, wfEditStepTitle, saveWorkflows } from './pages/project.js';
 import { loadGitTab, gitTabPick, gitTabShowCommit, gitTabBack, gitTabRemoveWorktree } from './pages/git-tab.js';
 import * as jiraView from './pages/jira.js';
-import { loadScrumboard, setBoardProject, setBoardFilter, setBoardQuery, applyBoardQuery,
-  boardDragStart, boardDragEnd, boardDragOver, boardDragLeave, boardDrop } from './pages/scrumboard.js';
+import { loadScrumboard, setBoardProject, setBoardFilter, setBoardQuery, applyBoardQuery } from './pages/scrumboard.js';
 import { loadLogs, setLogCategory, clearLogs } from './pages/logs.js';
 import { loadTasks, openTaskSession, deleteTaskSession, analyzeSession, updateTasksBadge } from './pages/tasks.js';
 import { loadPersistedTasks } from './services/tasks.js';
@@ -253,7 +252,6 @@ Object.assign(window, {
   findNext: () => find.findNext(true), findPrev: () => find.findNext(false),
   // views
   loadScrumboard, setBoardProject, setBoardFilter, setBoardQuery, applyBoardQuery,
-  boardDragStart, boardDragEnd, boardDragOver, boardDragLeave, boardDrop,
   loadProjectJira: jiraView.loadProjectJira, setProjJiraFilter: jiraView.setProjJiraFilter,
   openStatusMenu: jiraView.openStatusMenu, openAssignMenu: jiraView.openAssignMenu,
   projShowSection, reloadProjectPRs, loadProjectWebhooks, saveProjectWebhooks, previewFixVersion, scrollDash, setUsageTab,

@@ -232,18 +232,18 @@ export async function setBoardFilter(value) {
 // One board card: key (links to the ticket) + assignee chip, summary, then a footer with
 // type/priority and a move control that reuses the shared status-transition menu
 // (openStatusMenu reads data-key/data-status off the button). `mine` tickets get a subtle
-// accent edge so your own work stands out on a team board. The whole card is draggable —
-// dropping it on another column transitions the ticket (see boardDrag*); the move dropdown
-// stays as the keyboard/precise path. `fromStatus` is the source column's status so a drop
-// back in the same column is a no-op (compared by status, not a render-time index).
-function boardCard(it, mine, fromStatus) {
+// accent edge so your own work stands out on a team board. The card is drag-to-move via
+// SortableJS (initBoardSort) — dropping it in another column transitions the ticket; the
+// move dropdown stays as the precise path. `data-key` lets the drop handler read which card
+// moved (the source column is the Sortable list it came from).
+function boardCard(it, mine) {
   const key = esc(it.key || '');
   const keyJs = escJs(it.key || '');  // for the '…'-quoted args in inline on* handlers
   // The avatar is the assign control: click → assignee menu (openAssignMenu reads
   // data-key/data-assignee-id). Unassigned cards show a dashed "+" to invite assigning.
   // `mine` (assigned to me) tints the avatar with the Jira-capsule accent background.
   const av = `<button class="board-av${it.assignee ? '' : ' board-av-empty'}${mine ? ' board-av-mine' : ''}" data-key="${key}" data-assignee-id="${esc(it.assigneeId || '')}" onclick="openAssignMenu(this)" title="${it.assignee ? esc(it.assignee) : 'Assign'}">${it.assignee ? esc(initials(it.assignee)) : ICON.plus}</button>`;
-  return `<div class="board-card" draggable="true" ondragstart="boardDragStart(event, '${keyJs}', '${escJs(fromStatus)}')" ondragend="boardDragEnd(event)">
+  return `<div class="board-card" data-key="${key}">
     <div class="board-card-sum">${esc(it.summary || '')}</div>
     <div class="board-card-foot">
       ${typeIcon(it)}
@@ -255,57 +255,78 @@ function boardCard(it, mine, fromStatus) {
   </div>`;
 }
 
-// ── Drag-to-transition ───────────────────────────────────────────────────────────
-// Dragging a card onto another column transitions it to that column's status, reusing the
-// shared doTransition (sticky-optimistic update + next-poll confirm) — exactly what the move
-// dropdown calls. State lives in module locals (dataTransfer still carries the key so the OS
-// shows a drag image). The source identity is the source column's STATUS, not a render-time
-// index: an SSE sync can re-render the board mid-drag, so a status compare keeps "dropped back
-// in the same column" correct even if column positions shift.
-let _dragKey = '';
-let _dragFromStatus = '';
+// ── Drag-to-transition (SortableJS) ────────────────────────────────────────────────
+// Each column body is a Sortable list sharing one group, so a card drags between columns.
+// We use pointer-based SortableJS (the same lib the sidebar uses) rather than native HTML5
+// drag-and-drop: Tauri's WKWebView enables an OS-level drag-drop handler that swallows HTML5
+// drag events (and that handler is what routes file drops into the terminal — see bridge.js),
+// so HTML5 DnD can't work here without breaking that. `sort:false` disables intra-column
+// reordering (status only changes between columns); a cross-column drop reuses the shared
+// doTransition (optimistic update + next-poll confirm) — exactly what the move dropdown calls.
+let _boardSortables = [];
+// True between a drag's start and end. renderScrumboard() bails while it's set: a live SSE sync
+// re-runs loadScrumboard mid-drag, which would rebuild the board DOM and destroy the SortableJS
+// instance being dragged — freezing the drag. The skipped snapshot still lands in state; the
+// post-drag render (onEnd) catches up.
+let _boardDragging = false;
 
-// Strip the drop-target highlight from whatever column still has it. A drag cancelled with Esc
-// (or released outside any column) fires dragend but neither drop nor dragleave, so without this
-// the last-hovered column would stay highlighted until the next full re-render.
-function clearDropHighlight() {
+// Ring/tint whichever column the drag is currently over. Cleared on drop/cancel (onEnd) and
+// before each move so only one column lights up at a time.
+function clearColHighlight() {
   document.querySelectorAll('.board-col-drop').forEach(el => el.classList.remove('board-col-drop'));
 }
 
-export function boardDragStart(ev, key, fromStatus) {
-  _dragKey = key;
-  _dragFromStatus = fromStatus;
-  ev.dataTransfer.effectAllowed = 'move';
-  ev.dataTransfer.setData('text/plain', key);
-  ev.currentTarget.classList.add('board-card-dragging');
+function initBoardSort() {
+  _boardSortables.forEach(s => s.destroy());
+  _boardSortables = [];
+  if (typeof Sortable === 'undefined') return;
+  document.querySelectorAll('#scrumboard-body .board-col-body').forEach(body => {
+    _boardSortables.push(new Sortable(body, {
+      group: 'board',
+      draggable: '.board-card',
+      sort: false,                                   // move between columns only — no reorder within
+      animation: 150,
+      // Force the mouse-driven fallback instead of SortableJS's default native HTML5-DnD backend:
+      // WKWebView (Tauri) mangles native drag — the OS drag-drop handler swallows the events — so
+      // native-backed onMove/ghost don't fire. The fallback runs entirely in JS (its own drag clone)
+      // and is what makes the column highlight + placeholder work here.
+      forceFallback: true,
+      fallbackOnBody: true,                          // append the drag clone to <body> so it isn't clipped by a column
+      // Clicks on the key link / avatar / move button must stay clicks, not start a drag.
+      filter: '.board-card-key, .board-av, .board-move',
+      preventOnFilter: false,
+      ghostClass: 'board-card-ghost',                // the drop-placeholder shown in the target column
+      // Light up the column under the pointer as the card moves over it (replaces the old
+      // HTML5 dragover highlight). Returning nothing leaves the move allowed.
+      onStart() { _boardDragging = true; },           // freeze board re-renders for the duration (see _boardDragging)
+      onMove(evt) {
+        clearColHighlight();
+        evt.to?.closest('.board-col')?.classList.add('board-col-drop');
+      },
+      onEnd(evt) { _boardDragging = false; clearColHighlight(); onBoardDrop(evt); },
+    }));
+  });
 }
 
-export function boardDragEnd(ev) {
-  ev.currentTarget.classList.remove('board-card-dragging');
-  clearDropHighlight();
-  _dragKey = '';
-  _dragFromStatus = '';
-}
-
-// dragover must preventDefault for the column to be a valid drop target. dragleave fires
-// when crossing into a child too, so only drop the highlight when the pointer actually
-// leaves the column (relatedTarget outside it).
-export function boardDragOver(ev) {
-  if (!_dragKey) return;
-  ev.preventDefault();
-  ev.dataTransfer.dropEffect = 'move';
-  ev.currentTarget.classList.add('board-col-drop');
-}
-export function boardDragLeave(ev) {
-  if (!ev.currentTarget.contains(ev.relatedTarget)) ev.currentTarget.classList.remove('board-col-drop');
-}
-
-export function boardDrop(ev, status, statusId) {
-  ev.preventDefault();
-  ev.currentTarget.classList.remove('board-col-drop');
-  if (!_dragKey || status === _dragFromStatus) return;  // dropped back in the same column
-  if (!status) { toast('Can’t tell which status this column maps to — use the move menu.'); return; }
-  doTransition(_dragKey, status, statusId);
+// A card was dropped. `from`/`to` are the column bodies; same list ⇒ no status change. The
+// target column carries its status on data-status/-id (blank for a never-seen empty column,
+// which can't be a transition target). doTransition re-renders the board from state, which
+// rebuilds the DOM Sortable mutated — so a rejected drop just snaps back on re-render.
+function onBoardDrop(evt) {
+  // Same column ⇒ no status change, but a sync may have been skipped mid-drag — re-render to catch up.
+  if (evt.from === evt.to) { queueMicrotask(renderScrumboard); return; }
+  // Capture off the event now — Sortable reuses/clears it after onEnd returns.
+  const key = evt.item.dataset.key;
+  const status = evt.to.dataset.status || '';
+  const statusId = evt.to.dataset.statusId || '';
+  if (!key) { queueMicrotask(renderScrumboard); return; }
+  // Defer: doTransition/renderScrumboard rebuild #scrumboard-body and destroy these Sortable
+  // instances; running that synchronously inside onEnd (mid drop-cleanup) is unsafe. The
+  // microtask fires right after Sortable finishes the current operation.
+  queueMicrotask(() => {
+    if (!status) { toast('Can’t tell which status this column maps to — use the move menu.'); renderScrumboard(); return; }
+    doTransition(key, status, statusId);
+  });
 }
 
 // Columns in board order. Prefer the board's configured columns (snap.columns groups
@@ -353,6 +374,7 @@ function buildColumns(items, cfg) {
 export function renderScrumboard() {
   const el = document.getElementById('scrumboard-body');
   if (!el) return;
+  if (_boardDragging) return; // don't rebuild the DOM mid-drag — it would destroy the live Sortable instance
   const snap = state.boardSnap || { items: [] };
   // Overlay any optimistic drag/move still awaiting server confirmation so the card shows in
   // its new column even right after a sync re-read the (stale) snapshot.
@@ -377,6 +399,7 @@ export function renderScrumboard() {
       : snap.query ? `No tickets match “${esc(snap.query)}” in the active sprint.`
       : 'No active sprint, or no tickets in it.';
     el.innerHTML = `<div class="empty" style="padding:16px;color:var(--text-3)">${emptyMsg}</div>`;
+    initBoardSort(); // tear down any Sortable instances from a prior non-empty render
     return;
   }
 
@@ -384,14 +407,15 @@ export function renderScrumboard() {
 
   el.innerHTML = `<div class="board">
     ${ordered.map(col => `
-      <div class="board-col" ondragover="boardDragOver(event)" ondragleave="boardDragLeave(event)" ondrop="boardDrop(event, '${escJs(col.status)}', '${escJs(col.statusId)}')">
+      <div class="board-col">
         <div class="board-col-head">
           <span class="board-col-name">${esc(col.name)}</span>
           <span class="board-col-count">${col.items.length}</span>
         </div>
-        <div class="board-col-body">
-          ${col.items.map(it => boardCard(it, mineKeys.has(it.key), col.status)).join('')}
+        <div class="board-col-body" data-status="${esc(col.status)}" data-status-id="${esc(col.statusId)}">
+          ${col.items.map(it => boardCard(it, mineKeys.has(it.key))).join('')}
         </div>
       </div>`).join('')}
   </div>`;
+  initBoardSort();
 }

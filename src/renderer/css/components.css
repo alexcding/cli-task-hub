@@ -149,8 +149,9 @@
    from the body edge so the drop ring shows on all four sides instead of hiding behind the
    full-width cards; it's always present so hovering causes no layout shift. */
 .board-col-body { flex:1;display:flex;flex-direction:column;gap:8px;min-height:42px;border-radius:8px;padding:5px 3px; }
-/* Drop-target highlight: ring + tint the full-height card area and light up the column title
-   row, so the landing column reads unmistakably — title included. */
+/* Drop-target highlight while dragging (added by initBoardSort's onMove): ring + tint the
+   full-height card area and light up the column title row, so the landing column reads
+   unmistakably — title included. */
 .board-col-drop .board-col-body { box-shadow:inset 0 0 0 2px var(--accent);background:var(--accent-bg); }
 .board-col-drop .board-col-head { border-bottom-color:var(--accent); }
 .board-col-drop .board-col-name,
@@ -160,8 +161,10 @@
 .board-card { position:relative;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:11px 12px;cursor:grab;transition:border-color .15s; }
 .board-card:hover { border-color:var(--border-focus); }
 .board-card:active { cursor:grabbing; }
-/* The card being dragged fades so the accent drop-ring on the target column reads clearly. */
-.board-card-dragging { opacity:.4; }
+/* SortableJS drop-placeholder (ghostClass): an accent-ringed dashed slot showing where the
+   dragged card will land in the target column. */
+.board-card-ghost { opacity:.5;border:1px dashed var(--accent);background:var(--accent-bg); }
+.board-card-ghost > * { visibility:hidden; }
 /* Meta row sits at the BOTTOM (summary is the hero on top): type icon · key · priority,
    with the assignee pinned right. */
 .board-card-foot { display:flex;align-items:center;gap:3px;margin-top:10px; }
