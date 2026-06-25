@@ -14,7 +14,7 @@ import { visibleTerm } from './terminal.js';
 import { ensurePrTerminal, applyPrLayout, clearPrLayout, resolveTabFolder, removeWorktree, openPrPanel } from './split.js';
 import { jiraTaskBranch } from '../lib/workflow.mjs';
 import { persistTask } from '../services/tasks.js';
-import { refreshWorkflowBtn } from './workflow.js';
+import { refreshWorkflowBtn, launchCli } from './workflow.js';
 import { hideDiffPane } from './diff.js';
 import { attachFind, closeFind } from './find.js';
 import { renderContentTabs, playTabIn, playTabOut, markActiveTab, defaultChipRect, flipDefaultChip, focusCtabInput } from './content-tabs.js';
@@ -759,12 +759,14 @@ export async function removeTabWorktree() {
 // if the branch isn't checked out anywhere yet. This is the SINGLE worktree-create entry point —
 // the old folder-chip "Create worktree" CTA folded into it. Branch naming mirrors the workflow
 // runner: a GitHub PR uses its head ref; a Jira ticket derives feature/<KEY>-<summary>. After this
-// the tab has a live terminal, so the button hides (updateTitles) and ⌘J / the pane-switch take over.
-export async function newTask() {
+// the tab has a live terminal, so the buttons hide (updateTitles) and ⌘J / the pane-switch take over.
+// `cli` (''|'claude'|'codex') optionally launches that CLI right after the shell is up — the empty
+// state's "New Claude/Codex Task" buttons; '' (plain "New Task") just drops you at the shell.
+export async function newTask(cli = '') {
   const tab = activeTab();
   if (!tab || !canSplitTerminal(tab)) return;
-  const btn = document.querySelector('.new-task-cta');
-  if (btn) btn.disabled = true;
+  const btns = document.querySelectorAll('.new-task-cta');
+  btns.forEach(b => { b.disabled = true; });
   try {
     const f = await resolveTabFolder(tab);
     let cwd = f.path; // where the terminal opens — the just-created worktree if we create one below
@@ -797,14 +799,16 @@ export async function newTask() {
     await ensurePrTerminal(tab, cwd); // pass the resolved/created path so it isn't re-resolved
     if (state.activeTabId === tab.id) applyPrLayout(tab, true);
     document.getElementById('split-toggle-term')?.classList.add('on');
-    updateTitles(); // hide the New Task button now the tab has a terminal; set the worktree title
+    updateTitles(); // hide the New Task buttons now the tab has a terminal; set the worktree title
+    // Drop straight into the chosen CLI (no-op for plain New Task, or if one's already running).
+    if (cli) await launchCli(tab.termId, cwd, cli);
     // Track the task durably — it now survives tab close / terminal death / app restart (Tasks page).
     persistTask({ url: tab.url, kind: tab.kind, title: tab.title, repo: tab.repo || '', branch,
-      jiraKey: tab.kind === 'jira' ? key : '', workspace: f.workspace || '', worktree: cwd || '' });
+      jiraKey: tab.kind === 'jira' ? key : '', workspace: f.workspace || '', worktree: cwd || '', cli });
   } catch (e) {
     toastErr('Failed to start task: ' + e.message);
   } finally {
-    if (btn) btn.disabled = false;
+    btns.forEach(b => { b.disabled = false; });
   }
 }
 

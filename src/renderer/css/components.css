@@ -18,11 +18,11 @@
 .btn svg { width:14px; height:14px; flex-shrink:0; display:block; }
 
 /* Cards — .card is the default flat container surface (bordered, no shadow).
-   Add .clickable for a flat hover (border/bg change, no elevation). Padding
-   comes from .card-pad / .card-header, or the composing layout class. */
+   Add .clickable for a hover border focus (no shadow), matching the task cards.
+   Padding comes from .card-pad / .card-header, or the composing layout class. */
 .card { background:var(--surface);border:1px solid var(--border);border-radius:var(--rl); }
-.card.clickable { cursor:pointer;transition:background .12s,border-color .12s; }
-.card.clickable:hover { background:var(--surface-hover);border-color:var(--border-focus); }
+.card.clickable { cursor:pointer;transition:border-color .15s; }
+.card.clickable:hover { border-color:var(--border-focus); }
 .card-pad { padding:20px; }
 .card-header { padding:14px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:8px; }
 .card-header h3 { font-size:14px;font-weight:600; }
@@ -33,8 +33,8 @@
 .dash-date { font-size:11.5px;font-weight:600;color:var(--text-3);text-transform:uppercase;letter-spacing:1px; }
 .dash-hello { font-size:24px;font-weight:650;letter-spacing:-.4px;margin-top:5px; }
 .stat-chips { display:flex;align-items:stretch;gap:12px;flex-wrap:wrap; }
-.stat-chip { display:flex;align-items:center;gap:12px;padding:12px 22px 12px 14px;background:var(--surface);border:1px solid var(--border);border-radius:var(--rl);cursor:pointer;font:inherit;color:inherit;text-align:left;transition:background .12s,border-color .12s; }
-.stat-chip:hover { background:var(--surface-hover);border-color:var(--border-focus); }
+.stat-chip { display:flex;align-items:center;gap:12px;padding:12px 22px 12px 14px;background:var(--surface);border:1px solid var(--border);border-radius:var(--rl);cursor:pointer;font:inherit;color:inherit;text-align:left;transition:border-color .15s; }
+.stat-chip:hover { border-color:var(--border-focus); }
 .stat-chip-icon { width:34px;height:34px;border-radius:9px;display:flex;align-items:center;justify-content:center;flex-shrink:0; }
 .stat-chip-icon svg { width:17px;height:17px; }
 .stat-chip-icon.tint-accent { background:var(--accent-bg);color:var(--accent); }
@@ -155,9 +155,10 @@
 .board-col-drop .board-col-head { border-bottom-color:var(--accent); }
 .board-col-drop .board-col-name,
 .board-col-drop .board-col-count { color:var(--accent); }
-/* Flat card: white tile, no border, just a hair of shadow; separated from the grey board
-   by color + whitespace. */
-.board-card { position:relative;background:var(--surface);border-radius:8px;padding:11px 12px;box-shadow:var(--shadow);cursor:grab; }
+/* Flat card: outlined tile (no shadow), separated from the grey board by border + color;
+   border-focus on hover, matching the dashboard / task cards. */
+.board-card { position:relative;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:11px 12px;cursor:grab;transition:border-color .15s; }
+.board-card:hover { border-color:var(--border-focus); }
 .board-card:active { cursor:grabbing; }
 /* The card being dragged fades so the accent drop-ring on the target column reads clearly. */
 .board-card-dragging { opacity:.4; }

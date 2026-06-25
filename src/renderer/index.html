@@ -458,13 +458,24 @@
     </div>
     <div class="split-body" id="split-body">
       <!-- Right-pane empty state: a GitHub/Jira tab with no terminal yet shows no Terminal/Review
-           tabs — just this New Task button. It creates the branch's worktree (if absent) then opens
-           the terminal in it (newTask in viewer.js). Occupies the terminal slot; split.js toggles it. -->
+           tabs — just these New Task buttons. Each creates the branch's worktree (if absent) then
+           opens the terminal in it (newTask in viewer.js); the Claude/Codex variants additionally
+           launch that CLI at the shell. Occupies the terminal slot; split.js toggles it. -->
       <div class="term-empty" id="term-empty" hidden>
-        <button class="new-task-cta" onclick="newTask()">
-          <span class="ntc-ic"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 7l4 5-4 5"/><path d="M12 17h7"/></svg></span>
-          <span>New Task</span>
-        </button>
+        <div class="nt-choices">
+          <button class="new-task-cta" onclick="newTask()">
+            <span class="ntc-ic"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 7l4 5-4 5"/><path d="M12 17h7"/></svg></span>
+            <span>New Task</span>
+          </button>
+          <button class="new-task-cta nt-cli nt-claude" onclick="newTask('claude')">
+            <span class="ntc-ic"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 7l4 5-4 5"/><path d="M12 17h7"/></svg></span>
+            <span>New Claude Task</span>
+          </button>
+          <button class="new-task-cta nt-cli nt-codex" onclick="newTask('codex')">
+            <span class="ntc-ic"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 7l4 5-4 5"/><path d="M12 17h7"/></svg></span>
+            <span>New Codex Task</span>
+          </button>
+        </div>
       </div>
       <!-- Diff pane: shares the terminal's slot in the split; diff.js renders into it. -->
       <div class="diff-pane" id="diff-pane" style="display:none"></div>

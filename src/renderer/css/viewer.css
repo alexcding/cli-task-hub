@@ -233,12 +233,18 @@ body.pr-split .split-body .term-empty { left:var(--pr-split, 60%); }
 /* …including the action bar — body.pr-split shows it later in this file, so out-specify that. */
 body.pr-empty .pane-switch { display:none; }
 body.pr-empty.pr-split .pane-foot, body.pr-empty.viewing-term .pane-foot { display:none; }
-/* New Task call-to-action: a >_ glyph + label, accent-outlined, prompt-like. */
-.new-task-cta { display:inline-flex; align-items:center; gap:8px; padding:10px 18px; font:inherit; font-size:13px; font-weight:600; color:var(--accent); background:var(--accent-bg); border:1px solid var(--accent); border-radius:8px; cursor:pointer; transition:background .12s,color .12s; }
-.new-task-cta:hover { background:var(--accent); color:#fff; }
+/* Three stacked choices, all the same width so they read as one menu. */
+.nt-choices { display:flex; flex-direction:column; gap:10px; align-items:stretch; }
+/* New Task call-to-action: a >_ glyph + label, color-outlined, prompt-like; fills on hover. All three
+   share this style, each in its own highlight color — plain New Task on the app accent, the CLI
+   variants on that CLI's brand tint (Claude coral / Codex periwinkle). The >_ glyph is currentColor,
+   so it tracks the text color for free (brand at rest, white on hover). */
+.new-task-cta { display:inline-flex; align-items:center; justify-content:flex-start; gap:8px; padding:10px 18px; font:inherit; font-size:13px; font-weight:600; color:var(--accent); background:var(--accent-bg); border:1px solid var(--accent); border-radius:8px; cursor:pointer; }
 .new-task-cta .ntc-ic { display:inline-flex; }
 .new-task-cta svg { display:block; }
 .new-task-cta:disabled { opacity:.5; cursor:default; }
+.new-task-cta.nt-claude { color:var(--claude); background:var(--claude-bg); border-color:var(--claude); }
+.new-task-cta.nt-codex { color:var(--codex); background:var(--codex-bg); border-color:var(--codex); }
 
 /* Diff pane — read-only `git diff` of the tab's worktree, switchable with the paired
    terminal (split.js toggles body.pane-diff). Semantic add/remove colors live here

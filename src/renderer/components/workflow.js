@@ -108,6 +108,22 @@ async function submitLine(termId, line) {
   window.taskhub?.term?.write(termId, '\r');
 }
 
+// Launch an interactive CLI (claude/codex) in a terminal sitting at a shell prompt: cd into the
+// worktree first (a reused PTY may be rooted at the workspace, so the session must not run there),
+// then type the CLI name. If a program is already in the foreground (e.g. a CLI left running —
+// terminals outlive tabs) typing would go INTO it as input, so skip the launch and reuse the session.
+// Our hook/busy flag is the reliable signal; fall back to the PTY foreground probe. Shared by the
+// workflow runner and the "New Claude/Codex Task" buttons (viewer.js).
+export async function launchCli(termId, dir, cli) {
+  if (!termId || !cli) return;
+  let atShell = !(state.terms.get(termId)?.busy);
+  if (atShell) { try { atShell = (await window.taskhub?.term?.foreground(termId))?.atShell !== false; } catch {} }
+  if (!atShell) return;
+  if (dir) await submitLine(termId, `cd ${shq(dir)}`);
+  await submitLine(termId, cli);
+  await delay(LAUNCH_SETTLE_MS);
+}
+
 // After a step's turn finishes, hand the agent's last message + step context to the shared analyzer
 // (one headless CLI call — settle/read/record all live in the service) and return its decision
 // (proceed / retry / stop). Any skip/failure → 'proceed' (the prior behavior: keep advancing). The
@@ -183,20 +199,8 @@ export async function runWorkflow(tab, wf) {
     if (!termId) throw new Error('terminal not ready');
     const dir = (f && f.path) || p.workspace;
 
-    // 3. Launch the CLI only if the terminal is at a shell prompt. If a program is already in the
-    //    foreground (e.g. claude/codex left running from a previous run — terminals outlive tabs),
-    //    typing the CLI name would go INTO it as input, so skip the launch and reuse the session.
-    //    When we DO launch, cd into the worktree first: the terminal may be a reused PTY rooted at
-    //    the workspace (it was created before the worktree existed), so steps must not run there.
-    // If our hook/busy detection already shows this terminal working, a CLI is running — never
-    // launch on top of it (the reliable signal). Otherwise fall back to the PTY foreground check.
-    let atShell = !(state.terms.get(termId)?.busy);
-    if (atShell) { try { atShell = (await window.taskhub?.term?.foreground(termId))?.atShell !== false; } catch {} }
-    if (atShell) {
-      if (dir) await submitLine(termId, `cd ${shq(dir)}`);
-      await submitLine(termId, wf.cli);
-      await delay(LAUNCH_SETTLE_MS);
-    }
+    // 3. Launch the CLI (no-op if a program is already in the foreground — see launchCli).
+    await launchCli(termId, dir, wf.cli);
     const pr = tab.kind === 'github' ? String((tab.url.match(/\/pull\/(\d+)/) || [])[1] || '') : '';
     const ctx = {
       key, pr, url: tab.url, branch,

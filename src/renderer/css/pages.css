@@ -21,8 +21,8 @@
 .task-grid { display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px; }
 @keyframes task-pulse { 50% { opacity:.35; } }
 
-.task-card { position:relative;background:var(--surface);border:1px solid var(--border);border-radius:var(--rl);padding:14px 16px;cursor:pointer;overflow:hidden;transition:border-color .15s,box-shadow .15s,transform .06s; }
-.task-card:hover { border-color:var(--border-focus);box-shadow:var(--shadow-md); }
+.task-card { position:relative;background:var(--surface);border:1px solid var(--border);border-radius:var(--rl);padding:14px 16px;cursor:pointer;overflow:hidden;transition:border-color .15s,transform .06s; }
+.task-card:hover { border-color:var(--border-focus); }
 .task-card:active { transform:translateY(1px); }
 
 .tc-top { display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:11px; }
