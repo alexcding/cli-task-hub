@@ -85,6 +85,12 @@ function acceptBoardSnap(snap) {
 export async function loadScrumboard() {
   const body = document.getElementById('scrumboard-body');
   if (!body) return;
+  // Never refetch/rebuild the board mid-drag. This is the SSE-refresh entry point, and its error
+  // and no-project branches write body.innerHTML DIRECTLY (bypassing renderScrumboard's guard) —
+  // a fetch failure landing during a drag would wipe #scrumboard-body and destroy the live
+  // SortableJS instance, freezing the drag. Guarding here keeps the invariant at the loader level
+  // so onEnd always fires (the dragged DOM survives); the skipped snapshot lands on the next sync.
+  if (_boardDragging) return;
   try {
     // Settings carry the per-project saved assignee filter (board_filter_<id>). The
     // my-sprint feed lets us highlight my own cards on the team board (non-blocking now
@@ -264,10 +270,12 @@ function boardCard(it, mine) {
 // reordering (status only changes between columns); a cross-column drop reuses the shared
 // doTransition (optimistic update + next-poll confirm) — exactly what the move dropdown calls.
 let _boardSortables = [];
-// True between a drag's start and end. renderScrumboard() bails while it's set: a live SSE sync
-// re-runs loadScrumboard mid-drag, which would rebuild the board DOM and destroy the SortableJS
-// instance being dragged — freezing the drag. The skipped snapshot still lands in state; the
-// post-drag render (onEnd) catches up.
+// True between a drag's start and end. Every path that rebuilds #scrumboard-body bails while it's
+// set — loadScrumboard (the SSE-refresh entry, incl. its direct error/empty innerHTML writes) and
+// renderScrumboard as a backstop — because rebuilding the DOM mid-drag would destroy the SortableJS
+// instance being dragged and freeze it. Guarding at the loader means the dragged DOM survives the
+// whole drag, so onEnd always fires and the flag can't get stuck. Skipped snapshots land on the
+// next sync; the post-drag render (onEnd → doTransition) catches up.
 let _boardDragging = false;
 
 // Ring/tint whichever column the drag is currently over. Cleared on drop/cancel (onEnd) and
@@ -391,6 +399,7 @@ export function renderScrumboard() {
     : f ? all.filter(i => i.assigneeId === f)
     : all;
 
+  let html;
   if (!items.length) {
     const proj = projectById(state.boardProjectId);
     const emptyMsg = snap.error ? esc(snap.error)
@@ -398,14 +407,10 @@ export function renderScrumboard() {
       : proj && !proj.jiraProjectKey ? 'This project has no Jira key.'
       : snap.query ? `No tickets match “${esc(snap.query)}” in the active sprint.`
       : 'No active sprint, or no tickets in it.';
-    el.innerHTML = `<div class="empty" style="padding:16px;color:var(--text-3)">${emptyMsg}</div>`;
-    initBoardSort(); // tear down any Sortable instances from a prior non-empty render
-    return;
-  }
-
-  const ordered = buildColumns(items, snap.columns);
-
-  el.innerHTML = `<div class="board">
+    html = `<div class="empty" style="padding:16px;color:var(--text-3)">${emptyMsg}</div>`;
+  } else {
+    const ordered = buildColumns(items, snap.columns);
+    html = `<div class="board">
     ${ordered.map(col => `
       <div class="board-col">
         <div class="board-col-head">
@@ -417,5 +422,13 @@ export function renderScrumboard() {
         </div>
       </div>`).join('')}
   </div>`;
+  }
+  // Skip the innerHTML churn (and Sortable teardown/rebuild) when nothing changed — SSE refreshes
+  // re-render frequently but the board rarely differs (mirrors sidebar's renderTabs dirty-check).
+  // Safe vs. drag: a same-column drop leaves the markup identical (sort:false moves nothing) so we
+  // skip and keep the live instances; a real move changes the markup, so it re-renders + re-inits.
+  if (el._lastBoardHtml === html) return;
+  el.innerHTML = html;
+  el._lastBoardHtml = html;
   initBoardSort();
 }
