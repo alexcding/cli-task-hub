@@ -39,7 +39,11 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
     .hide_others()
     .show_all()
     .separator()
-    .quit()
+    // NOT the predefined .quit() role: that terminates the process directly, bypassing the
+    // QUITTING flag and killing the tray + every PTY/CLI living in this process. TaskHub is a
+    // menu-bar app — ⌘Q just hides the window (handled in lib.rs on_menu_event), same as the red
+    // button. The one real exit is the tray's "Quit TaskHub".
+    .item(&MenuItemBuilder::with_id("app:hide", "Quit TaskHub").accelerator("Cmd+Q").build(app)?)
     .build()?;
 
   let file = SubmenuBuilder::new(app, "File")

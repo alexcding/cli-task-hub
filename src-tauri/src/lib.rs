@@ -115,7 +115,28 @@ fn wait_for_backend() {
   log::warn!("backend did not become ready within ~10s; loading window anyway");
 }
 
+// Show/hide the Dock icon (macOS). A true menu-bar app drops out of the Dock when its window is
+// gone (Accessory) and rejoins it when the window is shown (Regular) — so quitting/closing the
+// window leaves only the tray, with no lingering Dock icon. No-op off macOS.
+pub(crate) fn set_dock_visible(app: &tauri::AppHandle, visible: bool) {
+  #[cfg(target_os = "macos")]
+  {
+    let policy = if visible {
+      tauri::ActivationPolicy::Regular
+    } else {
+      tauri::ActivationPolicy::Accessory
+    };
+    if let Err(e) = app.set_activation_policy(policy) {
+      log::warn!("[dock] set_activation_policy(visible={visible}) failed: {e}");
+    }
+  }
+  #[cfg(not(target_os = "macos"))]
+  let _ = (app, visible);
+}
+
 pub(crate) fn show_main(app: &tauri::AppHandle) {
+  // Rejoin the Dock before showing — an Accessory app's window can't take focus reliably.
+  set_dock_visible(app, true);
   // Target the "main" WEBVIEW's window, not get_webview_window(): once the window hosts child
   // webviews (an embedded tab is open) it's a multiwebview window and get_webview_window returns
   // None — so show/focus (and the tray/menu/notify evals) would silently no-op.
@@ -124,6 +145,15 @@ pub(crate) fn show_main(app: &tauri::AppHandle) {
     let _ = win.show();
     let _ = win.set_focus();
   }
+}
+
+// Hide the window and drop the Dock icon, leaving the app resident in the tray. The shared exit
+// path for every "close the window" trigger (red button, ⌘W, app-menu ⌘Q) — NOT a real quit.
+pub(crate) fn hide_main(app: &tauri::AppHandle) {
+  if let Some(w) = app.get_webview("main") {
+    let _ = w.window().hide();
+  }
+  set_dock_visible(app, false);
 }
 
 // Create the dashboard window. Built in Rust (rather than declared in tauri.conf.json) so we can
@@ -160,6 +190,12 @@ fn open_main_window(app: &tauri::AppHandle) -> tauri::Result<()> {
 
   let _window = builder.build()?;
   // (No auto-opened devtools — use right-click → Inspect Element in a debug build if needed.)
+
+  // Launched at login the window starts hidden, so start as a menu-bar-only app (no Dock icon);
+  // show_main flips back to Regular when the tray/Dock reveals it.
+  if at_login {
+    set_dock_visible(app, false);
+  }
 
   // Native translucent sidebar behind the transparent window. The renderer paints the content area
   // opaque and leaves the sidebar transparent (css: html.native-mac aside), so the material shows
@@ -266,6 +302,13 @@ pub fn run() {
       terminals::term_foreground,
     ])
     .on_menu_event(|app, event| {
+      // App-menu "Quit TaskHub" (⌘Q): a menu-bar app stays resident in the tray, so hide the
+      // window instead of terminating — this keeps the tray + every PTY/CLI in this process alive.
+      // The only sanctioned exit is the tray's Quit (which sets QUITTING and kills the PTYs).
+      if event.id().as_ref() == "app:hide" {
+        hide_main(app);
+        return;
+      }
       // App-menu accelerators: dispatch the "sc:<action>" id to the renderer's __shortcut.
       // Tray menu ids (no "sc:" prefix) are handled by the tray's own handler and ignored here.
       if let Some(action) = event.id().as_ref().strip_prefix("sc:") {
@@ -278,7 +321,7 @@ pub fn run() {
       if let tauri::WindowEvent::CloseRequested { api, .. } = event {
         if !QUITTING.load(Ordering::SeqCst) {
           api.prevent_close();
-          let _ = window.hide();
+          hide_main(&window.app_handle());
         }
       }
     })
