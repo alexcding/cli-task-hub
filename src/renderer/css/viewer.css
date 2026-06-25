@@ -215,8 +215,13 @@ body.pr-split .split-body .editor-pane { width:var(--pr-split, 60%); }
    overlay scrollbar that auto-hides; match that here so the terminal looks the same. */
 .term-pane .xterm-viewport { overflow-y:auto !important; background-color:transparent !important; }
 /* PR ↔ terminal split: the PR webview takes the left `--pr-split` fraction, the
-   paired terminal the rest on the right; a draggable divider sits between them. */
-body.pr-split .split-body webview, body.pr-split .split-body .wcv-shim { width: var(--pr-split, 60%); }
+   paired terminal the rest on the right; a draggable divider sits between them.
+   The webview right edge stops 1px SHORT of the boundary: it's a native child view
+   that paints over all DOM (z-index is moot), so a webview ending exactly at
+   --pr-split occludes #pr-divider's hairline — which sits on that same seam — whenever
+   its sub-pixel-rounded bounds round over the line (hence "resize to see the divider").
+   The 1px inset keeps the seam pixel in DOM territory so the divider always renders. */
+body.pr-split .split-body webview, body.pr-split .split-body .wcv-shim { width: calc(var(--pr-split, 60%) - 1px); }
 body.pr-split .split-body .term-pane { left: var(--pr-split, 60%); }
 #pr-divider { position:absolute; top:0; bottom:0; left:var(--pr-split, 60%); width:7px; transform:translateX(-50%); cursor:col-resize; z-index:6; display:none; }
 #pr-divider::before { content:''; position:absolute; left:50%; top:0; bottom:0; width:1px; transform:translateX(-50%); background:var(--border); }
