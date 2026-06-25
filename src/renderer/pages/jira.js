@@ -215,6 +215,11 @@ export async function doTransition(key, status, statusId) {
   try {
     await apiJson(ROUTES.jiraKeyTransition(key), 'POST', { transition: status });
     toast(`${key} → ${status}`);
+    // Re-poll so a fresh Jira snapshot confirms the move and reconcilePendingMoves releases the
+    // optimistic overlay promptly — otherwise the card lingers in the target column until the next
+    // routine poll (~2 min) or the 5-min TTL. Safe if Jira's search index still lags: reconcile only
+    // clears once the server actually reports the new status, so the overlay simply holds till then.
+    forceSync();
   } catch(e) {
     clearPendingMove(key, seq);
     rerenderActiveJira();
