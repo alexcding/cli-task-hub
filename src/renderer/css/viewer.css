@@ -523,3 +523,10 @@ body.find-open .split-body webview, body.find-open .split-body .wcv-shim { botto
 .opentab { position:relative; }
 .opentab .tab-title { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .opentab:hover .tab-x { opacity:1; }
+/* Drag-reorder (SortableJS, forceFallback): while dragging, the row stays in the list as the drop
+   placeholder (.sortable-ghost) AND a clone follows the cursor (.sortable-fallback). Without this
+   they're both fully opaque and read as two tabs — dim the placeholder to a faint slot, and give
+   the cursor-following clone a clean lifted look. */
+.opentab.sortable-ghost { opacity:.25; }
+.opentab.sortable-fallback { opacity:.95; box-shadow:var(--shadow-md); border-radius:var(--rs); cursor:grabbing; }
+.opentab.sortable-fallback .tab-x, .opentab.sortable-fallback .tab-spin { display:none; }
