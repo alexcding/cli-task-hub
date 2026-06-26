@@ -367,9 +367,48 @@
       }
       function stopFind(id) { evalIn(id, '(window.getSelection&&window.getSelection().removeAllRanges())'); }
 
+      // Run cb(webview) for each of the window's wcv* child webviews. The label scheme lives here in
+      // one place (hideAll and the on-load sweep both go through it). Async (getAllWebviews) + guarded.
+      function forEachWcv(cb) {
+        try {
+          T().webview.getAllWebviews().then(function (list) {
+            (list || []).forEach(function (w) {
+              if (w && typeof w.label === 'string' && w.label.indexOf('wcv') === 0) { try { cb(w); } catch (e) {} }
+            });
+          }).catch(function () {});
+        } catch (e) {}
+      }
+
+      // Force EVERY embedded webview out of view — called when the renderer navigates to a non-web
+      // page (Dashboard, Scrumboard, Settings, a project, …), where no PR/Jira webview should show.
+      // Belt-and-suspenders over per-tab hide (hideAllPanes): it also reaches webviews this session
+      // doesn't track. Tracked ones are hidden (kept alive for a fast re-show); untracked ones are
+      // closed (they should not exist once the unload/on-load teardown below is doing its job).
+      function hideAll() {
+        forEachWcv(function (w) {
+          var rec = views[w.label];
+          if (rec) { rec.hidden = true; rec.wv.hide(); } else { w.close(); }
+        });
+      }
+
+      // Root cause of orphaned webviews: the window outlives the renderer (quit only from tray; dev
+      // reloads), but child webviews are attached to the WINDOW, not this document — so a reload
+      // leaves the prior session's webviews painted over the next renderer's Dashboard, and their
+      // labels (wcv1, wcv2…) collide with the fresh ids (Tauri rejects a duplicate → blank/stuck
+      // tab, and selecting one can crash). Tear down THIS session's tracked webviews on unload so a
+      // reload starts clean. pagehide fires on reload/navigation/close (more reliable than unload).
+      window.addEventListener('pagehide', function () {
+        for (var id in views) { try { views[id].wv.close(); } catch (e) {} }
+      });
+
+      // Backstop for a hard crash where pagehide never fired: at load, close any wcv* still on the
+      // window from a previous session. The renderer creates its own lazily on tab activation, so at
+      // load every existing wcv* is stale. ('main' and other non-wcv labels are left untouched.)
+      forEachWcv(function (w) { w.close(); });
+
       return {
         create: create, load: navigate, navigate: navigate, bounds: bounds,
-        destroy: destroy, reload: reload,
+        destroy: destroy, reload: reload, hideAll: hideAll,
         nav: nav, find: find, stopFind: stopFind,
         // Page nav/title events come from the Rust WKWebView poll (viewer.rs) as `wcv://event`.
         onEvent: function (cb) {

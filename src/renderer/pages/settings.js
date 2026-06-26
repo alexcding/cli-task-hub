@@ -4,7 +4,7 @@ import { state } from '../stores/store.js';
 import { api, apiJson } from '../services/api.js';
 import { esc, timeAgo, setActiveSegTab } from '../lib/util.js';
 import { toast, toastErr } from '../components/toast.js';
-import { renderProjectNav } from '../components/sidebar.js';
+import { renderProjectNav, applySidebarGroupUI } from '../components/sidebar.js';
 import { GIT_CLIENTS, resolveGitClientCmd } from '../lib/git-clients.js';
 import { updateGitClient } from '../components/viewer.js';
 
@@ -15,6 +15,7 @@ export async function loadSettings() {
 
   populateSoundPicker(sounds, settings?.reviewSound);
   setActivityNotifyUI(settings?.activityNotify !== 'off'); // default on when unset
+  applySidebarGroupUI(); // reflect the persisted sidebar-grouping choice on its toggle
   populateGitClientPicker(settings);
 
   if (cfg.poll_interval)      document.getElementById('poll-interval').value = cfg.poll_interval;

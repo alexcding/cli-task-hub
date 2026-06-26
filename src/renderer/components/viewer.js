@@ -5,6 +5,7 @@ import { ROUTES } from '/shared/routes.mjs';
 import { state, activeTab, prByUrl, prGroup, prTabTitle, jiraTabTitle, jiraByKey } from '../stores/store.js';
 import { api, apiJson } from '../services/api.js';
 import { esc, jiraKeyFromUrl, canSplitTerminal, ghAvatarSrc, basename } from '../lib/util.js';
+import { seedAvatar } from '../lib/avatars.js';
 import { ICON } from '../lib/icons.js';
 import { gitClientLabel, gitClientIcon } from '../lib/git-clients.js';
 import { toast, toastErr } from './toast.js';
@@ -466,6 +467,7 @@ export async function restoreTabs() {
     // skip it so we don't double-add.
     if (t && t.url && !state.tabs.some(x => x.url === t.url)) {
       state.tabs.push(createTab(t.url, t.title, t.kind, { repo: t.repo, branch: t.branch, jiraKey: t.jiraKey, prSplit: t.prSplit, paneView: t.paneView, category: t.category, login: t.login, avatar: t.avatar, links: Array.isArray(t.links) ? t.links : [] }));
+      seedAvatar(t.login, t.avatar);   // share the restored data URI so the dashboard reuses it
     }
   }
   state.tabsReady = true;
@@ -854,6 +856,7 @@ async function freezeAvatar(url, login) {
   const live = state.tabs.find(t => t.url === url);   // may have closed mid-fetch
   if (!live) return;
   live.avatar = data;
+  seedAvatar(login, data);   // share it: the dashboard card for this author reuses it, no re-fetch
   saveTabs();
   renderTabs();
 }

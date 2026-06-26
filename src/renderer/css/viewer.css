@@ -504,6 +504,20 @@ body.find-open .split-body webview, body.find-open .split-body .wcv-shim { botto
    so all three section headers line up identically. */
 #opentabs-nav .tab-group { display:block; margin-top:4px; }
 #opentabs-nav .tab-group-label { display:block; padding:10px 8px 4px; }
+/* Project grouping mode: a project's open-tab rows nest directly under its folder (no separate
+   section). Indent them past the folder's icon + gap so they read as children. The orphan group
+   (tabs matching no project) shows un-nested in #opentabs-nav. */
+.proj-tabs { display:block; }
+#project-nav .proj-tabs { margin:1px 0 2px; }
+#project-nav .proj-tabs .opentab { padding-left:20px; }
+#opentabs-nav .proj-tabs { margin-top:4px; }
+/* Folder name grows so the disclosure caret sits at the row's right; the caret rotates to
+   point right when its project is collapsed (open-tab rows hidden). */
+.proj-name { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.proj-toggle { flex-shrink:0; display:flex; align-items:center; justify-content:center; width:16px; height:16px; color:var(--text-3); opacity:.7; transition:transform .12s, opacity .12s, color .12s; }
+.proj-toggle:hover { opacity:1; color:var(--text-2); }
+.proj-toggle svg { width:13px; height:13px; }
+.proj-toggle.collapsed { transform:rotate(-90deg); }
 /* Box, text, and hover/active highlight all come from the shared `.nav-btn, .opentab` rule in
    layout.css (sidebar rows are one component) — only .opentab's own extras live here. */
 .opentab { position:relative; }

@@ -160,6 +160,18 @@
                 </button>
               </div>
             </div>
+            <!-- Sidebar grouping: how the open-tab rows are grouped in the left nav.
+                 "By status" = Mine/Review/Jira (default); "By project" = one group per project. -->
+            <div class="card-pad theme-row" style="border-top:1px solid var(--border)">
+              <div>
+                <div class="theme-row-title">Sidebar grouping</div>
+                <div class="theme-row-sub">Group open tabs by review status or by project</div>
+              </div>
+              <div class="theme-toggle" id="sidebar-group-toggle" role="group" aria-label="Sidebar grouping">
+                <button class="theme-opt" data-group-opt="category" onclick="setSidebarGroup('category')">By status</button>
+                <button class="theme-opt" data-group-opt="project" onclick="setSidebarGroup('project')">By project</button>
+              </div>
+            </div>
             <!-- Code fonts, one row per pane, each with a live preview. Saved on change
                  (no Save button, like the theme); ⌘+ / ⌘− / ⌘0 adjust whichever pane
                  is in view (diff font from a plain page, so the preview reacts). -->

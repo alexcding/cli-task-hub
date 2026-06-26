@@ -11,7 +11,7 @@
 // Data lives on the active viewer tab: tab.links[] + tab.activeLink (null = default). All
 // mutations live in viewer.js (added to window.*); this module only renders + reads.
 import { state, activeTab, prByUrl } from '../stores/store.js';
-import { esc, ghAvatarSrc } from '../lib/util.js';
+import { esc, ghAvatarSrc, setHtmlIfChanged } from '../lib/util.js';
 import { ICON, TAB_ICON } from '../lib/icons.js';
 import { ciInfo } from './cards.js';
 
@@ -90,10 +90,7 @@ export function renderContentTabs(force = false) {
   el.closest('.bar-wv')?.classList.toggle('single', single);
   // The New-tab "+" is a static button in the toolbar (pinned far right), not rendered here.
   const html = defaultChipHtml(t) + (t.links || []).map(l => linkChipHtml(t, l)).join('');
-  if (el._lastHtml !== html) {
-    el.innerHTML = html;
-    el._lastHtml = html;
-  }
+  setHtmlIfChanged(el, html);
 }
 
 // Focus (+ select) a specific tab's inline address field — called EXPLICITLY when a tab is added

@@ -1,5 +1,6 @@
 // PR card builders shared by the dashboard and the project page.
 import { esc, jiraUrl, fmtDate, ghAvatarSrc } from '../lib/util.js';
+import { ensureAvatar } from '../lib/avatars.js';
 import { ICON } from '../lib/icons.js';
 
 // CI shown as a bare colored dot (with a tooltip for the actual status). Always
@@ -50,8 +51,10 @@ export function prCard(pr) {
   const jiraHtml = (pr.jiraKeys||[]).map(k =>
     `<a href="${jiraUrl(k)}" target="_blank" rel="noopener" class="badge badge-jira" onclick="jiraClick(event, this.href, '${esc(k)}')">${esc(k)}</a>`).join('');
   const login = pr.author?.login || '';
-  // GitHub serves any user's avatar at github.com/<login>.png — no API call needed.
-  const avatar = login ? `<img class="pr-avatar" src="${ghAvatarSrc(login)}" alt="" title="${esc(login)}" loading="lazy">` : '';
+  // The avatar src prefers the shared cache (a data URI) and warms it on a miss; data-av lets
+  // ensureAvatar swap the data URI in once it lands, so a later rebuild never re-fetches/flickers.
+  if (login) ensureAvatar(login);
+  const avatar = login ? `<img class="pr-avatar" src="${ghAvatarSrc(login)}" data-av="${esc(login)}" alt="" title="${esc(login)}" loading="lazy">` : '';
   const footLeft = avatar + jiraHtml;
   const labels = labelChips(pr.labels); // tinted chips, bottom-right (see .pr-foot-end)
   const approved = approvedMark(pr);     // green check, bottom-right (see .pr-foot-end)

@@ -7,7 +7,7 @@ import { api, forceSync } from './services/api.js';
 import { canSplitTerminal } from './lib/util.js';
 import { initTheme, setAppTheme, syncThemeFromSettings } from './services/theme.js';
 import { setFontFamily, bumpFontSize, resetFontSize, zoomTarget, syncFontsFromSettings, populateFontMenus } from './services/fonts.js';
-import { renderTabs, renderProjectNav, tabMenu, initSidebarResize } from './components/sidebar.js';
+import { renderTabs, renderProjectNav, tabMenu, initSidebarResize, setSidebarGroup, syncSidebarGroupFromSettings, toggleProjectTabs } from './components/sidebar.js';
 import { closeMenu, isMenuOpen } from './components/menu.js';
 import * as viewer from './components/viewer.js';
 import * as terminal from './components/terminal.js';
@@ -42,6 +42,7 @@ function showPage(name, projectId) {
   find.closeFind(); // stop find + clear highlights on the outgoing tab before activeTabId is lost
   document.getElementById('split').hidden = true;
   viewer.hideAllPanes(); // hide native child webviews now — hiding #split alone leaves them painted over the page until the next rAF (throttled in a debug build)
+  window.taskhub?.wcv?.hideAll?.(); // a non-web page is showing now: force EVERY embedded webview out of view, incl. orphans this session doesn't track (Tauri)
   document.body.classList.remove('viewing-tab', 'viewing-term', 'pr-split', 'pane-diff');
   state.activeTabId = null; state.activeTermId = null;  // terminals stay alive, just unfocused
   renderTabs();
@@ -262,7 +263,7 @@ Object.assign(window, {
   // window.* from workflow.js (notifyTasksUpdated) and sidebar.js (refreshTermBusy) so the running
   // count stays live off-page, without a tasks↔workflow/sidebar import cycle — keep all three.
   loadTasks, openTaskSession, deleteTaskSession, updateTasksBadge,
-  loadSettings, saveConfig, switchSettingsTab, setReviewSound, previewReviewSound, setActivityNotify, setAutostart, toggleSecret, setGitClient, setGitClientCmd, toggleHook,
+  loadSettings, saveConfig, switchSettingsTab, setReviewSound, previewReviewSound, setActivityNotify, setAutostart, toggleSecret, setGitClient, setGitClientCmd, toggleHook, setSidebarGroup, toggleProjectTabs,
   __activityToast: showActivityToast, // main pushes activity toasts here when the app is frontmost
   // project modal
   openNewProjectModal: modal.openNewProjectModal, openEditProjectModal: modal.openEditProjectModal,
@@ -322,6 +323,7 @@ loadPersistedTasks().then(() => { if (document.querySelector('.page.active')?.id
     // taskhub.db is authoritative (survives a localStorage clear, shared across windows);
     // re-sync the theme from it and re-apply if it differs from the pre-paint guess.
     syncThemeFromSettings(settings.theme);
+    syncSidebarGroupFromSettings(settings.sidebarGroup); // re-render the sidebar in the saved grouping
     syncFontsFromSettings(settings); // any terminal rehydrated before this lands is updated in place by applyFonts
   } catch {}
   populateFontMenus(); // fill the font pickers from this machine's installed fonts (replaces the static fallback)

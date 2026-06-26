@@ -4,7 +4,7 @@ import { ROUTES } from '/shared/routes.mjs';
 import { state, prByUrl, prGroup, applyPendingMoves, reconcilePendingMoves } from '../stores/store.js';
 import { PR_CATEGORY, PR_GROUP } from '/shared/constants.mjs';
 import { api } from '../services/api.js';
-import { esc, businessDaysUntil } from '../lib/util.js';
+import { esc, businessDaysUntil, setHtmlIfChanged } from '../lib/util.js';
 import { ICON } from '../lib/icons.js';
 import { prCard } from '../components/cards.js';
 import { jiraRowsHtml, rememberStatuses } from './jira.js';
@@ -101,7 +101,11 @@ export async function loadDashboard() {
 
   // Current Sprint (Jira) renders at the bottom, below the PR sections. It lives in
   // its own node so a status change can re-render just this section.
-  document.getElementById('dashboard-groups').innerHTML = `${prHtml}<div id="dashboard-sprint"></div>`;
+  // Skip the innerHTML churn when the cards are unchanged — refreshActivePage re-runs this on
+  // every SSE sync, and rebuilding recreates each card's avatar <img> (a github.com URL, no
+  // frozen data-URI), which flickers. The card markup is stable for stable data (fmtDate is
+  // absolute, not a relative "ago"), so an equal-HTML guard holds across no-op syncs.
+  setHtmlIfChanged(document.getElementById('dashboard-groups'), `${prHtml}<div id="dashboard-sprint"></div>`);
   renderDashboardSprint();
 
   // Refresh each open GitHub tab's saved group + author login from the freshly-loaded

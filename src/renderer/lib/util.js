@@ -1,4 +1,5 @@
 import { state } from '../stores/store.js';
+import { avatarUri } from './avatars.js';
 
 // Escapes quotes too, so escaped text is safe inside double- OR single-quoted attributes.
 export const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
@@ -10,6 +11,17 @@ export const escJs = s => esc(String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\
 
 // Promise that resolves after `ms` — a tiny shared sleep for sequenced UI/terminal steps.
 export const delay = ms => new Promise(r => setTimeout(r, ms));
+
+// Swap an element's innerHTML only when it actually changed (tracked on `el._lastHtml`). SSE
+// refreshes re-render frequently but the markup rarely differs; skipping the identical write
+// avoids the DOM churn that recreates avatar <img> (flicker) and drops drag-sort handlers.
+// Returns true when it rewrote. (DOM access is inside the call, so this stays import-clean.)
+export function setHtmlIfChanged(el, html) {
+  if (!el || el._lastHtml === html) return false;
+  el.innerHTML = html;
+  el._lastHtml = html;
+  return true;
+}
 
 // Human-readable text for anything thrown/rejected. Tauri commands reject with a plain
 // String (their Result<_, String> Err), which has no `.message` — naively concatenating
@@ -43,11 +55,12 @@ export const setActiveSegTab = btn => {
 };
 
 // <img> src for a PR author's avatar. GitHub serves any user's at github.com/<login>.png
-// (no API call). `frozen` is an optional data URI captured at tab-open time (freezeAvatar in
-// viewer.js) — preferred when present so the image never re-fetches or flickers. Returns ''
-// when there's no login or frozen copy, so callers fall back (octicon / nothing).
+// (no API call). Prefer, in order: a `frozen` data URI (captured at tab-open time by
+// freezeAvatar) → the shared avatar cache (lib/avatars.js) → the live github.com URL. The first
+// two are data URIs that repaint synchronously, so they never flicker on a re-render; callers that
+// hit the live URL pair this with ensureAvatar() to warm the cache. '' when there's no login.
 export const ghAvatarSrc = (login, frozen = '') =>
-  frozen || (login ? `https://github.com/${encodeURIComponent(login)}.png?size=40` : '');
+  frozen || avatarUri(login) || (login ? `https://github.com/${encodeURIComponent(login)}.png?size=40` : '');
 
 // Shared code font (terminal + diff pane). The fallback chain prefers a system-installed
 // "SF Mono", then the copy served from /sf-mono ("SFMonoServed"), then Menlo. A chosen

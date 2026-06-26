@@ -191,11 +191,11 @@ fn open_main_window(app: &tauri::AppHandle) -> tauri::Result<()> {
   let _window = builder.build()?;
   // (No auto-opened devtools — use right-click → Inspect Element in a debug build if needed.)
 
-  // Launched at login the window starts hidden, so start as a menu-bar-only app (no Dock icon);
-  // show_main flips back to Regular when the tray/Dock reveals it.
-  if at_login {
-    set_dock_visible(app, false);
-  }
+  // Keep the Dock icon in lockstep with the window: launched at login the window starts hidden, so
+  // start as a menu-bar-only app (no Dock icon) and let show_main flip to Regular when the tray/Dock
+  // reveals it; any other launch shows the window, so show the Dock icon too (don't rely on the
+  // process's default activation policy).
+  set_dock_visible(app, !at_login);
 
   // Native translucent sidebar behind the transparent window. The renderer paints the content area
   // opaque and leaves the sidebar transparent (css: html.native-mac aside), so the material shows
