@@ -389,7 +389,10 @@
 .font-size-ctl button { width:28px;height:32px;border:none;background:none;color:var(--text-2);font-size:15px;line-height:1;cursor:pointer;transition:color .12s,background .12s; }
 .font-size-ctl button:hover { color:var(--text);background:var(--surface-hover); }
 .font-size-ctl .fs-val { min-width:48px;text-align:center;font-size:12.5px;color:var(--text-2);font-variant-numeric:tabular-nums;user-select:none; }
-.font-preview { color:var(--text-2);white-space:pre;overflow-x:auto;border-top:1px solid var(--border); }
+/* Preview lives inside its font-setting block (no divider from the controls); an
+   inset --bg panel reads as a recessed console sample. */
+.font-preview-label { margin:14px 0 6px;font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--text-3); }
+.font-preview { padding:11px 13px;border-radius:var(--rs);background:var(--bg);color:var(--text-2);white-space:pre;overflow-x:auto; }
 .font-preview-term { font:var(--term-font-size)/1.6 var(--term-font); }
 .font-preview-diff { font:var(--diff-font-size)/1.6 var(--diff-font); }
 .font-preview .fp-del { color:var(--danger); }

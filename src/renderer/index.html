@@ -175,55 +175,61 @@
             <!-- Code fonts, one row per pane, each with a live preview. Saved on change
                  (no Save button, like the theme); ⌘+ / ⌘− / ⌘0 adjust whichever pane
                  is in view (diff font from a plain page, so the preview reacts). -->
-            <div class="card-pad theme-row" style="border-top:1px solid var(--border)">
-              <div>
-                <div class="theme-row-title">Terminal font</div>
-                <div class="theme-row-sub">⌘+ / ⌘− resize the pane in view, ⌘0 resets</div>
-              </div>
-              <div class="font-controls">
-                <select id="term-font-family" onchange="setFontFamily('term', this.value)" aria-label="Terminal font family">
-                  <option value="">SF Mono (default)</option>
-                  <option value="Menlo">Menlo</option>
-                  <option value="Monaco">Monaco</option>
-                  <option value="JetBrains Mono">JetBrains Mono</option>
-                  <option value="Fira Code">Fira Code</option>
-                  <option value="Source Code Pro">Source Code Pro</option>
-                  <option value="Courier New">Courier New</option>
-                </select>
-                <div class="font-size-ctl" role="group" aria-label="Terminal font size">
-                  <button onclick="bumpFontSize('term', -1)" title="Smaller (⌘−)" aria-label="Smaller">−</button>
-                  <span class="fs-val" id="term-font-size-val">13 px</span>
-                  <button onclick="bumpFontSize('term', 1)" title="Bigger (⌘+)" aria-label="Bigger">+</button>
+            <div class="card-pad font-setting" style="border-top:1px solid var(--border)">
+              <div class="theme-row">
+                <div>
+                  <div class="theme-row-title">Terminal font</div>
+                  <div class="theme-row-sub">⌘+ / ⌘− resize the pane in view, ⌘0 resets</div>
+                </div>
+                <div class="font-controls">
+                  <select id="term-font-family" onchange="setFontFamily('term', this.value)" aria-label="Terminal font family">
+                    <option value="">SF Mono (default)</option>
+                    <option value="Menlo">Menlo</option>
+                    <option value="Monaco">Monaco</option>
+                    <option value="JetBrains Mono">JetBrains Mono</option>
+                    <option value="Fira Code">Fira Code</option>
+                    <option value="Source Code Pro">Source Code Pro</option>
+                    <option value="Courier New">Courier New</option>
+                  </select>
+                  <div class="font-size-ctl" role="group" aria-label="Terminal font size">
+                    <button onclick="bumpFontSize('term', -1)" title="Smaller (⌘−)" aria-label="Smaller">−</button>
+                    <span class="fs-val" id="term-font-size-val">13 px</span>
+                    <button onclick="bumpFontSize('term', 1)" title="Bigger (⌘+)" aria-label="Bigger">+</button>
+                  </div>
                 </div>
               </div>
-            </div>
-            <div class="card-pad font-preview font-preview-term">$ npm test
+              <div class="font-preview-label">Preview</div>
+              <div class="font-preview font-preview-term">$ npm test
 ✓ 26 tests passed <span class="fp-add">(834ms)</span></div>
-            <div class="card-pad theme-row" style="border-top:1px solid var(--border)">
-              <div>
-                <div class="theme-row-title">Code font</div>
-                <div class="theme-row-sub">The code editor &amp; the Changes pane (git diff)</div>
-              </div>
-              <div class="font-controls">
-                <select id="diff-font-family" onchange="setFontFamily('diff', this.value)" aria-label="Code font family">
-                  <option value="">SF Mono (default)</option>
-                  <option value="Menlo">Menlo</option>
-                  <option value="Monaco">Monaco</option>
-                  <option value="JetBrains Mono">JetBrains Mono</option>
-                  <option value="Fira Code">Fira Code</option>
-                  <option value="Source Code Pro">Source Code Pro</option>
-                  <option value="Courier New">Courier New</option>
-                </select>
-                <div class="font-size-ctl" role="group" aria-label="Code font size">
-                  <button onclick="bumpFontSize('diff', -1)" title="Smaller (⌘−)" aria-label="Smaller">−</button>
-                  <span class="fs-val" id="diff-font-size-val">12 px</span>
-                  <button onclick="bumpFontSize('diff', 1)" title="Bigger (⌘+)" aria-label="Bigger">+</button>
+            </div>
+            <div class="card-pad font-setting" style="border-top:1px solid var(--border)">
+              <div class="theme-row">
+                <div>
+                  <div class="theme-row-title">Code font</div>
+                  <div class="theme-row-sub">The code editor &amp; the Changes pane (git diff)</div>
+                </div>
+                <div class="font-controls">
+                  <select id="diff-font-family" onchange="setFontFamily('diff', this.value)" aria-label="Code font family">
+                    <option value="">SF Mono (default)</option>
+                    <option value="Menlo">Menlo</option>
+                    <option value="Monaco">Monaco</option>
+                    <option value="JetBrains Mono">JetBrains Mono</option>
+                    <option value="Fira Code">Fira Code</option>
+                    <option value="Source Code Pro">Source Code Pro</option>
+                    <option value="Courier New">Courier New</option>
+                  </select>
+                  <div class="font-size-ctl" role="group" aria-label="Code font size">
+                    <button onclick="bumpFontSize('diff', -1)" title="Smaller (⌘−)" aria-label="Smaller">−</button>
+                    <span class="fs-val" id="diff-font-size-val">12 px</span>
+                    <button onclick="bumpFontSize('diff', 1)" title="Bigger (⌘+)" aria-label="Bigger">+</button>
+                  </div>
                 </div>
               </div>
-            </div>
-            <div class="card-pad font-preview font-preview-diff">$ git diff --stat
+              <div class="font-preview-label">Preview</div>
+              <div class="font-preview font-preview-diff">$ git diff --stat
 <span class="fp-del">- const size = settings.fontSize ?? 12;</span>
 <span class="fp-add">+ const { family, size } = state.fonts.diff;</span></div>
+            </div>
             <div class="card-pad theme-row" style="border-top:1px solid var(--border)">
               <div>
                 <div class="theme-row-title">Review sound</div>
