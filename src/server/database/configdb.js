@@ -13,8 +13,8 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const { DatabaseSync } = require('node:sqlite');
 const { dataDir } = require('./datadir');
+const { openDb } = require('./open-db');
 const datadb = require('./datadb'); // cache store — deleteProject cascades into it
 
 const dbPath = path.join(dataDir, 'taskhub.db');
@@ -34,7 +34,7 @@ try {
   console.error('[db] config.db → taskhub.db rename skipped:', err.message);
 }
 
-const db = new DatabaseSync(dbPath);
+const db = openDb(dbPath); // WAL + busy_timeout so concurrent access doesn't throw "database is locked"
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS config   (key TEXT PRIMARY KEY, value TEXT);

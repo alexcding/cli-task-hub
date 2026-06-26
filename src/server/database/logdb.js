@@ -7,12 +7,11 @@
 // view shown in the UI. It's a rolling log (capped), regenerable, and safe to wipe —
 // hence its own DB file rather than living in the durable taskhub.db.
 const path = require('path');
-const { DatabaseSync } = require('node:sqlite');
 const { dataDir } = require('./datadir');
+const { openDb } = require('./open-db');
 
 const dbPath = path.join(dataDir, 'logs.db');
-const db = new DatabaseSync(dbPath);
-try { db.exec('PRAGMA journal_mode = WAL;'); } catch { /* fine without WAL */ }
+const db = openDb(dbPath); // WAL + busy_timeout so concurrent access doesn't throw "database is locked"
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS logs (

@@ -13,11 +13,11 @@
 // stored as a JSON column rather than normalized into rows. SQLite buys us per-key
 // atomic upserts (no whole-file rewrite like the old sidecar JSON) and one tidy file.
 const path = require('path');
-const { DatabaseSync } = require('node:sqlite');
 const { dataDir } = require('./datadir');
+const { openDb } = require('./open-db');
 
 const dbPath = path.join(dataDir, 'data.db');
-const db = new DatabaseSync(dbPath);
+const db = openDb(dbPath); // WAL + busy_timeout so concurrent access doesn't throw "database is locked"
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS pr_snapshots (
