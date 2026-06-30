@@ -6,7 +6,7 @@
   "build": {
     "frontendDist": "../src/renderer",
     "devUrl": "http://localhost:3000",
-    "beforeDevCommand": "(lsof -ti tcp:3000 | xargs kill -9) 2>/dev/null; TASKHUB_DATA_DIR=\"$HOME/Library/Application Support/tv.accedo.taskhub\" node src/server/app.js",
+    "beforeDevCommand": "(pkill -f 'target/debug/taskhub'; lsof -ti tcp:3000 | xargs kill -9) 2>/dev/null; TASKHUB_DATA_DIR=\"$HOME/Library/Application Support/tv.accedo.taskhub\" node src/server/app.js",
     "beforeBuildCommand": "bash scripts/build-sidecar.sh"
   },
   "app": {

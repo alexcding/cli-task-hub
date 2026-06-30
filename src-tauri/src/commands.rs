@@ -287,6 +287,15 @@ pub fn autostart_get(app: tauri::AppHandle) -> bool {
 #[tauri::command]
 pub fn autostart_set(app: tauri::AppHandle, enabled: bool) -> Result<bool, String> {
   use tauri_plugin_autostart::ManagerExt;
+  // Never let a DEV build register a login item: the LaunchAgent would point at
+  // target/debug/taskhub, which macOS then launches at every login with --autostart — hidden, and
+  // with no backend on :3000 (only `tauri dev`'s beforeDevCommand starts it), so it comes up blank
+  // and, via single-instance, hijacks the next `tauri dev` with that blank window. Only the
+  // installed .app should own the login item. (Disabling stays allowed, so a stale dev plist can
+  // still be cleared from the toggle.)
+  if cfg!(debug_assertions) && enabled {
+    return Err("Launch at login is unavailable in dev builds".into());
+  }
   let mgr = app.autolaunch();
   // No-op if already in the desired state. Disabling a never-registered LaunchAgent removes a plist
   // that isn't there (NotFound), which would otherwise surface as a spurious error toast when the
