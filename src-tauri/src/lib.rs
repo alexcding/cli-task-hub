@@ -157,7 +157,12 @@ pub(crate) fn show_main(app: &tauri::AppHandle) {
 // path for every "close the window" trigger (red button, ⌘W, app-menu ⌘Q) — NOT a real quit.
 pub(crate) fn hide_main(app: &tauri::AppHandle) {
   if let Some(w) = app.get_webview("main") {
-    let _ = w.window().hide();
+    let win = w.window();
+    // Un-minimize first: orderOut (hide) leaves a *minimized* window as a thumbnail in the Dock,
+    // and the Accessory switch below can't drop that thumbnail-based Dock presence — so quitting
+    // from the menu after a ⌘M would leave a lingering Dock icon. Restoring then hiding clears it.
+    let _ = win.unminimize();
+    let _ = win.hide();
   }
   set_dock_visible(app, false);
 }
