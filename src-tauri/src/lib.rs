@@ -129,6 +129,12 @@ pub(crate) fn set_dock_visible(app: &tauri::AppHandle, visible: bool) {
     if let Err(e) = app.set_activation_policy(policy) {
       log::warn!("[dock] set_activation_policy(visible={visible}) failed: {e}");
     }
+    // Switching to Regular makes AppKit re-derive the Dock icon from the (absent, in dev) bundle and
+    // fall back to the generic executable icon — so reapply the real one. Only on the way to visible:
+    // Accessory hides the Dock icon entirely, so there's nothing to fix there.
+    if visible {
+      glass::set_app_icon();
+    }
   }
   #[cfg(not(target_os = "macos"))]
   let _ = (app, visible);

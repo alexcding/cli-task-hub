@@ -12,17 +12,40 @@
 // auto-resizes with the window. NSGlassEffectView doesn't exist before macOS 26, so the caller
 // version-gates this; older systems get the NSVisualEffectView vibrancy fallback (lib.rs).
 
+use objc2::AnyThread;
 use objc2_app_kit::{
-  NSAutoresizingMaskOptions, NSGlassEffectView, NSGlassEffectViewStyle, NSWindow,
-  NSWindowOrderingMode,
+  NSApplication, NSAutoresizingMaskOptions, NSGlassEffectView, NSGlassEffectViewStyle, NSImage,
+  NSWindow, NSWindowOrderingMode,
 };
-use objc2_foundation::{MainThreadMarker, NSProcessInfo};
+use objc2_foundation::{MainThreadMarker, NSData, NSProcessInfo};
 use std::sync::Mutex;
 use tauri::{WebviewWindow, Window};
 
 // macOS major version (26 = Tahoe). NSProcessInfo is available on every macOS we run on.
 pub fn macos_major_version() -> isize {
   NSProcessInfo::processInfo().operatingSystemVersion().majorVersion
+}
+
+// The real app icon, embedded so it's available with no bundle on disk and no cwd dependency.
+const APP_ICON_PNG: &[u8] = include_bytes!("../icons/icon.png");
+
+// Set the Dock/⌘-Tab icon at runtime via [NSApp setApplicationIconImage:]. macOS normally derives
+// that icon from the .app bundle's Info.plist (CFBundleIconFile) — but `tauri dev` runs the bare
+// `target/debug/taskhub` with no bundle, so any runtime activation-policy change (Accessory→Regular,
+// i.e. showing the Dock icon) makes AppKit re-derive it and fall back to the generic executable
+// icon. Reapplying the embedded icon after we flip to Regular restores the real one. Harmless in a
+// packaged build (re-sets the same icon the bundle already provides). Must run on the main thread;
+// no-ops otherwise (the activation-policy callers are already on it).
+pub fn set_app_icon() {
+  let Some(mtm) = MainThreadMarker::new() else { return };
+  let data = NSData::with_bytes(APP_ICON_PNG);
+  // SAFETY: standard AppKit calls on the main thread; initWithData returns None on bad data, which
+  // we skip rather than setting a nil icon (that would clear it to the generic icon).
+  unsafe {
+    if let Some(image) = NSImage::initWithData(NSImage::alloc(), &data) {
+      NSApplication::sharedApplication(mtm).setApplicationIconImage(Some(&image));
+    }
+  }
 }
 
 // Insert a full-window Liquid Glass backdrop behind the webview. Must run on the main thread.
