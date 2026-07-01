@@ -257,10 +257,7 @@ export function renderProjectNav(projects) {
       ? `<div class="proj-tabs" data-project="${p.id}">${tabs.map(tabRowHtml).join('')}</div>`
       : '');
   }).join('');
-  // No projects yet → show a prominent CTA; otherwise the "+" on the section title is enough.
-  const cta = state.projects.length ? '' :
-    `<button class="nav-btn" style="color:var(--accent)" onclick="openNewProjectModal()"><span class="icon" style="color:var(--accent)">${ICON.plus}</span> New project</button>`;
-  setHtmlIfChanged(el, list + cta);
+  setHtmlIfChanged(el, list);
   // Re-apply the active-project highlight showPage set — a rebuild (project mode runs this on tab
   // changes too) drops it, and there's no showPage to restore it on a background SSE refresh.
   // But a project and a tab are never both selected: skip while a tab/terminal is the view (its
