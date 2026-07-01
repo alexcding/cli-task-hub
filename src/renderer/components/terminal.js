@@ -196,13 +196,18 @@ export async function attachTermView(id, dir, title, { paired = false, pairKey =
     entry.hasContext = true;
     taskhub.term.write(id, d);
   });
-  // Shift+Enter → newline instead of submit. xterm sends CR (\r) for BOTH plain and Shift+Enter,
-  // so a TUI can't tell them apart; we intercept the combo and send LF (\x0a, == Ctrl+J), which
-  // Claude Code / Codex treat as "insert newline". Plain Enter still sends \r (submit). Returning
-  // false stops xterm's default handling (so onData doesn't also fire a \r); we write LF ourselves.
+  // Shift+Enter and Shift+Backspace: xterm sends the SAME bytes for these as the un-shifted keys
+  // (CR for Enter, DEL for Backspace), so a TUI can't tell them apart — we intercept each combo and
+  // inject the sequence the TUI understands:
+  //   • Shift+Enter → LF (\x0a, == Ctrl+J): Claude Code / Codex insert a newline (plain Enter still
+  //     sends \r = submit).
+  //   • Shift+Backspace → NAK (\x15, == Ctrl+U): kill the input line back to the start (plain
+  //     Backspace still deletes one char).
+  // Returning false stops xterm's default handling (so onData doesn't also fire the plain key); we
+  // write the byte ourselves on keydown.
   term.attachCustomKeyEventHandler(e => {
-    if (e.key === 'Enter' && e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey) {
-      if (e.type === 'keydown') { entry.hasContext = true; taskhub.term.write(id, '\n'); }
+    if (e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey && (e.key === 'Enter' || e.key === 'Backspace')) {
+      if (e.type === 'keydown') { entry.hasContext = true; taskhub.term.write(id, e.key === 'Enter' ? '\n' : '\x15'); }
       return false;
     }
     return true;
