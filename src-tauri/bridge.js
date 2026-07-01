@@ -81,17 +81,35 @@
   // ── Terminal file drop ────────────────────────────────────────────────────────
   // Tauri captures OS file drops at the window level (the DOM drop event gets no files), so resolve
   // the terminal under the drop point (terminal.js tags each with data-term-id) and hand it the
-  // absolute paths. Position is physical px → divide by DPR for elementFromPoint.
-  try {
-    window.__TAURI__.webview.getCurrentWebview().onDragDropEvent(function (e) {
-      var p = e && e.payload;
-      if (!p || p.type !== 'drop' || !p.paths || !p.paths.length) return;
-      var dpr = window.devicePixelRatio || 1;
-      var el = document.elementFromPoint(p.position.x / dpr, p.position.y / dpr);
-      var term = el && el.closest ? el.closest('[data-term-id]') : null;
-      if (term && window.__taskhubTermDrop) window.__taskhubTermDrop(term.dataset.termId, p.paths);
-    });
-  } catch (e) { /* webview drag-drop unavailable */ }
+  // absolute paths.
+  //
+  // Registered once window.__TAURI__.webview exists — this init script can run before Tauri's
+  // global-API script (see the header note), so poll briefly rather than call it eagerly.
+  (function wireDrop(tries) {
+    var wv = window.__TAURI__ && window.__TAURI__.webview;
+    if (!wv || !wv.getCurrentWebview) { if (tries > 0) setTimeout(function () { wireDrop(tries - 1); }, 50); return; }
+    // The try/catch (not just the promise .catch) is load-bearing: a synchronous throw here — e.g.
+    // a partially-initialized __TAURI__ where getCurrentWebview()/onDragDropEvent() blow up — would
+    // otherwise escape this top-level IIFE and skip the native window-drag wiring below it.
+    try {
+      wv.getCurrentWebview().onDragDropEvent(function (e) {
+        var p = e && e.payload;
+        if (!p || p.type !== 'drop' || !p.paths || !p.paths.length) return;
+        // wry delivers this position in LOGICAL points on macOS (despite the PhysicalPosition type),
+        // so hit-test at the raw coords. Only on a display where they differ (DPR≠1) do we also try
+        // the scaled point, for a hypothetical platform that really reports physical px — guarding it
+        // on dpr avoids a spurious second hit-test (at a shifted point) misrouting a near-miss drop.
+        var dpr = window.devicePixelRatio || 1;
+        var termAt = function (x, y) {
+          var el = document.elementFromPoint(x, y);
+          return el && el.closest ? el.closest('[data-term-id]') : null;
+        };
+        var term = termAt(p.position.x, p.position.y)
+          || (dpr !== 1 ? termAt(p.position.x / dpr, p.position.y / dpr) : null);
+        if (term && window.__taskhubTermDrop) window.__taskhubTermDrop(term.dataset.termId, p.paths);
+      }).catch(function () { /* webview drag-drop unavailable */ });
+    } catch (e) { /* webview API not ready — leave drops unwired */ }
+  })(40); // ~2s of 50ms retries
 
   // ── Native window drag ────────────────────────────────────────────────────────
   // -webkit-app-region:drag (Electron/Chromium) is ignored by WKWebView, so the hiddenInset top
