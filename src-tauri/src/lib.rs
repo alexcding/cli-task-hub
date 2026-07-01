@@ -115,9 +115,10 @@ fn wait_for_backend() {
   log::warn!("backend did not become ready within ~10s; loading window anyway");
 }
 
-// Show/hide the Dock icon (macOS). A true menu-bar app drops out of the Dock when its window is
-// gone (Accessory) and rejoins it when the window is shown (Regular) — so quitting/closing the
-// window leaves only the tray, with no lingering Dock icon. No-op off macOS.
+// Show/hide the Dock icon (macOS) by switching the activation policy. Regular = Dock icon + menu
+// bar; Accessory = menu-bar/tray only, no Dock icon. Used to start quietly (no Dock icon) when
+// launched at login and to rejoin the Dock when the window is shown — NOT on window close, which
+// keeps the app Regular (see hide_main). No-op off macOS.
 pub(crate) fn set_dock_visible(app: &tauri::AppHandle, visible: bool) {
   #[cfg(target_os = "macos")]
   {
@@ -153,18 +154,31 @@ pub(crate) fn show_main(app: &tauri::AppHandle) {
   }
 }
 
-// Hide the window and drop the Dock icon, leaving the app resident in the tray. The shared exit
-// path for every "close the window" trigger (red button, ⌘W, app-menu ⌘Q) — NOT a real quit.
+// Hide the window, leaving the app resident (Dock icon + menu bar + tray stay). The shared path for
+// every "close the window" trigger (red button, "Close Window", AND the app-menu ⌘Q "Quit TaskHub")
+// — NOT a quit. Closing a window must NOT drop the Dock icon: like the Electron build (and any
+// regular macOS app), TaskHub keeps its Dock presence and menu bar when its window is closed, and a
+// Dock click re-opens it (RunEvent::Reopen → show_main). Only the tray's Quit (quit_app) exits.
 pub(crate) fn hide_main(app: &tauri::AppHandle) {
   if let Some(w) = app.get_webview("main") {
     let win = w.window();
-    // Un-minimize first: orderOut (hide) leaves a *minimized* window as a thumbnail in the Dock,
-    // and the Accessory switch below can't drop that thumbnail-based Dock presence — so quitting
-    // from the menu after a ⌘M would leave a lingering Dock icon. Restoring then hiding clears it.
+    // Un-minimize first so a window closed while minimized hides cleanly and re-shows as a real
+    // window rather than restoring a stale thumbnail.
     let _ = win.unminimize();
     let _ = win.hide();
   }
-  set_dock_visible(app, false);
+}
+
+// The one real quit — ONLY the tray's "Quit TaskHub" calls this, matching the Electron build where
+// the tray Quit was the single sanctioned exit. Flip QUITTING (so the window's CloseRequested handler
+// lets the close through), kill the child CLIs/PTYs, and exit — process death removes the Dock icon,
+// menu bar, and tray together. Every OTHER close/quit trigger (red button, ⌘Q, app-menu "Quit
+// TaskHub") just hides the window via hide_main and leaves the app fully resident. NOT the predefined
+// .quit() menu role: that terminates immediately, skipping QUITTING and the PTY cleanup.
+pub(crate) fn quit_app(app: &tauri::AppHandle) {
+  QUITTING.store(true, Ordering::SeqCst);
+  terminals::kill_all(app);
+  app.exit(0);
 }
 
 // Create the dashboard window. Built in Rust (rather than declared in tauri.conf.json) so we can
@@ -313,9 +327,9 @@ pub fn run() {
       terminals::term_foreground,
     ])
     .on_menu_event(|app, event| {
-      // App-menu "Quit TaskHub" (⌘Q): a menu-bar app stays resident in the tray, so hide the
-      // window instead of terminating — this keeps the tray + every PTY/CLI in this process alive.
-      // The only sanctioned exit is the tray's Quit (which sets QUITTING and kills the PTYs).
+      // App-menu "Quit TaskHub" (⌘Q): NOT a real quit — matching the Electron build, it just hides
+      // the window (like the red button) and leaves the app resident (Dock icon + menu bar + tray
+      // all stay). The one sanctioned exit is the tray's "Quit TaskHub" (quit_app).
       if event.id().as_ref() == "app:hide" {
         hide_main(app);
         return;
@@ -327,8 +341,7 @@ pub fn run() {
       }
     })
     .on_window_event(|window, event| {
-      // Menu-bar app: a window close hides it (tray keeps the app alive); only the tray's Quit
-      // (which sets QUITTING) actually exits.
+      // Closing a window hides it (app stays resident); only a real quit (quit_app) exits.
       if let tauri::WindowEvent::CloseRequested { api, .. } = event {
         if !QUITTING.load(Ordering::SeqCst) {
           api.prevent_close();

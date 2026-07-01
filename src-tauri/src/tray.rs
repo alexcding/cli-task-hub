@@ -367,11 +367,7 @@ pub(crate) fn open_action(app: &AppHandle, a: &Action) {
 fn on_event(app: &AppHandle, id: &str) {
   match id {
     "open" => crate::show_main(app),
-    "quit" => {
-      crate::QUITTING.store(true, Ordering::SeqCst);
-      crate::terminals::kill_all(app);
-      app.exit(0);
-    }
+    "quit" => crate::quit_app(app),
     _ if id.starts_with("usage:") => {
       crate::show_main(app);
       if let Some(w) = app.get_webview("main") {
