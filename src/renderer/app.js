@@ -197,6 +197,12 @@ function connectStream() {
     if (everConnected) location.reload();
     everConnected = true;
   };
+  es.onerror = () => {
+    // EventSource auto-retries transient drops, but a fatal failure leaves it CLOSED
+    // permanently — the page then silently loses live-reload AND sync events until a
+    // manual refresh. Re-run connectStream after a beat so the stream self-heals.
+    if (es.readyState === EventSource.CLOSED) setTimeout(connectStream, 2000);
+  };
   es.onmessage = (e) => {
     let d = {}; try { d = JSON.parse(e.data); } catch {}
     if (d.type === 'reload') { location.reload(); return; } // dev: a file changed
