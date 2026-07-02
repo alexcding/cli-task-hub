@@ -314,6 +314,14 @@
           //     The <style> goes on documentElement (outside <head>/<body>) so Turbo's head/body
           //     swap doesn't strip it.
           wv.once('tauri://created', function () {
+            // Replay the last-requested geometry. Webview creation is async, and the shim's rAF
+            // loop pushes bounds() on the very next frame — those setPosition/setSize/show invokes
+            // can land before the webview registers and are silently dropped (rejected promises).
+            // The shim only re-sends when the rect CHANGES, so a lost first push left the tab
+            // permanently blank (webview parked off-screen at 1x1) until any relayout — e.g. a
+            // panel toggle — happened to re-push. Re-applying here closes the race.
+            var rec = views[id];
+            if (rec && rec.last) { rec.hidden = undefined; bounds(id, rec.last.rect, rec.last.visible); }
             setTimeout(function () {
               invoke('wcv_eval', { id: id, js: "if(!window.__thInstalled){window.__thInstalled=1;document.addEventListener('contextmenu',function(e){var t=e.target;var a=t&&t.closest&&t.closest('a');window.__thLink=(a&&a.href)||'';window.__thImg=(t&&t.tagName==='IMG'&&t.src)||'';},true);var s=document.createElement('style');s.textContent='.turbo-progress-bar{display:none!important}';document.documentElement.appendChild(s);}" });
             }, 300);
@@ -332,6 +340,7 @@
       function bounds(id, rect, visible) {
         var rec = views[id];
         if (!rec) return;
+        rec.last = { rect: rect, visible: visible }; // remembered for the created-event replay
         try {
           if (visible && rect && rect.width > 1 && rect.height > 1) {
             rec.rect = rect;
