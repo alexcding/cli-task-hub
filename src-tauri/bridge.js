@@ -355,13 +355,15 @@
       function destroy(id) {
         var rec = views[id];
         if (!rec) return;
-        // Kill the WebContent process BEFORE closing: Tauri's webview close() on macOS never
-        // deallocates the WKWebView (verified: close() resolves + the label unregisters, but the
-        // ~200-300MB com.apple.WebKit.WebContent process survives indefinitely — one leaked per
-        // closed tab). wcv_kill_content (-[WKWebView _killWebContentProcess]) terminates it
-        // directly, which also stops any playing media — replacing the old pause+about:blank
-        // eval, which emptied the page but couldn't free the process. Then close on the next
-        // tick so the kill lands while the webview still exists.
+        // Schedule the WebContent-process kill, then close: Tauri's webview close() on macOS
+        // never deallocates the WKWebView (verified: close() resolves + the label unregisters,
+        // but the ~200-300MB com.apple.WebKit.WebContent process survives indefinitely — one
+        // leaked per closed tab). wcv_kill_content schedules the private WKWebView kill on a
+        // 250ms timer — it must be REQUESTED while the webview is still registered (it needs
+        // get_webview) but LAND after close(), else wry's terminate handler reloads the page
+        // and the close orphans the respawned process (see commands.rs). Killing the process
+        // also stops any playing media — replacing the old pause+about:blank eval, which
+        // emptied the page but couldn't free the process.
         try {
           invoke('wcv_kill_content', { id: id });
         } catch (e) {}

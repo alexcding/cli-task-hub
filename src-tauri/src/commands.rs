@@ -282,18 +282,26 @@ pub fn wcv_kill_content(app: tauri::AppHandle, id: String) {
       use objc2::runtime::AnyObject;
       let wk = &*(platform.inner().cast::<AnyObject>());
       let sel_reset = objc2::sel!(_killWebContentProcessAndResetState);
-      let responds: bool = msg_send![wk, respondsToSelector: sel_reset];
-      log::info!("[wcv-kill] {label}: _killWebContentProcessAndResetState responds={responds}");
-      if responds {
-        let _: () = msg_send![wk, _killWebContentProcessAndResetState];
-        return;
-      }
       let sel_kill = objc2::sel!(_killWebContentProcess);
-      let responds: bool = msg_send![wk, respondsToSelector: sel_kill];
-      log::info!("[wcv-kill] {label}: _killWebContentProcess responds={responds}");
-      if responds {
-        let _: () = msg_send![wk, _killWebContentProcess];
-      }
+      let responds_reset: bool = msg_send![wk, respondsToSelector: sel_reset];
+      let responds_kill: bool = msg_send![wk, respondsToSelector: sel_kill];
+      let sel = if responds_reset { sel_reset } else if responds_kill { sel_kill } else {
+        log::warn!("[wcv-kill] {label}: no kill selector responds");
+        return;
+      };
+      // Do NOT send the kill inline, and do NOT let it land before close():
+      //  • Inline: WebKit delivers processDidTerminate SYNCHRONOUSLY from requestTermination,
+      //    and tauri-runtime-wry's terminate handler locks runtime state this with_webview
+      //    call chain already holds — the main thread deadlocks (whole app frozen; sampled).
+      //  • Before close: that handler's default action is webview.reload() — it would respawn
+      //    the very process we just killed, and the close ~80ms later orphans the respawn
+      //    (close never reclaims processes; that's the leak this command exists to fix).
+      // At 250ms the kill lands AFTER the bridge's close: the webview is unregistered by then,
+      // so the reload handler no-ops (and the dropped delegate usually means it never runs at
+      // all). The timer retains the receiver, so the leaked-but-detached WKWebView — exactly
+      // the object still pinning the WebContent process — is still reachable to kill.
+      let _: () = msg_send![wk, performSelector: sel, withObject: Option::<&AnyObject>::None, afterDelay: 0.25f64];
+      log::info!("[wcv-kill] {label}: scheduled {}", if responds_reset { "_killWebContentProcessAndResetState" } else { "_killWebContentProcess" });
     });
     if let Err(e) = r {
       log::warn!("[wcv-kill] with_webview failed for {id}: {e}");
