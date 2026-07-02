@@ -314,6 +314,7 @@ pub fn run() {
       commands::preview_sound,
       commands::get_usage,
       commands::wcv_eval,
+      commands::wcv_kill_content,
       commands::refresh_tray,
       commands::fetch_avatar,
       commands::autostart_get,

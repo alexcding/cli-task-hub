@@ -346,12 +346,15 @@
       function destroy(id) {
         var rec = views[id];
         if (!rec) return;
-        // Stop playback BEFORE closing: Tauri's webview close() doesn't promptly tear down the
-        // WebContent process, so audio/video (e.g. a YouTube tab) keeps playing. Pause any media and
-        // navigate the page to about:blank (unloads everything), then close on the next tick so the
-        // eval lands while the webview still exists.
+        // Kill the WebContent process BEFORE closing: Tauri's webview close() on macOS never
+        // deallocates the WKWebView (verified: close() resolves + the label unregisters, but the
+        // ~200-300MB com.apple.WebKit.WebContent process survives indefinitely — one leaked per
+        // closed tab). wcv_kill_content (-[WKWebView _killWebContentProcess]) terminates it
+        // directly, which also stops any playing media — replacing the old pause+about:blank
+        // eval, which emptied the page but couldn't free the process. Then close on the next
+        // tick so the kill lands while the webview still exists.
         try {
-          invoke('wcv_eval', { id: id, js: "try{var m=document.querySelectorAll('video,audio');for(var i=0;i<m.length;i++){try{m[i].pause();m[i].muted=true;}catch(e){}}location.replace('about:blank');}catch(e){}" });
+          invoke('wcv_kill_content', { id: id });
         } catch (e) {}
         delete views[id];
         setTimeout(function () { try { rec.wv.close(); } catch (e) {} }, 80);
@@ -405,7 +408,8 @@
       function hideAll() {
         forEachWcv(function (w) {
           var rec = views[w.label];
-          if (rec) { rec.hidden = true; rec.wv.hide(); } else { w.close(); }
+          if (rec) { rec.hidden = true; rec.wv.hide(); }
+          else { try { invoke('wcv_kill_content', { id: w.label }); } catch (e) {} w.close(); }
         });
       }
 
@@ -416,13 +420,16 @@
       // tab, and selecting one can crash). Tear down THIS session's tracked webviews on unload so a
       // reload starts clean. pagehide fires on reload/navigation/close (more reliable than unload).
       window.addEventListener('pagehide', function () {
-        for (var id in views) { try { views[id].wv.close(); } catch (e) {} }
+        for (var id in views) {
+          try { invoke('wcv_kill_content', { id: id }); } catch (e) {}
+          try { views[id].wv.close(); } catch (e) {}
+        }
       });
 
       // Backstop for a hard crash where pagehide never fired: at load, close any wcv* still on the
       // window from a previous session. The renderer creates its own lazily on tab activation, so at
       // load every existing wcv* is stale. ('main' and other non-wcv labels are left untouched.)
-      forEachWcv(function (w) { w.close(); });
+      forEachWcv(function (w) { try { invoke('wcv_kill_content', { id: w.label }); } catch (e) {} w.close(); });
 
       return {
         create: create, load: navigate, navigate: navigate, bounds: bounds,

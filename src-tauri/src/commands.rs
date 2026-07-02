@@ -261,6 +261,46 @@ pub fn wcv_eval(app: tauri::AppHandle, id: String, js: String) {
   }
 }
 
+// Force-terminate an embedded webview's WebContent process just before close. Tauri/wry's
+// webview close on macOS never deallocates the WKWebView (the child stays strongly referenced
+// somewhere native-side), so each closed tab would otherwise leak its ~200-300MB
+// com.apple.WebKit.WebContent process forever — verified empirically: close() resolves and the
+// label unregisters, but the process survives indefinitely. -[WKWebView _killWebContentProcess]
+// (private, guarded by respondsToSelector) kills the content process directly; the leaked-but-
+// empty WKWebView shell that remains costs ~nothing.
+#[tauri::command]
+pub fn wcv_kill_content(app: tauri::AppHandle, id: String) {
+  #[cfg(target_os = "macos")]
+  {
+    let Some(webview) = app.get_webview(&id) else {
+      log::warn!("[wcv-kill] webview not found: {id}");
+      return;
+    };
+    let label = id.clone();
+    let r = webview.with_webview(move |platform| unsafe {
+      use objc2::msg_send;
+      use objc2::runtime::AnyObject;
+      let wk = &*(platform.inner().cast::<AnyObject>());
+      let sel_reset = objc2::sel!(_killWebContentProcessAndResetState);
+      let responds: bool = msg_send![wk, respondsToSelector: sel_reset];
+      log::info!("[wcv-kill] {label}: _killWebContentProcessAndResetState responds={responds}");
+      if responds {
+        let _: () = msg_send![wk, _killWebContentProcessAndResetState];
+        return;
+      }
+      let sel_kill = objc2::sel!(_killWebContentProcess);
+      let responds: bool = msg_send![wk, respondsToSelector: sel_kill];
+      log::info!("[wcv-kill] {label}: _killWebContentProcess responds={responds}");
+      if responds {
+        let _: () = msg_send![wk, _killWebContentProcess];
+      }
+    });
+    if let Err(e) = r {
+      log::warn!("[wcv-kill] with_webview failed for {id}: {e}");
+    }
+  }
+}
+
 // Rebuild the tray menu now — the port of Electron's `tray:refresh`. The renderer fires this
 // after changing tray-relevant state that doesn't move the PR snapshot (and so won't trigger an
 // SSE `sync`): the usage-widget agent toggle and the review-sound / activity-notify settings.
