@@ -16,6 +16,14 @@ cd "$(dirname "$0")/.."
 
 TRIPLE="$(rustc -Vv | sed -n 's/^host: //p')"
 DEST="src-tauri/binaries/taskhub-node-${TRIPLE}"
+
+# Idempotent: `tauri dev` calls this on every launch, but the ~138M download only needs to
+# happen once. Skip if a valid sidecar for this triple already exists.
+if [ -x "$DEST" ]; then
+  echo "[build-sidecar] sidecar already present → ${DEST} (skipping download)"
+  exit 0
+fi
+
 VER="$(node --version)"                       # e.g. v26.3.1
 case "$(uname -m)" in arm64) NARCH=arm64 ;; *) NARCH=x64 ;; esac
 PKG="node-${VER}-darwin-${NARCH}"
