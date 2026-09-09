@@ -17,7 +17,7 @@ import { toggleWorkflowRun } from './components/workflow.js';
 import * as find from './components/find.js';
 import { toggleCommitPop, commitAction } from './components/commit.js';
 import { setReviewView, histShowCommit } from './components/history.js';
-import { loadDashboard, scrollDash, setUsageTab, openUsageMenu } from './pages/dashboard.js';
+import { loadDashboard, setUsageAgent } from './pages/dashboard.js';
 import { loadProjectPage, projShowSection, projJiraView, reloadProjectPRs, loadProjectWebhooks, saveProjectWebhooks, previewFixVersion,
   wfNew, wfDelete, wfSetName, wfSetCli, wfAddStep, wfRemoveStep, wfEditStepCommand, wfEditStepTitle, saveWorkflows } from './pages/project.js';
 import { loadGitTab, gitTabPick, gitTabShowCommit, gitTabBack, gitTabRemoveWorktree } from './pages/git-tab.js';
@@ -260,7 +260,7 @@ Object.assign(window, {
   setBoardFilter, applyBoardQuery,
   setProjJiraFilter: jiraView.setProjJiraFilter,
   openStatusMenu: jiraView.openStatusMenu, openAssignMenu: jiraView.openAssignMenu, jiraSearch: jiraView.jiraSearch,
-  projShowSection, projJiraView, reloadProjectPRs, loadProjectWebhooks, saveProjectWebhooks, previewFixVersion, scrollDash, setUsageTab, openUsageMenu,
+  projShowSection, projJiraView, reloadProjectPRs, loadProjectWebhooks, saveProjectWebhooks, previewFixVersion, setUsageAgent,
   wfNew, wfDelete, wfSetName, wfSetCli, wfAddStep, wfRemoveStep, wfEditStepCommand, wfEditStepTitle, saveWorkflows,
   loadGitTab, gitTabPick, gitTabShowCommit, gitTabBack, gitTabRemoveWorktree,
   loadLogs, setLogCategory, clearLogs, showEvents, toggleEventsPopover, // the sidebar bell

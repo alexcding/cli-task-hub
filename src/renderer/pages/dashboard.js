@@ -9,16 +9,20 @@ import { ICON } from '../lib/icons.js';
 import { prRow } from '../components/cards.js';
 import { renderTabs, renderProjectNav } from '../components/sidebar.js';
 import { saveTabs } from '../components/viewer.js';
-import { usageWidgetHtml, usableAgents } from '../components/usage-widget.js';
-import { openMenu } from '../components/menu.js';
+import { usageHero } from '../components/usage-widget.js';
 
 export async function loadDashboard() {
   // Reads the snapshot (instant) — no leading spinner so SSE refreshes are seamless.
-  const [groups, usage, whoami] = await Promise.all([
+  const [groups, usage, whoami, settings] = await Promise.all([
     api(ROUTES.DASHBOARD),
     api(ROUTES.USAGE).catch(() => null),
     api(ROUTES.WHOAMI).catch(() => null),
+    api(ROUTES.SETTINGS).catch(() => null),
   ]);
+  // Which agent the hero shows: the dashboard's own `usageAgent` setting (the topbar picker),
+  // falling back to the Default agent (Settings → CLIs). Re-read on every load — except while a
+  // pick's save is still in flight, so an SSE refresh mid-PUT can't snap the hero back.
+  if (!usageAgentSaving) usageAgent = settings?.usageAgent || settings?.defaultCli || state.defaultCli || 'claude';
   state.projects = groups;
   renderProjectNav(groups);
 
@@ -36,9 +40,9 @@ export async function loadDashboard() {
   const review  = openPRs.filter(p => prGroup(p) === PR_GROUP.REVIEW);
   const errors  = groups.flatMap(g => (g.prs||[]).filter(p => p.error));
 
-  // Hero: greeting + date on the left, actionable counts as chips on the right.
-  // Each chip jumps to the section (or page) it counts. No subtitle — the PR and
-  // review sections right below already say what's waiting.
+  // Hero: greeting + date on the left; the chosen agent's plan limits as ring chips on the right
+  // (usage-widget.js). The Claude/Codex picker sits in the topbar. The PR sections below carry their
+  // own counts, so the hero has no stat chips.
   const now = new Date();
   const hour = now.getHours();
   // First word of git's user.name, capitalized — "alexcding" → "Alexcding".
@@ -46,31 +50,21 @@ export async function loadDashboard() {
   const who = first ? `, ${esc(first[0].toUpperCase() + first.slice(1))}` : '';
   const hello = (hour < 5 ? 'Up late' : hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening') + who;
   const dateStr = now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
-  const chip = (val, label, icon, tint, onclick) => `
-    <button class="stat-chip" onclick="${onclick}">
-      <span class="stat-chip-icon tint-${tint}">${icon}</span>
-      <span><div class="stat-chip-val">${val}</div><div class="stat-chip-label">${label}</div></span>
-    </button>`;
-
-  // AI usage widget (shared builder in usage-widget.js): a full-width section below the
-  // hero; its title is a dropdown switching Claude Code / Codex.
   state.usageSnap = usage;
 
   document.getElementById('stats').innerHTML = `
     <div class="dash-hero">
-      <div>
+      <div class="dash-greet">
         <div class="dash-date">${dateStr}</div>
         <div class="dash-hello">${hello}</div>
       </div>
-      <div class="stat-chips">
-        ${chip(mine.length, 'My PRs', ICON.branch, 'accent', "scrollDash('dash-mine')")}
-        ${chip(review.length, 'To Review', ICON.eye, 'warn', "scrollDash('dash-review')")}
-      </div>
+      <div class="dash-usage" id="usage-figs"></div>
     </div>
-    <div id="usage-widget" class="usage-row"></div>
   `;
+  // The Claude/Codex picker lives in the topbar's action slot while the dashboard is showing
+  // (showPage clears the slot on every navigation, so re-creating it here is safe).
+  document.getElementById('topbar-actions').innerHTML = '<span id="usage-agent" class="dash-agent"></span>';
   renderUsageWidget();
-  restoreUsageTab();
   startUsageAutoRefresh();
 
   const section = (title, prs, emptyMsg, id) => `
@@ -116,51 +110,37 @@ export async function loadDashboard() {
   renderTabs(); // refresh CI dots on open GitHub tabs now that PR data (with CI) is loaded
 }
 
-// Smooth-scroll to a dashboard section (hero chips). No-op if the section isn't rendered.
-export function scrollDash(id) {
-  document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-}
-
-// Active tab on the dashboard usage widget. Persisted to settings (key `usageAgent`)
-// so it survives reloads AND so the tray menu can render the same selected agent.
-let usageTab = 'claude';
-let usageTabRestored = false;
-export function setUsageTab(key) {
-  usageTab = key;
+// Agent whose limits the hero shows (see loadDashboard for where it comes from).
+let usageAgent = 'claude';
+// Hero picker. Persisted as the `usageAgent` setting so it survives reloads AND so the tray menu
+// can render the same agent — persist first, THEN ask the tray to rebuild, so its menu re-reads
+// the new agent rather than racing the save.
+let usageAgentSaving = false;
+export function setUsageAgent(key) {
+  usageAgent = key;
+  usageAgentSaving = true;
   renderUsageWidget();
-  // Persist first, THEN ask the tray to rebuild — so its menu re-reads the new agent
-  // rather than racing the save and rendering the previous one.
   api(ROUTES.settingsKey('usageAgent'), { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ value: key }) })
     .then(() => window.taskhub?.refreshTray?.())
-    .catch(() => {});
-}
-// Title dropdown: the shared context menu, anchored under the title button (openMenu positions
-// at a point, so hand it the button's bottom-left corner). Picking an agent = setUsageTab.
-export function openUsageMenu(e) {
-  const r = e.currentTarget.getBoundingClientRect();
-  const at = { preventDefault() {}, clientX: r.left - 6, clientY: r.bottom + 6 };
-  openMenu(at, usableAgents(state.usageSnap).map(a => ({ label: a.name, onClick: () => setUsageTab(a.key) })));
-}
-// Restore the saved tab once per session (the in-session selection wins after that).
-async function restoreUsageTab() {
-  if (usageTabRestored) return;
-  usageTabRestored = true;
-  const settings = await api(ROUTES.SETTINGS).catch(() => null);
-  if (settings?.usageAgent && settings.usageAgent !== usageTab) { usageTab = settings.usageAgent; renderUsageWidget(); }
+    .catch(() => {})
+    .finally(() => { usageAgentSaving = false; });
 }
 function renderUsageWidget() {
-  const el = document.getElementById('usage-widget');
-  if (el) el.innerHTML = usageWidgetHtml(state.usageSnap, usageTab);
+  const { agentLine, figures } = usageHero(state.usageSnap, usageAgent);
+  const a = document.getElementById('usage-agent'), f = document.getElementById('usage-figs');
+  if (a) a.innerHTML = agentLine;
+  if (f) f.innerHTML = figures;
 }
 
-// The usage widget has no SSE trigger of its own — `sync` events track PR/Jira
-// snapshots, not token usage — so its limit bars and "resets in…" countdown would
+// The hero figures have no SSE trigger of their own — `sync` events track PR/Jira
+// snapshots, not token usage — so the percentages and "resets in…" countdown would
 // freeze at page-load values until some unrelated sync re-ran loadDashboard. Poll
-// /api/usage once a minute while the widget is on screen and re-render just it, so
-// the bars/pace tick/countdown stay live. One timer, started lazily on first load.
+// /api/usage once a minute while the dashboard is on screen and re-render just them.
+// One timer, started lazily on first load.
 let usageTimer = null;
 async function refreshUsageWidget() {
-  if (!document.getElementById('usage-widget')) return; // not on the dashboard right now
+  // Not on the dashboard: stop polling until the next visit restarts it.
+  if (!document.getElementById('usage-figs')) { clearInterval(usageTimer); usageTimer = null; return; }
   const usage = await api(ROUTES.USAGE).catch(() => null);
   if (usage) state.usageSnap = usage;
   renderUsageWidget(); // always re-render so the countdown ticks even from cached data

@@ -234,6 +234,7 @@ export async function setActivityNotify(on) {
 // ── Default agent ──────────────────────────────────────────────────────────────
 // The agent preselected in the sidebar's New session dialog ("+" on a project). Persisted as the
 // `defaultCli` setting ('claude' | 'codex' | '' for a plain shell) and mirrored in state.defaultCli.
+// (The dashboard hero's agent picker is separate: `usageAgent`, falling back to this.)
 function setDefaultCliUI(value) {
   const v = value == null ? 'claude' : String(value);
   state.defaultCli = v;

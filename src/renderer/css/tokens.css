@@ -24,7 +24,6 @@
   --codex: #717af0; --codex-bg: #eef0fe;     /* Codex app-icon periwinkle — Codex tab of the widget */
   /* Syntax tokens for the diff highlighter (lib/highlight.mjs) — GitHub-light palette. */
   --tok-kw: #cf222e; --tok-str: #0a3069; --tok-com: #6e7781; --tok-num: #0550ae; --tok-fn: #8250df;
-  --limit-mark: rgb(0 0 0/.16);              /* 50%/75% divider marks on the plan-limit bars */
   --overlay: rgb(0 0 0/.06);
   --shadow: 0 1px 2px rgb(16 24 40/.05);
   --shadow-md: 0 4px 12px -2px rgb(16 24 40/.10),0 2px 6px -2px rgb(16 24 40/.06);
@@ -57,7 +56,6 @@ html[data-theme="dark"] {
   --codex: #8d94f5; --codex-bg: #1f2138;
   /* Syntax tokens for the diff highlighter — GitHub-dark palette (pure swap of the light set). */
   --tok-kw: #ff7b72; --tok-str: #a5d6ff; --tok-com: #8b949e; --tok-num: #79c0ff; --tok-fn: #d2a8ff;
-  --limit-mark: rgb(255 255 255/.16);
   --overlay: rgb(255 255 255/.09);
   --shadow: 0 1px 2px rgb(0 0 0/.4);
   --shadow-md: 0 6px 16px -3px rgb(0 0 0/.55),0 3px 7px -3px rgb(0 0 0/.4);

@@ -26,89 +26,34 @@
 .card-header { padding:14px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:8px; }
 .card-header h3 { font-size:14px;font-weight:600; }
 
-/* Dashboard hero — greeting/date block on the left, actionable stat chips on
-   the right (they navigate). The AI usage cards live on their own row below. */
-.dash-hero { display:flex;align-items:center;justify-content:space-between;gap:24px 40px;flex-wrap:wrap;margin:8px 0 36px; }
+/* Dashboard hero — a larger greeting (left) and the Default agent's plan limits as ring chips
+   under its name (right). Flat on the page: no band, no hairline. The PR sections below carry
+   their own counts, so there are no stat chips. */
+.dash-hero { display:flex;align-items:flex-end;justify-content:space-between;gap:20px 48px;flex-wrap:wrap;margin:8px 0 36px; }
 .dash-date { font-size:11.5px;font-weight:600;color:var(--text-3);text-transform:uppercase;letter-spacing:1px; }
-.dash-hello { font-size:24px;font-weight:650;letter-spacing:-.4px;margin-top:5px; }
-.stat-chips { display:flex;align-items:stretch;gap:12px;flex-wrap:wrap; }
-/* Flat stat: no box — tinted icon, big figure, muted label. Only the hover fill says "button". */
-.stat-chip { display:flex;align-items:center;gap:12px;padding:10px 18px 10px 12px;background:none;border:none;border-radius:var(--r);cursor:pointer;font:inherit;color:inherit;text-align:left;transition:background .12s; }
-.stat-chip:hover { background:var(--surface-hover); }
-.stat-chip-icon { width:34px;height:34px;border-radius:9px;display:flex;align-items:center;justify-content:center;flex-shrink:0; }
-.stat-chip-icon svg { width:17px;height:17px; }
-.stat-chip-icon.tint-accent { background:var(--accent-bg);color:var(--accent); }
-.stat-chip-icon.tint-warn { background:var(--warn-bg);color:var(--warn); }
-.stat-chip-icon.tint-merged { background:var(--merged-bg);color:var(--merged); }
-.stat-chip-icon.tint-success { background:var(--success-bg);color:var(--success); }
-.stat-chip-icon.tint-neutral { background:var(--surface-hover);color:var(--text-2); }
-.stat-chip-val { font-size:17px;font-weight:700;letter-spacing:-.4px;line-height:1.2; }
-.stat-chip-label { font-size:11.5px;color:var(--text-3);font-weight:500;white-space:nowrap;margin-top:1px; }
-/* AI usage widget (views/usage-widget.js): one full-width landscape block with
-   Claude/Codex tabs top-right — plan-limit lines on the left, stat row + day
-   histogram on the right. Each agent brings its own accent via agent-<key>. */
-.usage-row { margin-bottom:36px;container-type:inline-size; }
-.usage-row:empty { display:none; }
-.usage-card { --agent:var(--claude); }
-.usage-card.agent-codex { --agent:var(--codex); }
-/* Header = the dashboard's .project-group-header (title over a hairline), tabs on the right;
-   spacing comes from that class. */
-/* Fixed minimum height — sized for three limit blocks so switching
-   Claude ↔ Codex (fewer rows, or none) never shifts the sections below. */
-.usage-cols { display:flex;flex-wrap:wrap;gap:14px 44px;align-items:stretch;min-height:162px; }
-/* Narrow pane (viewer open / small window): the columns wrap onto two lines, so the fixed
-   height would overflow into the sections below — let it grow, and give the histogram its own
-   height since it no longer stretches to match the limits column. */
-@container (max-width: 700px) {
-  .usage-cols { min-height:0; }
-  .usage-limits, .usage-stats { flex:1 1 100%;min-width:0; }
-  .usage-hist { min-height:56px; }
-}
-.usage-limits { flex:1.35 1 0;min-width:340px; } .usage-stats { flex:1 1 0;min-width:280px; }
-/* Limits column: stacked three-line blocks (name / bar / figures), spread top-to-bottom so
-   the first sits level with the stat labels and the last shares its bottom edge with the
-   histogram beside it. */
-.usage-limits { display:flex;flex-direction:column;justify-content:space-between;gap:6px; }
-.lim { display:flex;flex-direction:column;gap:4px; }
-/* Row text matches the PR rows (.pr-title: 13.5px / 500). */
-.lim-name { font-size:13.5px;line-height:1.3;font-weight:500;color:var(--text);white-space:nowrap; }
-.lim-figs { display:flex;align-items:baseline;justify-content:space-between;gap:12px;font-size:12.5px;line-height:1.3;color:var(--text-3);white-space:nowrap;font-variant-numeric:tabular-nums; }
-.lim-reset { margin-left:auto; }
-.lim-dot { display:inline-block;width:3px;height:3px;border-radius:50%;background:var(--border-focus);margin:0 7px;vertical-align:middle; }
-/* Stats column: stat row on top, the histogram fills the remaining height below it. */
-.usage-stats { display:flex;flex-direction:column; }
-/* Claude/Codex switcher — the section title itself, with a caret; opens the shared menu. */
-.usage-title { display:inline-flex;align-items:center;gap:3px;border:none;background:none;font:inherit;color:inherit;cursor:pointer;padding:2px 6px;margin:-2px -6px;border-radius:6px;transition:background .12s; }
-.usage-title:hover { background:var(--surface-hover); }
-.usage-title svg { width:14px;height:14px;color:var(--text-3);margin-top:1px; }
-/* Plan-limit bar: the fill shows what's LEFT; a green pace notch marks the on-pace position;
-   faint divider marks sit at 50% and 75%. */
-.limit-bar { position:relative;height:8px;border-radius:4px;background:var(--surface-hover);overflow:hidden; }
-.limit-bar i { position:absolute;left:0;top:0;bottom:0;max-width:100%;border-radius:4px;background:var(--agent); }
-.limit-bar::after { content:'';position:absolute;inset:0;pointer-events:none;background:
-  linear-gradient(90deg,transparent calc(50% - .5px),var(--limit-mark) calc(50% - .5px),var(--limit-mark) calc(50% + .5px),transparent calc(50% + .5px)),
-  linear-gradient(90deg,transparent calc(75% - .5px),var(--limit-mark) calc(75% - .5px),var(--limit-mark) calc(75% + .5px),transparent calc(75% + .5px)); }
-/* Green pace notch: a short segment with track-coloured gaps either side so it reads as a
-   distinct mark cut into the bar. */
-.limit-bar s { position:absolute;top:0;bottom:0;width:9px;margin-left:-4.5px;background:var(--success);border-left:2px solid var(--surface-hover);border-right:2px solid var(--surface-hover);background-clip:padding-box;box-sizing:border-box; }
-/* Stat row: four cells across the top, muted label over bold value. */
-.usage-grid { display:grid;grid-template-columns:repeat(4,1fr);gap:8px 16px;margin:0 0 12px; }
-.usage-grid label { display:block;font-size:12.5px;font-weight:500;color:var(--text-3);margin-bottom:1px; }
-.usage-grid b { font-size:18px;font-weight:650;letter-spacing:-.4px; }
-/* Day histogram below the stats, stretching to fill the column. Each <i> is a
-   full-height hover column (so short bars are easy to hit); the visible bar is
-   its ::before at --h, the value tooltip its ::after. */
-.usage-hist { display:flex;gap:4px;flex:1;min-height:52px; }
-.usage-hist i { flex:1;position:relative; }
-.usage-hist i::before { content:'';position:absolute;left:0;right:0;bottom:0;height:var(--h,3%);min-height:3px;border-radius:3px;background:var(--agent);opacity:.35; }
-.usage-hist i.today::before { opacity:1; }
-.usage-hist i:hover::before { opacity:.65; }
-.usage-hist i.today:hover::before { opacity:1; }
-.usage-hist i::after { content:attr(data-tip);position:absolute;bottom:calc(100% + 5px);left:50%;transform:translateX(-50%);background:var(--text);color:var(--bg);font-size:11px;font-weight:500;line-height:1.4;padding:3px 8px;border-radius:5px;white-space:nowrap;opacity:0;pointer-events:none;transition:opacity .1s;z-index:3; }
-.usage-hist i:hover::after { opacity:1; }
-/* Keep edge tooltips inside the card so they don't spill past the content edge. */
-.usage-hist i:nth-child(-n+4)::after { left:0;transform:none; }
-.usage-hist i:nth-last-child(-n+4)::after { left:auto;right:0;transform:none; }
+.dash-hello { font-size:30px;font-weight:650;letter-spacing:-.7px;line-height:1.15;margin-top:5px; }
+/* Right side: the chosen agent's limit chips, right-aligned. */
+.dash-usage { display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap; }
+/* Claude/Codex picker — lives in the topbar's action slot while the dashboard shows; a compact
+   segmented control, same recipe as the app's other toggles. */
+.dash-agent { display:flex;align-items:center; }
+.dash-agent:empty { display:none; }
+.usage-name { font-size:13px;font-weight:600;color:var(--text-2); }
+.usage-tabs { display:flex;gap:2px;background:var(--surface-hover);border-radius:99px;padding:3px; }
+.usage-tab { border:none;background:none;font:inherit;font-size:12px;font-weight:500;color:var(--text-2);padding:4px 13px;border-radius:99px;cursor:pointer;transition:background .12s,color .12s; }
+.usage-tab:hover { color:var(--text); }
+.usage-tab.active { background:var(--surface);color:var(--text);box-shadow:var(--shadow); }
+/* Ring chips: soft pills, each a 20px ring filled to the percentage left (agent-<key> sets
+   --agent) beside two short lines — the number over "label · reset". */
+.dash-figs { display:contents;--agent:var(--claude); }
+.dash-figs.agent-codex { --agent:var(--codex); }
+.fig { display:inline-flex;align-items:center;gap:10px;padding:8px 16px 8px 11px;border-radius:99px;background:color-mix(in srgb, var(--surface-hover) 55%, var(--surface)); }
+.fig-ring { display:block;flex-shrink:0; }
+.fig-text { display:flex;flex-direction:column;gap:2px;line-height:1.2; }
+.fig-val { font-size:13px;font-weight:600;letter-spacing:-.2px;font-variant-numeric:tabular-nums; }
+.fig-lbl { font-size:10.5px;font-weight:500;color:var(--text-3);white-space:nowrap; }
+.fig-reset { font-variant-numeric:tabular-nums; }
+.fig-reset::before { content:"·";margin:0 4px;color:var(--border-focus); }
 
 /* Dashboard section: title + count pill over a hairline, then the PR list. */
 /* Section rhythm (shared by the usage block and both PR sections): 36px between sections,
