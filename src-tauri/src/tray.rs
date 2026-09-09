@@ -138,12 +138,23 @@ fn group_for(title: &str, win: &Option<UsageWin>, win_ms: i64, now: i64) -> Opti
   Some(crate::usage_image::Group { title: title.to_string(), left, pace_left, data })
 }
 
+// A model-scoped weekly window (e.g. Fable's own allowance): the UsageWin fields plus its label.
+#[derive(Deserialize, Clone, Default)]
+struct ScopedWin {
+  #[serde(default)]
+  label: String,
+  #[serde(flatten)]
+  win: UsageWin,
+}
+
 #[derive(Deserialize, Clone, Default)]
 struct Limits {
   #[serde(default)]
   session: Option<UsageWin>,
   #[serde(default)]
   weekly: Option<UsageWin>,
+  #[serde(default)]
+  scoped: Vec<ScopedWin>,
 }
 
 #[derive(Deserialize, Default)]
@@ -312,13 +323,19 @@ fn build_menu(app: &AppHandle, tabs: &[Tab], prs: &[Pr], usage: &Usage, settings
   let limits = if agent == "codex" { usage.codex_limits.clone() } else { usage.limits.clone() };
   if let Some(lim) = limits {
     let now = chrono::Utc::now().timestamp_millis();
-    let groups: Vec<crate::usage_image::Group> = [
+    // Session, Weekly, then one group per model-scoped weekly cap (Fable) at the bottom.
+    let mut groups: Vec<crate::usage_image::Group> = [
       group_for("Session", &lim.session, SESSION_MS, now),
       group_for("Weekly", &lim.weekly, WEEK_MS, now),
     ]
     .into_iter()
     .flatten()
     .collect();
+    for s in &lim.scoped {
+      if let Some(g) = group_for(&format!("{} · Weekly", s.label), &Some(s.win.clone()), WEEK_MS, now) {
+        groups.push(g);
+      }
+    }
     if !groups.is_empty() {
       b = b.separator();
       match crate::usage_image::render(&groups, crate::usage_image::accent(agent), dark) {

@@ -103,7 +103,14 @@ async function planLimits() {
     : null;
   const session = win(data.five_hour);
   const weekly = win(data.seven_day ?? data.seven_day_overall ?? data.seven_day_oauth_apps);
-  return (session || weekly) ? { session, weekly } : null;
+  // Model-scoped weekly caps (e.g. a separate Fable allowance) arrive only in the `limits` list:
+  // `{kind:'weekly_scoped', percent, resets_at, scope:{model:{display_name}}}`. Ship them as extra
+  // {label, usedPct, resetsAt} windows so the widgets add one bar per model under Session/Weekly.
+  const scoped = Array.isArray(data.limits) ? data.limits
+    .filter(l => l && l.kind === 'weekly_scoped' && l.percent != null && l.scope?.model?.display_name)
+    .map(l => ({ label: l.scope.model.display_name, ...win({ utilization: l.percent, resets_at: l.resets_at }) }))
+    : [];
+  return (session || weekly || scoped.length) ? { session, weekly, scoped } : null;
 }
 
 // Codex's plan limits, unlike Claude's, are written to the local session logs — the
