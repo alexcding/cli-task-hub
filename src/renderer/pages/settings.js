@@ -21,7 +21,6 @@ export async function loadSettings() {
 
   if (cfg.poll_interval)      document.getElementById('poll-interval').value = cfg.poll_interval;
   if (cfg.jira_base_url)      document.getElementById('jira-base-url').value = cfg.jira_base_url;
-  if (cfg.sprint_jql)         document.getElementById('sprint-jql').value = cfg.sprint_jql;
   // Show the auto-detected site as the placeholder so it's clear what's in effect.
   api(ROUTES.JIRA_SITE).then(s => { if (s.baseUrl) document.getElementById('jira-base-url').placeholder = `${s.baseUrl} (auto-detected)`; }).catch(()=>{});
   if (cfg.jira_poll_interval) document.getElementById('jira-poll-interval').value = cfg.jira_poll_interval;
@@ -345,13 +344,12 @@ export async function saveConfig() {
     await apiJson(ROUTES.CONFIG, 'POST', {
       poll_interval:      document.getElementById('poll-interval').value || '60',
       jira_base_url:      document.getElementById('jira-base-url').value.trim(), // blank = auto-detect
-      sprint_jql:         document.getElementById('sprint-jql').value.trim() || 'assignee = currentUser() AND sprint is not EMPTY AND statusCategory != Done ORDER BY updated DESC',
       jira_poll_interval: document.getElementById('jira-poll-interval').value || '120',
       jira_limit:         document.getElementById('jira-limit').value || '100',
       jira_api_token:     document.getElementById('jira-api-token').value.trim(),
     });
     // Ticket links depend on the base URL — refresh it after a save.
-    try { state.jiraBase = (await api(ROUTES.JIRA_SITE)).baseUrl || state.jiraBase; } catch {}
+    try { const site = await api(ROUTES.JIRA_SITE); state.jiraBase = site.baseUrl || state.jiraBase; if (site.me) state.jiraMe = site.me; } catch {}
     // No client-side resync: the server refreshes the Jira feeds after a config change and
     // broadcasts jira-sync, which the active page reacts to (see routes/config.js).
     toast('Settings saved');

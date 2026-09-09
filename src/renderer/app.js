@@ -17,11 +17,11 @@ import * as find from './components/find.js';
 import { toggleCommitPop, commitAction } from './components/commit.js';
 import { setReviewView, histShowCommit } from './components/history.js';
 import { loadDashboard, scrollDash, setUsageTab } from './pages/dashboard.js';
-import { loadProjectPage, projShowSection, reloadProjectPRs, loadProjectWebhooks, saveProjectWebhooks, previewFixVersion,
+import { loadProjectPage, projShowSection, projJiraView, reloadProjectPRs, loadProjectWebhooks, saveProjectWebhooks, previewFixVersion,
   wfNew, wfDelete, wfSetName, wfSetCli, wfAddStep, wfRemoveStep, wfEditStepCommand, wfEditStepTitle, saveWorkflows } from './pages/project.js';
 import { loadGitTab, gitTabPick, gitTabShowCommit, gitTabBack, gitTabRemoveWorktree } from './pages/git-tab.js';
 import * as jiraView from './pages/jira.js';
-import { loadScrumboard, setBoardProject, setBoardFilter, setBoardQuery, applyBoardQuery } from './pages/scrumboard.js';
+import { loadScrumboard, setBoardFilter, applyBoardQuery } from './pages/scrumboard.js';
 import { loadLogs, setLogCategory, clearLogs } from './pages/logs.js';
 import { loadTasks, openTaskSession, deleteTaskSession, analyzeSession, updateTasksBadge } from './pages/tasks.js';
 import { loadPersistedTasks } from './services/tasks.js';
@@ -55,9 +55,6 @@ function showPage(name, projectId) {
   if (name === 'dashboard') {
     document.getElementById('page-title').textContent = 'Dashboard';
     loadDashboard();
-  } else if (name === 'scrumboard') {
-    document.getElementById('page-title').textContent = 'Scrumboard';
-    loadScrumboard();
   } else if (name === 'project' && projectId) {
     state.activeProjectId = projectId;
     const proj = projectById(projectId);
@@ -108,7 +105,6 @@ function handleShortcut(action) {
   const tab = activeTab(); // non-null only while a tab is the active view
   switch (action) {
     case 'nav:dashboard': showPage('dashboard'); break;
-    case 'nav:scrumboard': showPage('scrumboard'); break;
     case 'nav:tasks':     showPage('tasks'); break;
     case 'nav:activity':  showPage('activity'); break;
     case 'nav:settings':  showPage('settings'); break;
@@ -172,16 +168,17 @@ function refreshActivePage() {
     loadLogs();
   } else if (active === 'page-tasks') {
     loadTasks();
-  } else if (active === 'page-scrumboard') {
-    loadScrumboard();
   } else if (active === 'page-project' && state.activeProjectId) {
-    // The digest shows PRs and Jira at once — refresh both. PRs keep the chosen state filter.
+    // The digest loads PRs and Jira on open — refresh both. PRs keep the chosen state filter.
     const id = state.activeProjectId;
     const sel = document.getElementById(`pr-state-${id}`);
     if (sel) reloadProjectPRs(id, sel.value || 'open', { silent: true });
-    // Only refetch Jira for projects that actually have it configured (a key or saved JQL).
+    // The Board section is lazy: refresh it only once it has been shown (lazyOnce marks the body).
+    if (document.getElementById('scrumboard-body')?.dataset.loaded) loadScrumboard(id);
+    // Only refetch the Tickets view once it has been shown, and only for projects that actually
+    // have Jira configured (a key or saved JQL). Search is live-only — never auto-rerun.
     const p = projectById(id);
-    if ((p?.jiraProjectKey || p?.jql) && document.getElementById(`proj-jira-${id}`)) jiraView.loadProjectJira(id);
+    if ((p?.jiraProjectKey || p?.jql) && document.getElementById(`jv-tickets-${id}`)?.dataset.loaded) jiraView.loadProjectJira(id);
   }
 }
 function scheduleRefresh() {
@@ -258,10 +255,10 @@ Object.assign(window, {
   onFindInput: find.onFindInput, onFindKey: find.onFindKey, closeFind: () => find.closeFind(true),
   findNext: () => find.findNext(true), findPrev: () => find.findNext(false),
   // views
-  loadScrumboard, setBoardProject, setBoardFilter, setBoardQuery, applyBoardQuery,
-  loadProjectJira: jiraView.loadProjectJira, setProjJiraFilter: jiraView.setProjJiraFilter,
-  openStatusMenu: jiraView.openStatusMenu, openAssignMenu: jiraView.openAssignMenu,
-  projShowSection, reloadProjectPRs, loadProjectWebhooks, saveProjectWebhooks, previewFixVersion, scrollDash, setUsageTab,
+  setBoardFilter, applyBoardQuery,
+  setProjJiraFilter: jiraView.setProjJiraFilter,
+  openStatusMenu: jiraView.openStatusMenu, openAssignMenu: jiraView.openAssignMenu, jiraSearch: jiraView.jiraSearch,
+  projShowSection, projJiraView, reloadProjectPRs, loadProjectWebhooks, saveProjectWebhooks, previewFixVersion, scrollDash, setUsageTab,
   wfNew, wfDelete, wfSetName, wfSetCli, wfAddStep, wfRemoveStep, wfEditStepCommand, wfEditStepTitle, saveWorkflows,
   loadGitTab, gitTabPick, gitTabShowCommit, gitTabBack, gitTabRemoveWorktree,
   loadLogs, setLogCategory, clearLogs,
@@ -329,6 +326,7 @@ loadPersistedTasks().then(() => { if (document.querySelector('.page.active')?.id
     // taskhub.db is authoritative (survives a localStorage clear, shared across windows);
     // re-sync the theme from it and re-apply if it differs from the pre-paint guess.
     syncThemeFromSettings(settings.theme);
+    if (site.me) state.jiraMe = site.me;
     syncSidebarGroupFromSettings(settings.sidebarGroup); // re-render the sidebar in the saved grouping
     syncFontsFromSettings(settings); // any terminal rehydrated before this lands is updated in place by applyFonts
     if (settings.webviewPool != null) viewer.setWebviewPoolSize(settings.webviewPool); // live-webview pool cap (Settings → System); clamped, bad values → default

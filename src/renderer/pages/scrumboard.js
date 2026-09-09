@@ -1,16 +1,17 @@
-// Scrum board page: the active sprint of a chosen project's Jira board (every assignee),
-// rendered as columns by status — a native mirror of a Jira software board. The top-left
-// tabs are your configured projects that have a Jira key; clicking one switches boards.
-// Each project's board is scoped to its component (e.g. iOS) when one is set, so a
-// per-platform project shows just that swimlane. The feed is the project's `board:<id>`
-// snapshot (ROUTES.PROJECT_BOARD) — fetched via acli like every other Jira view.
+// Board view of the project page's Jira section: the active sprint of THIS project's Jira board
+// (every assignee), rendered as columns by status — a native mirror of a Jira software board.
+// There is no project picker: the board always belongs to the project whose page is open
+// (project.js hosts the view and lazy-loads the snapshot on first show). The board
+// is narrowed by the project's saved JQL clause (e.g. `component = iOS`) so a per-platform
+// project shows just that swimlane. The feed is the project's `board:<id>` snapshot
+// (ROUTES.PROJECT_BOARD) — fetched via acli like every other Jira view.
 import { ROUTES } from '/shared/routes.mjs';
-import { state, setProjects, projectById, applyPendingMoves, reconcilePendingMoves } from '../stores/store.js';
+import { state, projectById, applyPendingMoves, reconcilePendingMoves } from '../stores/store.js';
 import { api, apiJson } from '../services/api.js';
 import { esc, escJs, jiraUrl, businessDaysUntil } from '../lib/util.js';
 import { ICON, ISSUE_ICON } from '../lib/icons.js';
 import { toast, toastErr } from '../components/toast.js';
-import { rememberStatuses, doTransition } from './jira.js';
+import { rememberStatuses, doTransition, loadProjectJira, renderProjJira } from './jira.js';
 
 // Status workflow categories, ordered left→right so the board reads To Do → In Progress
 // → Done. acli reports `statusCategory` as one of these keys; an unknown/blank category
@@ -28,9 +29,6 @@ function initials(name) {
   const b = parts.length > 1 ? parts[parts.length - 1][0] : parts[0][1] || '';
   return (a + b).toUpperCase();
 }
-
-// Projects eligible for a board tab: those with a Jira key configured.
-const boardProjects = () => (state.projects || []).filter(p => p.jiraProjectKey);
 
 // Issue-type key, normalised (sub-tasks reuse the task mark).
 const typeKey = (it) => {
@@ -72,7 +70,7 @@ function prioMark(it) {
 
 // Accept a freshly-fetched board snapshot: release any optimistic moves the server has now
 // confirmed (reconcilePendingMoves), store it, learn its statuses, and re-render. One helper so
-// the three fetch paths (load / switch project / change filter) can't drift — and so the reconcile
+// the two fetch paths (load / change filter) can't drift — and so the reconcile
 // can never be forgotten on a fetch path.
 function acceptBoardSnap(snap) {
   reconcilePendingMoves(snap);
@@ -82,9 +80,12 @@ function acceptBoardSnap(snap) {
   renderScrumboard();
 }
 
-export async function loadScrumboard() {
+// Load (or refresh) the board for project `id`. Called by project.js the first time the Board
+// section is shown, by its Refresh button, and by the SSE refresh (which passes the active
+// project). Falls back to the project whose board is already loaded.
+export async function loadScrumboard(id = state.boardProjectId) {
   const body = document.getElementById('scrumboard-body');
-  if (!body) return;
+  if (!body || !id) return;
   // Never refetch/rebuild the board mid-drag. This is the SSE-refresh entry point, and its error
   // and no-project branches write body.innerHTML DIRECTLY (bypassing renderScrumboard's guard) —
   // a fetch failure landing during a drag would wipe #scrumboard-body and destroy the live
@@ -92,25 +93,30 @@ export async function loadScrumboard() {
   // so onEnd always fires (the dragged DOM survives); the skipped snapshot lands on the next sync.
   if (_boardDragging) return;
   try {
-    // Settings carry the per-project saved assignee filter (board_filter_<id>). The
-    // my-sprint feed lets us highlight my own cards on the team board (non-blocking now
-    // that acli is async).
-    const [projects, settings, sprintSnap] = await Promise.all([
-      api(ROUTES.PROJECTS), api(ROUTES.SETTINGS), api(ROUTES.JIRA_SPRINT).catch(() => null),
-    ]);
-    setProjects(projects);
-    if (sprintSnap) state.sprintSnap = sprintSnap;
-    const boardable = boardProjects();
-    for (const p of boardable) state.boardFilters[p.id] = settings[`board_filter_${p.id}`] || '';
-    // Active project: the remembered one if it still has a board, else the first.
-    let id = state.boardProjectId;
-    if (!boardable.some(p => p.id === id)) id = boardable[0]?.id || '';
+    // Switching projects: drop the previous project's snapshot so its cards never flash under
+    // the new project's header while the fetch is in flight.
+    if (state.boardProjectId !== id) { state.boardSnap = { items: [] }; body.innerHTML = BOARD_LOADING; }
     state.boardProjectId = id;
-    renderScrumboardTabs();
-
-    if (!id) {
+    // The saved assignee filter (settings: board_filter_<id>) is seeded ONCE per project, then
+    // lives in memory — re-reading it on every SSE refresh could revert a selection whose PUT
+    // hasn't landed yet (mirrors loadProjectJira's projJiraFilters).
+    if (state.boardFilters[id] === undefined) {
+      const settings = await api(ROUTES.SETTINGS);
+      if (state.boardProjectId !== id) return;
+      state.boardFilters[id] = settings[`board_filter_${id}`] || '';
+    }
+    const proj = projectById(id);
+    if (!proj?.jiraProjectKey) {
+      // No sprint board without a key — but the shared filter bar must still show (the Tickets
+      // view works off a saved JQL alone, and the clause is ANDed into it server-side), so read
+      // the saved clause from the config store the poller uses and paint the bar from that.
+      const cfg = await api(ROUTES.CONFIG).catch(() => ({}));
+      if (state.boardProjectId !== id) return;
+      state.boardSnap = { items: [], query: cfg[`board_query_${id}`] || '' };
+      renderScrumboardQuery();
+      renderScrumboardFilter();
       setTitle(null);
-      body.innerHTML = `<div class="empty" style="padding:16px;color:var(--text-3)">No projects with a Jira key yet. Add one (with an optional component like iOS) to see its board.</div>`;
+      body.innerHTML = `<div class="empty" style="padding:16px;color:var(--text-3)">This project has no Jira key. Set one (⚙ Edit project) to see its sprint board.</div>`;
       return;
     }
     const snap = await api(ROUTES.projectBoard(id));
@@ -121,39 +127,8 @@ export async function loadScrumboard() {
   }
 }
 
-// Switch the board to another project (top-left tab click).
-export async function setBoardProject(id) {
-  if (id === state.boardProjectId && (state.boardSnap.items || []).length) return;
-  state.boardProjectId = id;
-  renderScrumboardTabs();
-  const body = document.getElementById('scrumboard-body');
-  if (body) body.innerHTML = BOARD_LOADING;
-  try {
-    const snap = await api(ROUTES.projectBoard(id));
-    if (state.boardProjectId !== id) return; // switched again while this was in flight
-    acceptBoardSnap(snap);
-  } catch (e) { toastErr(e.message); }
-}
-
-// Top-left project picker: a dropdown of the board-capable projects (those with a Jira
-// key). Selecting one switches the board. Labelled by project name, with the Jira key
-// shown when it differs.
-export function renderScrumboardTabs() {
-  const el = document.getElementById('scrumboard-tabs');
-  if (!el) return;
-  const projects = boardProjects();
-  if (!projects.length) { el.innerHTML = ''; return; }
-  const label = p => {
-    const name = p.name || p.jiraProjectKey;
-    return p.jiraProjectKey && p.jiraProjectKey !== name ? `${name} (${p.jiraProjectKey})` : name;
-  };
-  const opt = p => `<option value="${esc(p.id)}" ${p.id === state.boardProjectId ? 'selected' : ''}>${esc(label(p))}</option>`;
-  el.innerHTML = `<span class="filter-label">Project</span>
-    <select class="filter-select" onchange="setBoardProject(this.value)">${projects.map(opt).join('')}</select>`;
-}
-
 function setTitle(snap) {
-  // The active sprint's name + days left — the topbar already shows "Scrumboard", so no
+  // The active sprint's name + days left — the section heading already says "Board", so no
   // placeholder when there's no sprint. textContent (not innerHTML) so no escaping needed.
   const el = document.getElementById('scrumboard-title');
   if (!el) return;
@@ -163,22 +138,24 @@ function setTitle(snap) {
   el.textContent = days > 0 ? `${s.name} · ${days}d left` : s.name;
 }
 
-// The board's free-form filter: a JQL clause (e.g. `component = iOS`) ANDed into the
-// sprint query, saved per project. Rendered only on load/switch (not on every re-render)
-// so typing isn't clobbered by a background refresh. Submits on Enter / blur.
+// The project's free-form filter: a JQL clause (e.g. `component = iOS`) the server ANDs into
+// BOTH the sprint query and the Tickets query, saved per project. Rebuilt on each snapshot (incl.
+// SSE refreshes) EXCEPT while the user is typing in it or when it already shows the saved value —
+// so a background refresh never clobbers a half-typed clause. Enter applies (no Go).
 export function renderScrumboardQuery() {
   const el = document.getElementById('scrumboard-query');
   if (!el) return;
   if (!state.boardProjectId) { el.innerHTML = ''; return; }
   const cur = state.boardSnap?.query || '';
-  el.innerHTML = `<span class="filter-label">Filter</span>
-    <input id="scrumboard-query-input" class="board-query-input" type="text" value="${esc(cur)}" placeholder="e.g. component = iOS"
-      title="A JQL clause ANDed into the sprint (blank = whole sprint)"
-      onkeydown="if(event.key==='Enter'){event.preventDefault();applyBoardQuery();}">
-    <button class="btn btn-secondary btn-sm" onclick="applyBoardQuery()">Go</button>`;
+  const existing = document.getElementById('scrumboard-query-input');
+  if (existing && (document.activeElement === existing || existing.value === cur)) return;
+  // No label: the placeholder (shown only while the box is empty) says what it is.
+  el.innerHTML = `<input id="scrumboard-query-input" class="board-query-input" type="text" value="${esc(cur)}" placeholder="Filter, e.g. component = iOS"
+      title="A JQL clause ANDed into the board and the tickets (blank = everything). Enter applies."
+      onkeydown="if(event.key==='Enter'){event.preventDefault();applyBoardQuery();}">`;
 }
 
-// Triggered by the Filter field's Go button / Enter — read the input and apply it.
+// Triggered by Enter in the Filter field — read the input and apply it.
 export function applyBoardQuery() {
   const inp = document.getElementById('scrumboard-query-input');
   if (inp) setBoardQuery(inp.value.trim());
@@ -193,20 +170,34 @@ export async function setBoardQuery(value) {
     // Stored in the config store (key board_query_<id>) — that's where the poller reads it
     // via db.get when building the board query, so it survives reloads/restarts.
     await apiJson(ROUTES.CONFIG, 'POST', { [`board_query_${id}`]: value });
-    // The clause changes the server query, so re-fetch with ?refresh=1 (re-syncs first).
-    const snap = await api(`${ROUTES.projectBoard(id)}?refresh=1`);
+    // The clause changes both server queries, so re-fetch with ?refresh=1 (re-syncs first). The
+    // Tickets feed re-reads too, if that view has been loaded.
+    const ticketsLoaded = document.getElementById(`jv-tickets-${id}`)?.dataset.loaded;
+    const [snap] = await Promise.all([
+      api(`${ROUTES.projectBoard(id)}?refresh=1`),
+      ticketsLoaded ? loadProjectJira(id, { refresh: true }) : null,
+    ]);
     if (state.boardProjectId !== id) return; // switched projects while this was in flight
     acceptBoardSnap(snap);
-    toast(value ? 'Board filter saved' : 'Board filter cleared');
+    toast(value ? 'Jira filter saved' : 'Jira filter cleared');
   } catch (e) { toastErr(e.message); }
 }
 
-// The assignee filter: All / Unassigned / each person on the board. The selection is
-// saved per project (board_filter_<id>) so each board remembers its own filter.
+// Apply the shared assignee filter ('' = all, '__unassigned__', or an accountId) to any
+// ticket list — the board lanes and the Tickets table both go through this.
+export function applyAssigneeFilter(items, f) {
+  return f === '__unassigned__' ? items.filter(i => !i.assigneeId)
+    : f ? items.filter(i => i.assigneeId === f)
+    : items;
+}
+
+// The shared assignee filter: All / Unassigned / each person seen on the sprint board or in
+// the Tickets list (incl. search results). The selection is saved per project (board_filter_<id>).
 export function renderScrumboardFilter() {
   const el = document.getElementById('scrumboard-filter');
   if (!el) return;
-  const items = state.boardSnap?.items || [];
+  const pid = state.boardProjectId;
+  const items = [...(state.boardSnap?.items || []), ...(state.projJiraSnap[pid]?.items || []), ...(state.jiraSearchSnap[pid]?.items || [])];
   const seen = new Map();        // accountId -> display name
   let hasUnassigned = false;
   for (const it of items) {
@@ -226,11 +217,13 @@ export function renderScrumboardFilter() {
     </select>`;
 }
 
+
 export async function setBoardFilter(value) {
   const id = state.boardProjectId;
   if (!id) return;
   state.boardFilters[id] = value;
   renderScrumboard();
+  renderProjJira(id); // the Tickets view obeys the same filter
   try { await apiJson(ROUTES.settingsKey(`board_filter_${id}`), 'PUT', { value }); }
   catch (e) { toastErr(e.message); }
 }
@@ -421,14 +414,13 @@ export function renderScrumboard() {
   setTitle(snap);
   renderScrumboardFilter(); // keep the assignee list in sync with the loaded board
 
-  // Keys assigned to me (from the my-sprint feed) → tint my cards' avatar on the team board.
-  const mineKeys = new Set((state.sprintSnap?.items || []).map(i => i.key));
+  // Cards assigned to me → tinted avatar. Matched against the acli login (state.jiraMe): by
+  // accountId when the REST token resolved it, else by email when the site exposes assignee emails.
+  const me = state.jiraMe || {};
+  const isMine = it => !!((me.accountId && it.assigneeId === me.accountId) || (me.email && it.assigneeEmail && it.assigneeEmail.toLowerCase() === me.email.toLowerCase()));
 
   // Apply the saved per-project assignee filter.
-  const f = state.boardFilters[state.boardProjectId] || '';
-  const items = f === '__unassigned__' ? all.filter(i => !i.assigneeId)
-    : f ? all.filter(i => i.assigneeId === f)
-    : all;
+  const items = applyAssigneeFilter(all, state.boardFilters[state.boardProjectId] || '');
 
   let html;
   if (!items.length) {
@@ -453,7 +445,7 @@ export function renderScrumboard() {
             <div class="board-lane${lane.status ? '' : ' board-lane-nostatus'}">
               ${col.multi ? `<div class="board-lane-head"><span class="board-lane-name">${esc(lane.status || '—')}</span><span class="board-lane-count">${lane.items.length}</span></div>` : ''}
               <div class="board-lane-body" data-status="${esc(lane.status)}" data-status-id="${esc(lane.statusId)}">
-                ${lane.items.map(it => boardCard(it, mineKeys.has(it.key))).join('')}
+                ${lane.items.map(it => boardCard(it, isMine(it))).join('')}
               </div>
             </div>`).join('')}
         </div>

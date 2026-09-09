@@ -1,9 +1,10 @@
-// Jira reads + transitions. Snapshots (assigned-to-me + per-project) follow the same
+// Jira reads + transitions. Snapshots (per-project Jira tab + sprint board) follow the same
 // stale-while-revalidate model as PRs (services/sync.js jiraStale): read the cached
 // snapshot the Jira sync loop writes; if it's stale, kick a background refresh whose
 // result lands over SSE.
 const db = require('../database/db');
 const jira = require('../repositories/jira');
+const jiraRest = require('../repositories/jira-rest');
 const poller = require('../services/poller');
 const { jiraStale } = require('../services/sync');
 const { wrap } = require('./helpers');
@@ -24,16 +25,28 @@ async function jiraBaseUrl() {
   return _jiraBaseCache || '';
 }
 
-function register(app) {
-  app.get(ROUTES.JIRA_SITE, wrap(async (req, res) => res.json({ baseUrl: await jiraBaseUrl() })));
+// The authenticated account, cached for the session (it can't change without re-running
+// `acli jira auth login`, which needs an app restart anyway). Never throws.
+let _jiraMeCache = null;
+async function jiraMe() {
+  if (_jiraMeCache) return _jiraMeCache;
+  let email = null, accountId = null;
+  try { email = (await jira.getAuth()).email; } catch { /* not authed yet */ }
+  try { accountId = (await jiraRest.myself())?.accountId || null; } catch { /* no token — email match only */ }
+  const me = { email, accountId };
+  // Cache only a complete answer: the REST token is editable at runtime (Settings → Jira), so a
+  // null accountId must be retried on the next read (the config route also drops the cache).
+  if (email && accountId) _jiraMeCache = me;
+  return me;
+}
+const invalidateJiraMe = () => { _jiraMeCache = null; };
 
-  // Global "my work in the active sprint(s)" feed (dashboard). The active sprint's
-  // name/end date lives in poller memory (not the snapshot table), merged in here.
-  app.get(ROUTES.JIRA_SPRINT, wrap(async (req, res) => {
-    const snap = db.getJiraSnapshot(poller.MY_SPRINT_ID);
-    if (jiraStale(snap)) poller.syncJiraSprint().catch(() => {}); // background (acli is async now)
-    res.json({ ...(snap || { items: [], jql: '', lastSynced: null, error: null }), sprint: await poller.currentSprint() });
-  }));
+function register(app) {
+  // Site + identity: the base URL for ticket links and who the acli login is (`me`), so the
+  // board can tint the cards assigned to you. `me.email` comes from `acli jira auth status`;
+  // `me.accountId` needs the REST token (Settings → Jira) and is null without it — the UI
+  // matches on whichever it has (board items carry both the assignee's id and email).
+  app.get(ROUTES.JIRA_SITE, wrap(async (req, res) => res.json({ baseUrl: await jiraBaseUrl(), me: await jiraMe() })));
 
   // A project's Scrumboard: the whole active sprint (every assignee), scoped to the
   // project's filter clause. The snapshot the poller writes already aggregates the
@@ -54,7 +67,7 @@ function register(app) {
   }));
 
   // Per-project Jira feed (the project's saved JQL).
-  app.get(ROUTES.PROJECT_JIRA, wrap((req, res) => {
+  app.get(ROUTES.PROJECT_JIRA, wrap(async (req, res) => {
     const project = db.getProject(req.params.id);
     if (!project) return res.status(404).json({ error: 'Not found' });
     const snap = db.getJiraSnapshot(project.id);
@@ -62,8 +75,22 @@ function register(app) {
     // has a feed (see poller.projectJql). Gate the sync and report it so the tab knows
     // there's a query even before the first snapshot lands.
     const eff = poller.projectJql(project);
-    if (eff && jiraStale(snap)) poller.syncProjectJira(project).catch(() => {}); // background (acli is async now)
-    res.json(snap ? { ...snap, jql: snap.jql || eff } : { items: [], jql: eff, lastSynced: null, error: null });
+    // ?refresh=1 (the filter clause changed) re-queries first so the response reflects it;
+    // otherwise stale-while-revalidate in the background (acli is async now).
+    if (eff && req.query.refresh) await poller.syncProjectJira(project, true);
+    else if (eff && jiraStale(snap)) poller.syncProjectJira(project).catch(() => {});
+    const fresh = req.query.refresh ? db.getJiraSnapshot(project.id) : snap;
+    res.json(fresh ? { ...fresh, jql: fresh.jql || eff } : { items: [], jql: eff, lastSynced: null, error: null });
+  }));
+
+  // Inline JQL search (project page → Jira → Tickets). Live, not snapshot-backed: the user typed
+  // the query and is waiting, so it runs acli now and returns the lean items directly.
+  app.post(ROUTES.JIRA_SEARCH, wrap(async (req, res) => {
+    const jql = String(req.body?.jql || '').trim();
+    if (!jql) return res.status(400).json({ error: 'jql is required' });
+    const limit = Math.min(200, Math.max(1, parseInt(req.body?.limit, 10) || 50));
+    const items = await jira.searchLean(jql, limit);
+    res.json({ items, jql, lastSynced: new Date().toISOString(), error: null });
   }));
 
   app.post(ROUTES.JIRA_KEY_TRANSITION, wrap(async (req, res) => {
@@ -81,4 +108,4 @@ function register(app) {
   }));
 }
 
-module.exports = { register };
+module.exports = { register, invalidateJiraMe };

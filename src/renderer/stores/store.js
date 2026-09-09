@@ -30,15 +30,16 @@ export const state = {
   tabTermInit: null,   // promise: tabs restored + PTYs rehydrated (awaited by ensurePrTerminal)
 
   // Jira snapshots + filters
-  sprintSnap: { items: [] },   // assigned to me, in an active sprint — the dashboard's "Current Sprint"
-  boardSnap: { items: [] },   // the active project's sprint board (all assignees) — Scrumboard page
-  boardProjectId: '',         // which project's board the Scrumboard is showing
+  boardSnap: { items: [] },   // the open project's sprint board (all assignees) — project page Board section
+  boardProjectId: '',         // which project's board is loaded (the project page that built it)
   boardFilters: {},           // projectId -> assignee filter ('' = all, '__unassigned__', or accountId)
+  jiraSearchSnap: {},         // projectId -> last inline JQL search on its Tickets view ({ items, jql, error })
   projJiraSnap: {},     // projectId -> last snapshot
   projJiraFilters: {},  // projectId -> filters object
 
   // Jira ticket link base — auto-detected from acli (or settings override), never hardcoded.
   jiraBase: '',
+  jiraMe: { email: null, accountId: null }, // the acli login (from JIRA_SITE) — spots "my" cards on a board
 
   // Chosen git GUI for the viewer's folder-chip action (Settings → Appearance). id '' = none
   // (chip just reveals in Finder); cmd is the resolved command template run with {path}
@@ -47,7 +48,7 @@ export const state = {
   gitClient: { id: '', cmd: '' },
   webviewPool: 3,      // max embedded pages kept loaded at once (Settings → System); WEBVIEW_POOL_DEFAULT in viewer.js owns the value
   knownStatuses: new Set(),
-  // Optimistic Scrumboard moves awaiting server confirmation: ticket key -> { status, statusId }.
+  // Optimistic board moves awaiting server confirmation: ticket key -> { status, statusId }.
   // A drop (or board status change) records the target here and the board renders the card in
   // that column immediately; the entry is held — surviving the stale-while-revalidate snapshot
   // reloads that fire on every sync — until a fetched board snapshot reports the new status
@@ -96,9 +97,9 @@ export function prByUrl(url) {
 // the dashboard filter; falls back to category for snapshots predating awaitingMyReview.
 export const prGroup = pr => ((pr?.awaitingMyReview ?? (pr?.category === PR_CATEGORY.REVIEW)) ? PR_GROUP.REVIEW : PR_GROUP.MINE);
 
-// A loaded Jira ticket by key, across the cached snapshots (mine, sprint, per-project).
+// A loaded Jira ticket by key, across the cached snapshots (board, per-project).
 export function jiraByKey(key) {
-  const pools = [state.sprintSnap?.items, state.boardSnap?.items,
+  const pools = [state.boardSnap?.items, ...Object.values(state.jiraSearchSnap || {}).map(s => s && s.items),
                  ...Object.values(state.projJiraSnap || {}).map(s => s && s.items)];
   for (const items of pools) {
     const it = (items || []).find(x => x.key === key);
@@ -112,7 +113,7 @@ export function jiraByKey(key) {
 // and HELD across the stale-while-revalidate snapshot reloads that fire on every sync, until a
 // fetched snapshot reports the new status (Jira's search index lags a beat after a transition).
 // Applied at render time as copies — the snapshot is never mutated, so reconcile keeps comparing
-// against the server's real status. Every Jira view (board, dashboard sprint, project tab) shares
+// against the server's real status. Every Jira view (board, project tab) shares
 // this, so none of them bounce. See doTransition / the render fns / the *PendingMoves callers.
 // Give up holding a move only after this long. It MUST exceed the board snapshot's refresh
 // latency, or the overlay is dropped before the server reflects the move and the card snaps
@@ -126,7 +127,7 @@ let _moveSeq = 0;             // monotonic token so a stale failed transition ca
 // '' when the status isn't present anywhere — the overlay then keeps the card's own id (configured
 // boards re-column only once a card with that status appears).
 function jiraStatusId(name) {
-  for (const snap of [state.boardSnap, state.sprintSnap, ...Object.values(state.projJiraSnap)])
+  for (const snap of [state.boardSnap, ...Object.values(state.jiraSearchSnap), ...Object.values(state.projJiraSnap)])
     for (const it of (snap?.items || [])) if (it.status === name && it.statusId) return String(it.statusId);
   return '';
 }

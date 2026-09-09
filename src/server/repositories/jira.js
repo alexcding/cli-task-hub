@@ -57,6 +57,9 @@ const leanItem = (it) => {
     // accountId lets the UI reassign to a known person (acli assign needs an id/email,
     // not a display name) and builds the board's "who's on this sprint" roster.
     assigneeId: f.assignee?.accountId || '',
+    // Email (when the site exposes it) is the fallback the board uses to spot "my" cards when no
+    // REST token is set to resolve my accountId — see routes/jira.js jiraMe.
+    assigneeEmail: f.assignee?.emailAddress || '',
   };
 };
 

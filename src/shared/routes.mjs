@@ -60,7 +60,7 @@ export const ROUTES = Object.freeze({
 
   // ── Jira ───────────────────────────────────────────────────────────────────
   JIRA_SITE: '/api/jira/site',
-  JIRA_SPRINT: '/api/jira/sprint',
+  JIRA_SEARCH: '/api/jira/search',          // POST { jql, limit? } — inline JQL search on a project's Tickets view
   JIRA_KEY_TRANSITION: '/api/jira/:key/transition',
   jiraKeyTransition: key => `/api/jira/${encodeURIComponent(key)}/transition`,
   JIRA_KEY_ASSIGN: '/api/jira/:key/assign',

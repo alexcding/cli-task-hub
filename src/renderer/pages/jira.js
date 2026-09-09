@@ -1,13 +1,13 @@
-// Shared Jira UI: snapshot tables, ticket filters, the assigned-to-me feed, the
-// per-project Jira tab, and the status-transition menu.
+// Shared Jira UI: snapshot tables, ticket filters, the
+// per-project Tickets view (with its inline JQL search), and the status-transition menu.
 import { ROUTES } from '/shared/routes.mjs';
-import { state, recordPendingMove, clearPendingMove, applyPendingMoves, reconcilePendingMoves } from '../stores/store.js';
+import { toJql } from '/shared/jql.mjs';
+import { state, projectById, recordPendingMove, clearPendingMove, applyPendingMoves, reconcilePendingMoves } from '../stores/store.js';
 import { api, apiJson, forceSync } from '../services/api.js';
 import { esc, jiraUrl } from '../lib/util.js';
 import { ICON } from '../lib/icons.js';
 import { toast, toastErr } from '../components/toast.js';
-import { renderDashboardSprint } from './dashboard.js';
-import { renderScrumboard } from './scrumboard.js';
+import { renderScrumboard, renderScrumboardFilter, applyAssigneeFilter } from './scrumboard.js';
 
 // Shared 5-column row renderer for the snapshot-backed Jira tables (JIRA Tickets +
 // per-project tab). `items` are lean tickets from the snapshot endpoints. The status
@@ -95,7 +95,8 @@ async function persistFilters(cfgKey, filters) {
 }
 
 // ── Project Jira tab (the active project's saved JQL) ────────────────────────────
-export async function loadProjectJira(id) {
+// `refresh` (the shared filter clause changed) makes the server re-query before responding.
+export async function loadProjectJira(id, { refresh = false } = {}) {
   const tbody = document.getElementById(`proj-jira-${id}`);
   if (!tbody) return;
   try {
@@ -103,7 +104,7 @@ export async function loadProjectJira(id) {
     // settings the first time. loadProjectJira runs on every open AND every sync; refetching
     // settings each time would be pure waste on the hot path.
     const needSettings = state.projJiraFilters[id] === undefined;
-    const [snap, settings] = await Promise.all([api(ROUTES.projectJira(id)), needSettings ? api(ROUTES.SETTINGS) : null]);
+    const [snap, settings] = await Promise.all([api(ROUTES.projectJira(id) + (refresh ? '?refresh=1' : '')), needSettings ? api(ROUTES.SETTINGS) : null]);
     if (needSettings) state.projJiraFilters[id] = parseFilters(settings['ticket_filter_' + id]);
     reconcilePendingMoves(snap);
     state.projJiraSnap[id] = snap;
@@ -120,17 +121,25 @@ export async function loadProjectJira(id) {
 
 export function renderProjJiraFilter(id) {
   const fEl = document.getElementById(`proj-jira-filter-${id}`);
-  if (fEl) fEl.innerHTML = ticketFilterBar((state.projJiraSnap[id] || {}).items || [], state.projJiraFilters[id] || {}, k => `setProjJiraFilter('${id}', '${k}', this.value)`);
+  if (fEl) fEl.innerHTML = ticketFilterBar(ticketsSource(id).items || [], state.projJiraFilters[id] || {}, k => `setProjJiraFilter('${id}', '${k}', this.value)`);
 }
 
 export function renderProjJira(id) {
   const tbody = document.getElementById(`proj-jira-${id}`);
   if (!tbody) return;
-  const snap = state.projJiraSnap[id] || { items: [] };
-  const items = applyPendingMoves(snap.items);  // overlay any sticky-optimistic status change
+  const searching = !!state.jiraSearchSnap[id];
+  const snap = ticketsSource(id);
+  // Overlay any sticky-optimistic status change, then the shared assignee filter (same one the
+  // board uses), then this view's facet filters.
+  const all = applyPendingMoves(snap.items || []);
+  const items = applyAssigneeFilter(all, state.boardFilters[id] || '');
   const filtered = itemsMatching(items, state.projJiraFilters[id] || {}, null);
-  const emptyMsg = !snap.jql ? 'Set a Jira project key or JQL in this project’s settings.'
-    : items.length ? 'No tickets match these filters.' : 'No Jira items found.';
+  if (state.boardProjectId === id) renderScrumboardFilter(); // roster may have grown (new people in the list / search)
+  // "match these filters" whenever the feed HAD rows that the assignee/facet filters hid.
+  const emptyMsg = all.length ? 'No tickets match these filters.'
+    : searching ? `No tickets match “${esc(snap.typed || snap.jql)}”.`
+    : !snap.jql ? 'Set a Jira project key or JQL in this project’s settings.'
+    : 'No Jira items found.';
   renderJiraSnapshot(tbody, { items: filtered, error: items.length ? null : snap.error, lastSynced: snap.lastSynced }, { emptyMsg });
 }
 
@@ -141,6 +150,41 @@ export async function setProjJiraFilter(id, key, value) {
   renderProjJira(id);
   await persistFilters('ticket_filter_' + id, state.projJiraFilters[id]);
 }
+
+// ── Inline JQL search (Tickets view) ─────────────────────────────────────────────
+// Live acli search (ROUTES.JIRA_SEARCH) — not snapshot-backed, so nothing polls it. The box takes
+// keywords (→ a text search scoped to the project's key), a ticket key, or raw JQL (shared/jql.mjs
+// decides). A non-blank query swaps the Tickets table (and its facet filters) over to the results; blank restores the
+// project's snapshot. Kept per project in state.jiraSearchSnap so the status menu / optimistic
+// moves see the rows and re-opening the page restores the query.
+let _searchSeq = 0; // bumps per call so a late response can't overwrite a newer search (or a clear)
+export async function jiraSearch(id) {
+  const inp = document.getElementById(`jira-search-${id}`);
+  const tbody = document.getElementById(`proj-jira-${id}`);
+  if (!inp || !tbody) return;
+  const seq = ++_searchSeq;
+  const typed = inp.value.trim();
+  if (!typed) { delete state.jiraSearchSnap[id]; renderProjJiraFilter(id); renderProjJira(id); return; }
+  const jql = toJql(typed, projectById(id)?.jiraProjectKey || '');
+  tbody.innerHTML = jiraRow('<div class="loading-row"><div class="spinner"></div> Searching…</div>');
+  let result;
+  try {
+    const snap = await apiJson(ROUTES.JIRA_SEARCH, 'POST', { jql });
+    result = { ...snap, typed }; // `typed` restores the box; `jql` is what ran
+  } catch (e) {
+    result = { items: [], jql, typed, error: e.message };
+  }
+  // Stale: a newer search or a clear ran meanwhile (its own render already happened), or the
+  // box no longer says what we searched for.
+  if (seq !== _searchSeq || (document.getElementById(`jira-search-${id}`)?.value.trim() ?? typed) !== typed) return;
+  state.jiraSearchSnap[id] = result;
+  rememberStatuses(result.items);
+  renderProjJiraFilter(id);
+  renderProjJira(id);
+}
+
+// The rows the Tickets view currently shows: the live search when one is active, else the snapshot.
+const ticketsSource = id => state.jiraSearchSnap[id] || state.projJiraSnap[id] || { items: [] };
 
 // ── Jira transition (status menu) ───────────────────────────────────────────────
 // acli can't list a ticket's real transitions, so we offer the workflow statuses
@@ -199,7 +243,7 @@ export function openStatusMenu(btn) {
   openPopupMenu(btn, `Move ${key} to…`, targets.map(s => ({ label: s, onClick: () => doTransition(key, s) })));
 }
 
-// `statusId` is optional and only the Scrumboard passes it: its configured columns bucket
+// `statusId` is optional and only the project Board passes it: its configured columns bucket
 // by status id, so the local patch must move the id too (the status name alone wouldn't
 // re-column the card). The Jira tables bucket by name and omit it.
 //
@@ -234,7 +278,7 @@ export async function doTransition(key, status, statusId) {
 function assigneeRoster() {
   const seen = new Map(); // accountId -> display name
   const add = snap => (snap?.items || []).forEach(i => { if (i.assigneeId && !seen.has(i.assigneeId)) seen.set(i.assigneeId, i.assignee || i.assigneeId); });
-  add(state.boardSnap); add(state.sprintSnap);
+  add(state.boardSnap);
   Object.values(state.projJiraSnap).forEach(add);
   return [...seen.entries()].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
 }
@@ -266,12 +310,12 @@ async function doAssign(key, assignee, name, id) {
 // Update the cached snapshots so the new status/assignee shows immediately, then
 // re-render whichever view is active.
 function rerenderActiveJira() {
-  if (document.getElementById('page-dashboard')?.classList.contains('active')) renderDashboardSprint();
-  if (document.getElementById('page-scrumboard')?.classList.contains('active')) renderScrumboard();
-  if (state.activeProjectId && document.getElementById(`proj-jira-${state.activeProjectId}`)) { renderProjJiraFilter(state.activeProjectId); renderProjJira(state.activeProjectId); }
+  renderScrumboard(); // no-op unless a project page's Jira section is built
+  const id = state.activeProjectId;
+  if (id && document.getElementById(`proj-jira-${id}`)) { renderProjJiraFilter(id); renderProjJira(id); }
 }
 function patchSnaps(key, fn) {
-  [state.sprintSnap, state.boardSnap, ...Object.values(state.projJiraSnap)]
+  [state.boardSnap, ...Object.values(state.jiraSearchSnap), ...Object.values(state.projJiraSnap)]
     .forEach(snap => { const it = (snap?.items || []).find(i => i.key === key); if (it) fn(it); });
 }
 function applyAssigneeLocally(key, name, id) {

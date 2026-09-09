@@ -236,13 +236,10 @@ test('POST /api/prs/viewed validates its body', async () => {
   assert.equal(bad.status, 400);
 });
 
-test('jira feeds serve a seeded fresh snapshot without acli', async () => {
-  const poller = require('../src/server/services/poller');
-  const item = { key: 'REC-9', summary: 'S', status: 'To Do', type: 'Task', priority: 'High' };
-  db.setJiraSnapshot(poller.MY_SPRINT_ID, { items: [item], jql: 'x', lastSynced: new Date().toISOString(), error: null });
-  const { body } = await get('/api/jira/sprint');
-  assert.equal(body.items.length, 1);
-  assert.equal(body.items[0].key, 'REC-9');
+test('jira search rejects an empty query without touching acli', async () => {
+  const { status, body } = await send('POST', '/api/jira/search', { jql: '   ' });
+  assert.equal(status, 400);
+  assert.match(body.error, /jql/);
 });
 
 test('project board returns the aggregated snapshot (items + sprint + filter + columns) without acli', async () => {

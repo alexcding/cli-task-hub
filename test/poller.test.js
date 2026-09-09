@@ -38,3 +38,22 @@ test('syncProject coalesces concurrent syncs of one project, then runs fresh aft
   assert.strictEqual(calls, 2, 'a sync after the first settled runs fresh (not stuck on a stale promise)');
   assert.strictEqual(github.ghStats().inflight, inflightBefore, 'inflight still balanced after the fresh sync');
 });
+
+test('projectJql ANDs the saved filter clause into the Tickets query, keeping ORDER BY last', () => {
+  const db = require('../src/server/database/db');
+  const p = { id: 'clause-test', jiraProjectKey: 'REC' };
+  db.set('board_query_clause-test', '');
+  assert.equal(poller.projectJql(p), 'project = REC AND statusCategory != Done ORDER BY updated DESC');
+  db.set('board_query_clause-test', 'component = iOS');
+  assert.equal(poller.projectJql(p), '(project = REC AND statusCategory != Done) AND (component = iOS) ORDER BY updated DESC');
+  assert.equal(poller.projectJql({ ...p, jql: 'assignee = currentUser()' }), '(assignee = currentUser()) AND (component = iOS)');
+  db.set('board_query_clause-test', '');
+});
+
+test('projectJql drops an ORDER BY inside the filter clause (it would be invalid in parentheses)', () => {
+  const db = require('../src/server/database/db');
+  const p = { id: 'clause-order-test', jiraProjectKey: 'REC' };
+  db.set('board_query_clause-order-test', 'component = iOS ORDER BY rank');
+  assert.equal(poller.projectJql(p), '(project = REC AND statusCategory != Done) AND (component = iOS) ORDER BY updated DESC');
+  db.set('board_query_clause-order-test', '');
+});

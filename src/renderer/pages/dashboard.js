@@ -1,29 +1,24 @@
 // Dashboard (taskboard). Personal view: "Tasks" = PRs you authored, "Review" = PRs
 // awaiting your review. Other people's PRs live under each project, not here.
 import { ROUTES } from '/shared/routes.mjs';
-import { state, prByUrl, prGroup, applyPendingMoves, reconcilePendingMoves } from '../stores/store.js';
+import { state, prByUrl, prGroup } from '../stores/store.js';
 import { PR_CATEGORY, PR_GROUP } from '/shared/constants.mjs';
 import { api } from '../services/api.js';
-import { esc, businessDaysUntil, setHtmlIfChanged } from '../lib/util.js';
+import { esc, setHtmlIfChanged } from '../lib/util.js';
 import { ICON } from '../lib/icons.js';
 import { prCard } from '../components/cards.js';
-import { jiraRowsHtml, rememberStatuses } from './jira.js';
 import { renderTabs, renderProjectNav } from '../components/sidebar.js';
 import { saveTabs } from '../components/viewer.js';
 import { usageWidgetHtml } from '../components/usage-widget.js';
 
 export async function loadDashboard() {
   // Reads the snapshot (instant) — no leading spinner so SSE refreshes are seamless.
-  const [groups, sprintSnap, usage, whoami] = await Promise.all([
+  const [groups, usage, whoami] = await Promise.all([
     api(ROUTES.DASHBOARD),
-    api(ROUTES.JIRA_SPRINT).catch(() => ({ items: [] })),
     api(ROUTES.USAGE).catch(() => null),
     api(ROUTES.WHOAMI).catch(() => null),
   ]);
   state.projects = groups;
-  reconcilePendingMoves(sprintSnap);
-  state.sprintSnap = sprintSnap;
-  rememberStatuses(sprintSnap.items);
   renderProjectNav(groups);
 
   // New-project entry point: a [+] in the top-right action bar whenever projects exist (the empty
@@ -73,7 +68,6 @@ export async function loadDashboard() {
       <div class="stat-chips">
         ${chip(mine.length, 'My PRs', ICON.branch, 'accent', "scrollDash('dash-mine')")}
         ${chip(review.length, 'To Review', ICON.eye, 'warn', "scrollDash('dash-review')")}
-        ${chip((sprintSnap.items||[]).length, sprintLabel(sprintSnap), ICON.zap, 'merged', "scrollDash('dashboard-sprint')")}
       </div>
     </div>
     <div id="usage-widget" class="usage-row"></div>
@@ -99,14 +93,12 @@ export async function loadDashboard() {
       section('Review Requested', review, 'Nothing awaiting your review.', 'dash-review')
     : `<div class="empty"><div class="empty-icon">${ICON.folder}</div><p>No projects yet. Create one to get started.</p><br><button class="btn btn-primary" onclick="openNewProjectModal()">${ICON.plus} New project</button></div>`;
 
-  // Current Sprint (Jira) renders at the bottom, below the PR sections. It lives in
-  // its own node so a status change can re-render just this section.
+  // Sprint work lives on each project's Board tab, not here — the dashboard is PRs only.
   // Skip the innerHTML churn when the cards are unchanged — refreshActivePage re-runs this on
   // every SSE sync, and rebuilding recreates each card's avatar <img> (a github.com URL, no
   // frozen data-URI), which flickers. The card markup is stable for stable data (fmtDate is
   // absolute, not a relative "ago"), so an equal-HTML guard holds across no-op syncs.
-  setHtmlIfChanged(document.getElementById('dashboard-groups'), `${prHtml}<div id="dashboard-sprint"></div>`);
-  renderDashboardSprint();
+  setHtmlIfChanged(document.getElementById('dashboard-groups'), prHtml);
 
   // Refresh each open GitHub tab's saved group + author login from the freshly-loaded
   // snapshot, so a PR that moved mine↔review re-groups and legacy/tray-opened tabs (saved
@@ -171,34 +163,4 @@ async function refreshUsageWidget() {
 }
 function startUsageAutoRefresh() {
   if (!usageTimer) usageTimer = setInterval(refreshUsageWidget, 60_000);
-}
-
-// Chip/section label for the sprint snapshot: the active sprint's name (with days
-// left when it has an end date), falling back to the generic title.
-function sprintLabel(snap) {
-  const s = snap?.sprint;
-  if (!s?.name) return 'In Sprint';
-  const days = s.endDate ? businessDaysUntil(s.endDate) : 0;
-  return days > 0 ? `${esc(s.name)} · ${days}d left` : esc(s.name);
-}
-
-// Render the "Current Sprint" section from the cached snapshot (used on load and
-// after a status change). Reuses the shared Jira table so the status menu works here.
-export function renderDashboardSprint() {
-  const el = document.getElementById('dashboard-sprint');
-  if (!el) return;
-  const items = applyPendingMoves(state.sprintSnap.items);  // overlay any sticky-optimistic status change
-  const emptyMsg = state.sprintSnap.error ? esc(state.sprintSnap.error) : 'No open tickets in an active sprint.';
-  el.innerHTML = `
-    <div class="project-group">
-      <div class="project-group-header">
-        <span class="project-name">${state.sprintSnap.sprint?.name ? esc(state.sprintSnap.sprint.name) : 'Current Sprint'}</span>
-        <span class="project-meta">${items.length}</span>
-      </div>
-      ${items.length
-        ? `<div class="card"><div class="table-wrap"><table>
-            <thead><tr><th>Key</th><th>Summary</th><th>Status</th><th>Type</th><th>Priority</th></tr></thead>
-            <tbody>${jiraRowsHtml(items)}</tbody></table></div></div>`
-        : `<div style="font-size:13px;color:var(--text-3);padding:12px 0">${emptyMsg}</div>`}
-    </div>`;
 }

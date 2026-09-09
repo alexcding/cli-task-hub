@@ -82,4 +82,8 @@ async function setFixVersion(key, versionName) {
     { update: { fixVersions: [{ add: { name: versionName } }] } });
 }
 
-module.exports = { ensureVersion, setFixVersion, boardConfig };
+// The authenticated user ({ accountId, emailAddress, displayName }) — the id acli never prints,
+// used to recognise "my" cards on a board. Throws without a token (the caller treats it as unknown).
+const myself = () => call('GET', '/rest/api/3/myself');
+
+module.exports = { ensureVersion, setFixVersion, boardConfig, myself };

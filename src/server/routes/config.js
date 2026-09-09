@@ -3,7 +3,6 @@
 const path = require('path');
 const db = require('../database/db');
 const configdb = require('../database/configdb');
-const poller = require('../services/poller');
 const sse = require('./sse');
 const { wrap } = require('./helpers');
 const { ROUTES } = require('../../shared/routes.mjs');
@@ -13,14 +12,9 @@ function register(app) {
   app.get(ROUTES.CONFIG, (req, res) => res.json(db.getConfig()));
   app.post(ROUTES.CONFIG, (req, res) => {
     for (const [k, v] of Object.entries(req.body)) db.set(k, v);
+    // A new REST token can resolve the Jira accountId `me` was missing — forget the cached one.
+    if ('jira_api_token' in req.body) require('./jira').invalidateJiraMe();
     res.json({ ok: true });
-    // The sprint JQL feeds the dashboard's "Current Sprint" list — resync it now (so a JQL
-    // edit takes effect immediately; the snapshot write broadcasts jira-sync, which the UI
-    // reacts to) and ONLY when it actually changed. Other keys (e.g. poll_interval) must not
-    // trigger acli. Deferred off the response: writeJiraSnapshot shells out to acli synchronously.
-    if ('sprint_jql' in req.body) {
-      poller.syncJiraSprint().catch(err => console.error('[config] jira resync failed:', err.message));
-    }
   });
 
   // macOS notification sounds the user can pick for review alerts — the same folders

@@ -1,9 +1,11 @@
 // Project page: a paged "digest" — a header (project name + gear-to-edit, plus clickable
 // repo/Jira/forwarding tags) over the shared segmented control (.seg-tabs), which pages between
-// four sections shown one at a time: Pull Requests, Jira, Git (the full git-tab.js surface), and
-// Automation (webhook forwarding + on-merge Jira). The header + picker stay fixed; only the
-// section body (.pd-body) scrolls. PRs and Jira load on open; Git and Automation lazy-load the
-// first time their page is shown (projShowSection → lazyOnce).
+// sections shown one at a time: Pull Requests, Jira, Git (the full git-tab.js surface), Automation
+// (webhook forwarding + on-merge Jira) and Workflows. The Jira section has its own view switcher
+// (projJiraView): Board (sprint columns, scrumboard.js) and Tickets (the project's saved JQL with
+// an inline ad-hoc JQL search, jira.js). The header + picker stay
+// fixed; only the section body (.pd-body) scrolls. PRs load on open; everything else lazy-loads
+// the first time it's shown (projShowSection / projJiraView → lazyOnce).
 import { ROUTES } from '/shared/routes.mjs';
 import { state, projectById as proj } from '../stores/store.js';
 import { api, apiJson } from '../services/api.js';
@@ -15,6 +17,7 @@ import { renderProjectNav } from '../components/sidebar.js';
 import { prListHtml } from '../components/cards.js';
 import { loadProjectJira, renderProjJira } from './jira.js';
 import { loadGitTab } from './git-tab.js';
+import { loadScrumboard } from './scrumboard.js';
 
 // Forwarding tag (header): refresh icon + a state dot, "Live" when webhooks are actually being
 // forwarded, "Polled" otherwise. Inner content is factored so paintForwardTag can swap it in place.
@@ -69,6 +72,10 @@ export async function loadProjectPage(id) {
   // The shared segmented control (.seg-tabs, same as Settings/Activity) pages between sections.
   const seg = (sec, label) =>
     `<button class="seg-tab${sec === 'prs' ? ' active' : ''}" data-sec="${sec}" onclick="projShowSection('${id}','${sec}',this)">${label}</button>`;
+  // The Jira section's view switcher (a compact .seg-tabs). Remembers the last view per project.
+  const view = _jiraView.get(id) || 'board';
+  const jv = (v, label) =>
+    `<button class="seg-tab${v === view ? ' active' : ''}" data-view="${v}" onclick="projJiraView('${id}','${v}',this)">${label}</button>`;
 
   el.innerHTML = `
     <div class="proj-digest">
@@ -108,25 +115,58 @@ export async function loadProjectPage(id) {
           : prListHtml([], '', 'open')}</div>
       </section>
 
-      <!-- Jira -->
+      <!-- Jira: one section, two views (Board / Tickets) picked by the small segmented control
+           in the header, under a shared filter bar that narrows both. Board is the sprint
+           snapshot (scrumboard.js — the scrumboard-* ids are its contract); Tickets is the
+           project's saved JQL with an inline keyword/JQL search box (jira.js). -->
       <section class="pd-sec" id="pd-jira-${id}" data-sec="jira" hidden>
-        <div class="pd-sec-head">
+        <!-- Header row: title, then the shared filters (apply to BOTH views: the assignee is
+             client-side, the JQL clause is server-side — ANDed into the sprint and Tickets
+             queries; scrumboard.js fills them once the sprint snapshot lands, which the section
+             always loads), then the view switcher on the right. Live data refreshes over SSE, so no
+             Refresh button. -->
+        <div class="pd-sec-head jv-head">
           <h2 class="pd-sec-title"><span class="pd-sec-ic tint-neutral">${TAB_ICON.jira}</span>Jira</h2>
+          <div class="jv-filters">
+            <span id="scrumboard-filter" class="ticket-filter"></span>
+            <span id="scrumboard-query" class="ticket-filter"></span>
+          </div>
           <div class="pd-sec-ctl">
-            <div id="proj-jira-filter-${id}" class="ticket-filter" style="margin-bottom:0"></div>
-            <button class="btn btn-secondary btn-sm" onclick="loadProjectJira('${id}')">${ICON.refresh} Refresh</button>
+            <div class="seg-tabs jv-segs" role="tablist">
+              ${jv('board', 'Board')}${jv('tickets', 'Tickets')}
+            </div>
           </div>
         </div>
-        <div class="card">
-          <div class="table-wrap">
-            <table>
-              <thead><tr><th>Key</th><th>Summary</th><th>Status</th><th>Type</th><th>Priority</th></tr></thead>
-              <tbody id="proj-jira-${id}">
-                <tr><td colspan="5"><div class="loading-row"><div class="spinner"></div> Loading…</div></td></tr>
-              </tbody>
-            </table>
+
+        <!-- Board: the active sprint as status columns -->
+        <div class="jv" id="jv-board-${id}" data-view="board" ${view === 'board' ? '' : 'hidden'}>
+          <div class="board-subtitle" id="scrumboard-title"></div>
+          <div id="scrumboard-body"><div class="board-loading"><div class="spinner"></div> Loading…</div></div>
+        </div>
+
+        <!-- Tickets: the project's saved JQL (or its key's in-flight tickets), with an inline JQL
+             search — a query swaps the table for live results, blank restores the list. -->
+        <div class="jv" id="jv-tickets-${id}" data-view="tickets" ${view === 'tickets' ? '' : 'hidden'}>
+          <form class="jv-bar" onsubmit="event.preventDefault();jiraSearch('${id}')">
+            <input id="jira-search-${id}" class="board-query-input jv-search-input" type="search" value="${esc(state.jiraSearchSnap[id]?.typed || '')}"
+              placeholder="Search ${p.jiraProjectKey ? esc(p.jiraProjectKey) + ' ' : ''}tickets — keywords, a key like ${p.jiraProjectKey ? esc(p.jiraProjectKey) : 'ABC'}-123, or JQL"
+              autocomplete="off" spellcheck="false"
+              oninput="if(!this.value.trim())jiraSearch('${id}')"
+              onkeydown="if(event.key==='Escape'){this.value='';jiraSearch('${id}');}">
+            <div id="proj-jira-filter-${id}" class="ticket-filter"></div>
+          </form>
+          <div class="card">
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>Key</th><th>Summary</th><th>Status</th><th>Type</th><th>Priority</th></tr></thead>
+                <tbody id="proj-jira-${id}">
+                  <tr><td colspan="5"><div class="loading-row"><div class="spinner"></div> Loading…</div></td></tr>
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
+
       </section>
 
       <!-- Git: the full branches/worktrees + commit-graph surface (git-tab.js) -->
@@ -158,23 +198,39 @@ export async function loadProjectPage(id) {
       </div><!-- /.pd-body -->
     </div>`;
 
-  // Load the default PR page now. Jira loads only when configured (a project key or saved
-  // JQL); otherwise render the section's empty state without a fetch. Git and Settings
-  // lazy-load the first time their page is shown (projShowSection).
+  // Load the default PR page now. Every other section (Jira views, Git, Automation, Workflows)
+  // lazy-loads the first time it's shown (projShowSection / projJiraView).
   if (p.repo) { reloadProjectPRs(id, 'open'); paintForwardTag(id); }
-  if (p.jiraProjectKey || p.jql) loadProjectJira(id);
-  else renderProjJira(id);
 }
 
+// ── Jira section views ────────────────────────────────────────────────────────────────
+// Board / Tickets, under one shared filter bar (assignee + JQL clause — both views obey it).
+// Board is the sprint snapshot (loadScrumboard, lazyOnce keyed off #scrumboard-body). Tickets loads the project's saved JQL only when one is configured — otherwise
+// its empty state says so; its inline JQL box runs a live search on submit (jira.js jiraSearch).
+// The chosen view is remembered per project (module-local: view-only).
+const JIRA_VIEWS = ['board', 'tickets'];
+const _jiraView = new Map();
+export function projJiraView(id, view, btn) {
+  if (btn) setActiveSegTab(btn);
+  _jiraView.set(id, view);
+  JIRA_VIEWS.forEach(v => { const el = document.getElementById(`jv-${v}-${id}`); if (el) el.hidden = v !== view; });
+  // The sprint snapshot loads whichever view is shown: it fills the shared bar (assignee roster,
+  // filter clause) that both views use.
+  lazyOnce('scrumboard-body', () => loadScrumboard(id));
+  if (view === 'tickets') lazyOnce(`jv-tickets-${id}`, () => { const p = proj(id); return (p?.jiraProjectKey || p?.jql) ? loadProjectJira(id) : renderProjJira(id); });
+}
+
+
 // ── Paging: the segmented tabs swap which section is shown ────────────────────────────
-// One section is visible at a time. Git and Settings lazy-load the first time their page
-// is shown; PRs and Jira are already loaded by loadProjectPage. The scroller resets to the
+// One section is visible at a time. Jira (its active view), Git and Settings lazy-load the first
+// time their page is shown; PRs are already loaded by loadProjectPage. The scroller resets to the
 // top so each page starts at its heading. `btn` is always the clicked seg-tab (every caller is
 // an inline onclick passing `this`).
 const SECTIONS = ['prs', 'jira', 'git', 'settings', 'workflows'];
 export function projShowSection(id, sec, btn) {
   if (btn) setActiveSegTab(btn);
   SECTIONS.forEach(s => { const el = document.getElementById(`pd-${s}-${id}`); if (el) el.hidden = s !== sec; });
+  if (sec === 'jira') projJiraView(id, _jiraView.get(id) || 'board');
   if (sec === 'git') lazyOnce(`proj-gittab-${id}`, () => loadGitTab(id));
   if (sec === 'workflows') lazyOnce(`proj-workflows-${id}`, () => loadProjectWorkflows(id));
   if (sec === 'settings') {
