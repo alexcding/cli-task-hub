@@ -23,7 +23,7 @@ serde = { version = "1.0", features = ["derive"] }
 log = "0.4"
 # `unstable` enables multiwebview (multiple child webviews in one window) — required for the
 # embedded GitHub/Jira viewer (one child WKWebview per PR/Jira tab, positioned over a shim div).
-tauri = { version = "2.11.3", features = ["macos-private-api", "unstable", "tray-icon", "image-png"] }
+tauri = { version = "2.11.5", features = ["macos-private-api", "unstable", "tray-icon", "image-png"] }
 tauri-plugin-log = "2"
 tauri-plugin-shell = "2"
 tauri-plugin-single-instance = "2"
@@ -33,8 +33,8 @@ portable-pty = "0.9.0"
 # setsid for the detached PTY daemon (terminals.rs → ptyd.rs); already in the tree transitively.
 libc = "0.2"
 sysinfo = "0.36.1"
-tauri-plugin-notification = "2.3.3"
-tauri-plugin-updater = "2.10.1"
+tauri-plugin-notification = "2.4.0"
+tauri-plugin-updater = "2.11.0"
 # Launch-at-login: registers a macOS LaunchAgent. Backs the Settings "Launch at login" toggle
 # (autostart_get / autostart_set in commands.rs), driven from Rust via ManagerExt — so the
 # renderer only ever invokes our app commands, never the plugin's JS API (no autostart:* capability).
