@@ -60,6 +60,10 @@ separation everything follows:
   `category:'other'` but belongs under Review — grouping on `category` sends it to Mine. Persist
   the *group* on a tab (`prGroup`), not the raw category, so restored tabs land correctly. The
   tray/sound are the exception: they intentionally stay on `category==='review'` (see AGENTS.md).
+- **Embedded webviews are pooled.** `tab.wv` / `link.wv` are built lazily on first show and torn
+  down when they fall out of the LRU pool (`state.webviewPool`, Settings → System), then rebuilt
+  from `tab.cur` / `link.url`. Never cache a `wv` reference; re-read `owner.wv` (may be null) and
+  attach listeners inside `buildTabWebview` / `buildLinkWebview` so they survive a rebuild.
 - Jira keys link via `jiraUrl(key)` with `onclick="jiraClick(event, this.href, key)"`.
 - Icons come from `lib/icons.js` (`ICON` for UI strokes, `TAB_ICON` for GitHub/Jira
   brand marks). SVG only — no emoji.

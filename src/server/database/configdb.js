@@ -77,6 +77,7 @@ db.exec(`
     login     TEXT NOT NULL DEFAULT '',
     avatar    TEXT NOT NULL DEFAULT '',
     links     TEXT NOT NULL DEFAULT '[]',
+    cur       TEXT NOT NULL DEFAULT '',
     position  INTEGER NOT NULL DEFAULT 0,
     active    INTEGER NOT NULL DEFAULT 0
   );
@@ -117,6 +118,9 @@ for (const stmt of [
   `ALTER TABLE tabs ADD COLUMN avatar TEXT NOT NULL DEFAULT ''`,
   // The context's extra horizontal tabs (web pages + local files), as a JSON array.
   `ALTER TABLE tabs ADD COLUMN links TEXT NOT NULL DEFAULT '[]'`,
+  // The page the user navigated to inside the tab (url is the identity); an evicted webview
+  // reloads here. See the live-webview pool in src/renderer/components/viewer.js.
+  `ALTER TABLE tabs ADD COLUMN cur TEXT NOT NULL DEFAULT ''`,
   `ALTER TABLE projects ADD COLUMN forward_webhooks INTEGER NOT NULL DEFAULT 1`,
   // On-merge "set Fix Version" automation (gated by fix_version_enabled): a platform prefix
   // (e.g. "ios-") + a JS script that returns the number part ("0.0.0"); the final version is
@@ -240,12 +244,12 @@ function getTabs() {
   // links is a JSON array of the tab's extra horizontal tabs (web pages + local files).
   const parseLinks = s => { try { const v = JSON.parse(s || '[]'); return Array.isArray(v) ? v : []; } catch { return []; } };
   return {
-    tabs: rows.map(r => ({ kind: r.kind, title: r.title, url: r.url, repo: r.repo || '', branch: r.branch || '', prSplit: !!r.pr_split, paneView: r.pane_view || 'term', category: r.category || '', login: r.login || '', avatar: r.avatar || '', links: parseLinks(r.links) })),
+    tabs: rows.map(r => ({ kind: r.kind, title: r.title, url: r.url, cur: r.cur || '', repo: r.repo || '', branch: r.branch || '', prSplit: !!r.pr_split, paneView: r.pane_view || 'term', category: r.category || '', login: r.login || '', avatar: r.avatar || '', links: parseLinks(r.links) })),
     active: active ? active.url : null,
   };
 }
 const _insertTab = db.prepare(
-  `INSERT INTO tabs (url, kind, title, repo, branch, pr_split, pane_view, category, login, avatar, links, position, active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  `INSERT INTO tabs (url, kind, title, cur, repo, branch, pr_split, pane_view, category, login, avatar, links, position, active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 );
 function setTabs(tabs = [], active = null) {
   db.exec('BEGIN');
@@ -254,7 +258,7 @@ function setTabs(tabs = [], active = null) {
     tabs.forEach((t, i) => {
       if (!t || !t.url) return;
       const links = JSON.stringify(Array.isArray(t.links) ? t.links : []);
-      _insertTab.run(t.url, t.kind === 'jira' ? 'jira' : 'github', t.title || t.url,
+      _insertTab.run(t.url, t.kind === 'jira' ? 'jira' : 'github', t.title || t.url, typeof t.cur === 'string' ? t.cur : '',
         t.repo || '', t.branch || '', t.prSplit ? 1 : 0, t.paneView === 'diff' ? 'diff' : 'term',
         t.category || '', t.login || '', t.avatar || '', links, i, active && t.url === active ? 1 : 0);
     });

@@ -25,7 +25,7 @@ import { loadScrumboard, setBoardProject, setBoardFilter, setBoardQuery, applyBo
 import { loadLogs, setLogCategory, clearLogs } from './pages/logs.js';
 import { loadTasks, openTaskSession, deleteTaskSession, analyzeSession, updateTasksBadge } from './pages/tasks.js';
 import { loadPersistedTasks } from './services/tasks.js';
-import { loadSettings, saveConfig, switchSettingsTab, setReviewSound, previewReviewSound, setActivityNotify, setAutostart, toggleSecret, setGitClient, setGitClientCmd, toggleHook } from './pages/settings.js';
+import { loadSettings, saveConfig, switchSettingsTab, setReviewSound, previewReviewSound, setActivityNotify, setAutostart, toggleSecret, setGitClient, setGitClientCmd, toggleHook, setWebviewPool } from './pages/settings.js';
 import { showActivityToast } from './components/activity-toast.js';
 import * as modal from './components/modal.js';
 
@@ -269,7 +269,7 @@ Object.assign(window, {
   // window.* from workflow.js (notifyTasksUpdated) and sidebar.js (refreshTermBusy) so the running
   // count stays live off-page, without a tasks↔workflow/sidebar import cycle — keep all three.
   loadTasks, openTaskSession, deleteTaskSession, updateTasksBadge,
-  loadSettings, saveConfig, switchSettingsTab, setReviewSound, previewReviewSound, setActivityNotify, setAutostart, toggleSecret, setGitClient, setGitClientCmd, toggleHook, setSidebarGroup, toggleProjectTabs,
+  loadSettings, saveConfig, switchSettingsTab, setReviewSound, previewReviewSound, setActivityNotify, setAutostart, toggleSecret, setGitClient, setGitClientCmd, toggleHook, setWebviewPool, setSidebarGroup, toggleProjectTabs,
   __activityToast: showActivityToast, // main pushes activity toasts here when the app is frontmost
   // project modal
   openNewProjectModal: modal.openNewProjectModal, openEditProjectModal: modal.openEditProjectModal,
@@ -331,6 +331,7 @@ loadPersistedTasks().then(() => { if (document.querySelector('.page.active')?.id
     syncThemeFromSettings(settings.theme);
     syncSidebarGroupFromSettings(settings.sidebarGroup); // re-render the sidebar in the saved grouping
     syncFontsFromSettings(settings); // any terminal rehydrated before this lands is updated in place by applyFonts
+    if (settings.webviewPool != null) viewer.setWebviewPoolSize(settings.webviewPool); // live-webview pool cap (Settings → System); clamped, bad values → default
   } catch {}
   populateFontMenus(); // fill the font pickers from this machine's installed fonts (replaces the static fallback)
   loadDashboard(); // renderProjectNav is called inside loadDashboard

@@ -62,27 +62,87 @@ export function createTab(url, title, kind, meta = {}) {
   // its sidebar group AND its author avatar across restarts and even after its PR merges and
   // leaves the snapshot. avatar is the author's avatar frozen as a data URI (freezeAvatar).
   // links[] are this context's extra horizontal tabs; activeLink is the shown one (null = default).
-  const tab = { id, kind: kind === 'jira' ? 'jira' : 'github', title: title || url, url, wv: null,
+  // `url` is the tab's identity (dedupe, PR lookup, paired-PTY key) and never changes; `cur` is
+  // the page the user has navigated to inside it, so an evicted-then-reselected tab (see the
+  // webview pool below) reloads where they left off rather than at the PR root.
+  // wv is built lazily on first show (buildTabWebview) — a tab that's never shown costs no process.
+  const tab = { id, kind: kind === 'jira' ? 'jira' : 'github', title: title || url, url, cur: meta.cur || '', wv: null,
     loaded: false, started: false, repo: meta.repo || '', branch: meta.branch || '',
     jiraKey: meta.jiraKey || jiraKeyFromUrl(url), prSplit: !!meta.prSplit,
     paneView: meta.paneView === 'diff' ? 'diff' : 'term', category: meta.category || '',
     login: meta.login || '', avatar: meta.avatar || '',
     links: (meta.links || []).map(rebuildLink), activeLink: null };
+  return tab;
+}
 
+// Build the default (PR/Jira page) webview for a context, lazily, on first show — mirrors
+// buildLinkWebview. Rebuilt from scratch after a pool eviction, so every listener lives here.
+function buildTabWebview(tab) {
   const wv = createWebviewEl();
   tab.wv = wv;
   wv.addEventListener('did-stop-loading', () => { tab.loaded = true; });
   // Page-load bar: this is the shown webview when its tab is active and no link is overlaid.
-  wireProgress(wv, () => id === state.activeTabId && !tab.activeLink);
-  // Keep the Back button's enabled state in sync as the user navigates within the tab.
-  const onNav = () => { if (id === state.activeTabId && !tab.activeLink) updateNavButtons(); };
+  const shown = () => tab.id === state.activeTabId && !tab.activeLink;
+  wireProgress(wv, shown);
+  // Keep the Back button's enabled state in sync as the user navigates within the tab, and
+  // remember the current page (debounced — GitHub's Turbo nav is chatty) for a later rebuild.
+  // (Electron fires GitHub's Turbo/pjax navigations as did-navigate-in-page, so both matter.)
+  const onNav = e => { if (shown()) updateNavButtons(); if (isWebUrl(e.url)) { tab.cur = e.url; saveTabsSoon(); } };
   wv.addEventListener('did-navigate', onNav);
   wv.addEventListener('did-navigate-in-page', onNav);
-  return tab;
+}
+// A persistable page URL (never about:blank / file:// / data:).
+const isWebUrl = u => !!u && /^https?:/i.test(u);
+
+// ── Live-webview pool ────────────────────────────────────────────────────────────
+// Every embedded page (a context's default PR/Jira page or a web link) is its own WebContent /
+// renderer process — a few hundred MB each — and hidden ones used to live forever. Instead, keep
+// only the N most recently shown webviews alive (state.webviewPool, Settings → System); the rest are
+// torn down and rebuilt from their saved URL the next time they're shown (a browser's tab discard).
+// The pool holds owner objects (tab or link, whichever has the `.wv`), least-recent first.
+let _live = [];
+
+// Record `owner` as the most recently shown live webview and evict whatever exceeds the pool.
+function touchLive(owner) {
+  _live = _live.filter(o => o !== owner && o.wv);
+  _live.push(owner);
+  trimLive();
+}
+function trimLive() {
+  const max = Math.max(1, state.webviewPool | 0);
+  const shown = shownOwner();
+  while (_live.length > max) {
+    const victim = _live.find(o => o !== shown);   // never evict the page on screen
+    if (!victim) break;
+    disposeWebview(victim);   // evicted: page state (scroll, history) is lost; its URL survives (tab.cur / link.url)
+  }
+}
+// Drop an owner's webview (if any) and forget it. The single teardown for evictions AND the
+// close paths (disposeLink / closeTab / closeSplit) — null-safe on either build. Callers must
+// never cache a `.wv` across a show — always re-read owner.wv (it may have been rebuilt).
+function disposeWebview(owner) {
+  if (owner.wv) { try { owner.wv.remove(); } catch {} }
+  owner.wv = null; owner.started = false; owner.loaded = false;
+  _live = _live.filter(o => o !== owner);
+}
+// The owner (tab or link) whose webview is currently on screen, if any.
+function shownOwner() {
+  const t = activeTab();
+  if (!t) return null;
+  if (t.activeLink) return (t.links || []).find(l => l.id === t.activeLink) || null;
+  return inDiff(t) ? null : t;   // a page hidden behind the Diff view is evictable like any other
+}
+// Settings → System: change the pool size at runtime (also persisted by settings.js).
+export const WEBVIEW_POOL_DEFAULT = 3;
+// Clamp a setting value to a valid pool size; anything non-numeric → the default (not 1).
+export function clampWebviewPool(v) { const n = parseInt(v, 10); return Number.isFinite(n) ? Math.min(20, Math.max(1, n)) : WEBVIEW_POOL_DEFAULT; }
+export function setWebviewPoolSize(n) {
+  state.webviewPool = clampWebviewPool(n);
+  trimLive();
 }
 
 // Create a hidden <webview> with the app's shared-session policy, appended to split-body, with
-// find-in-page wired. Shared by the default tab (createTab) and per-context web links
+// find-in-page wired. Shared by the default tab (buildTabWebview) and per-context web links
 // (buildLinkWebview) — callers attach their own navigation listeners.
 // Perf: lazy — `src` is set on first activation, so restored/background views don't all load at
 // once; backgroundThrottling pauses hidden ones. NOTE: deliberately NO `partition` — webviews
@@ -126,7 +186,7 @@ function linkById(id) {
 // Tear down a link's left-pane resources (its webview or its editor pane). The single teardown
 // the close paths share (closeLink / closeOtherLinks / commitLinkInput / closeTab / closeSplit).
 function disposeLink(l) {
-  if (l.wv) l.wv.remove();
+  disposeWebview(l);
   if (l.ed) { disposeEditor(l); l.ed.remove(); }
 }
 
@@ -154,8 +214,9 @@ function buildLinkWebview(link) {
   const onNav = () => { if (linkShown(link)) updateNavButtons(); };
   // Persist URL/title via the debounced saver — a chatty SPA fires many nav/title events, and
   // each saveTabs() is a full /api/tabs PUT serializing every tab. Coalesce the bursts.
-  wv.addEventListener('did-navigate', e => { onNav(); if (e.url) { link.url = e.url; saveTabsSoon(); } });
-  wv.addEventListener('did-navigate-in-page', onNav);
+  const onNavUrl = e => { onNav(); if (isWebUrl(e.url)) { link.url = e.url; saveTabsSoon(); } };
+  wv.addEventListener('did-navigate', onNavUrl);
+  wv.addEventListener('did-navigate-in-page', onNavUrl);
   // After load, the tab adopts the page's title + favicon (a browser tab).
   wv.addEventListener('page-title-updated', e => { if (e.title) { link.title = e.title; renderContentTabs(); saveTabsSoon(); } });
   wv.addEventListener('page-favicon-updated', e => { const ic = e.favicons && e.favicons[0]; if (ic) { link.icon = ic; renderContentTabs(); } });
@@ -180,10 +241,10 @@ export function paintLeft(tab) {
   if (inDiff(tab)) {
     /* the Diff view covers the pane — leave the page hidden */
   } else if (!link) {                                   // default tab — the PR/Jira page
-    if (tab.wv) {
-      if (!tab.started) { tab.started = true; tab.wv.setAttribute('src', tab.url); }
-      tab.wv.style.display = '';
-    }
+    if (!tab.wv) buildTabWebview(tab);
+    if (!tab.started) { tab.started = true; tab.wv.setAttribute('src', tab.cur || tab.url); }
+    tab.wv.style.display = '';
+    touchLive(tab);
   } else if (!link.url) {                         // blank tab: address field is in the bar; left stays empty
     /* nothing to show */
   } else if (link.kind === 'file') {
@@ -194,6 +255,7 @@ export function paintLeft(tab) {
     if (!link.wv) buildLinkWebview(link);
     if (!link.started) { link.started = true; link.wv.setAttribute('src', link.url); }
     link.wv.style.display = '';
+    touchLive(link);
   }
   // Push the new visibility to the native child webviews now (Tauri shim) rather than waiting for
   // the rAF loop, which is throttled while the renderer isn't painting — see wcv-shim el.syncBounds.
@@ -312,7 +374,7 @@ function commitLinkInput(id, raw) {
   if (!v) return;            // nothing entered → keep the tab blank; only a real value commits
   const { kind, value } = classifyInput(v);
   // Tear down any element from a prior value (e.g. re-edited tab whose kind changed).
-  disposeLink(link); link.wv = null; link.ed = null;
+  disposeLink(link); link.ed = null;
   link.kind = kind; link.editing = false; link.started = false; link.loaded = false; link.icon = '';
   if (kind === 'file') { link.path = value; link.url = fileUrl(value); link.title = basename(value) || value; }
   else { link.url = value; link.title = value; link.home = value; }   // home = the entered URL (Home button)
@@ -445,7 +507,7 @@ export function saveTabs() {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      tabs: state.tabs.map(t => ({ kind: t.kind, title: t.title, url: t.url, repo: t.repo, branch: t.branch, jiraKey: t.jiraKey, prSplit: t.prSplit, paneView: t.paneView, category: t.category, login: t.login, avatar: t.avatar,
+      tabs: state.tabs.map(t => ({ kind: t.kind, title: t.title, url: t.url, cur: t.cur || '', repo: t.repo, branch: t.branch, jiraKey: t.jiraKey, prSplit: t.prSplit, paneView: t.paneView, category: t.category, login: t.login, avatar: t.avatar,
         // The context's extra horizontal tabs (web pages + local files). Only committed ones
         // (with a url) — a blank, never-entered tab isn't persisted.
         links: (t.links || []).filter(l => l.url).map(l => ({ kind: l.kind, url: l.url, title: l.title, path: l.path || '', icon: l.icon || '' })) })),
@@ -476,7 +538,7 @@ export async function restoreTabs() {
     // A tab opened from the tray may already be in state.tabs by the time restore lands —
     // skip it so we don't double-add.
     if (t && t.url && !state.tabs.some(x => x.url === t.url)) {
-      state.tabs.push(createTab(t.url, t.title, t.kind, { repo: t.repo, branch: t.branch, jiraKey: t.jiraKey, prSplit: t.prSplit, paneView: t.paneView, category: t.category, login: t.login, avatar: t.avatar, links: Array.isArray(t.links) ? t.links : [] }));
+      state.tabs.push(createTab(t.url, t.title, t.kind, { cur: t.cur, repo: t.repo, branch: t.branch, jiraKey: t.jiraKey, prSplit: t.prSplit, paneView: t.paneView, category: t.category, login: t.login, avatar: t.avatar, links: Array.isArray(t.links) ? t.links : [] }));
       seedAvatar(t.login, t.avatar);   // share the restored data URI so the dashboard reuses it
     }
   }
@@ -546,7 +608,7 @@ export function closeTab(id) {
   if (i < 0) return;
   const tab = state.tabs[i];
   closePairedTerm(tab);
-  tab.wv?.remove();
+  disposeWebview(tab);
   (tab.links || []).forEach(disposeLink);
   state.tabs.splice(i, 1);
   if (state.activeTabId === id) {
@@ -561,7 +623,7 @@ export function closeTab(id) {
 
 export function closeSplit() {
   closeFind();
-  state.tabs.forEach(t => { closePairedTerm(t); t.wv?.remove(); (t.links || []).forEach(disposeLink); });
+  state.tabs.forEach(t => { closePairedTerm(t); disposeWebview(t); (t.links || []).forEach(disposeLink); });
   state.tabs = []; state.activeTabId = null; state.activeTermId = null;
   document.getElementById('split').hidden = true;
   document.body.classList.remove('viewing-tab', 'viewing-term', 'pr-split', 'pane-diff'); // restore <main>

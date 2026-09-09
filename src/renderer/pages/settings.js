@@ -6,7 +6,7 @@ import { esc, timeAgo, setActiveSegTab } from '../lib/util.js';
 import { toast, toastErr } from '../components/toast.js';
 import { renderProjectNav, applySidebarGroupUI } from '../components/sidebar.js';
 import { GIT_CLIENTS, resolveGitClientCmd } from '../lib/git-clients.js';
-import { updateGitClient } from '../components/viewer.js';
+import { updateGitClient, setWebviewPoolSize, clampWebviewPool, WEBVIEW_POOL_DEFAULT } from '../components/viewer.js';
 
 export async function loadSettings() {
   const [cfg, dbinfo, settings, sounds] = await Promise.all([
@@ -17,6 +17,7 @@ export async function loadSettings() {
   setActivityNotifyUI(settings?.activityNotify !== 'off'); // default on when unset
   applySidebarGroupUI(); // reflect the persisted sidebar-grouping choice on its toggle
   populateGitClientPicker(settings);
+  setWebviewPoolUI(settings?.webviewPool);
 
   if (cfg.poll_interval)      document.getElementById('poll-interval').value = cfg.poll_interval;
   if (cfg.jira_base_url)      document.getElementById('jira-base-url').value = cfg.jira_base_url;
@@ -219,6 +220,22 @@ export async function setActivityNotify(on) {
     await apiJson(ROUTES.settingsKey('activityNotify'), 'PUT', { value: on ? 'on' : 'off' });
     setActivityNotifyUI(on);           // reflect the toggle only once it's actually persisted
     window.taskhub?.refreshTray?.();   // let the tray re-read the setting now, not on its next tick
+  } catch (e) { toastErr(e.message); }
+}
+
+// ── Memory: live-webview pool size ─────────────────────────────────────────────
+// How many embedded pages stay loaded (see the pool in components/viewer.js). Persisted as the
+// `webviewPool` setting; applied to the running viewer immediately (evicts on shrink).
+function setWebviewPoolUI(value) {
+  const el = document.getElementById('webview-pool');
+  if (el) el.value = clampWebviewPool(value ?? WEBVIEW_POOL_DEFAULT);
+}
+export async function setWebviewPool(value) {
+  const n = clampWebviewPool(value);
+  try {
+    await apiJson(ROUTES.settingsKey('webviewPool'), 'PUT', { value: String(n) });
+    setWebviewPoolUI(n);
+    setWebviewPoolSize(n);
   } catch (e) { toastErr(e.message); }
 }
 

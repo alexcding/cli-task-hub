@@ -393,6 +393,20 @@
             </div>
           </div>
 
+          <!-- Memory: how many embedded web pages (PR/ticket pages, content-tab links — any webview) stay loaded. Each is its own WebContent
+               process; the rest are torn down and reload from their last URL when reselected
+               (viewer.js live-webview pool). Persisted as the `webviewPool` setting. -->
+          <div class="card">
+            <div class="card-header"><h3>Memory</h3></div>
+            <div class="card-pad theme-row">
+              <div>
+                <div class="theme-row-title">Web views kept loaded</div>
+                <div class="theme-row-sub">Embedded web pages of any kind held in memory at once — PR and ticket pages as well as tabs you open. Others reload where you left them when reselected. Lower saves RAM; higher makes switching instant.</div>
+              </div>
+              <input type="number" id="webview-pool" min="1" max="20" step="1" style="width:72px" aria-label="Web views kept loaded" onchange="setWebviewPool(this.value)">
+            </div>
+          </div>
+
           <!-- Resource usage: total RAM + CPU across every TaskHub process, with a
                per-component breakdown. Filled live by settings.js via window.taskhub.getUsage()
                (main-process getAppMetrics); hidden outside the Electron app, where it's unavailable. -->

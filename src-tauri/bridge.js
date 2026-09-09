@@ -314,6 +314,12 @@
           //     The <style> goes on documentElement (outside <head>/<body>) so Turbo's head/body
           //     swap doesn't strip it.
           wv.once('tauri://created', function () {
+            var rec0 = views[id];
+            if (rec0) rec0.created = true;
+            // destroy() called while creation was in flight (the viewer's live-webview pool can evict
+            // a tab within ~100ms of showing it): wcv_kill_content needs get_webview(), which only
+            // resolves once registered — so the kill was deferred to here. Run it now, skip the rest.
+            if (rec0 && rec0.pendingDestroy) { destroy(id); return; }
             // Replay the last-requested geometry. Webview creation is async, and the shim's rAF
             // loop pushes bounds() on the very next frame — those setPosition/setSize/show invokes
             // can land before the webview registers and are silently dropped (rejected promises).
@@ -355,6 +361,10 @@
       function destroy(id) {
         var rec = views[id];
         if (!rec) return;
+        // Not yet registered on the Rust side (tauri://created hasn't fired): killing now would be
+        // a no-op ("webview not found") and close() would race the registration, leaking the
+        // WebContent process. Mark it and let the created handler call back in.
+        if (!rec.created) { rec.pendingDestroy = true; return; }
         // Schedule the WebContent-process kill, then close: Tauri's webview close() on macOS
         // never deallocates the WKWebView (verified: close() resolves + the label unregisters,
         // but the ~200-300MB com.apple.WebKit.WebContent process survives indefinitely — one
@@ -412,7 +422,7 @@
       }
 
       // Force EVERY embedded webview out of view — called when the renderer navigates to a non-web
-      // page (Dashboard, Scrumboard, Settings, a project, …), where no PR/Jira webview should show.
+      // page (Dashboard, Tasks, Settings, a project, …), where no PR/Jira webview should show.
       // Belt-and-suspenders over per-tab hide (hideAllPanes): it also reaches webviews this session
       // doesn't track. Tracked ones are hidden (kept alive for a fast re-show); untracked ones are
       // closed (they should not exist once the unload/on-load teardown below is doing its job).

@@ -23,7 +23,7 @@ function targetWv() {
 
 export function findVisible() { return !!(bar() && !bar().hidden); }
 
-// Wire a tab's webview so its native find results land in the bar. Called from createTab so
+// Wire a tab's webview so its native find results land in the bar. Called from buildTabWebview / buildLinkWebview so
 // every tab (new and restored) reports while it's the active one.
 export function attachFind(wv) {
   wv.addEventListener('found-in-page', e => {

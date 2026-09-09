@@ -45,6 +45,7 @@ export const state = {
   // substituted — derived from the id (preset) or the stored custom template, never persisted
   // for presets. Loaded at bootstrap (app.js), updated by the Settings picker (setGitClient).
   gitClient: { id: '', cmd: '' },
+  webviewPool: 3,      // max embedded pages kept loaded at once (Settings → System); WEBVIEW_POOL_DEFAULT in viewer.js owns the value
   knownStatuses: new Set(),
   // Optimistic Scrumboard moves awaiting server confirmation: ticket key -> { status, statusId }.
   // A drop (or board status change) records the target here and the board renders the card in
