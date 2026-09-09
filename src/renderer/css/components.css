@@ -1,5 +1,5 @@
 /* Reusable widgets and dashboard surfaces: buttons, cards, badges, tables, forms,
-   chips, menus, plus the dashboard hero / AI usage widget / PR cards. */
+   chips, menus, plus the dashboard hero / AI usage widget / PR rows. */
 .page { display:none; }
 .page.active { display:block; }
 
@@ -14,7 +14,9 @@
 .btn-sm { padding:4px 10px;font-size:12px; }
 .btn svg { width:14px; height:14px; flex-shrink:0; display:block; }
 
-/* Cards — .card is the default flat container surface (bordered, no shadow).
+/* Cards — .card is the default flat container surface (bordered, no shadow). Pages are white
+   (--bg === --surface), so a card is only a hairline outline: use it for forms/groups, not for
+   lists — lists are hairline-separated rows (see .pr-row).
    Add .clickable for a hover border focus (no shadow), matching the task cards.
    Padding comes from .card-pad / .card-header, or the composing layout class. */
 .card { background:var(--surface);border:1px solid var(--border);border-radius:var(--rl); }
@@ -30,8 +32,9 @@
 .dash-date { font-size:11.5px;font-weight:600;color:var(--text-3);text-transform:uppercase;letter-spacing:1px; }
 .dash-hello { font-size:24px;font-weight:650;letter-spacing:-.4px;margin-top:5px; }
 .stat-chips { display:flex;align-items:stretch;gap:12px;flex-wrap:wrap; }
-.stat-chip { display:flex;align-items:center;gap:12px;padding:12px 22px 12px 14px;background:var(--surface);border:1px solid var(--border);border-radius:var(--rl);cursor:pointer;font:inherit;color:inherit;text-align:left;transition:border-color .15s; }
-.stat-chip:hover { border-color:var(--border-focus); }
+/* Flat stat: no box — tinted icon, big figure, muted label. Only the hover fill says "button". */
+.stat-chip { display:flex;align-items:center;gap:12px;padding:10px 18px 10px 12px;background:none;border:none;border-radius:var(--r);cursor:pointer;font:inherit;color:inherit;text-align:left;transition:background .12s; }
+.stat-chip:hover { background:var(--surface-hover); }
 .stat-chip-icon { width:34px;height:34px;border-radius:9px;display:flex;align-items:center;justify-content:center;flex-shrink:0; }
 .stat-chip-icon svg { width:17px;height:17px; }
 .stat-chip-icon.tint-accent { background:var(--accent-bg);color:var(--accent); }
@@ -41,50 +44,61 @@
 .stat-chip-icon.tint-neutral { background:var(--surface-hover);color:var(--text-2); }
 .stat-chip-val { font-size:17px;font-weight:700;letter-spacing:-.4px;line-height:1.2; }
 .stat-chip-label { font-size:11.5px;color:var(--text-3);font-weight:500;white-space:nowrap;margin-top:1px; }
-/* AI usage widget (views/usage-widget.js): one full-width landscape card with
-   Claude/Codex tabs top-right — plan-limit bars on the left, stat grid + day
+/* AI usage widget (views/usage-widget.js): one full-width landscape block with
+   Claude/Codex tabs top-right — plan-limit lines on the left, stat row + day
    histogram on the right. Each agent brings its own accent via agent-<key>. */
-.usage-row { margin-bottom:44px; }
+.usage-row { margin-bottom:36px;container-type:inline-size; }
 .usage-row:empty { display:none; }
-.usage-card { background:var(--surface);border:1px solid var(--border);border-radius:var(--rl);padding:14px 20px 16px;--agent:var(--claude); }
+.usage-card { --agent:var(--claude); }
 .usage-card.agent-codex { --agent:var(--codex); }
-.usage-head { display:flex;align-items:center;gap:9px; }
-.agent-icon { width:22px;height:22px;border-radius:5px;flex-shrink:0; }
-.usage-name { font-size:13.5px;font-weight:600; }
-.usage-cols { display:flex;flex-wrap:wrap;gap:8px 48px; }
-.usage-limits, .usage-stats { flex:1 1 0;min-width:280px; }
-/* Stats column: all four stats on one top row so the histogram below stretches
-   to fill the column's remaining height (matching the limits column). */
+/* Header = the dashboard's .project-group-header (title over a hairline), tabs on the right;
+   spacing comes from that class. */
+/* Fixed minimum height — sized for three limit blocks so switching
+   Claude ↔ Codex (fewer rows, or none) never shifts the sections below. */
+.usage-cols { display:flex;flex-wrap:wrap;gap:14px 44px;align-items:stretch;min-height:162px; }
+/* Narrow pane (viewer open / small window): the columns wrap onto two lines, so the fixed
+   height would overflow into the sections below — let it grow, and give the histogram its own
+   height since it no longer stretches to match the limits column. */
+@container (max-width: 700px) {
+  .usage-cols { min-height:0; }
+  .usage-limits, .usage-stats { flex:1 1 100%;min-width:0; }
+  .usage-hist { min-height:56px; }
+}
+.usage-limits { flex:1.35 1 0;min-width:340px; } .usage-stats { flex:1 1 0;min-width:280px; }
+/* Limits column: stacked three-line blocks (name / bar / figures), spread top-to-bottom so
+   the first sits level with the stat labels and the last shares its bottom edge with the
+   histogram beside it. */
+.usage-limits { display:flex;flex-direction:column;justify-content:space-between;gap:6px; }
+.lim { display:flex;flex-direction:column;gap:4px; }
+/* Row text matches the PR rows (.pr-title: 13.5px / 500). */
+.lim-name { font-size:13.5px;line-height:1.3;font-weight:500;color:var(--text);white-space:nowrap; }
+.lim-figs { display:flex;align-items:baseline;justify-content:space-between;gap:12px;font-size:12.5px;line-height:1.3;color:var(--text-3);white-space:nowrap;font-variant-numeric:tabular-nums; }
+.lim-reset { margin-left:auto; }
+.lim-dot { display:inline-block;width:3px;height:3px;border-radius:50%;background:var(--border-focus);margin:0 7px;vertical-align:middle; }
+/* Stats column: stat row on top, the histogram fills the remaining height below it. */
 .usage-stats { display:flex;flex-direction:column; }
-/* Claude/Codex switcher — segmented control on the card's top right. */
-.usage-tabs { margin-left:auto;display:flex;gap:2px;background:var(--surface-hover);border-radius:7px;padding:2px; }
-.usage-tab { border:none;background:none;font:inherit;font-size:12px;font-weight:500;color:var(--text-2);padding:3px 12px;border-radius:5px;cursor:pointer;transition:background .12s,color .12s; }
-.usage-tab:hover { color:var(--text); }
-.usage-tab.active { background:var(--surface);color:var(--text);box-shadow:var(--shadow); }
-/* Plan-limit section: the coral fills to what's LEFT; a green pace segment marks
-   the on-pace position; faint gridmarks sit at 50% and 75%. */
-.limit-title { font-size:13.5px;font-weight:500;margin:12px 0 6px; }
+/* Claude/Codex switcher — the section title itself, with a caret; opens the shared menu. */
+.usage-title { display:inline-flex;align-items:center;gap:3px;border:none;background:none;font:inherit;color:inherit;cursor:pointer;padding:2px 6px;margin:-2px -6px;border-radius:6px;transition:background .12s; }
+.usage-title:hover { background:var(--surface-hover); }
+.usage-title svg { width:14px;height:14px;color:var(--text-3);margin-top:1px; }
+/* Plan-limit bar: the fill shows what's LEFT; a green pace notch marks the on-pace position;
+   faint divider marks sit at 50% and 75%. */
 .limit-bar { position:relative;height:8px;border-radius:4px;background:var(--surface-hover);overflow:hidden; }
 .limit-bar i { position:absolute;left:0;top:0;bottom:0;max-width:100%;border-radius:4px;background:var(--agent); }
-/* 50% and 75% reference gridmarks, painted faint on top of the track/fill. */
 .limit-bar::after { content:'';position:absolute;inset:0;pointer-events:none;background:
   linear-gradient(90deg,transparent calc(50% - .5px),var(--limit-mark) calc(50% - .5px),var(--limit-mark) calc(50% + .5px),transparent calc(50% + .5px)),
   linear-gradient(90deg,transparent calc(75% - .5px),var(--limit-mark) calc(75% - .5px),var(--limit-mark) calc(75% + .5px),transparent calc(75% + .5px)); }
-/* Green pace marker: a short segment with track-colored gaps either side, so it
-   reads as a distinct notch cut into the bar (not a hairline). */
+/* Green pace notch: a short segment with track-coloured gaps either side so it reads as a
+   distinct mark cut into the bar. */
 .limit-bar s { position:absolute;top:0;bottom:0;width:9px;margin-left:-4.5px;background:var(--success);border-left:2px solid var(--surface-hover);border-right:2px solid var(--surface-hover);background-clip:padding-box;box-sizing:border-box; }
-.limit-rows { margin-top:6px;font-size:12px; }
-.limit-rows > div { display:flex;justify-content:space-between;gap:10px;margin-top:2px; }
-.limit-rows b { font-weight:600; }
-.limit-rows span { color:var(--text-3); }
 /* Stat row: four cells across the top, muted label over bold value. */
-.usage-grid { display:grid;grid-template-columns:repeat(4,1fr);gap:10px 20px;margin:12px 0; }
-.usage-grid label { display:block;font-size:12px;font-weight:500;color:var(--text-3);margin-bottom:1px; }
-.usage-grid b { font-size:18px;font-weight:700;letter-spacing:-.4px; }
+.usage-grid { display:grid;grid-template-columns:repeat(4,1fr);gap:8px 16px;margin:0 0 12px; }
+.usage-grid label { display:block;font-size:12.5px;font-weight:500;color:var(--text-3);margin-bottom:1px; }
+.usage-grid b { font-size:18px;font-weight:650;letter-spacing:-.4px; }
 /* Day histogram below the stats, stretching to fill the column. Each <i> is a
    full-height hover column (so short bars are easy to hit); the visible bar is
    its ::before at --h, the value tooltip its ::after. */
-.usage-hist { display:flex;gap:4px;flex:1;min-height:56px; }
+.usage-hist { display:flex;gap:4px;flex:1;min-height:52px; }
 .usage-hist i { flex:1;position:relative; }
 .usage-hist i::before { content:'';position:absolute;left:0;right:0;bottom:0;height:var(--h,3%);min-height:3px;border-radius:3px;background:var(--agent);opacity:.35; }
 .usage-hist i.today::before { opacity:1; }
@@ -96,39 +110,55 @@
 .usage-hist i:nth-child(-n+4)::after { left:0;transform:none; }
 .usage-hist i:nth-last-child(-n+4)::after { left:auto;right:0;transform:none; }
 
-/* Project group on dashboard */
-.project-group { margin-bottom:32px; }
-.project-group-header { display:flex;align-items:center;gap:10px;margin-bottom:12px; }
-.project-name { font-size:16px;font-weight:600; }
-.project-meta { font-size:12px;color:var(--text-3); }
-/* PR cards — header (num + repo on the left, date + CI dot on the right) on top,
-   title fills the middle, footer holds the avatar + optional Jira tag. */
-.pr-grid { display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px; }
-.pr-card { display:flex;flex-direction:column;padding:13px 16px; }
-.pr-head { display:flex;align-items:center;gap:7px;font-size:12px;color:var(--text-3);margin-bottom:9px; }
-.pr-num { font-weight:600;color:var(--text-3);font-variant-numeric:tabular-nums;flex-shrink:0; }
-.pr-repo { color:var(--text-2);font-weight:500;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
-.pr-date { flex-shrink:0; }
-.pr-draft { font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.3px;color:var(--text-3);border:1px solid var(--border);border-radius:4px;padding:1px 5px;flex-shrink:0; }
-.pr-body { flex:1;display:flex;align-items:center;min-height:0; }
-.pr-title { font-size:14px;font-weight:500;line-height:1.4;color:var(--text);display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden; }
-.pr-foot { margin-top:11px;display:flex;align-items:center;flex-wrap:wrap;gap:6px; }
-.pr-avatar { width:18px;height:18px;border-radius:50%;flex-shrink:0;object-fit:cover;background:var(--surface-hover); }
-.pr-foot .badge-jira { text-decoration:none;transition:background .1s,color .1s; }
-.pr-foot .badge-jira:hover { background:var(--accent);color:#fff; }
-/* Label chips + approved mark pinned to the footer's far (bottom) right. margin-left:auto
-   pushes the cluster to the edge whether or not there's an avatar/Jira tag on the left. */
-.pr-foot-end { margin-left:auto;display:flex;align-items:center;flex-wrap:wrap;justify-content:flex-end;gap:6px; }
-.pr-label { display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;padding:2px 8px;border-radius:99px;background:var(--surface-hover);color:var(--text-2); }
+/* Dashboard section: title + count pill over a hairline, then the PR list. */
+/* Section rhythm (shared by the usage block and both PR sections): 36px between sections,
+   10px from title to hairline, 14px from hairline to the first line of content. */
+.project-group { margin-bottom:36px; }
+.project-group-header { display:flex;align-items:center;gap:9px;padding-bottom:10px;margin-bottom:14px;border-bottom:1px solid var(--border); }
+.project-name { font-size:15px;font-weight:650;letter-spacing:-.2px; }
+.project-meta { font-size:11.5px;font-weight:600;color:var(--text-2);background:var(--surface-hover);border-radius:99px;padding:1px 8px;font-variant-numeric:tabular-nums; }
+.project-group-empty { font-size:13px;color:var(--text-3); }
+/* PR rows — one line per PR, hairline-separated, whole row clickable. Left → right:
+   CI dot · #num · title (fills, ellipsis) · state (draft / approved / changes requested) ·
+   labels + Jira · repo/branch ref · author avatar · date. Negative side margins let the hover
+   fill bleed past the text edge, so the list reads flush with the section title at rest. */
+/* Rows carry 8px of their own padding, so pull the list up to keep the 14px hairline gap. */
+.pr-list { display:flex;flex-direction:column;margin:-8px 0;container-type:inline-size; }
+.pr-row { display:flex;align-items:center;gap:10px;min-height:44px;padding:8px 10px;margin:0 -10px;border-radius:var(--rs);cursor:pointer;transition:background .1s; }
+.pr-row + .pr-row { position:relative; }
+.pr-row + .pr-row::before { content:'';position:absolute;left:10px;right:10px;top:0;border-top:1px solid var(--border); }
+.pr-row:hover { background:var(--surface-hover); }
+.pr-row:hover + .pr-row::before, .pr-row:hover::before { border-color:transparent; }
+.pr-num { font-size:12px;font-weight:600;color:var(--text-3);font-variant-numeric:tabular-nums;flex-shrink:0;min-width:38px; }
+.pr-title { flex:1 1 auto;min-width:120px;font-size:13.5px;font-weight:500;line-height:1.35;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+.pr-state { display:inline-flex;align-items:center;gap:4px;flex-shrink:0;font-size:11px;font-weight:600;white-space:nowrap; }
+.pr-state svg { width:13px;height:13px;display:block; }
+.pr-state-draft { color:var(--text-3);text-transform:uppercase;letter-spacing:.3px;border:1px solid var(--border);border-radius:4px;padding:1px 5px;font-size:10px; }
+.pr-state-approved { color:var(--success); }
+.pr-state-changes { color:var(--warn); }
+.pr-tags { display:flex;align-items:center;gap:6px;flex-shrink:0; }
+.pr-tags .badge-jira { text-decoration:none;transition:background .1s,color .1s;flex-shrink:0; }
+.pr-tags .badge-jira:hover { background:var(--accent);color:#fff; }
+/* repo/branch as one muted mono ref: "owner/repo · branch", branch trimmed first. */
+.pr-ref { display:flex;align-items:center;gap:5px;flex:0 1 auto;min-width:0;max-width:34%;font-family:var(--diff-font,ui-monospace,SFMono-Regular,monospace);font-size:11.5px;color:var(--text-3);white-space:nowrap; }
+.pr-ref-repo { flex-shrink:0; }
+.pr-ref-branch { overflow:hidden;text-overflow:ellipsis;min-width:0; }
+.pr-ref-sep { color:var(--border-focus); }
+.pr-avatar { width:20px;height:20px;border-radius:50%;flex-shrink:0;object-fit:cover;background:var(--surface-hover); }
+.pr-date { flex-shrink:0;min-width:42px;text-align:right;font-size:12px;color:var(--text-3);font-variant-numeric:tabular-nums; }
+.pr-label { display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;padding:1px 8px;border-radius:99px;background:var(--surface-hover);color:var(--text-2);white-space:nowrap; }
 .pr-label-dot { width:7px;height:7px;border-radius:50%;flex-shrink:0; }
+/* Narrow pane (viewer open): the pane that shrinks is main, not the window, so query the list's own
+   width. The ref and labels go first; title keeps a line. */
+@container (max-width: 640px) { .pr-ref { display:none; } .pr-tags .pr-label { display:none; } }
 /* CI status dot — reusable across PR cards and the sidebar PR list. */
 .ci-dot { width:9px;height:9px;border-radius:50%;flex-shrink:0; }
 .ci-dot.ci-success { background:var(--success); }
 .ci-dot.ci-failure { background:var(--danger); }
 .ci-dot.ci-running { background:var(--warn);box-shadow:0 0 0 3px var(--warn-bg); }
 .ci-dot.ci-none    { background:var(--border-focus); }
-/* PR approved mark — green circle + white check, pinned bottom-right (see .pr-foot-end). */
-.pr-approved { width:14px;height:14px;flex-shrink:0;display:block;color:var(--success); }
+/* PR approved mark — green circle + white check, inside the row's .pr-state-approved. */
+.pr-approved { width:13px;height:13px;flex-shrink:0;display:block;color:var(--success); }
 
 /* Sprint board (Linear-style minimal): no column or card boxes. A column is just a
    status-dot header over a hairline, then a stack of flat white cards on the recessed

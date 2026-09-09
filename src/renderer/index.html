@@ -24,8 +24,8 @@
        cover + spinner fills that gap; app.js fades it out once the first page has painted. Inlined
        (not in a linked stylesheet) with literal colors so it shows before any CSS request resolves. -->
   <style>
-    #boot-splash { position:fixed; inset:0; z-index:9999; display:flex; align-items:center; justify-content:center; background:#f6f7f9; transition:opacity .25s ease; }
-    html[data-theme=dark] #boot-splash { background:#161616; }
+    #boot-splash { position:fixed; inset:0; z-index:9999; display:flex; align-items:center; justify-content:center; background:#ffffff; transition:opacity .25s ease; }
+    html[data-theme=dark] #boot-splash { background:#1e1e1e; }
     #boot-splash.hide { opacity:0; pointer-events:none; }
     #boot-splash .spin { width:26px; height:26px; border-radius:50%; border:2.5px solid #e7e9ee; border-top-color:#2563eb; animation:boot-spin .7s linear infinite; }
     html[data-theme=dark] #boot-splash .spin { border-color:#323232; border-top-color:#4b86f0; }

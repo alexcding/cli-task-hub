@@ -155,15 +155,13 @@ export async function loadProjectPage(id) {
               onkeydown="if(event.key==='Escape'){this.value='';jiraSearch('${id}');}">
             <div id="proj-jira-filter-${id}" class="ticket-filter"></div>
           </form>
-          <div class="card">
-            <div class="table-wrap">
-              <table>
-                <thead><tr><th>Key</th><th>Summary</th><th>Status</th><th>Type</th><th>Priority</th></tr></thead>
-                <tbody id="proj-jira-${id}">
-                  <tr><td colspan="5"><div class="loading-row"><div class="spinner"></div> Loading…</div></td></tr>
-                </tbody>
-              </table>
-            </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Key</th><th>Summary</th><th>Status</th><th>Type</th><th>Priority</th></tr></thead>
+              <tbody id="proj-jira-${id}">
+                <tr><td colspan="5"><div class="loading-row"><div class="spinner"></div> Loading…</div></td></tr>
+              </tbody>
+            </table>
           </div>
         </div>
 

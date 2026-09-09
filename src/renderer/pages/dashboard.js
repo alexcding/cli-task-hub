@@ -6,10 +6,11 @@ import { PR_CATEGORY, PR_GROUP } from '/shared/constants.mjs';
 import { api } from '../services/api.js';
 import { esc, setHtmlIfChanged } from '../lib/util.js';
 import { ICON } from '../lib/icons.js';
-import { prCard } from '../components/cards.js';
+import { prRow } from '../components/cards.js';
 import { renderTabs, renderProjectNav } from '../components/sidebar.js';
 import { saveTabs } from '../components/viewer.js';
-import { usageWidgetHtml } from '../components/usage-widget.js';
+import { usageWidgetHtml, usableAgents } from '../components/usage-widget.js';
+import { openMenu } from '../components/menu.js';
 
 export async function loadDashboard() {
   // Reads the snapshot (instant) — no leading spinner so SSE refreshes are seamless.
@@ -51,8 +52,8 @@ export async function loadDashboard() {
       <span><div class="stat-chip-val">${val}</div><div class="stat-chip-label">${label}</div></span>
     </button>`;
 
-  // AI usage widget (shared builder in usage-widget.js): full-width card below the
-  // hero, compact variant (stat grid + histogram), Claude/Codex tabs top-right.
+  // AI usage widget (shared builder in usage-widget.js): a full-width section below the
+  // hero; its title is a dropdown switching Claude Code / Codex.
   state.usageSnap = usage;
 
   document.getElementById('stats').innerHTML = `
@@ -79,8 +80,8 @@ export async function loadDashboard() {
         <span class="project-meta">${prs.length}</span>
       </div>
       ${prs.length
-        ? `<div class="pr-grid">${prs.map(pr=>prCard(pr)).join('')}</div>`
-        : `<div style="font-size:13px;color:var(--text-3);padding:12px 0">${emptyMsg}</div>`}
+        ? `<div class="pr-list">${prs.map(pr=>prRow(pr)).join('')}</div>`
+        : `<div class="project-group-empty">${emptyMsg}</div>`}
     </div>`;
 
   const prHtml = groups.length
@@ -90,9 +91,9 @@ export async function loadDashboard() {
     : `<div class="empty"><div class="empty-icon">${ICON.folder}</div><p>No projects yet. Create one to get started.</p><br><button class="btn btn-primary" onclick="openNewProjectModal()">${ICON.plus} New project</button></div>`;
 
   // Sprint work lives on each project's Board tab, not here — the dashboard is PRs only.
-  // Skip the innerHTML churn when the cards are unchanged — refreshActivePage re-runs this on
-  // every SSE sync, and rebuilding recreates each card's avatar <img> (a github.com URL, no
-  // frozen data-URI), which flickers. The card markup is stable for stable data (fmtDate is
+  // Skip the innerHTML churn when the rows are unchanged — refreshActivePage re-runs this on
+  // every SSE sync, and rebuilding recreates each row's avatar <img> (a github.com URL, no
+  // frozen data-URI), which flickers. The row markup is stable for stable data (fmtDate is
   // absolute, not a relative "ago"), so an equal-HTML guard holds across no-op syncs.
   setHtmlIfChanged(document.getElementById('dashboard-groups'), prHtml);
 
@@ -132,6 +133,13 @@ export function setUsageTab(key) {
   api(ROUTES.settingsKey('usageAgent'), { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ value: key }) })
     .then(() => window.taskhub?.refreshTray?.())
     .catch(() => {});
+}
+// Title dropdown: the shared context menu, anchored under the title button (openMenu positions
+// at a point, so hand it the button's bottom-left corner). Picking an agent = setUsageTab.
+export function openUsageMenu(e) {
+  const r = e.currentTarget.getBoundingClientRect();
+  const at = { preventDefault() {}, clientX: r.left - 6, clientY: r.bottom + 6 };
+  openMenu(at, usableAgents(state.usageSnap).map(a => ({ label: a.name, onClick: () => setUsageTab(a.key) })));
 }
 // Restore the saved tab once per session (the in-session selection wins after that).
 async function restoreUsageTab() {

@@ -1,5 +1,5 @@
-// PR card builders shared by the dashboard and the project page.
-import { esc, jiraUrl, fmtDate, ghAvatarSrc } from '../lib/util.js';
+// PR row builders shared by the dashboard and the project page.
+import { esc, escJs, jiraUrl, fmtDate, ghAvatarSrc } from '../lib/util.js';
 import { ensureAvatar } from '../lib/avatars.js';
 import { ICON } from '../lib/icons.js';
 
@@ -21,10 +21,10 @@ export function ciDot(ci) {
   return `<span class="ci-dot ${cls}" title="${label}"></span>`;
 }
 
-// GitHub's reviewDecision === 'APPROVED' → a green circle with a white check, pinned to
-// the card footer's bottom-right (approved-but-not-yet-merged, in both My PRs and Review
-// Requested). '' otherwise. Shown via lib/poller lean() carrying reviewDecision.
-export function approvedMark(pr) {
+// GitHub's reviewDecision === 'APPROVED' → a green circle with a white check (used inside
+// prState's Approved chip; approved-but-not-yet-merged). '' otherwise. reviewDecision comes
+// from the poller's lean().
+function approvedMark(pr) {
   if (pr?.reviewDecision !== 'APPROVED') return '';
   return `<svg class="pr-approved" viewBox="0 0 16 16" title="Approved" aria-label="Approved">
     <circle cx="8" cy="8" r="8" fill="currentColor"></circle>
@@ -42,43 +42,45 @@ export function labelChips(labels) {
   }).join('');
 }
 
-// A flat, whole-card-clickable PR card. The card opens the PR; the Jira badge keeps
-// its own link to Jira (stopPropagation so it doesn't also trigger the card).
-// Layout: header (num · repo · date + CI dot) on top, title fills the middle,
-// footer holds the author's GitHub avatar (bottom-left) + optional Jira tag, with
-// label chips + the approved mark pinned bottom-right.
-export function prCard(pr) {
+// Review state, shown after the title: Draft (outlined), Approved (green check), or Changes
+// requested (amber). '' for a plain open PR — GitHub's reviewDecision is APPROVED /
+// CHANGES_REQUESTED / REVIEW_REQUIRED, and only the first two say anything worth a glance.
+export function prState(pr) {
+  if (pr.isDraft) return `<span class="pr-state pr-state-draft">Draft</span>`;
+  if (pr.reviewDecision === 'APPROVED') return `<span class="pr-state pr-state-approved" title="Approved">${approvedMark(pr)}Approved</span>`;
+  if (pr.reviewDecision === 'CHANGES_REQUESTED') return `<span class="pr-state pr-state-changes" title="Changes requested">${ICON.warn}Changes requested</span>`;
+  return '';
+}
+
+// One PR as a flat, whole-row-clickable line (dashboard + project PR list). The row opens the
+// PR in the viewer; the Jira badge keeps its own link (stopPropagation in jiraClick so it
+// doesn't also trigger the row). Left → right: CI dot · #num · title · state · labels + Jira ·
+// repo/branch ref · author avatar · date.
+export function prRow(pr) {
   const jiraHtml = (pr.jiraKeys||[]).map(k =>
-    `<a href="${jiraUrl(k)}" target="_blank" rel="noopener" class="badge badge-jira" onclick="jiraClick(event, this.href, '${esc(k)}')">${esc(k)}</a>`).join('');
+    `<a href="${jiraUrl(k)}" target="_blank" rel="noopener" class="badge badge-jira" onclick="jiraClick(event, this.href, '${escJs(k)}')">${esc(k)}</a>`).join('');
   const login = pr.author?.login || '';
   // The avatar src prefers the shared cache (a data URI) and warms it on a miss; data-av lets
   // ensureAvatar swap the data URI in once it lands, so a later rebuild never re-fetches/flickers.
   if (login) ensureAvatar(login);
   const avatar = login ? `<img class="pr-avatar" src="${ghAvatarSrc(login)}" data-av="${esc(login)}" alt="" title="${esc(login)}" loading="lazy">` : '';
-  const footLeft = avatar + jiraHtml;
-  const labels = labelChips(pr.labels); // tinted chips, bottom-right (see .pr-foot-end)
-  const approved = approvedMark(pr);     // green check, bottom-right (see .pr-foot-end)
-  const footRight = labels + approved;
-  // Footer renders whenever there's a left item (avatar/Jira) OR a right item (labels /
-  // approved mark), so the right cluster shows even on a card with no avatar/Jira tags.
-  const foot = (footLeft || footRight)
-    ? `<div class="pr-foot">${footLeft}${footRight ? `<span class="pr-foot-end">${footRight}</span>` : ''}</div>`
-    : '';
-  return `<div class="card clickable pr-card" onclick="openPrSplit('${pr.url}','#${pr.number}','${esc(pr.repo||'')}','${esc(pr.headRefName||'')}')" title="Open PR #${pr.number}">
-    <div class="pr-head">
-      <span class="pr-num">#${pr.number}</span>
-      <span class="pr-repo">${esc(pr.repo)}</span>
-      ${pr.isDraft ? `<span class="pr-draft">Draft</span>` : ''}
-      <span class="pr-date">${fmtDate(pr.createdAt)}</span>
-      ${ciDot(pr.ci)}
-    </div>
-    <div class="pr-body"><div class="pr-title">${esc(pr.title)}</div></div>
-    ${foot}
+  const tags = labelChips(pr.labels) + jiraHtml;
+  const branch = pr.headRefName || '';
+  const ref = `<span class="pr-ref" title="${esc(pr.repo||'')}${branch ? ' · ' + esc(branch) : ''}"><span class="pr-ref-repo">${esc((pr.repo||'').split('/').pop())}</span>${branch ? `<span class="pr-ref-sep">·</span><span class="pr-ref-branch">${esc(branch)}</span>` : ''}</span>`;
+  return `<div class="pr-row" onclick="openPrSplit('${escJs(pr.url)}','#${Number(pr.number)}','${escJs(pr.repo||'')}','${escJs(branch)}')" title="Open PR #${pr.number}">
+    ${ciDot(pr.ci)}
+    <span class="pr-num">#${pr.number}</span>
+    <span class="pr-title" title="${esc(pr.title)}">${esc(pr.title)}</span>
+    ${prState(pr)}
+    ${tags ? `<span class="pr-tags">${tags}</span>` : ''}
+    ${ref}
+    ${avatar}
+    <span class="pr-date">${fmtDate(pr.createdAt)}</span>
   </div>`;
 }
 
 export function prListHtml(prs, repo, state) {
   if (!repo) return `<div class="empty"><div class="empty-icon">${ICON.branch}</div><p>Set a repository in settings to track pull requests.</p></div>`;
   if (!prs.length) return `<div class="empty"><div class="empty-icon">${ICON.branch}</div><p>No ${state} pull requests.</p></div>`;
-  return `<div class="pr-grid">${prs.map(pr => prCard(pr)).join('')}</div>`;
+  return `<div class="pr-list">${prs.map(pr => prRow(pr)).join('')}</div>`;
 }
