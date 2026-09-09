@@ -16,6 +16,7 @@ import { state, activeTab, prByUrl } from '../stores/store.js';
 import { esc, ghAvatarSrc, setHtmlIfChanged, canSplitTerminal } from '../lib/util.js';
 import { ICON, TAB_ICON } from '../lib/icons.js';
 import { ciInfo } from './cards.js';
+import { taskForTab } from '../services/tasks.js';
 
 // Icon for the default (context) chip — the PR author's avatar + CI badge, or the Jira mark.
 function defaultIcon(t) {
@@ -54,14 +55,16 @@ function diffChipHtml(t) {
 }
 
 // The default chip IS the context (the sidebar's PR/Jira tab), so its × closes the whole context —
-// page, extra tabs, and the paired terminal binding — exactly like closing it from the sidebar.
+// page, extra tabs, and the paired terminal binding — exactly like closing it from the sidebar. A
+// task session's tab has no ×: it is removed only via the task row's right-click Remove session.
 function defaultChipHtml(t) {
   const active = !t.activeLink && !inDiff(t);
+  const x = taskForTab(t) ? '' : `<button class="ctab-btn ctab-x" title="Close tab" onclick="event.stopPropagation();closeTab('${t.id}')">${ICON.close}</button>`;
   return `<div class="ctab default ${active ? 'active' : ''}"
         onclick="setActiveLink(null)" title="${esc(t.url || '')}">
      ${defaultIcon(t)}
      <span class="ctab-title">${esc(t.title || '')}</span>
-     <button class="ctab-btn ctab-x" title="Close tab" onclick="event.stopPropagation();closeTab('${t.id}')">${ICON.close}</button>
+     ${x}
      <i class="ctab-load"></i>
    </div>`;
 }

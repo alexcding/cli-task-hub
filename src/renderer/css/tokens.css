@@ -8,6 +8,10 @@
   --bg: #f6f7f9; --surface: #ffffff; --surface-hover: #f1f3f5;
   --border: #e7e9ee; --border-focus: #c2c7d0;
   --text: #16181d; --text-2: #565d68; --text-3: #9298a3;
+  --nav-text: #3b3d3f; /* sidebar row + icon colour — sampled from ChatGPT's sidebar (charcoal on #f9f9f9) */
+  /* Session status (unpeel DESIGN.md §5) — semantic, same in both themes: attention dot, and the
+     per-CLI busy-spinner tints. */
+  --attention: #f59e0b; --spin-claude: #d97757; --spin-codex: #39d353;
   --accent: #2563eb; --accent-bg: #eff4ff; --accent-hover: #1d4ed8;
   --success: #16a34a; --success-bg: #f0fdf4;
   --warn: #d97706; --warn-bg: #fffbeb;
@@ -40,6 +44,7 @@ html[data-theme="dark"] {
   --bg: #161616; --surface: #1e1e1e; --surface-hover: #2a2a2a;
   --border: #323232; --border-focus: #525252;
   --text: #e8e8e8; --text-2: #a2a2a2; --text-3: #6e6e6e;
+  --nav-text: #c9cbce; /* dark-mode counterpart: same contrast step below --text */
   --accent: #4b86f0; --accent-bg: #1c2740; --accent-hover: #6d9ef4;
   --success: #4ade80; --success-bg: #14251a;
   --warn: #fbbf24; --warn-bg: #2a2310;

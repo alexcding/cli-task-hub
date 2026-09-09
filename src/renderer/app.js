@@ -7,8 +7,9 @@ import { api, forceSync } from './services/api.js';
 import { canSplitTerminal } from './lib/util.js';
 import { initTheme, setAppTheme, syncThemeFromSettings } from './services/theme.js';
 import { setFontFamily, bumpFontSize, resetFontSize, zoomTarget, syncFontsFromSettings, populateFontMenus } from './services/fonts.js';
-import { renderTabs, renderProjectNav, tabMenu, initSidebarResize, toggleProjectTabs } from './components/sidebar.js';
+import { renderTabs, renderProjectNav, tabMenu, sessionMenu, initSidebarResize, projectClick } from './components/sidebar.js';
 import { closeMenu, isMenuOpen } from './components/menu.js';
+import { toggleEventsPopover, refreshEventsPopover, isEventsPopoverOpen, closeEventsPopover } from './components/events-popover.js';
 import * as viewer from './components/viewer.js';
 import * as terminal from './components/terminal.js';
 import * as split from './components/split.js';
@@ -23,7 +24,7 @@ import { loadGitTab, gitTabPick, gitTabShowCommit, gitTabBack, gitTabRemoveWorkt
 import * as jiraView from './pages/jira.js';
 import { loadScrumboard, setBoardFilter, applyBoardQuery } from './pages/scrumboard.js';
 import { loadLogs, setLogCategory, clearLogs } from './pages/logs.js';
-import { openTaskSession, deleteTaskSession, deleteWorktree, analyzeSession, newWorktreeTask, newWorktreeTaskIn } from './components/tasks.js';
+import { openTaskSession, analyzeSession, newWorktreeTask } from './components/tasks.js';
 import { loadPersistedTasks, persistTask } from './services/tasks.js';
 import { loadSettings, saveConfig, switchSettingsTab, setReviewSound, previewReviewSound, setActivityNotify, setAutostart, toggleSecret, setGitClient, setGitClientCmd, toggleHook, setWebviewPool, showEvents } from './pages/settings.js';
 import { showActivityToast } from './components/activity-toast.js';
@@ -144,6 +145,7 @@ window.__shortcut = handleShortcut; // called by the app menu via executeJavaScr
 document.addEventListener('keydown', e => {
   if (e.key !== 'Escape') return;
   if (isMenuOpen()) { closeMenu(); return; }   // close any open context menu first
+  if (isEventsPopoverOpen()) { closeEventsPopover(); return; } // …or the bell popover — never fall through to closeSplit
   modal.closeModal();
   if (!document.getElementById('split').hidden) viewer.closeSplit();
 });
@@ -221,7 +223,9 @@ function connectStream() {
     }
     // Activity toasts are NOT triggered here: the main process is the single decider (it
     // alone can tell if the app is frontmost vs an embedded webview holding focus) and pushes
-    // the toast via window.__activityToast. An 'activity' event still refreshes Settings → Events below.
+    // the toast via window.__activityToast. An 'activity' event still refreshes Settings → Events below
+    // (and the bell popover, if it's open).
+    if (d.type === 'activity') refreshEventsPopover();
     scheduleRefresh();
   };
   es.onerror = () => {}; // EventSource auto-reconnects
@@ -259,9 +263,9 @@ Object.assign(window, {
   projShowSection, projJiraView, reloadProjectPRs, loadProjectWebhooks, saveProjectWebhooks, previewFixVersion, scrollDash, setUsageTab,
   wfNew, wfDelete, wfSetName, wfSetCli, wfAddStep, wfRemoveStep, wfEditStepCommand, wfEditStepTitle, saveWorkflows,
   loadGitTab, gitTabPick, gitTabShowCommit, gitTabBack, gitTabRemoveWorktree,
-  loadLogs, setLogCategory, clearLogs, showEvents,
-  openTaskSession, deleteTaskSession, deleteWorktree, newWorktreeTask, newWorktreeTaskIn, // the sidebar's task/worktree rows (inline onclick)
-  loadSettings, saveConfig, switchSettingsTab, setReviewSound, previewReviewSound, setActivityNotify, setAutostart, toggleSecret, setGitClient, setGitClientCmd, toggleHook, setWebviewPool, toggleProjectTabs,
+  loadLogs, setLogCategory, clearLogs, showEvents, toggleEventsPopover, // the sidebar bell
+  openTaskSession, newWorktreeTask, sessionMenu, // the sidebar's session rows (click, right-click menu)
+  loadSettings, saveConfig, switchSettingsTab, setReviewSound, previewReviewSound, setActivityNotify, setAutostart, toggleSecret, setGitClient, setGitClientCmd, toggleHook, setWebviewPool, projectClick,
   __activityToast: showActivityToast, // main pushes activity toasts here when the app is frontmost
   // project modal
   openNewProjectModal: modal.openNewProjectModal, openEditProjectModal: modal.openEditProjectModal,

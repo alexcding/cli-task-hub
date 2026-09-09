@@ -23,7 +23,6 @@ export const state = {
   // { url, kind, title, repo, branch, jiraKey, workspace, worktree, cli, createdAt }. The Tasks
   // page merges these with live `terms` (a task is "running" when a paired terminal exists for its url).
   tasks: [],           // durable tasks (services/tasks.js) — { id, projectId, workspace, worktree, branch, title, kind, url, jiraKey, cli, sessionId }
-  worktrees: {},       // projectId -> [{ path, branch }] linked worktrees (services/tasks.js → loadWorktrees)
 
   // Terminals (xterm views bound to main-process PTYs)
   terms: new Map(),    // id -> { el, term, fit, off, offExit, cwd, title, paired, pairKey, hasContext }

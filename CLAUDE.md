@@ -59,14 +59,19 @@ separation everything follows:
   `'mine'`). A PR I've only commented on is `category:'other'` but belongs under Review — grouping
   on `category` sends it to Mine. The tray/sound are the exception: they intentionally stay on
   `category==='review'` (see AGENTS.md).
-- **The sidebar is always laid out by project → worktree → task.** Each project folder nests its
-  linked worktrees (`state.worktrees`, from `/api/worktrees`), each worktree its tasks (agent
-  sessions, live or stopped — `services/tasks.js → taskSessions()`), then the project's plain
-  open-tab rows. A task is keyed by id (its terminal's `pairKey`), always sits on a worktree, and
-  may link to a PR/Jira tab by `url`; several tasks may share one worktree. Hover "+" on a project
-  creates a worktree + task, on a worktree another task; a task's trash stops only its terminal,
-  the worktree row's trash force-removes the folder with its tasks. A tab whose URL is a task renders only as
-  a task row. There is no Tasks page, no Tasks group, and no grouping setting.
+- **The sidebar is laid out by project → session, and reads ONLY session records.** A session
+  (`services/tasks.js → taskSessions()`, one task record per worktree) is the agent running on a
+  worktree — live or stopped — keyed by id (its terminal's `pairKey`), titled by its worktree folder,
+  optionally linked to a PR/Jira tab by `url`. The renderer keeps no worktree list and shows no
+  worktree UI: git worktrees without a session are invisible here (the project Git tab lists them).
+  Hover "+" on a project creates a worktree + session; clicking a folder focuses its project, clicking
+  the focused folder again collapses/expands its rows (no disclosure caret). Right-click is the only removal:
+  "Remove session" (`deleteTaskSession`, the single path) stops the terminal, forgets the task and
+  force-removes the worktree folder, behind `confirmDialog()` (`components/confirm.js`) — never
+  native `confirm()`. A session's tab is not closable by any browser-tab path (middle-click, ⌘W, the
+  default chip's ×, the native tab menu): `closeTab` refuses task tabs; only `removeTaskRecord` drops
+  one via `removeTaskTab`. A tab whose URL is a task renders only as a session row. There is no
+  Tasks page, no Tasks group, no worktree row, and no grouping setting.
 - **Embedded webviews are pooled.** `tab.wv` / `link.wv` are built lazily on first show and torn
   down when they fall out of the LRU pool (`state.webviewPool`, Settings → System), then rebuilt
   from `tab.cur` / `link.url`. Never cache a `wv` reference; re-read `owner.wv` (may be null) and

@@ -43,13 +43,18 @@
 
   <!-- Sidebar -->
   <aside>
-    <div class="sidebar-logo">
-      <div class="logo-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6.5,12.5 10.6,16.6 17.8,8.2"/></svg></div>
-      <span class="logo-text">TaskHub</span>
-      <!-- New-project "+" moved to the dashboard's top-right action bar (dashboard.js). -->
+    <!-- Top spacer: room for the window's traffic lights on native mac (see layout.css). -->
+    <div class="sidebar-logo"></div>
+    <!-- App header row: wordmark left; on the right, New project (+) then the bell (today's activity popover). -->
+    <div class="sidebar-app">
+      <span class="app-name">TaskHub</span>
+      <span class="app-actions">
+      <button class="app-btn" title="New project" onclick="openNewProjectModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg></button>
+      <button class="app-btn app-bell" title="Today's activity" onclick="toggleEventsPopover(this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 2H4.5z"/><path d="M10 21a2.2 2.2 0 0 0 4 0"/></svg></button>
+      </span>
     </div>
     <nav>
-      <button class="nav-btn active" data-page="dashboard" onclick="showPage('dashboard')"><span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="2.5"/><rect x="14" y="3" width="7" height="7" rx="2.5"/><rect x="3" y="14" width="7" height="7" rx="2.5"/><rect x="14" y="14" width="7" height="7" rx="2.5"/></svg></span> Dashboard</button>
+      <button class="nav-btn active" data-page="dashboard" onclick="showPage('dashboard')"><span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="17" rx="2.5"/><path d="M2 8.5h20"/><path d="M9.5 8.5V20"/></svg></span> Dashboard</button>
 
       <div class="nav-label" style="margin-top:4px">Projects</div>
       <div id="project-nav"></div>

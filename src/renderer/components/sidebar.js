@@ -1,6 +1,6 @@
-// Left sidebar: the project nav. Under each project folder: its worktrees, each with the tasks
-// (agent sessions, live or stopped) running on it, then the project's plain open-tab rows. Hover
-// "+" on a project creates a new worktree + task; hover "+" on a worktree adds another task there.
+// Left sidebar: the project nav. Under each project folder: its session rows (one agent session per
+// worktree, live or stopped), then the project's plain open-tab rows. Hover
+// "+" on a project creates a new worktree + session.
 // Layout is always by project; a tab that is a task shows ONLY as a task row. Tasks/tabs matching
 // no configured project fall into the unlabeled orphan group.
 import { state, prByUrl, setProjects, projectByRepo, projectByJiraKey, projectById } from '../stores/store.js';
@@ -11,19 +11,41 @@ import { ciInfo } from './cards.js';
 import { closeTab, saveTabs, updateTitles } from './viewer.js';
 import { renderContentTabs } from './content-tabs.js';
 import { workflowRunState } from './workflow.js';
-import { taskSessions, taskUrls, loadWorktrees, worktreesLoaded } from '../services/tasks.js';
+import { taskSessions, taskUrls, taskById } from '../services/tasks.js';
+import { openMenu } from './menu.js';
+import { deleteTaskSession } from './tasks.js';
 
 // Per-project collapse state: a project whose id is in this set hides
 // its nested open-tab rows. Persisted to localStorage so the choice survives re-renders/restart.
 let _collapsed = (() => { try { return new Set(JSON.parse(localStorage.getItem('taskhub.projCollapsed') || '[]')); } catch { return new Set(); } })();
 const saveCollapsed = () => { try { localStorage.setItem('taskhub.projCollapsed', JSON.stringify([..._collapsed])); } catch {} };
 
-// Toggle the disclosure on a project folder (the caret on its right). stopPropagation in the
-// caller keeps the click off the folder button's navigate-to-project handler.
-export function toggleProjectTabs(id) {
+// Collapse/expand ANIMATES: the rows are always in the DOM inside .proj-tabs (a 1fr→0fr grid track,
+// see viewer.css), so this flips the class in place and swaps the folder icon — no markup rebuild,
+// which would cut the transition. The nav's render cache is then pointed at what a fresh render
+// would produce, so the next renderTabs sees "unchanged" and leaves the animating nodes alone.
+function toggleProjectTabs(id) {
+  const nav = document.getElementById('project-nav');
+  const group = nav?.querySelector(`.proj-tabs[data-project="${id}"]`);
+  if (!group) return; // nothing to collapse (no sessions/tabs) — and the icon must stay "closed"
   if (_collapsed.has(id)) _collapsed.delete(id); else _collapsed.add(id);
   saveCollapsed();
-  renderTabs();   // full pipeline: rebuilds the nav AND re-applies the active-row highlight
+  const collapsed = _collapsed.has(id);
+  group.classList.toggle('collapsed', collapsed);
+  const icon = nav.querySelector(`.nav-btn[data-project="${id}"] .icon`);
+  if (icon) icon.innerHTML = collapsed ? ICON.folder : ICON.folderOpen; // same rule as projectNavHtml (rows exist here)
+  nav._lastHtml = projectNavHtml();
+}
+
+// Click on a project folder. First click focuses the project (shows its detail page); a click on the
+// folder that is ALREADY in view toggles its rows collapsed/expanded. "In view" means the project
+// page is the visible view — not merely the last-selected project while a tab/terminal is showing
+// (then the click brings the project page back instead). No separate disclosure caret.
+export function projectClick(id) {
+  const body = document.body.classList;
+  const focused = document.querySelector('.page.active')?.id === 'page-project' && state.activeProjectId === id
+    && !body.contains('viewing-tab') && !body.contains('viewing-term');
+  if (focused) toggleProjectTabs(id); else window.showPage?.('project', id);
 }
 
 // Render the sidebar's dynamic parts: the project nav (each project's task + open-tab rows
@@ -51,40 +73,19 @@ function reconcileRows() {
 const tabProject = t => (t.kind === 'jira' ? projectByJiraKey(t.jiraKey) : projectByRepo(t.repo));
 
 // Working first, then live over stopped, then by title — a stable order for a worktree's task rows.
-const byTaskState = (a, b) => (Number(!!b.busy) - Number(!!a.busy)) || (Number(b.live) - Number(a.live)) || a.title.localeCompare(b.title);
+// Sessions sort working → live → stopped, then by the label the row SHOWS (worktree folder name).
+const rowLabel = s => basename(s.worktree || '') || s.title || '';
+const byTaskState = (a, b) => (Number(!!b.busy) - Number(!!a.busy)) || (Number(!!b.live) - Number(!!a.live)) || rowLabel(a).localeCompare(rowLabel(b));
 
-// A worktree row under a project: folder name + branch, hover "+" (another task on it) and trash
-// (delete the worktree with its tasks — the only place a worktree is removed), and its task rows
-// nested beneath. Worktrees come from git (state.worktrees, loaded per project) plus
-// any a task record names (so a task never hides while the list is still loading).
-function worktreeRowHtml(p, wt, tasks) {
-  const name = basename(wt.path);
-  // Only a git-confirmed linked worktree gets the trash; a row synthesised from a task record alone
-  // (list still loading, or the folder is gone) can add tasks but not force-delete a folder.
-  const confirmed = (state.worktrees[p.id] || []).some(w => w.path === wt.path);
-  const del = confirmed
-    ? `<button class="wt-btn wt-del" title="Delete worktree (and its tasks)" onclick="event.stopPropagation();deleteWorktree('${p.id}','${escJs(wt.path)}',event)">${ICON.trash}</button>`
-    : '';
-  const sub = wt.branch && wt.branch !== name ? `<span class="wt-branch">${esc(wt.branch)}</span>` : '';
-  return `<div class="wt-row" data-path="${esc(wt.path)}" title="${esc(wt.path)}">
-     <span class="tab-ic">${ICON.worktree}</span>
-     <span class="tab-title">${esc(name)}</span>${sub}
-     <span class="wt-actions">
-       <button class="wt-btn" title="New task on this worktree" onclick="event.stopPropagation();newWorktreeTaskIn('${p.id}','${escJs(wt.path)}')">${ICON.plus}</button>
-       ${del}
-     </span>
-   </div>` + tasks.map(taskRowHtml).join('');
-}
-
-// The rows nested under a project: its worktrees (each with its tasks), then its plain open tabs
-// (tabs that are tasks are excluded — they already show as task rows).
+// One SESSION row per task record under a project (services/tasks.js → taskSessions). The worktree is
+// the unit of work and the session is the agent running there — one per worktree — so the row is
+// titled by the worktree folder. The sidebar reads ONLY session records: git worktrees without a
+// session are not shown (no separate worktree UI).
 function projectRows(p) {
   const tasks = taskSessions().filter(s => s.projectId === p.id).sort(byTaskState);
-  const wts = [...(state.worktrees[p.id] || [])];
-  for (const t of tasks) if (!wts.some(w => w.path === t.worktree)) wts.push({ path: t.worktree, branch: t.branch });
   const urls = taskUrls();
   const tabs = state.tabs.filter(t => !urls.has(t.url) && tabProject(t)?.id === p.id);
-  return wts.map(wt => worktreeRowHtml(p, wt, tasks.filter(t => t.worktree === wt.path))).concat(tabs.map(tabRowHtml));
+  return tasks.map(sessionRowHtml).concat(tabs.map(tabRowHtml));
 }
 
 // Tasks whose project is gone and tabs owned by no configured project, as one unlabeled group (no
@@ -93,8 +94,8 @@ function orphanTabsMarkup() {
   const tasks = taskSessions().filter(s => !projectById(s.projectId)).sort(byTaskState);
   const urls = taskUrls();
   const tabs = state.tabs.filter(t => !urls.has(t.url) && !tabProject(t));
-  const rows = tasks.map(taskRowHtml).concat(tabs.map(tabRowHtml));
-  return rows.length ? `<div class="proj-tabs" data-project="">${rows.join('')}</div>` : '';
+  const rows = tasks.map(sessionRowHtml).concat(tabs.map(tabRowHtml));
+  return rows.length ? `<div class="proj-tabs" data-project=""><div class="proj-tabs-inner">${rows.join('')}</div></div>` : '';
 }
 
 // Toggle the per-row .active (active tab) and .busy ("working" spinner, from the paired terminal)
@@ -105,6 +106,7 @@ function orphanTabsMarkup() {
 export function refreshTermBusy() {
   const byId = new Map(state.tabs.map(t => [t.id, t]));
   const active = state.activeTabId;
+  let anyBusy = false;
   document.querySelectorAll('.opentab').forEach(el => {
     const t = byId.get(el.dataset.id);
     // Active: the active tab's row, or a task row whose standalone terminal is the view.
@@ -113,7 +115,9 @@ export function refreshTermBusy() {
     const term = state.terms.get(el.dataset.term || t?.termId || '');
     const busy = !!term?.busy || !!(el.classList.contains('task-row') && t && workflowRunState(t.id));
     el.classList.toggle('busy', busy);
+    if (busy && el.classList.contains('task-row')) anyBusy = true;
   });
+  syncSpinner(anyBusy);
 }
 
 // One open-tab row. GitHub tabs show the PR author's avatar (github.com/<login>.png, no API
@@ -153,39 +157,77 @@ function tabRowHtml(t) {
      ${icon}
      <span class="tab-title">${esc(t.title)}</span>
      ${spin}
-     <button class="tab-x" onclick="event.stopPropagation();closeTab('${t.id}')" title="Close tab">${ICON.close}</button>
    </div>`;
 }
 
-// ── Task rows ─────────────────────────────────────────────────────────────────
-// One row per task (services/tasks.js → taskSessions), nested under its worktree row: a state
-// dot, the GitHub/Jira mark, the title, and the CLI mark. `.busy` (working spinner + dot) is toggled
-// by refreshTermBusy, not baked in; the analyzed resting state (needs input / blocked / done) rides
-// on data-state. The last summary is the tooltip. Click opens/resumes (openTaskSession); the trash
-// deletes the task with its worktree. Task rows are not drag-reorderable (they sort by state).
-const CLI_LABEL = { claude: 'Claude', codex: 'Codex' };
-function taskRowHtml(s) {
+// ── Session rows ──────────────────────────────────────────────────────────────
+// One row per session (services/tasks.js → taskSessions): a 16px leading status slot + the worktree
+// folder name. Status visuals follow unpeel's sidebar (DESIGN.md §5): busy = a glyph spinner at
+// 120ms/frame — Claude Code's blooming asterisk in coral for Claude rows, unpeel's braille cycle in
+// green for Codex; live-but-idle = that glyph held static in grey; needs input = a 6px amber dot
+// with a 20% halo; blocked = the same in red; stopped = the row dims. `.busy` is toggled by
+// refreshTermBusy, not baked in; the analyzed resting state rides on data-state. The last summary is
+// the tooltip. Click opens/resumes (openTaskSession); right-click opens sessionMenu. Session rows
+// are not drag-reorderable (they sort by state).
+function sessionRowHtml(s) {
   const st = !s.live ? 'stopped' : (s.state || 'idle');
-  const tab = s.tab;
-  const tabAttrs = tab
-    ? ` data-id="${tab.id}" onauxclick="if(event.button===1){event.preventDefault();closeTab('${tab.id}')}" oncontextmenu="return tabMenu(event,'${tab.id}')"`
-    : '';
   const where = s.url || s.worktree;
   const tip = s.summary ? `${s.title}\n${s.summary}` : (s.live ? where : `${where}\nStopped — click to resume`);
-  const cli = CLI_LABEL[s.cli] || '';
-  return `<div class="opentab task-row${s.live ? '' : ' stopped'}" data-state="${esc(st)}" data-task="${esc(s.id)}"${s.termId ? ` data-term="${esc(s.termId)}"` : ''}${tabAttrs}
-        onclick="openTaskSession('${escJs(s.id)}')" title="${esc(tip)}">
-     <span class="task-dot"></span>
-     <span class="tab-ic">${TAB_ICON[s.kind] || ICON.terminal}</span>
-     <span class="tab-title">${esc(s.title)}</span>
-     ${cli ? `<span class="task-cli">${esc(cli)}</span>` : ''}
-     <span class="tab-spin"></span>
-     <button class="tab-x" onclick="event.stopPropagation();deleteTaskSession('${escJs(s.id)}',event)" title="Delete task (stops its terminal; the worktree stays)">${ICON.trash}</button>
+  const attrs = [
+    `data-state="${esc(st)}"`, `data-task="${esc(s.id)}"`,
+    s.termId && `data-term="${esc(s.termId)}"`,
+    s.tab && `data-id="${s.tab.id}"`, // no middle-click close: a session's tab goes only with Remove session
+    s.cli && `data-cli="${esc(s.cli)}"`,
+  ].filter(Boolean).join(' ');
+  return `<div class="opentab task-row${s.live ? '' : ' stopped'}" ${attrs}
+        onclick="openTaskSession('${escJs(s.id)}')" oncontextmenu="return sessionMenu(event,'${escJs(s.id)}')" title="${esc(tip)}">
+     <span class="task-lead"><span class="task-spin">${spinFrames(s.cli)[0]}</span><span class="task-mark">${staticGlyph(s.cli)}</span></span>
+     <span class="tab-title">${esc(rowLabel(s))}</span>
    </div>`;
 }
 
-// Drag-to-reorder within each group — the per-project groups (.proj-tabs, nested in the project
-// nav) plus the orphan group. After a drop, sync state.tabs to DOM order.
+// Busy-spinner frames per CLI. Claude rows use Claude Code's own spinner — the asterisk that
+// blooms · ✢ ✳ ✶ ✻ ✽ and back, in Claude coral; everything else (Codex, unknown) uses unpeel's
+// braille cycle ⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏. One shared 120ms ticker advances every visible busy row's glyph in
+// lockstep and runs only while at least one row is busy (started/stopped by refreshTermBusy).
+const SPIN_FRAMES = {
+  claude: ['·', '✢', '✳', '✶', '✻', '✽', '✻', '✶', '✳', '✢'],
+  default: ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'],
+};
+const spinFrames = cli => SPIN_FRAMES[cli] || SPIN_FRAMES.default;
+// Resting glyph for a LIVE but idle session — the spinner's full-bloom frame held still (Claude's ✻,
+// a filled braille cell otherwise), colourless: colour is reserved for activity.
+const STATIC_GLYPH = { claude: '✻', default: '⠿' };
+const staticGlyph = cli => STATIC_GLYPH[cli] || STATIC_GLYPH.default;
+let _spinTimer = null, _spinFrame = 0;
+function syncSpinner(anyBusy) {
+  if (anyBusy && !_spinTimer) {
+    _spinTimer = setInterval(() => {
+      _spinFrame = (_spinFrame + 1) % 10;
+      document.querySelectorAll('.task-row.busy .task-spin').forEach(el => {
+        el.textContent = spinFrames(el.closest('.task-row')?.dataset.cli)[_spinFrame];
+      });
+    }, 120);
+  } else if (!anyBusy && _spinTimer) {
+    clearInterval(_spinTimer); _spinTimer = null;
+  }
+}
+
+// Right-click a session row: Reveal in Finder (its worktree folder), Copy link (when the session has
+// a PR/Jira page), and Remove session — which removes the worktree with it (one unit; tasks.js →
+// deleteTaskSession is the single removal path).
+export function sessionMenu(e, id) {
+  const t = taskById(id);
+  const url = t?.url && /^https?:/.test(t.url) ? t.url : null;
+  return openMenu(e, [
+    t?.worktree && { label: 'Reveal in Finder', onClick: () => window.taskhub?.openPath?.(t.worktree) },
+    url && { label: 'Copy link', onClick: () => navigator.clipboard?.writeText(url) },
+    { label: 'Remove session…', danger: true, onClick: () => deleteTaskSession(id) },
+  ]);
+}
+
+// Drag-to-reorder within each group — the per-project groups (.proj-tabs > .proj-tabs-inner, nested
+// in the project nav) plus the orphan group. After a drop, sync state.tabs to DOM order.
 // Idempotent so it's safe to call after EVERY render: a group that already has a Sortable keeps it
 // (an in-progress drag is never interrupted, and the markup-stable renders that fix the avatar
 // flicker no longer drop the drag); instances on rebuilt-away elements are pruned.
@@ -193,14 +235,15 @@ let _sortables = [];
 function initTabSort() {
   if (typeof Sortable === 'undefined') return;
   _sortables = _sortables.filter(s => { if (document.body.contains(s.el)) return true; try { s.destroy(); } catch {} return false; });
-  document.querySelectorAll('.proj-tabs').forEach(group => {
+  // The rows' direct parent is .proj-tabs-inner (the clipping wrapper inside the animated group).
+  document.querySelectorAll('.proj-tabs-inner').forEach(group => {
     if (Sortable.get(group)) return;   // already wired
     // forceFallback: use SortableJS's own mouse-driven drag, NOT the native HTML5 DnD API —
     // native DnD is unreliable in the Tauri shell's WKWebView (it worked under Electron/Chromium),
     // and the fallback behaves identically across engines. fallbackTolerance keeps a plain click
     // (activate tab) from being read as a drag.
     _sortables.push(new Sortable(group, {
-      draggable: '.opentab:not(.task-row)', filter: '.tab-x', animation: 150,
+      draggable: '.opentab:not(.task-row)', animation: 150,
       forceFallback: true, fallbackTolerance: 4, onEnd: syncTabOrder,
     }));
   });
@@ -223,34 +266,35 @@ export async function tabMenu(e, id) {
 }
 
 // ── Projects sidebar nav ──────────────────────────────────────────────────────
-// Each folder is followed by its rows, nested inline: its worktrees with their tasks, then its plain
-// open tabs. setProjects keeps the live PR data the tab rows read for avatars.
-export function renderProjectNav(projects) {
-  setProjects(projects);
-  const el = document.getElementById('project-nav');
-  if (!el) return;
-  const list = state.projects.map(p => {
-    if (p.workspace && !worktreesLoaded(p)) loadWorktrees(p); // async; re-renders when it lands
+// Each folder is followed by its rows, nested inline: its session rows, then its plain open tabs. setProjects keeps the live PR data the tab rows read for avatars.
+// The project nav's markup — one string, so the render cache and the in-place collapse toggle agree.
+function projectNavHtml() {
+  return state.projects.map(p => {
     const rows = projectRows(p);
     const collapsed = _collapsed.has(p.id);
-    // A caret on the folder's right toggles its open-tab rows — shown only when it has any.
-    const caret = rows.length
-      ? `<span class="proj-toggle${collapsed ? ' collapsed' : ''}" title="${collapsed ? 'Show' : 'Hide'} open tabs"
-           onclick="event.stopPropagation();toggleProjectTabs('${p.id}')">${ICON.caret}</span>`
-      : '';
+    // The folder icon mirrors the collapse state: open flap while expanded, closed while collapsed
+    // (or with nothing to show). Collapsing is a click on the already-focused folder (projectClick).
     // Hover "+" (only for projects with a local workspace): a new worktree + task.
     const add = p.workspace
       ? `<span class="proj-add" title="New task on a new worktree" onclick="event.stopPropagation();newWorktreeTask('${p.id}')">${ICON.plus}</span>`
       : '';
-    const btn = `<button class="nav-btn" data-page="project" data-project="${p.id}" onclick="showPage('project','${p.id}')">
-      <span class="icon">${ICON.folder}</span>
+    const btn = `<button class="nav-btn" data-page="project" data-project="${p.id}" onclick="projectClick('${p.id}')">
+      <span class="icon">${rows.length && !collapsed ? ICON.folderOpen : ICON.folder}</span>
       <span class="proj-name">${esc(p.name)}</span>
-      ${add}${caret}
+      ${add}
     </button>`;
-    return btn + (rows.length && !collapsed
-      ? `<div class="proj-tabs" data-project="${p.id}">${rows.join('')}</div>`
+    // Rows always render (collapsed ones are hidden by the 0fr track) so collapse/expand can animate.
+    return btn + (rows.length
+      ? `<div class="proj-tabs${collapsed ? ' collapsed' : ''}" data-project="${p.id}"><div class="proj-tabs-inner">${rows.join('')}</div></div>`
       : '');
   }).join('');
+}
+
+export function renderProjectNav(projects) {
+  setProjects(projects);
+  const el = document.getElementById('project-nav');
+  if (!el) return;
+  const list = projectNavHtml();
   setHtmlIfChanged(el, list);
   // Re-apply the active-project highlight showPage set — a rebuild (this runs on tab changes
   // too) drops it, and there's no showPage to restore it on a background SSE refresh.

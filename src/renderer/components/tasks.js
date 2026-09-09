@@ -9,14 +9,14 @@ import { apiJson } from '../services/api.js';
 import { basename } from '../lib/util.js';
 import { toast, toastErr } from './toast.js';
 import { workflowRunState } from './workflow.js';
-import { openInSplit, activateTab, closeTab } from './viewer.js';
+import { openInSplit, activateTab, removeTaskTab } from './viewer.js';
 import { createTermView, activateTerminal, closeTerminal, disposeTerm } from './terminal.js';
 import { removeWorktree, worktreeHolders } from './split.js';
 import { renderTabs } from './sidebar.js';
-import { inlineConfirm } from './inline-confirm.js';
+import { confirmDialog } from './confirm.js';
 import { launchCli } from './cli-launch.js';
 import { analyzeTerminal } from '../services/analyzer.js';
-import { newTaskId, persistTask, unpersistTask, taskById, taskTerm, loadWorktrees } from '../services/tasks.js';
+import { newTaskId, persistTask, unpersistTask, taskById, taskTerm } from '../services/tasks.js';
 
 // Create a worktree for `branch` under the project (idempotent: an existing worktree for that
 // branch is adopted). A non-worktree folder in the way is confirmed before it is replaced.
@@ -31,7 +31,6 @@ export async function ensureWorktree(project, branch, { create = true } = {}) {
     r = await apiJson(ROUTES.WORKTREE, 'POST', { path: project.workspace, branch, create, override: true });
   }
   if (!r || r.error) { toastErr(r?.error || 'Worktree creation failed'); return null; }
-  loadWorktrees(project); // refresh the sidebar's worktree list
   return r.path;
 }
 
@@ -44,14 +43,6 @@ export async function newWorktreeTask(projectId) {
   const worktree = await ensureWorktree(project, branch);
   if (!worktree) return;
   await createTask(project, worktree, { branch });
-}
-
-// Sidebar "+" on a worktree row: another task on that worktree.
-export async function newWorktreeTaskIn(projectId, worktree) {
-  const project = projectById(projectId);
-  if (!project?.workspace || !worktree) return;
-  const wt = (state.worktrees[project.id] || []).find(w => w.path === worktree);
-  await createTask(project, worktree, { branch: wt?.branch || '' });
 }
 
 // Record a task on `worktree` and open its terminal as a standalone view (no linked page).
@@ -104,47 +95,53 @@ export async function openTaskSession(id) {
   } catch (e) { toastErr('Terminal failed: ' + e.message); }
 }
 
-// The row the trash click came from (inline confirm anchors under it).
-const rowOf = ev => ev?.target?.closest?.('.opentab, .wt-row') || null;
-
-// The task row's trash: delete the TASK — stop its terminal (inline Delete/Cancel while a shell is
-// live) and forget the record. The worktree is untouched; removing it is the worktree row's own
-// trash (deleteWorktree). A STOPPED task goes without asking — nothing is running.
-export async function deleteTaskSession(id, ev) {
-  const task = taskById(id);
-  if (!task) return;
-  const live = taskTerm(task);
-  const termId = live ? live[0] : null;
-  if (termId && !(await inlineConfirm(rowOf(ev), { text: 'Stop the terminal and delete this task? The worktree stays.' }))) return;
-  await removeTaskRecord(task, termId);
-}
-
-// Stop a task's terminal (if any), close its linked tab, and forget the record. termId is cleared
-// on the tab before closeTab so closePairedTerm no-ops on the already-disposed PTY.
+// Stop a task's terminal (if any), drop its linked tab, and forget the record. This is the ONLY
+// place a task's tab is removed (closeTab refuses task tabs). termId is cleared on the tab first so
+// closePairedTerm no-ops on the already-disposed PTY.
 async function removeTaskRecord(task, termId) {
   const openTab = task.url ? (state.tabs.find(x => x.termId === termId) || state.tabs.find(x => x.url === task.url)) : null;
   if (termId) { if (state.activeTermId === termId) closeTerminal(termId); else disposeTerm(termId); }
-  if (openTab) { openTab.termId = null; closeTab(openTab.id); }
+  if (openTab) { openTab.termId = null; removeTaskTab(openTab.id); }
   await unpersistTask(task.id);
 }
 
-// The worktree row's trash: delete the WORKTREE and every task on it — everything, after ONE inline
-// Delete/Cancel that spells it out: uncommitted changes lost, apps lsof sees holding files there
-// (Xcode is told to close its documents), the tasks' terminals stopped. Forced on the server, so a
-// stale or unregistered worktree never blocks; the branch itself is kept.
-export async function deleteWorktree(projectId, worktree, ev) {
-  const project = projectById(projectId);
-  if (!project?.workspace || !worktree) return;
-  const row = rowOf(ev);
+// THE single worktree-removal path — session menu (deleteTaskSession), the project Git tab's
+// "remove", and the folder chip's Delete worktree all come here. Removes EVERY session record on the
+// worktree (a url-linked task from a PR tab can share the folder with a standalone one), after ONE
+// confirm dialog that spells it out — terminals stopped, the folder removed (uncommitted changes
+// lost, the branch kept), apps lsof sees holding files there (Xcode is told to close its documents).
+// Forced on the server, so a stale or unregistered worktree never blocks. Resolves true on removal.
+export async function deleteWorktreeAt(workspace, worktree) {
+  if (!workspace || !worktree) return false;
   const tasks = state.tasks.filter(t => t.worktree === worktree);
+  const liveCount = tasks.filter(t => taskTerm(t)).length;
   const holders = await worktreeHolders(worktree);
-  const parts = ['Delete the folder — uncommitted changes are lost'];
-  if (tasks.length) parts.push(`${tasks.length} task${tasks.length === 1 ? '' : 's'} stopped`);
-  if (holders.length) parts.push(`${holders.map(h => h.command).join(', ')} ${holders.length === 1 ? 'has' : 'have'} files open${holders.some(h => /xcode/i.test(h.command)) ? ' (Xcode will close them)' : ''}`);
-  if (!(await inlineConfirm(row, { text: parts.join(' · ') + '.' }))) return;
+  const parts = [];
+  if (tasks.length > 1) parts.push(`${tasks.length} sessions share this worktree — all are removed.`);
+  parts.push(`${liveCount ? (liveCount === 1 ? 'Its terminal is stopped and the' : 'Their terminals are stopped and the') : 'The'} worktree folder is removed; uncommitted changes there are lost, the branch is kept.`);
+  if (holders.length) parts.push(`${holders.map(h => h.command).join(', ')} ${holders.length === 1 ? 'has' : 'have'} files open there${holders.some(h => /xcode/i.test(h.command)) ? ' (Xcode will close them)' : ''}.`);
+  const title = tasks.length ? `Remove session “${basename(worktree)}”?` : `Delete worktree “${basename(worktree)}”?`;
+  if (!(await confirmDialog({ title, message: parts.join(' '), label: tasks.length ? 'Remove' : 'Delete' }))) return false;
   for (const task of tasks) { const live = taskTerm(task); await removeTaskRecord(task, live ? live[0] : null); }
-  const r = await removeWorktree(project.workspace, worktree, { force: true });
-  if (r.error) toastErr(`Worktree could not be removed — ${r.error}`);
-  else toast('Worktree removed');
-  loadWorktrees(project);
+  const r = await removeWorktree(workspace, worktree, { force: true });
+  if (r.error) { toastErr(`Worktree could not be removed — ${r.error}`); return false; }
+  toast(tasks.length ? 'Session removed' : 'Worktree removed');
+  return true;
+}
+
+// Session row → Remove session: the session and its worktree go together (one unit).
+export async function deleteTaskSession(id) {
+  const task = taskById(id);
+  if (!task) return;
+  const project = projectById(task.projectId);
+  // Project gone (orphan): there is no workspace to remove a worktree from — stop the terminal and
+  // forget the record; the folder is left alone.
+  if (!project?.workspace || !task.worktree) {
+    const name = basename(task.worktree || '') || task.title || 'session';
+    if (!(await confirmDialog({ title: `Remove session “${name}”?`, message: 'Its project is no longer configured; the terminal is stopped and the session forgotten. The folder is left alone.', label: 'Remove' }))) return;
+    const live = taskTerm(task);
+    await removeTaskRecord(task, live ? live[0] : null);
+    return;
+  }
+  await deleteWorktreeAt(project.workspace, task.worktree);
 }

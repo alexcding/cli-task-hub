@@ -1,8 +1,8 @@
 // Tasks: one agent session on a worktree of a project. The durable record lives in taskhub.db
 // (ROUTES.TASKS) and is mirrored in state.tasks; the paired terminal's pairKey is the task id. A task
-// is created from the sidebar ("+" on a project = new worktree + task, "+" on a worktree = another
-// task there — several tasks may share a worktree) or from a PR/Jira tab's New Task, which links it
-// to that tab by url. Every change re-renders the sidebar (window.__refreshTabs — the bridge avoids
+// is created from the sidebar ("+" on a project = new worktree + task) or from a PR/Jira tab's New
+// Task, which links it to that tab by url (and may land on a worktree that already has a task —
+// removal always takes every task on the folder, see components/tasks.js → deleteWorktreeAt). Every change re-renders the sidebar (window.__refreshTabs — the bridge avoids
 // a services→components import).
 import { ROUTES } from '/shared/routes.mjs';
 import { state } from '../stores/store.js';
@@ -68,15 +68,3 @@ export function taskSessions() {
   });
 }
 
-// The linked worktrees of a project (git worktree list, main checkout excluded), cached in
-// state.worktrees[projectId]. Fetched once per project on first render and after create/remove.
-const _loading = new Set();
-export async function loadWorktrees(project) {
-  if (!project?.id || !project.workspace || _loading.has(project.id)) return;
-  _loading.add(project.id);
-  try { state.worktrees[project.id] = await api(`${ROUTES.WORKTREES}?path=${encodeURIComponent(project.workspace)}`) || []; }
-  catch { state.worktrees[project.id] = state.worktrees[project.id] || []; }
-  finally { _loading.delete(project.id); }
-  refreshSidebar();
-}
-export const worktreesLoaded = project => Object.prototype.hasOwnProperty.call(state.worktrees, project.id);

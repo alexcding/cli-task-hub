@@ -109,7 +109,7 @@ export function ensurePrTerminal(tab, cwd0, meta = {}) {
         const proj = tabProject(tab);
         if (!proj?.workspace) throw new Error('tab belongs to no project with a workspace');
         // A task lives on a linked worktree of the project, never on the main checkout: the sidebar
-        // renders a worktree row (with a force-delete trash) for every task's folder.
+        // renders a session row for it, removable (folder included) via right-click.
         const norm = p => String(p).replace(/[/\\]+$/, '');
         if (norm(cwd) === norm(proj.workspace)) throw new Error('this branch is checked out in the main repo — a task needs its own worktree');
         task = await persistTask({ id: newTaskId(), projectId: proj.id, workspace: proj.workspace, worktree: cwd,

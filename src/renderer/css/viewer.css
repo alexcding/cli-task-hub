@@ -54,10 +54,6 @@ body.viewing-term #split-toggle-term { display:none; }
 /* Icon-only run button (no label): square-ish. The play glyph uses the app's neutral toolbar tone
    (inherits .pf-btn's --text-2, → --text on hover) — not the accent. */
 .wf-btn { padding:7px 9px; }
-/* Each segment's header shows its title (PR title left, terminal folder right). */
-.split-title { flex:1; min-width:0; font-size:13px; font-weight:600; display:flex; align-items:center; gap:7px; overflow:hidden; }
-.split-title .stitle-text { min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.split-title img { flex-shrink:0; width:16px; height:16px; border-radius:50%; object-fit:cover; }
 /* Workspace/worktree folder chip — leads the terminal toolbar segment (.bar-term); opens the
    folder in the configured git client, else reveals in Finder. */
 /* Outlined segmented control (like .wf-group): the chip owns the border/corners; the icon half
@@ -84,8 +80,6 @@ body.viewing-term #split-toggle-term { display:none; }
 /* display:inline-flex above overrides the UA [hidden] rule, so hiding needs to be explicit. */
 .folder-chip[hidden] { display:none; }
 body.viewing-tab main { display:none; }
-.tab-group { display:flex; align-items:center; gap:3px; }
-.tab-group-label { font-size:13px; font-weight:500; letter-spacing:.3px; color:var(--text-3); padding:0 3px; flex-shrink:0; }
 .tab-ic { display:inline-flex; flex-shrink:0; position:relative; }
 .tab-ic svg { display:block; width:20px; height:20px; }
 .tab-ic img { display:block; width:20px; height:20px; border-radius:50%; object-fit:cover; }
@@ -97,14 +91,9 @@ body.viewing-tab main { display:none; }
 .ci-badge.ci-running { background:var(--warn); }
 /* "CLI is working" spinner at the row's right edge while a hook-enabled CLI turn is running in the
    paired terminal (toggled by setTermBusy in terminal.js, driven by the turn-start/turn-done hooks).
-   On hover the close button (also right-pinned) floats over it. Reuses the `spin` keyframe in pages.css. */
+   Reuses the `spin` keyframe in pages.css. */
 .tab-spin { display:none; flex-shrink:0; width:13px; height:13px; border-radius:50%; background:conic-gradient(var(--text-3) 300deg, var(--border) 0); -webkit-mask:radial-gradient(farthest-side, transparent calc(100% - 1.5px), #000 0); mask:radial-gradient(farthest-side, transparent calc(100% - 1.5px), #000 0); animation:spin 2.2s linear infinite; }
 .opentab.busy .tab-spin { display:block; }
-/* Sidebar open-tab close button — round, floats over the row's right edge (absolute, out of flow
-   so the title keeps the full width), hidden until row hover; its opaque fill (the row's hover bg)
-   covers the title end beneath it. Shares the round-button base (.tab-x, .ctab-btn) defined with
-   the chrome tab buttons below; only its position + resting fill differ here. */
-.tab-x { right:5px; opacity:0; background:var(--surface-hover); }
 /* Safari-style page-load bar — lives INSIDE the active content tab at its bottom edge. .ctab's
    overflow:hidden + pill radius clip it to the tab's shape. Progress is driven by two values on the
    persistent #ctabs element (so a chip rebuild on a title change can't wipe it): --load-frac (0–1)
@@ -171,12 +160,11 @@ body.viewing-tab main { display:none; }
    otherwise the generic form-field border/focus-glow draws an inner outline inside the pill,
    visible whenever the field isn't focused (a persisted, abandoned blank tab). The pill IS the field. */
 .ctab .ctab-input, .ctab .ctab-input:focus { flex:1; min-width:60px; height:20px; padding:0; margin:0; border:none; background:none; outline:none; box-shadow:none; box-sizing:border-box; -webkit-appearance:none; appearance:none; color:var(--text); font:inherit; font-size:13px; line-height:20px; }
-/* Shared round-button base — the sidebar open-tab close (.tab-x, above) and the chrome content-tab
-   close+save (.ctab-btn). Absolute (so they never shift the centered title), round, same size; a
-   darker fill on hover shows the round target. Position, reveal, and resting fill are per-context. */
-.tab-x, .ctab-btn { position:absolute; top:50%; transform:translateY(-50%); width:20px; height:20px; border:none; border-radius:50%; color:var(--text-3); cursor:pointer; padding:0; display:inline-flex; align-items:center; justify-content:center; transition:opacity .12s, background-color .12s, color .12s; }
-.tab-x svg, .ctab-btn svg { width:15px; height:15px; display:block; }
-.tab-x:hover, .ctab .ctab-x:hover { background:var(--border); color:var(--text); }
+/* Round-button base for the chrome content-tab close+save (.ctab-btn). Absolute (so they never
+   shift the centered title), round, same size; a darker fill on hover shows the round target. */
+.ctab-btn { position:absolute; top:50%; transform:translateY(-50%); width:20px; height:20px; border:none; border-radius:50%; color:var(--text-3); cursor:pointer; padding:0; display:inline-flex; align-items:center; justify-content:center; transition:opacity .12s, background-color .12s, color .12s; }
+.ctab-btn svg { width:15px; height:15px; display:block; }
+.ctab .ctab-x:hover { background:var(--border); color:var(--text); }
 /* Chrome tab close: pinned right, hidden until pill hover; opaque pill-bg fill covers the title. */
 .ctab-btn { right:7px; }
 .ctab-x { opacity:0; background:var(--surface-hover); }
@@ -215,10 +203,14 @@ body.pr-split .split-body .editor-pane { left:var(--term-w); }
 /* One xterm terminal pane per worktree; only the active one is shown. */
 .term-pane { position:absolute; inset:0; overflow:hidden; background:#1e1e1e; padding:6px 4px 6px 8px; }
 .term-pane .xterm, .term-pane .xterm-viewport { height:100%; }
-/* xterm.css forces `overflow-y:scroll` + an opaque `#000` track, giving the terminal an
-   always-visible chunky scrollbar. Every other view uses overflow:auto → the native macOS
-   overlay scrollbar that auto-hides; match that here so the terminal looks the same. */
-.term-pane .xterm-viewport { overflow-y:auto !important; background-color:transparent !important; }
+/* Scrollbar: xterm's viewport gets a thin, always-visible thumb (a custom -webkit-scrollbar opts out
+   of the macOS overlay bar, which only shows while scrolling and read as "no scrollbar"). Neutral
+   grey so it sits on both terminal palettes; the track is transparent. */
+.term-pane .xterm-viewport { overflow-y:scroll !important; background-color:transparent !important; }
+.term-pane .xterm-viewport::-webkit-scrollbar { width:8px; }
+.term-pane .xterm-viewport::-webkit-scrollbar-track { background:transparent; }
+.term-pane .xterm-viewport::-webkit-scrollbar-thumb { background:rgba(128,128,128,.35); border-radius:4px; }
+.term-pane .xterm-viewport::-webkit-scrollbar-thumb:hover { background:rgba(128,128,128,.6); }
 /* Terminal ↔ PR split: the paired terminal takes the left `--term-w` fraction, the PR
    webview the right `--pr-split` fraction; a draggable divider sits between them.
    The webview left edge starts 1px PAST the boundary: it's a native child view that
@@ -508,71 +500,57 @@ body.find-open .split-body webview, body.find-open .split-body .wcv-shim { botto
 .find-bar .split-btn { padding:5px; }
 
 /* Open tabs render as nav rows under GitHub / Jira group labels. */
-/* Sidebar section headers (Mine/Review) share the exact box of the Projects label (.nav-label)
-   so all three section headers line up identically. */
-/* Task row (nested under its project folder): state dot (idle grey; working green + pulse via .busy; needs input amber; blocked red;
-   done green; stopped hollow) + CLI mark. .busy also shows the shared .tab-spin. */
-.task-row .task-dot { width:7px; height:7px; border-radius:50%; flex-shrink:0; background:var(--text-3); }
-.task-row.busy .task-dot { background:var(--success); box-shadow:0 0 0 3px var(--success-bg); animation:task-pulse 1.4s ease-in-out infinite; }
-.task-row[data-state="needs_input"] .task-dot { background:var(--warn); box-shadow:0 0 0 3px var(--warn-bg); }
-.task-row[data-state="blocked"] .task-dot { background:var(--danger); }
-.task-row[data-state="done"] .task-dot { background:var(--success); }
-.task-row.stopped .task-dot { background:transparent; border:1.5px solid var(--text-3); }
-.task-row.stopped .tab-title, .task-row.stopped .tab-ic { opacity:.6; }
-.task-row .task-cli { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.4px; color:var(--text-3); flex-shrink:0; }
-.task-row:hover .task-cli, .task-row.busy .task-cli { display:none; } /* make room for the trash / spinner */
-@keyframes task-pulse { 50% { opacity:.35; } }
+/* Session row status — unpeel's sidebar visuals (DESIGN.md §5). A fixed 16px leading slot so the
+   title never shifts between states:
+     busy        → glyph spinner (mono 700 ≈14.7px, flat): Claude Code's asterisk bloom for claude
+                   rows, unpeel's braille cycle otherwise (sidebar.js SPIN_FRAMES), tinted per CLI
+                   via --spin-<cli>. Glyph cycling is the 120ms ticker in sidebar.js (syncSpinner).
+     idle / done / working (analyzer state, not .busy) → the CLI glyph held static (✻ / ⠿) in muted grey.
+     needs_input → a 6px amber dot with a 4px 20% halo (no animation).
+     blocked     → the same dot in red.
+     stopped     → the whole row dims to .82 like unpeel's exited rows. */
+.task-row .task-lead { width:16px; height:16px; flex-shrink:0; display:flex; align-items:center; justify-content:center; position:relative; margin-right:-2px; } /* 6px to the title (row gap is 8) */
+.task-row .task-spin, .task-row .task-mark { display:none; font:700 14.7px/1 ui-monospace, Menlo, monospace; color:var(--text-3); }
+.task-row.busy[data-cli="claude"] .task-spin { color:var(--spin-claude); }
+.task-row.busy[data-cli="codex"] .task-spin { color:var(--spin-codex); }
+.task-row.busy .task-spin { display:block; }
+/* Live + idle (or done): the static CLI glyph in muted grey. Stopped rows show no mark (they dim). */
+.task-row:not(.busy):not(.stopped):not([data-state="needs_input"]):not([data-state="blocked"]) .task-mark { display:block; } /* idle, done, working */
+.task-row:not(.busy)[data-state="needs_input"] .task-lead::before,
+.task-row:not(.busy)[data-state="blocked"] .task-lead::before { content:''; width:6px; height:6px; border-radius:50%; background:var(--attention); box-shadow:0 0 0 4px color-mix(in srgb, var(--attention) 20%, transparent); }
+.task-row:not(.busy)[data-state="blocked"] .task-lead::before { background:var(--danger); box-shadow:0 0 0 4px color-mix(in srgb, var(--danger) 20%, transparent); }
+.task-row.stopped { opacity:.82; }
+.task-row.stopped .tab-title { color:var(--text-3); }
 /* Project grouping mode: a project's open-tab rows nest directly under its folder (no separate
    section). Indent them past the folder's icon + gap so they read as children. The orphan group
    (tabs matching no project) shows un-nested in #opentabs-nav. */
-.proj-tabs { display:block; }
+/* Collapse/expand animation: a grid track that goes 1fr → 0fr animates height-to-auto natively (the
+   inner wrapper clips), with the rows fading. sidebar.js toggles .collapsed in place. */
+.proj-tabs { display:grid; grid-template-rows:1fr; transition:grid-template-rows .2s ease, margin .2s ease; }
+.proj-tabs.collapsed { grid-template-rows:0fr; }
+.proj-tabs-inner { min-height:0; overflow:hidden; transition:opacity .16s ease; }
+.proj-tabs.collapsed .proj-tabs-inner { opacity:0; }
 #project-nav .proj-tabs { margin:1px 0 2px; }
+#project-nav .proj-tabs.collapsed { margin:0; }
 #project-nav .proj-tabs .opentab { padding-left:20px; }
 #opentabs-nav .proj-tabs { margin-top:4px; }
-/* Folder name grows so the disclosure caret sits at the row's right; the caret rotates to
-   point right when its project is collapsed (open-tab rows hidden). */
+/* Folder name grows so the hover "+" sits at the row's right. */
 .proj-name { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.proj-toggle { flex-shrink:0; display:flex; align-items:center; justify-content:center; width:16px; height:16px; color:var(--text-3); opacity:.7; transition:transform .12s, opacity .12s, color .12s; }
-.proj-toggle:hover { opacity:1; color:var(--text-2); }
-.proj-toggle svg { width:13px; height:13px; }
-.proj-toggle.collapsed { transform:rotate(-90deg); }
 /* Hover "+" on a project folder: a new worktree + task. Hidden until the row is hovered. */
 .proj-add { flex-shrink:0; display:flex; align-items:center; justify-content:center; width:16px; height:16px; color:var(--text-3); opacity:0; border-radius:4px; }
 .nav-btn:hover .proj-add { opacity:.7; }
 .proj-add:hover { opacity:1 !important; color:var(--text); background:var(--surface-hover); }
 .proj-add svg { width:13px; height:13px; }
-/* Worktree row under a project: folder + branch, with a hover "+" for another task on it. Task rows
-   nest one level deeper. */
-.wt-row { position:relative; display:flex; align-items:center; gap:8px; padding:4px 8px 4px 20px; font-size:13px; color:var(--text-2); border-radius:var(--rs); }
-.wt-row:hover { background:var(--surface-hover); }
-.wt-row .tab-ic svg { width:16px; height:16px; }
-.wt-row .tab-title { flex:0 1 auto; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.wt-branch { font-size:11px; color:var(--text-3); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; }
-.wt-actions { position:absolute; right:5px; top:50%; transform:translateY(-50%); display:inline-flex; gap:3px; opacity:0; }
-.wt-row:hover .wt-actions { opacity:1; }
-.wt-btn { width:20px; height:20px; border:none; border-radius:50%; background:var(--surface-hover); color:var(--text-3); display:inline-flex; align-items:center; justify-content:center; cursor:pointer; padding:0; }
-.wt-btn:hover { background:var(--border); color:var(--text); }
-.wt-del:hover { color:var(--danger); background:var(--danger-bg); }
-.wt-btn svg { width:14px; height:14px; display:block; }
-#project-nav .proj-tabs .task-row { padding-left:34px; }
-/* Inline Delete/Cancel strip under a task/worktree row (components/inline-confirm.js). */
-.row-confirm { display:flex; align-items:center; gap:6px; margin:2px 8px 4px 20px; padding:6px 8px; font-size:12px; line-height:1.35; color:var(--text-2); background:var(--surface); border:1px solid var(--border); border-radius:var(--rs); }
-.row-confirm .rc-text { flex:1; min-width:0; }
-.rc-btn { flex-shrink:0; font-size:12px; font-weight:600; padding:3px 9px; border-radius:var(--rs); border:1px solid var(--border); background:var(--surface-hover); color:var(--text); cursor:pointer; }
-.rc-btn:hover { background:var(--border); }
-.rc-del { color:#fff; background:var(--danger); border-color:var(--danger); }
-.rc-del:hover { filter:brightness(1.1); background:var(--danger); }
-.opentab.confirming, .wt-row.confirming { background:var(--surface-hover); }
+#project-nav .proj-tabs .task-row { padding-left:20px; } /* one level under the project folder */
 #opentabs-nav .proj-tabs .task-row { padding-left:8px; }
 /* Box, text, and hover/active highlight all come from the shared `.nav-btn, .opentab` rule in
    layout.css (sidebar rows are one component) — only .opentab's own extras live here. */
 .opentab { position:relative; }
 .opentab .tab-title { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.opentab:hover .tab-x { opacity:1; }
 /* Drag-reorder (SortableJS, forceFallback): while dragging, the row stays in the list as the drop
    placeholder (.sortable-ghost) AND a clone follows the cursor (.sortable-fallback). Without this
    they're both fully opaque and read as two tabs — dim the placeholder to a faint slot, and give
    the cursor-following clone a clean lifted look. */
 .opentab.sortable-ghost { opacity:.25; }
 .opentab.sortable-fallback { opacity:.95; box-shadow:var(--shadow-md); border-radius:var(--rs); cursor:grabbing; }
-.opentab.sortable-fallback .tab-x, .opentab.sortable-fallback .tab-spin { display:none; }
+.opentab.sortable-fallback .tab-spin, .opentab.sortable-fallback .task-spin { display:none; }

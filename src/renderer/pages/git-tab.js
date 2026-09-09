@@ -13,6 +13,7 @@ import { computeGraph } from '../lib/git-graph.mjs';
 import { parseDiff } from '../lib/diff-parse.mjs';
 import { fmtDateTime, ROW_H, renderCommitRows, avatarImg } from '../components/git.js';
 import { renderReadOnly, wireDiffCollapse } from '../components/diff.js';
+import { deleteWorktreeAt } from '../components/tasks.js';
 
 // One project tab is visible at a time → a single module-level snapshot suffices.
 let _t = null;   // { id, cwd, ref, viewing, commits, graph, refs, view:'list'|'commit', sha, detail }
@@ -188,20 +189,13 @@ function renderCommit(id) {
 }
 
 // Remove an existing worktree folder (the only worktree write here — creation lives on the
-// terminal tab chip). Two-click confirm: first click arms the button, second removes (the
-// codebase avoids blocking window.confirm — see diff.js).
-export async function gitTabRemoveWorktree(id, btn, worktreePath) {
+// terminal tab chip). Goes through the single removal path (components/tasks.js → deleteWorktreeAt):
+// in-app confirm, every session on it stopped and forgotten, folder force-removed.
+export async function gitTabRemoveWorktree(id, _btn, worktreePath) {
   if (_busy || !_t || _t.id !== id) return;
-  if (!btn.dataset.armed) {
-    btn.dataset.armed = '1'; btn.textContent = 'remove?'; btn.classList.add('armed');
-    setTimeout(() => { if (btn.isConnected) { delete btn.dataset.armed; btn.textContent = 'remove'; btn.classList.remove('armed'); } }, 2500);
-    return;
-  }
   _busy = true;
-  try {
-    const r = await apiJson(ROUTES.WORKTREE_REMOVE, 'POST', { path: _t.cwd, worktree: worktreePath });
-    if (r.error) toastErr(r.error); else toast('Worktree removed');
-  } catch (e) { toastErr(e.message); }
+  try { await deleteWorktreeAt(_t.cwd, worktreePath); }
+  catch (e) { toastErr(e.message); }
   finally { _busy = false; loadRefs(id); }
 }
 

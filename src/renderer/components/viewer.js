@@ -14,6 +14,7 @@ import { openMenu, closeMenu } from './menu.js';
 import { ensurePrTerminal, applyPrLayout, clearPrLayout, resolveTabFolder, removeWorktree, openPrPanel, leaveReview } from './split.js';
 import { jiraTaskBranch } from '../lib/workflow.mjs';
 import { persistTask, taskForTab, taskById } from '../services/tasks.js';
+import { deleteWorktreeAt } from './tasks.js';
 import { refreshWorkflowBtn, launchCli } from './workflow.js';
 import { hideDiffPane } from './diff.js';
 import { attachFind, closeFind } from './find.js';
@@ -594,7 +595,7 @@ export function hideAllPanes() {
 
 // Closing a web tab NEVER kills its task. A paired terminal is a deliberately-started task (worktree
 // + terminal) — there are no auto-spawned bare shells anymore — so it keeps running in the background
-// and shows in the sidebar; only the row's trash (deleteTaskSession) or the shell exiting stops it.
+// and shows in the sidebar; only the row's right-click Remove session (deleteTaskSession) or the shell exiting stops it.
 // Closing the tab just unbinds + hides the pane; the PTY lives on (keyed to the task, so reopening
 // the link re-adopts it).
 export function closePairedTerm(tab) {
@@ -604,7 +605,20 @@ export function closePairedTerm(tab) {
   tab.termId = null;
 }
 
+// Close a plain web tab (sidebar middle-click / native tab menu / ⌘W / the default chip's ×). A tab
+// that belongs to a task session is NOT closable here — the session owns it, and the single way to
+// drop it is the task row's right-click Remove session (tasks.js → removeTaskTab). Every browser-tab
+// close path therefore no-ops on a task tab instead of half-removing the session's view.
 export function closeTab(id) {
+  const tab = state.tabs.find(t => t.id === id);
+  if (!tab || taskForTab(tab)) return;
+  removeTab(id);
+}
+
+// Unguarded removal — the session-removal path only (deleteTaskSession → removeTaskRecord).
+export function removeTaskTab(id) { removeTab(id); }
+
+function removeTab(id) {
   const i = state.tabs.findIndex(t => t.id === id);
   if (i < 0) return;
   const tab = state.tabs[i];
@@ -815,17 +829,14 @@ export async function folderMenu(e) {
   ]);
 }
 
-// Delete the chip's worktree (after confirming), then re-resolve so the chip falls back
-// to the plain checkout / create CTA. The branch is left intact.
+// Delete the chip's worktree through the single removal path (tasks.js → deleteWorktreeAt: in-app
+// confirm, sessions on it stopped and forgotten, folder force-removed), then re-resolve so the chip
+// falls back to the plain checkout / create CTA. The branch is left intact.
 export async function removeTabWorktree() {
   const el = document.getElementById('split-folder');
   const workspace = el?.dataset.workspace, worktree = el?.dataset.path;
   if (!workspace || !worktree) return;
-  if (!confirm(`Delete this worktree?\n\n${worktree}\n\nThe folder is removed; the branch is kept. Uncommitted changes there will block deletion.`)) return;
-  const r = await removeWorktree(workspace, worktree);
-  if (r.error) { toastErr(r.error); return; }
-  toast('Worktree deleted');
-  updateFolderChip(true);
+  if (await deleteWorktreeAt(workspace, worktree)) updateFolderChip(true);
 }
 
 // New task: open the active tab's terminal in its branch worktree, creating the worktree first
