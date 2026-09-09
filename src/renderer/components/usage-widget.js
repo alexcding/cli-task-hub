@@ -46,13 +46,15 @@ const limitSec = (title, win, winMs) => {
     <div class="limit-rows"><div><b>${left}% left${reserveTxt ? ` · ${reserveTxt}` : ''}</b><span>${until ? `Resets in ${until}` : ''}</span></div></div>`;
 };
 
-// Session/Weekly sections from a {session, weekly} limits object — Claude's come from
-// the OAuth endpoint, Codex's from the local rollout file (same shape). `block` is the
-// ccusage 5h block, used as a Claude-only fallback when the limits lookup failed.
+// Session/Weekly sections from a {session, weekly, scoped?} limits object — Claude's come from
+// the OAuth endpoint, Codex's from the local rollout file (same shape). `scoped` adds one weekly
+// bar per model with its own allowance (Fable) below the two. `block` is the ccusage 5h block,
+// used as a Claude-only fallback when the limits lookup failed.
 const limitsHtml = (limits, block) => {
   if (limits) {
     return limitSec('Session', limits.session, 5 * 3600_000)
-         + limitSec('Weekly', limits.weekly, 7 * 86_400_000);
+         + limitSec('Weekly', limits.weekly, 7 * 86_400_000)
+         + (limits.scoped || []).map(s => limitSec(`${s.label} · Weekly`, s, 7 * 86_400_000)).join('');
   }
   if (block) {
     const start = +new Date(block.startTime), end = +new Date(block.endTime);

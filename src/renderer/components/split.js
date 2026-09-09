@@ -1,4 +1,4 @@
-// PR ↔ terminal split: each GitHub/Jira tab can show its right panel — a paired terminal, or the
+// PR ↔ terminal split: each GitHub/Jira tab can show its terminal panel (left pane) — a paired terminal, or the
 // New Task empty state when no worktree exists yet. The on/off choice is PER TAB (`tab.prSplit`,
 // persisted) and defaults OFF — opening a link shows just the page until the user expands the panel
 // (⌘J). Expanding recreates the task's terminal when its worktree exists on disk, else shows New
@@ -11,7 +11,8 @@ import { toastErr } from './toast.js';
 import { createTermView, disposeTerm, fitTerm, visibleTerm } from './terminal.js';
 import { hideDiffPane } from './diff.js';
 import { hideHistory, applyReview } from './history.js';
-import { saveTabs, updateTitles, activeLeftWebview } from './viewer.js';
+import { saveTabs, updateTitles, activeLeftWebview, paintLeft } from './viewer.js';
+import { renderContentTabs, markActiveTab } from './content-tabs.js';
 
 // Resolve a tab's local folder: the matching git checkout if its branch/key is checked
 // out, else the project workspace. GitHub PR → the PR's branch. Jira ticket → the worktree
@@ -140,22 +141,36 @@ function tweenPrSplit(toPct, onDone) {
   _prAnimRaf = requestAnimationFrame(tick);
 }
 
-// Show the tab's pane content per its paneView: the paired terminal (default) or the
-// diff view of the same worktree. Also syncs the toolbar — the view-switch buttons'
-// active state and the body.pane-diff class that swaps the clear/refresh buttons.
+// Show the tab's split content. The terminal (left) is always on; `paneView` picks what the
+// RIGHT pane shows — the page ('term', the legacy value for "not the diff"; kept so persisted
+// tabs + the server column stay valid) or the diff view of the terminal's worktree ('diff'),
+// which covers the page. Also syncs the content-tab bar (the pinned Diff chip appears once a
+// terminal exists, and is the active chip while the diff shows) + the body.pane-diff class
+// that shows the Review foot.
 function showPaneContent(tab, t) {
   const diff = tab.paneView === 'diff';
   document.body.classList.toggle('pane-diff', diff);
-  document.getElementById('pane-view-term')?.classList.toggle('on', !diff);
-  document.getElementById('pane-view-diff')?.classList.toggle('on', diff);
-  t.el.style.display = diff ? 'none' : '';
+  renderContentTabs();               // adds the Diff chip (cheap no-op when the bar is unchanged)
+  markActiveTab();
+  t.el.style.display = '';
   if (diff) applyReview(tab, t.cwd); // restore this tab's Review sub-view (Changes / History)
-  else { hideHistory(); hideDiffPane(); } // Terminal: drop the opaque history overlay too
+  else { hideHistory(); hideDiffPane(); } // back to the page: drop the opaque history overlay too
+  paintLeft(tab);                    // hides the page under Review, or re-shows it
   return diff;
 }
 
-// Show the PR's paired terminal beside its webview. With `animate` (toolbar toggle) the split slides
-// open from the right; otherwise (switching to an already-split tab) it appears at the resting
+// Leaving the Diff view for the page (a content tab was picked / a file link opened). Flips the
+// STATE only — paneView, body.pane-diff, the diff/history panes — and leaves the single paintLeft
+// + renderContentTabs/markActiveTab + saveTabs to the caller, which does them anyway (going through
+// setPaneView here doubled every one of those, including an immediate PUT /tabs). No-op otherwise.
+export function leaveReview(tab) {
+  if (!tab || tab.paneView !== 'diff') return;
+  tab.paneView = 'term';
+  if (tab === activeTab()) { document.body.classList.remove('pane-diff'); hideHistory(); hideDiffPane(); }
+}
+
+// Show the PR's paired terminal beside (left of) its webview. With `animate` (toolbar toggle) the split
+// slides open from the left; otherwise (switching to an already-split tab) it appears at the resting
 // boundary immediately.
 export function applyPrLayout(tab, animate = false) {
   adoptPairedTerminal(tab);                 // re-adopt a surviving terminal by URL; never creates one
@@ -163,11 +178,12 @@ export function applyPrLayout(tab, animate = false) {
   const target = Math.round(state.prRatio * 100);
   const empty = document.getElementById('term-empty');
   document.body.classList.add('pr-split');
-  // No terminal yet → show the New Task empty state in the right pane: no Terminal/Review tabs,
+  // No terminal yet → show the New Task empty state in the terminal (left) pane: no Terminal/Review tabs,
   // just the button (newTask creates the worktree + opens the terminal, then re-runs this).
   if (!t) {
     document.body.classList.add('pr-empty');
     document.body.classList.remove('pane-diff');
+    renderContentTabs(); markActiveTab();   // no terminal → no Diff chip
     hideHistory(); hideDiffPane();
     if (empty) empty.hidden = false;
     if (animate) { setPrSplit(100); tweenPrSplit(target); } else setPrSplit(target);
@@ -176,31 +192,33 @@ export function applyPrLayout(tab, animate = false) {
   }
   document.body.classList.remove('pr-empty');
   if (empty) empty.hidden = true;
-  const diff = showPaneContent(tab, t);
+  showPaneContent(tab, t);
   if (animate) {
-    setPrSplit(target); if (!diff) fitTerm(t);   // park at final geometry so the terminal grid sizes correctly…
+    setPrSplit(target); fitTerm(t);              // park at final geometry so the terminal grid sizes correctly…
     setPrSplit(100);                             // …then start fully collapsed and slide open
-    tweenPrSplit(target, () => { if (state.activeTabId === tab.id && tab.prSplit && tab.paneView !== 'diff') fitTerm(t); });
+    tweenPrSplit(target, () => { if (state.activeTabId === tab.id && tab.prSplit) fitTerm(t); });
   } else {
-    setPrSplit(target); if (!diff) fitTerm(t);
+    setPrSplit(target); fitTerm(t);
   }
   updateTitles(); // terminal segment now has a terminal to name
 }
 
-// Toolbar view switch: show the terminal or the worktree diff in THIS tab's pane
-// (persisted per tab, like prSplit). The PTY keeps running underneath the diff view,
+// Diff chip (content-tab bar) / ⇧⌘D: show the page or the worktree diff in THIS tab's right pane
+// (persisted per tab, like prSplit). The page's webview is only hidden, not torn down,
 // so flipping back is instant and loses nothing.
 export function setPaneView(view) {
   const tab = activeTab();
   if (!canSplitTerminal(tab) || !tab.prSplit) return;
   const next = view === 'diff' ? 'diff' : 'term';
   if ((tab.paneView || 'term') === next) return;
+  const t = tab.termId && state.terms.get(tab.termId);
+  // No live terminal (New Task empty state / still spawning) → there's no worktree to diff and no
+  // Diff chip on screen. Don't persist 'diff' from here: it would silently cover the page with an
+  // empty diff the moment the task's terminal lands.
+  if (!t) return;
   tab.paneView = next;
   saveTabs();
-  const t = tab.termId && state.terms.get(tab.termId);
-  if (!t) return; // terminal still spawning — applyPrLayout will honor paneView when it lands
   showPaneContent(tab, t);
-  if (next === 'term') { fitTerm(t); t.term.focus(); }
   updateTitles();
 }
 
@@ -208,16 +226,23 @@ export function setPaneView(view) {
 // then tears down; without them (e.g. a tab closed) it drops the layout immediately.
 export function clearPrLayout(tab = null, animate = false) {
   const t = animate && tab && tab.termId && state.terms.get(tab.termId);
-  // Hide the heavy right-pane CONTENT up front — a diff table reflows on every frame as its width
-  // shrinks (the jank). The terminal's canvas just clips, so it stays and slides cheaply. We keep
-  // pane-diff/pr-split set during the slide so the foot doesn't flip to the terminal buttons; both
-  // classes drop together at the end, so only the webview width animates in between.
+  // Hide the heavy Review CONTENT up front — a diff table reflows on every frame as its width
+  // grows (the jank). The terminal's canvas just clips, so it stays and slides cheaply. pr-split
+  // stays set during the slide and drops at the end, so only the boundary animates in between.
   hideHistory();
   hideDiffPane();
   document.getElementById('term-empty')?.setAttribute('hidden', '');
+  // The Diff view may have been covering the page: drop pane-diff and re-show the page NOW, so the
+  // slide animates the page growing (not a bare pane with the page popping in at the end). `tab`
+  // is null for the argument-less callers (shell exit, tab switch) — the active tab is the one
+  // whose pane needs repainting then.
+  document.body.classList.remove('pane-diff');
+  const shown = tab || activeTab();
+  if (shown) paintLeft(shown);
   const finish = () => {
-    document.body.classList.remove('pr-split', 'pane-diff', 'pr-empty');
+    document.body.classList.remove('pr-split', 'pr-empty');
     if (t) t.el.style.display = 'none';
+    renderContentTabs(); markActiveTab();              // the Diff chip goes with the split
   };
   if (!t) { stopPrTween(); finish(); return; }        // nothing to animate → collapse immediately
   tweenPrSplit(100, () => {                            // 100% = panel fully collapsed off the right
@@ -225,7 +250,7 @@ export function clearPrLayout(tab = null, animate = false) {
   });
 }
 
-// Open the tab's right panel. A surviving live terminal → show it. Else recovery is RECORD-based
+// Open the tab's terminal panel (left pane). A surviving live terminal → show it. Else recovery is RECORD-based
 // ONLY: recreate the terminal for an explicitly-created task (persisted in state.tasks) using its
 // recorded worktree — that's how opening the link from anywhere (dashboard, tray) "finds the task"
 // and resumes it. A worktree merely existing on disk is NOT a task; with no record we show the New
@@ -263,12 +288,13 @@ export function initPrDivider() {
   window.addEventListener('mousemove', e => {
     if (!dragging) return;
     const r = document.getElementById('split-body').getBoundingClientRect();
-    // Clamp by PIXEL width, not just ratio: the terminal pane (right) needs room for the foot
-    // buttons (Run/picker/Commit) and the PR pane (left) needs to stay readable. A pure ratio cap
+    // Clamp by PIXEL width, not just ratio: the terminal pane (left) needs room for the foot
+    // buttons (Run/picker/Commit) and the PR pane (right) needs to stay readable. A pure ratio cap
     // let the terminal shrink to a sliver on a small window, overlapping the foot controls.
-    const MIN_LEFT = 360, MIN_TERM = 300;
-    let ratio = (e.clientX - r.left) / r.width;
-    const lo = MIN_LEFT / r.width, hi = 1 - MIN_TERM / r.width;
+    // `ratio` is the WEBVIEW's share (--pr-split), i.e. the fraction right of the cursor.
+    const MIN_PR = 360, MIN_TERM = 300;
+    let ratio = 1 - (e.clientX - r.left) / r.width;
+    const lo = MIN_PR / r.width, hi = 1 - MIN_TERM / r.width;
     ratio = lo < hi ? Math.min(hi, Math.max(lo, ratio)) : 0.5;  // window too small for both mins → split evenly
     state.prRatio = ratio;
     setPrSplit(Math.round(state.prRatio * 100));

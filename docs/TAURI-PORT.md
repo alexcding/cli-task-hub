@@ -105,7 +105,7 @@ the JS `Webview` has no `reload()`/`navigate()` of its own). `canGoBack/Forward`
 count (WKWebView's public find API doesn't expose one either), and making the find selection render
 focused/blue without stealing focus from the find input.
 
-**Runtime test (owed):** `bunx tauri dev`, click a PR card → it should embed in the left pane instead
+**Runtime test (owed):** `bunx tauri dev`, click a PR card → it should embed in the content pane (right of the terminal when the split is open) instead
 of opening Chrome; resize the sidebar/split and switch tabs → the embedded page should track the pane
 and hide when another tab/terminal is shown.
 

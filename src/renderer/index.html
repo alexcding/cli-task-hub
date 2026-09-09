@@ -423,29 +423,45 @@
   </main>
 
   <!-- Embedded viewer: shows the active tab's page in an Electron webview (or a local file
-       in the Monaco editor). The left content pane carries a Safari-compact horizontal
+       in the Monaco editor). The content pane (right of the terminal in split mode) carries a Safari-compact horizontal
        tab bar (content-tabs.js); the sidebar's vertical tabs are a separate, unmirrored set. -->
   <div id="split" class="split" hidden>
     <div class="split-bar">
-      <!-- Webview segment (over the PR pane in split mode). Holds the back/home controls,
-           then the Safari-compact horizontal tab bar (#ctabs) for the LEFT content pane:
+      <!-- Terminal segment (over the LEFT pane — always the paired terminal — in split mode, or
+           full-width when a terminal is the sole view). -->
+      <div class="bar-seg bar-term">
+        <!-- Terminal actions live here (no bottom bar under the terminal): the task's local folder
+             chip — the worktree (or the project workspace before one exists); click opens it in the
+             chosen git client (Settings → Appearance), else reveals in Finder; right-click for both;
+             filled by updateFolderChip — and the Run + workflow picker as one outlined segmented
+             control (Run executes the picker's workflow; refreshWorkflowBtn shows/hides the group and
+             populates it). Both hide while the New Task empty state shows (body.pr-empty). -->
+        <div class="folder-chip pf-term" id="split-folder" hidden oncontextmenu="return folderMenu(event)"></div>
+        <div class="wf-group pf-term" id="wf-group" hidden>
+          <button class="pf-btn wf-btn" id="term-workflow" title="Run the selected workflow" onclick="toggleWorkflowRun()">
+            <svg class="wf-play" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 4 13.5h7L11 22l9-11.5h-7z"/></svg>
+            <span class="wf-run" aria-hidden="true"><svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><rect x="8.5" y="8.5" width="7" height="7" rx="1.5"/></svg></span>
+          </button>
+          <select class="wf-select" id="wf-select" title="Workflow to run"></select>
+        </div>
+        <!-- Terminal-panel on/off (⌘J), at the right end of the terminal tab bar. When the split is
+             closed the segment collapses to just this button at the toolbar's left edge, so the
+             terminal can still be opened from where it will appear. Hidden in a solo terminal view. -->
+        <button class="split-btn" id="split-toggle-term" title="Show/hide the terminal panel (⌘J)" onclick="togglePrSplit()">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="4.5" width="19" height="15" rx="2.5"/><path d="M9.5 4.5v15"/></svg>
+        </button>
+      </div>
+      <!-- Webview segment (over the PR pane — the RIGHT pane in split mode, full-width otherwise).
+           Holds the back/home controls, then the Safari-compact horizontal tab bar (#ctabs) for the content pane:
            a read-only default tab (the PR/Jira page) + extra web/file tabs + a "+". -->
       <div class="bar-seg bar-wv">
-        <!-- Left controls + right "+" are equal-flex side groups so a lone centered tab lands
-             at true bar-center (not offset by the heavier left cluster). -->
+        <!-- The (now empty) left group and the right "+" are equal-flex side groups so a lone
+             centered tab lands at true bar-center. -->
         <div class="bar-nav">
-          <button class="split-btn nav-lg" id="split-back" title="Back (⌘[)" onclick="splitBack()">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
-          </button>
-          <button class="split-btn nav-lg" id="split-fwd" title="Forward (⌘])" onclick="splitForward()">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
-          </button>
-          <button class="split-btn nav-lg" title="Home (default page)" onclick="splitHome()">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9.5 12 3l9 6.5"/><path d="M5 9v11h14V9"/><path d="M9.5 20v-6h5v6"/></svg>
-          </button>
+          <!-- Back / Forward / Home moved to the browser foot (#browser-foot) at the bottom of the pane. -->
         </div>
-        <!-- Horizontal content tabs render here (content-tabs.js). The page title lives on the
-             default tab's chip. -->
+        <!-- Horizontal content tabs render here (content-tabs.js): the page's default chip, the
+             pinned Diff chip while a terminal is beside the pane, then extra web/file tabs. -->
         <div class="ctabs" id="ctabs"></div>
         <div class="bar-add">
           <button class="ctab-add" id="ctab-add" title="New tab" onclick="addLink()">
@@ -453,29 +469,9 @@
           </button>
         </div>
       </div>
-      <!-- Terminal segment (over the terminal pane in split mode, or full-width when a terminal is the sole view).
-           The view switch flips the pane between the paired terminal and a read-only
-           `git diff` of the same worktree (split-mode tabs only — hidden in solo terminal view). -->
-      <div class="bar-seg bar-term">
-        <div class="seg-tabs pane-switch">
-          <button class="seg-tab on" id="pane-view-term" title="Terminal (⇧⌘D)" onclick="setPaneView('term')">
-            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 7l4 5-4 5"/><path d="M12 17h7"/></svg><span class="pv-label">Terminal</span>
-          </button>
-          <button class="seg-tab" id="pane-view-diff" title="Review — git diff (⇧⌘D)" onclick="setPaneView('diff')">
-            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4.5v6"/><path d="M9 7.5h6"/><path d="M9 16.5h6"/></svg><span class="pv-label">Review</span>
-          </button>
-        </div>
-        <span class="split-title" id="term-title"></span>
-      </div>
-      <!-- Right-panel toggle (terminal/changes pane) lives outside both segments so it
-           stays pinned to the far right of the toolbar — its position doesn't shift
-           when the split opens. -->
-      <button class="split-btn" id="split-toggle-term" title="Show/hide the right panel (⌘J)" onclick="togglePrSplit()">
-        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="4.5" width="19" height="15" rx="2.5"/><path d="M14.5 4.5v15"/></svg>
-      </button>
     </div>
     <div class="split-body" id="split-body">
-      <!-- Right-pane empty state: a GitHub/Jira tab with no terminal yet shows no Terminal/Review
+      <!-- Terminal-pane empty state: a GitHub/Jira tab with no terminal yet shows no Terminal/Review
            tabs — just these New Task buttons. Each creates the branch's worktree (if absent) then
            opens the terminal in it (newTask in viewer.js); the Claude/Codex variants additionally
            launch that CLI at the shell. Occupies the terminal slot; split.js toggles it. -->
@@ -495,7 +491,7 @@
           </button>
         </div>
       </div>
-      <!-- Diff pane: shares the terminal's slot in the split; diff.js renders into it. -->
+      <!-- Diff pane: takes the RIGHT (page) pane while Review is on — the webview hides under it; diff.js renders into it. -->
       <div class="diff-pane" id="diff-pane" style="display:none"></div>
       <!-- Inline commit history for the tab's worktree, drawn over the diff pane when the
            Changes-view History button is toggled on (history.js renders into it). -->
@@ -503,18 +499,27 @@
       <!-- Discard confirmation: an overlay scoped to the diff pane's region (not a
            window-blocking native confirm). diff.js fills + toggles it. -->
       <div class="diff-confirm" id="diff-confirm" hidden></div>
-      <!-- Bottom action bar pinned to the foot of the right pane. The top toolbar stays
-           clear of actions; everything actionable lives here. Terminal view shows the
-           .pf-term buttons (Run workflow); the Changes view (body.pane-diff) shows
-           the .pf-diff buttons (commit History / Commit). CSS swaps which set is visible. -->
-      <div class="pane-foot" id="pane-foot">
+      <!-- Browser controls: the foot of the page pane (the RIGHT pane in split mode, full width
+           otherwise), shown while the page is in view (not body.pane-diff, not a solo terminal).
+           The webview/editor reserve --foot-h at the bottom for it — the native webview would
+           otherwise paint over it. Back/Home act on whichever webview the content pane shows. -->
+      <div class="pane-foot browser-foot" id="browser-foot">
         <div class="pf-side pf-left">
-          <!-- Local folder for this task (the worktree, or the project workspace before one exists):
-               identifies the worktree the terminal runs in, and is the git-client shortcut. Click
-               opens it in the chosen git client (Settings → Appearance) wearing its mark, else reveals
-               in Finder; right-click for both. Terminal view only (.pf-term hides it in Review).
-               Filled by updateFolderChip. -->
-          <div class="folder-chip pf-term" id="split-folder" hidden oncontextmenu="return folderMenu(event)"></div>
+          <button class="split-btn nav-lg" id="split-back" title="Back (⌘[)" onclick="splitBack()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+          </button>
+          <button class="split-btn nav-lg" id="split-fwd" title="Forward (⌘])" onclick="splitForward()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
+          </button>
+          <button class="split-btn nav-lg" title="Home (default page)" onclick="splitHome()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9.5 12 3l9 6.5"/><path d="M5 9v11h14V9"/><path d="M9.5 20v-6h5v6"/></svg>
+          </button>
+        </div>
+      </div>
+      <!-- Review action bar: the foot of the RIGHT pane, shown only while Review is on
+           (body.pane-diff): the Changes/History sub-view switch + Commit. -->
+      <div class="pane-foot review-foot" id="review-foot">
+        <div class="pf-side pf-left">
           <!-- Review sub-view switch: the working diff (current changes) vs the branch's commit
                history. Both always reachable — neither is a toggle you have to turn off. -->
           <div class="seg-tabs review-switch pf-diff">
@@ -527,17 +532,6 @@
           </div>
         </div>
         <div class="pf-side pf-right">
-          <!-- Run + workflow picker as one outlined segmented control: Run (left) executes the workflow
-               selected in the picker (right), from the project's saved workflows (Workflows tab).
-               refreshWorkflowBtn (workflow.js) shows/hides the whole group (none → hidden; running → just
-               the Stop button, picker hidden) and populates the options. -->
-          <div class="wf-group pf-term" id="wf-group" hidden>
-            <button class="pf-btn wf-btn" id="term-workflow" title="Run the selected workflow" onclick="toggleWorkflowRun()">
-              <svg class="wf-play" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 4 13.5h7L11 22l9-11.5h-7z"/></svg>
-              <span class="wf-run" aria-hidden="true"><svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><rect x="8.5" y="8.5" width="7" height="7" rx="1.5"/></svg></span>
-            </button>
-            <select class="wf-select" id="wf-select" title="Workflow to run"></select>
-          </div>
           <button class="pf-btn pf-diff" id="commit-btn" title="Commit changes" onclick="toggleCommitPop()">
             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.5"/><path d="M2.5 12h6"/><path d="M15.5 12h6"/></svg><span class="cb-label">Commit</span>
           </button>

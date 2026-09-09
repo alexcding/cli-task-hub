@@ -11,14 +11,13 @@ import { gitClientLabel, gitClientIcon } from '../lib/git-clients.js';
 import { toast, toastErr } from './toast.js';
 import { renderTabs } from './sidebar.js';
 import { openMenu, closeMenu } from './menu.js';
-import { visibleTerm } from './terminal.js';
-import { ensurePrTerminal, applyPrLayout, clearPrLayout, resolveTabFolder, removeWorktree, openPrPanel } from './split.js';
+import { ensurePrTerminal, applyPrLayout, clearPrLayout, resolveTabFolder, removeWorktree, openPrPanel, leaveReview } from './split.js';
 import { jiraTaskBranch } from '../lib/workflow.mjs';
 import { persistTask } from '../services/tasks.js';
 import { refreshWorkflowBtn, launchCli } from './workflow.js';
 import { hideDiffPane } from './diff.js';
 import { attachFind, closeFind } from './find.js';
-import { renderContentTabs, playTabIn, playTabOut, markActiveTab, defaultChipRect, flipDefaultChip, focusCtabInput } from './content-tabs.js';
+import { renderContentTabs, playTabIn, playTabOut, markActiveTab, defaultChipRect, flipDefaultChip, focusCtabInput, inDiff } from './content-tabs.js';
 import { ensureEditor, disposeEditor, saveEditor, focusEditor, gotoLine } from './editor.js';
 import { createWcvShim } from './wcv-shim.js';
 
@@ -169,15 +168,18 @@ function buildLinkEditorPane(link) {
   link.ed = ed;
 }
 
-// Paint the LEFT content pane for a context: show the active link's element (or the default
-// PR webview), hiding the rest. Does NOT touch the right split view.
-function paintLeft(tab) {
+// Paint the content pane for a context: show the active link's element (or the default PR
+// webview), hiding the rest. Does NOT touch the terminal split. While Review covers the pane
+// everything stays hidden — the native webview would otherwise paint over the diff.
+export function paintLeft(tab) {
   if (!tab) return;
   resetWvProgress();   // the shown webview is changing; drop any in-flight bar (a still-loading view re-emits)
   if (tab.wv) tab.wv.style.display = 'none';
   (tab.links || []).forEach(l => { if (l.wv) l.wv.style.display = 'none'; if (l.ed) l.ed.style.display = 'none'; });
   const link = tab.activeLink ? (tab.links || []).find(l => l.id === tab.activeLink) : null;
-  if (!link) {                                   // default tab — the PR/Jira page
+  if (inDiff(tab)) {
+    /* the Diff view covers the pane — leave the page hidden */
+  } else if (!link) {                                   // default tab — the PR/Jira page
     if (tab.wv) {
       if (!tab.started) { tab.started = true; tab.wv.setAttribute('src', tab.url); }
       tab.wv.style.display = '';
@@ -209,13 +211,15 @@ export function activeLeftWebview() {
   return t.wv || null;
 }
 
-// Switch which horizontal tab is shown in the left pane. linkId null = the default PR tab.
-// Deliberately does NOT call openPrPanel/clearPrLayout — the right split view stays put.
+// Switch which horizontal tab is shown in the content pane. linkId null = the default PR tab.
+// Deliberately does NOT call openPrPanel/clearPrLayout — the terminal split stays put. Picking
+// a tab is asking to see a page, so it also leaves Review if that was covering the pane.
 export function setActiveLink(linkId) {
   const tab = activeTab();
   if (!tab) return;
   closeFind();
   tab.activeLink = linkId || null;
+  leaveReview(tab);
   paintLeft(tab);
   updateNavButtons();
   markActiveTab();           // class toggle (not a rebuild) so the pill fill animates
@@ -232,6 +236,7 @@ export function addLink() {
   const link = makeWebLink();
   tab.links.push(link);
   tab.activeLink = link.id;
+  leaveReview(tab);
   paintLeft(tab);            // nothing to show yet — the inline input lives in the bar
   renderContentTabs();
   focusCtabInput(link.id);   // focus THIS tab's field (explicitly — render no longer auto-focuses)
@@ -253,6 +258,7 @@ export function openWebLink(url) {
   link.editing = false; link.url = url; link.title = url; link.home = url;
   tab.links.push(link);
   tab.activeLink = link.id;
+  leaveReview(tab);
   paintLeft(tab);            // builds + loads the link's webview
   renderContentTabs(true);
   playTabIn(link.id);
@@ -274,7 +280,9 @@ export function editLink(id) {
 export function ctabClick(id) {
   const { tab, link } = linkById(id);
   if (!tab || !link) return;
-  if (tab.activeLink === id) editLink(id);
+  // While the Diff view covers the page the chip renders inactive, so a click means "show me
+  // the page again", not "edit the address".
+  if (tab.activeLink === id && !inDiff(tab)) editLink(id);
   else setActiveLink(id);
 }
 
@@ -308,6 +316,7 @@ function commitLinkInput(id, raw) {
   link.kind = kind; link.editing = false; link.started = false; link.loaded = false; link.icon = '';
   if (kind === 'file') { link.path = value; link.url = fileUrl(value); link.title = basename(value) || value; }
   else { link.url = value; link.title = value; link.home = value; }   // home = the entered URL (Home button)
+  leaveReview(tab);
   paintLeft(tab);
   renderContentTabs(true);   // force past the typing guard — the input is still focused here
   saveTabs();
@@ -405,6 +414,7 @@ export function openFileTab(filePath, line = 0) {
   if (!link) { link = makeFileLink(filePath); tab.links.push(link); }
   if (line) link._pendingLine = line;
   tab.activeLink = link.id;
+  leaveReview(tab);          // a file link wants to be SEEN — even if the Diff view was up
   if (state.activeTabId === tab.id) {
     paintLeft(tab);
     renderContentTabs(true);
@@ -625,10 +635,8 @@ function wireProgress(wv, isShown) {
 // the active view-switch button (segmented control), so the segment title stays empty;
 // a solo full-width terminal (no switch visible) still gets the "Terminal" label.
 export function updateTitles() {
-  // The webview segment's title now lives on the content bar's default chip (content-tabs.js),
-  // so there's no #split-title to fill here — only the terminal segment's label remains.
-  const tt = document.getElementById('term-title');
-  if (tt) tt.textContent = (state.activeTermId && visibleTerm()) ? 'Terminal' : '';
+  // The webview segment's title lives on the content bar's default chip (content-tabs.js) and the
+  // terminal segment shows its folder chip instead of a label — nothing textual to fill here.
   updateFolderChip();
   refreshWorkflowBtn();
 }
@@ -761,7 +769,7 @@ export async function removeTabWorktree() {
 // if the branch isn't checked out anywhere yet. This is the SINGLE worktree-create entry point —
 // the old folder-chip "Create worktree" CTA folded into it. Branch naming mirrors the workflow
 // runner: a GitHub PR uses its head ref; a Jira ticket derives feature/<KEY>-<summary>. After this
-// the tab has a live terminal, so the buttons hide (updateTitles) and ⌘J / the pane-switch take over.
+// the tab has a live terminal, so the buttons hide (updateTitles) and ⌘J / the Diff chip take over.
 // `cli` (''|'claude'|'codex') optionally launches that CLI right after the shell is up — the empty
 // state's "New Claude/Codex Task" buttons; '' (plain "New Task") just drops you at the shell.
 export async function newTask(cli = '') {

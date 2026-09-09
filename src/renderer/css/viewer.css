@@ -4,24 +4,29 @@
    Electron <webview> (the main process strips X-Frame-Options/CSP so framing is
    allowed). Open links live as tabs in the left nav; activating one shows it here,
    replacing <main>. */
-.split { position:relative; min-width:0; min-height:0; height:100vh; flex:1; background:var(--surface); display:flex; flex-direction:column; --foot-h:46px; --find-h:var(--foot-h); }
+.split { position:relative; min-width:0; min-height:0; height:100vh; flex:1; background:var(--surface); display:flex; flex-direction:column; --foot-h:46px; --find-h:var(--foot-h);
+  /* --pr-split is the webview's (RIGHT pane) width; --term-w is the terminal's (LEFT pane) width,
+     i.e. where the divider sits measured from the left edge. Every pane derives from these two. */
+  --term-w:calc(100% - var(--pr-split, 60%)); }
 .split[hidden] { display:none; }
-/* The toolbar is two segments — webview controls + terminal controls — that mirror
-   the panes below: in split mode the divide sits at the same --pr-split boundary. */
+/* The toolbar is two segments — terminal controls (left) + webview controls (right) — that
+   mirror the panes below: in split mode the divide sits at the same --term-w boundary. */
 .split-bar { height:52px; flex-shrink:0; display:flex; align-items:stretch; border-bottom:1px solid var(--border); }
 .bar-seg { display:flex; align-items:center; gap:4px; padding:0 6px 0 8px; min-width:0; }
 .bar-wv { flex:1; }
-.bar-term { display:none; flex:1; min-width:0; border-left:1px solid var(--border); }
-body.pr-split .bar-wv   { flex:none; width:var(--pr-split, 60%); }
-/* In split mode the full-height #pr-divider already draws the boundary line through the toolbar,
-   so drop .bar-term's own border-left — otherwise the two sit ~3px apart and read as a double line. */
-body.pr-split .bar-term { display:flex; border-left:none; }
+/* Split closed: the segment is just the terminal on/off button at the toolbar's left edge. */
+.bar-term { display:flex; flex:none; min-width:0; border-right:1px solid var(--border); }
+/* Split open: the segment spans the terminal pane. The full-height #pr-divider already draws the
+   boundary line through the toolbar, so drop the segment's own border-right — otherwise the two
+   sit ~3px apart and read as a double line. */
+body.pr-split .bar-term { width:var(--term-w); border-right:none; }
+/* Solo terminal: the segment is the whole toolbar. */
 body.viewing-term .bar-wv   { display:none; }
-body.viewing-term .bar-term { display:flex; border-left:none; }
-/* Terminal toggle is pinned to the far right of the whole toolbar (a direct child of
-   .split-bar, after both segments) so it keeps its position when the split opens.
+body.viewing-term .bar-term { flex:1; border-right:none; }
+/* Terminal on/off sits at the right end of the terminal segment (margin-left:auto pushes it past
+   the title). With the split closed the segment holds only this button, at the toolbar's left edge.
    It's webview-only, so hide it when a terminal is the sole view. */
-#split-toggle-term { align-self:center; margin-right:12px; }
+#split-toggle-term { align-self:center; margin-left:auto; }
 body.viewing-term #split-toggle-term { display:none; }
 /* Expanded ("on") state uses the plain hover highlight, NOT the accent that generic .split-btn.on
    applies — an open right panel isn't an accent-worthy selection. */
@@ -53,8 +58,8 @@ body.viewing-term #split-toggle-term { display:none; }
 .split-title { flex:1; min-width:0; font-size:13px; font-weight:600; display:flex; align-items:center; gap:7px; overflow:hidden; }
 .split-title .stitle-text { min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .split-title img { flex-shrink:0; width:16px; height:16px; border-radius:50%; object-fit:cover; }
-/* Workspace/worktree folder chip — bottom-left of the terminal pane (in .pane-foot); opens the
-   folder in the configured git client, else reveals in Finder. Terminal view only (.pf-term). */
+/* Workspace/worktree folder chip — leads the terminal toolbar segment (.bar-term); opens the
+   folder in the configured git client, else reveals in Finder. */
 /* Outlined segmented control (like .wf-group): the chip owns the border/corners; the icon half
    (opens the git client) and the name half (reveals in Finder) sit inside it, split by a hairline. */
 /* min-width:0 + flex-shrink let the chip yield in a narrow pane (its .fc-text ellipsis-truncates)
@@ -108,7 +113,8 @@ body.viewing-tab main { display:none; }
 .ctab.active .ctab-load { width:calc(var(--load-frac, 0) * 100%); }
 #ctabs.loading .ctab.active .ctab-load { opacity:1; }
 .split-body { flex:1; position:relative; background:var(--bg); }
-.split-body webview, .split-body .wcv-shim { position:absolute; inset:0; width:100%; height:100%; border:0; }
+/* bottom:var(--foot-h) leaves the strip under the page to the browser foot (#browser-foot). */
+.split-body webview, .split-body .wcv-shim { position:absolute; inset:0; bottom:var(--foot-h); width:100%; height:auto; border:0; }
 
 /* ── Safari-compact horizontal content tabs (left toolbar segment, #ctabs) ───────────
    Inline after the ‹ › ⌂ controls: a read-only default chip (the PR/Jira page, non-
@@ -196,10 +202,10 @@ body.win-inactive .ctab .ctab-title { color:var(--text-3); }
 body.win-inactive .ctab.active { background:var(--surface-hover); border-color:transparent; }
 body.win-inactive .ctab.active .ctab-title { color:var(--text-2); }
 
-/* Editor pane (a file tab) — fills the left content region like a webview; Monaco paints
-   inside (its own theme/scrollbar). Follows the same --pr-split width when the right split is open. */
-.editor-pane { position:absolute; inset:0; overflow:hidden; background:var(--surface); }
-body.pr-split .split-body .editor-pane { width:var(--pr-split, 60%); }
+/* Editor pane (a file tab) — fills the content region like a webview; Monaco paints inside (its
+   own theme/scrollbar). Takes the same right-hand --pr-split width when the terminal split is open. */
+.editor-pane { position:absolute; inset:0; bottom:var(--foot-h); overflow:hidden; background:var(--surface); }
+body.pr-split .split-body .editor-pane { left:var(--term-w); }
 .editor-pane .monaco-editor { position:absolute; inset:0; }
 .editor-err { padding:22px 24px; color:var(--danger); font-size:13px; }
 /* SF Mono copy served from Terminal.app (/sf-mono) under a DISTINCT family name so it
@@ -207,37 +213,36 @@ body.pr-split .split-body .editor-pane { width:var(--pr-split, 60%); }
 @font-face { font-family:'SFMonoServed'; src:url('/sf-mono/SF-Mono-Regular.otf') format('opentype'); font-weight:400; font-style:normal; font-display:swap; }
 @font-face { font-family:'SFMonoServed'; src:url('/sf-mono/SF-Mono-Bold.otf') format('opentype'); font-weight:700; font-style:normal; font-display:swap; }
 /* One xterm terminal pane per worktree; only the active one is shown. */
-/* inset:0 then bottom:var(--foot-h) leaves the bottom strip to the action bar (.pane-foot). */
-.term-pane { position:absolute; inset:0; bottom:var(--foot-h); overflow:hidden; background:#1e1e1e; padding:6px 4px 6px 8px; }
+.term-pane { position:absolute; inset:0; overflow:hidden; background:#1e1e1e; padding:6px 4px 6px 8px; }
 .term-pane .xterm, .term-pane .xterm-viewport { height:100%; }
 /* xterm.css forces `overflow-y:scroll` + an opaque `#000` track, giving the terminal an
    always-visible chunky scrollbar. Every other view uses overflow:auto → the native macOS
    overlay scrollbar that auto-hides; match that here so the terminal looks the same. */
 .term-pane .xterm-viewport { overflow-y:auto !important; background-color:transparent !important; }
-/* PR ↔ terminal split: the PR webview takes the left `--pr-split` fraction, the
-   paired terminal the rest on the right; a draggable divider sits between them.
-   The webview right edge stops 1px SHORT of the boundary: it's a native child view
-   that paints over all DOM (z-index is moot), so a webview ending exactly at
-   --pr-split occludes #pr-divider's hairline — which sits on that same seam — whenever
-   its sub-pixel-rounded bounds round over the line (hence "resize to see the divider").
+/* Terminal ↔ PR split: the paired terminal takes the left `--term-w` fraction, the PR
+   webview the right `--pr-split` fraction; a draggable divider sits between them.
+   The webview left edge starts 1px PAST the boundary: it's a native child view that
+   paints over all DOM (z-index is moot), so a webview starting exactly at --term-w
+   occludes #pr-divider's hairline — which sits on that same seam — whenever its
+   sub-pixel-rounded bounds round over the line (hence "resize to see the divider").
    The 1px inset keeps the seam pixel in DOM territory so the divider always renders. */
-body.pr-split .split-body webview, body.pr-split .split-body .wcv-shim { width: calc(var(--pr-split, 60%) - 1px); }
-body.pr-split .split-body .term-pane { left: var(--pr-split, 60%); }
-#pr-divider { position:absolute; top:0; bottom:0; left:var(--pr-split, 60%); width:7px; transform:translateX(-50%); cursor:col-resize; z-index:6; display:none; }
+body.pr-split .split-body webview, body.pr-split .split-body .wcv-shim { left: calc(var(--term-w) + 1px); width:auto; }
+body.pr-split .split-body .term-pane { right: var(--pr-split, 60%); }
+#pr-divider { position:absolute; top:0; bottom:0; left:var(--term-w); width:7px; transform:translateX(-50%); cursor:col-resize; z-index:6; display:none; }
 #pr-divider::before { content:''; position:absolute; left:50%; top:0; bottom:0; width:1px; transform:translateX(-50%); background:var(--border); }
 #pr-divider:hover::before { background:var(--border-focus); }
 body.pr-split #pr-divider { display:block; }
 .split-btn.on { color:var(--accent); background:var(--accent-bg); }
 
-/* Right-pane empty state (#term-empty): occupies the terminal slot when a GitHub/Jira tab has no
+/* Terminal-pane empty state (#term-empty): occupies the terminal slot when a GitHub/Jira tab has no
    terminal yet, holding only the New Task button. split.js toggles its [hidden] + body.pr-empty. */
-.term-empty { position:absolute; inset:0; bottom:var(--foot-h); display:flex; align-items:center; justify-content:center; background:var(--bg); }
+.term-empty { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; background:var(--bg); }
 .term-empty[hidden] { display:none; }
-body.pr-split .split-body .term-empty { left:var(--pr-split, 60%); }
-/* While the empty state shows there are no Terminal/Review tabs and no action bar. */
-/* …including the action bar — body.pr-split shows it later in this file, so out-specify that. */
-body.pr-empty .pane-switch { display:none; }
-body.pr-empty.pr-split .pane-foot, body.pr-empty.viewing-term .pane-foot { display:none; }
+body.pr-split .split-body .term-empty { right:var(--pr-split, 60%); }
+/* While the empty state shows, the terminal segment's actions (folder chip, Run) are gone too. */
+body.pr-empty .pf-term { display:none; }
+/* …and with the split closed the segment is just the on/off button. */
+body:not(.pr-split):not(.viewing-term) .pf-term { display:none; }
 /* Three stacked choices, all the same width so they read as one menu. */
 .nt-choices { display:flex; flex-direction:column; gap:10px; align-items:stretch; }
 /* New Task call-to-action: a >_ glyph + label, color-outlined, prompt-like; fills on hover. All three
@@ -263,14 +268,14 @@ html[data-theme="dark"] {
   --diff-del-bg:rgba(248,81,73,.13); --diff-del-gut:rgba(248,81,73,.28); --diff-del-fg:#f85149;
 }
 .diff-pane { position:absolute; inset:0; bottom:var(--foot-h); overflow:auto; background:var(--bg); font:var(--diff-font-size)/1.5 var(--diff-font); }
-body.pr-split .split-body .diff-pane { left:var(--pr-split, 60%); }
+body.pr-split .split-body .diff-pane { left:var(--term-w); }
 /* Discard confirm: dims + covers only the diff pane's region (same left offset as the
    pane in split mode), so it never blocks the webview or the rest of the window. */
 .diff-confirm { position:absolute; inset:0; z-index:20; display:flex; align-items:center; justify-content:center; padding:16px; background:rgba(0,0,0,.32); }
 /* display:flex above overrides the UA [hidden]{display:none}, so el.hidden alone won't
    hide it — without this the dark overlay sits on the pane permanently. */
 .diff-confirm[hidden] { display:none; }
-body.pr-split .split-body .diff-confirm { left:var(--pr-split, 60%); }
+body.pr-split .split-body .diff-confirm { left:var(--term-w); }
 .diff-confirm-card { width:min(340px,100%); background:var(--surface); border:1px solid var(--border); border-radius:12px; box-shadow:0 12px 32px rgba(0,0,0,.22),0 2px 8px rgba(0,0,0,.10); padding:16px; }
 .diff-confirm-msg { font-size:13px; line-height:1.5; color:var(--text); }
 .diff-confirm-msg b { font-weight:600; word-break:break-all; }
@@ -290,7 +295,6 @@ html[data-theme="dark"]         { --seg-thumb:#3d3d3d; --seg-shadow:0 1px 2px rg
 .seg-tab svg { display:block; }
 .seg-tab:hover { color:var(--text); }
 .seg-tab.active, .seg-tab.on { background:var(--seg-thumb); color:var(--text); box-shadow:var(--seg-shadow); cursor:default; }
-.pane-switch { flex-shrink:0; }   /* keep the view switch from collapsing */
 /* The review switch yields in a narrow pane (labels ellipsis-truncate) so it never overlaps the
    Commit button on the right; at a comfortable width flex-shrink is inert and it stays full size. */
 .review-switch { flex-shrink:1; min-width:0; }
@@ -298,18 +302,23 @@ html[data-theme="dark"]         { --seg-thumb:#3d3d3d; --seg-shadow:0 1px 2px rg
 .review-switch .seg-tab span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 /* The view switch is split-mode only (solo terminals have no tab → no diff), so hide it when
    a terminal is the sole view. Its actions now live in the bottom bar, not the toolbar. */
-body.viewing-term .pane-switch { display:none; }
 
-/* Bottom action bar — pinned to the foot of the right pane (terminal/diff side). The top
-   toolbar holds only navigation + the view switch; everything actionable lives here. The
-   terminal view shows the .pf-term items (the folder chip + Run); the Changes view (body.pane-diff)
-   shows the .pf-diff buttons (History / Commit). Sits below the divider (z<6) so the full-
-   height divider stays draggable; the panes above reserve --foot-h so it never overlaps them. */
+/* Bottom action bars under the RIGHT pane: #browser-foot (Back/Forward/Home) while the page shows,
+   #review-foot (History / Changes + Commit) while body.pane-diff. The terminal has no foot — its
+   actions sit in the toolbar segment above it. Sits below the divider (z<6) so the full-height
+   divider stays draggable; the panes above reserve --foot-h so it never overlaps them. */
 .pane-foot { position:absolute; left:0; right:0; bottom:0; height:var(--foot-h); z-index:5;
   display:none; align-items:center; justify-content:space-between; gap:8px; padding:0 10px;
   background:var(--surface); border-top:1px solid var(--border); }
-body.pr-split .pane-foot { left:var(--pr-split, 60%); }
-body.pr-split .pane-foot, body.viewing-term .pane-foot { display:flex; }
+.review-foot { left:var(--term-w); }
+body.pr-split.pane-diff .review-foot { display:flex; }
+/* Browser foot (Back / Forward / Home): under the page whenever the page is in view — full width
+   without a terminal, the right pane beside one. Gone under Source and in a solo terminal. */
+.browser-foot { justify-content:flex-start; }
+body.pr-split .browser-foot { left:var(--term-w); }
+body:not(.pane-diff):not(.viewing-term) .browser-foot { display:flex; }
+/* The find bar docks in the same bottom strip (same height, higher z) — yield to it while open. */
+body.find-open .browser-foot { display:none; }
 .pf-side { display:flex; align-items:center; gap:6px; min-width:0; }
 /* The right side (Run/picker/Commit) keeps its size; the left side's folder chip is what yields. */
 .pf-right { flex-shrink:0; }
@@ -352,12 +361,11 @@ html[data-theme="dark"] .wf-select {
 .wf-group .wf-btn { border-radius:0; }                         /* the group provides the outline */
 .wf-group .wf-select { border:none; border-left:1px solid var(--border); border-radius:0; background-color:transparent; }
 .wf-group .wf-select:hover { border-left-color:var(--border); } /* keep the divider neutral; the group border highlights */
-/* View-scoped: terminal actions vs Changes actions. */
-body.pane-diff .pf-term { display:none; }
+/* Review actions only exist while Review is on. */
 body:not(.pane-diff) .pf-diff { display:none; }
 
 /* Commit popover — branch + counts, message, then the action list (screenshot-style).
-   Anchored just above the bottom bar's Commit button (bottom-right of the right pane). */
+   Anchored just above the Review foot's Commit button (bottom-right of the right pane). */
 .commit-pop { position:absolute; bottom:calc(var(--foot-h) + 8px); right:12px; width:320px; z-index:40; background:var(--surface); border:1px solid var(--border); border-radius:12px; box-shadow:0 12px 32px rgba(0,0,0,.18), 0 2px 8px rgba(0,0,0,.08); padding:10px; }
 /* Inline commit history (history.js) — drawn over the diff pane in the Changes view when the
    foot's History toggle is on. Same right-pane geometry as the diff pane; opaque, so it covers
@@ -365,7 +373,7 @@ body:not(.pane-diff) .pf-diff { display:none; }
    tab's .pg-crow rows — graph + avatars + ref chips), the selected commit's diff at the bottom. */
 .history-pane { position:absolute; inset:0; bottom:var(--foot-h); z-index:4; overflow:hidden; background:var(--bg);
   display:flex; flex-direction:column; font:13px/1.5 -apple-system,BlinkMacSystemFont,sans-serif; color:var(--text); }
-body.pr-split .split-body .history-pane { left:var(--pr-split, 60%); }
+body.pr-split .split-body .history-pane { left:var(--term-w); }
 .history-pane[hidden] { display:none; }
 /* Two stacked halves, each scrolling independently, split at --hist-split (list height, 3/7
    default) with a draggable divider between them (history.js drives the var + persists it). */
@@ -487,8 +495,8 @@ body.resizing .split-body webview { pointer-events:none; }
   z-index:30; display:flex; align-items:center; gap:2px; padding:6px 10px;
   background:var(--surface); border-top:1px solid var(--border); }
 .find-bar[hidden] { display:none; }
-/* In PR-split mode the bar spans only the webview (left, --pr-split) pane, not the terminal/diff. */
-body.pr-split .find-bar { width: var(--pr-split, 60%); }
+/* In PR-split mode the bar spans only the webview (right, --pr-split) pane, not the terminal/diff. */
+body.pr-split .find-bar { left: var(--term-w); width: var(--pr-split, 60%); }
 /* Make room for the bar by trimming the webview's bottom — the terminal/diff pane (a separate
    absolutely-positioned element) is untouched, so its foot stays put. */
 body.find-open .split-body webview, body.find-open .split-body .wcv-shim { bottom: var(--find-h); height: auto; }

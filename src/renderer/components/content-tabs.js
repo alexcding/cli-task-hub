@@ -3,15 +3,17 @@
 // tabs — it does NOT mirror the sidebar's vertical PR/Jira tabs.
 //
 // The bar belongs to the ACTIVE viewer tab (the "context"): its first chip is the default
-// tab (the PR/Jira page — read-only url, non-closable, owns the right-side split), followed
-// by that context's extra web/file tabs and a `+`. Extra tabs are added only two ways: the
-// user's `+` (type a URL or file path inline) or a file link clicked in the terminal. They
-// render in the left pane only; switching among them never touches the right split view.
+// tab (the PR/Jira page — read-only url; its × closes the context), then — while the terminal split is
+// open with a live terminal — a pinned Diff chip (the worktree's `git diff`, drawn over the
+// page; tab.paneView === 'diff'), followed by that context's extra web/file tabs and a `+`.
+// Extra tabs are added only two ways: the user's `+` (type a URL or file path inline) or a
+// file link clicked in the terminal. Picking a page chip leaves the Diff view; the terminal
+// beside the pane is never touched by any of this.
 //
 // Data lives on the active viewer tab: tab.links[] + tab.activeLink (null = default). All
 // mutations live in viewer.js (added to window.*); this module only renders + reads.
 import { state, activeTab, prByUrl } from '../stores/store.js';
-import { esc, ghAvatarSrc, setHtmlIfChanged } from '../lib/util.js';
+import { esc, ghAvatarSrc, setHtmlIfChanged, canSplitTerminal } from '../lib/util.js';
 import { ICON, TAB_ICON } from '../lib/icons.js';
 import { ciInfo } from './cards.js';
 
@@ -36,18 +38,36 @@ function linkIcon(l) {
   return `<span class="ctab-ic">${ICON.globe}</span>`;
 }
 
+// The Diff chip exists only while the split is open with a live terminal (the diff needs its
+// worktree). While it's the shown view no page chip is active. Both are PURE STATE predicates
+// (no DOM class) so a paint that runs before split.js has synced body.pane-diff — activateTab's
+// first paintLeft — still agrees with what the split will show; viewer.js imports inDiff for that.
+export const hasDiffTab = t => !!(t && canSplitTerminal(t) && t.prSplit && t.termId && state.terms.get(t.termId));
+export const inDiff = t => hasDiffTab(t) && t.paneView === 'diff';
+
+function diffChipHtml(t) {
+  return `<div class="ctab source ${inDiff(t) ? 'active' : ''}"
+        onclick="setPaneView('diff')" title="Working changes in the task's worktree (⇧⌘D)">
+     <span class="ctab-ic">${ICON.branch}</span>
+     <span class="ctab-title">Diff</span>
+   </div>`;
+}
+
+// The default chip IS the context (the sidebar's PR/Jira tab), so its × closes the whole context —
+// page, extra tabs, and the paired terminal binding — exactly like closing it from the sidebar.
 function defaultChipHtml(t) {
-  const active = !t.activeLink;
+  const active = !t.activeLink && !inDiff(t);
   return `<div class="ctab default ${active ? 'active' : ''}"
         onclick="setActiveLink(null)" title="${esc(t.url || '')}">
      ${defaultIcon(t)}
      <span class="ctab-title">${esc(t.title || '')}</span>
+     <button class="ctab-btn ctab-x" title="Close tab" onclick="event.stopPropagation();closeTab('${t.id}')">${ICON.close}</button>
      <i class="ctab-load"></i>
    </div>`;
 }
 
 function linkChipHtml(t, l) {
-  const active = t.activeLink === l.id;
+  const active = t.activeLink === l.id && !inDiff(t);
   // A blank (just-added) or being-edited tab is a bare inline address field — just the outlined
   // pill (the blue focus ring from .ctab.editing) and the input. No magnifier glyph, no placeholder.
   if (l.editing || !l.url) {
@@ -85,11 +105,13 @@ export function renderContentTabs(force = false) {
   if (!t) { el.innerHTML = ''; el._lastHtml = ''; el.classList.remove('ctabs-single'); return; }
   // With just the default tab (no extra tabs), center a larger pill against the whole bar
   // (CSS .bar-wv.single balances the side groups). Multiple tabs share the bar equally.
-  const single = !(t.links && t.links.length);
+  const diffTab = hasDiffTab(t);
+  const single = !(t.links && t.links.length) && !diffTab;
   el.classList.toggle('ctabs-single', single);
   el.closest('.bar-wv')?.classList.toggle('single', single);
   // The New-tab "+" is a static button in the toolbar (pinned far right), not rendered here.
-  const html = defaultChipHtml(t) + (t.links || []).map(l => linkChipHtml(t, l)).join('');
+  const html = defaultChipHtml(t) + (diffTab ? diffChipHtml(t) : '')
+    + (t.links || []).map(l => linkChipHtml(t, l)).join('');
   setHtmlIfChanged(el, html);
 }
 
@@ -108,8 +130,12 @@ export function markActiveTab() {
   const t = activeTab();
   const el = document.getElementById('ctabs');
   if (!t || !el) return;
+  const diff = inDiff(t);
   el.querySelectorAll('.ctab').forEach(node => {
-    const active = node.classList.contains('default') ? !t.activeLink : node.dataset.id === t.activeLink;
+    const active = node.classList.contains('source') ? diff
+      : diff ? false
+      : node.classList.contains('default') ? !t.activeLink
+      : node.dataset.id === t.activeLink;
     node.classList.toggle('active', active);
   });
 }

@@ -51,9 +51,8 @@ function notifyTasksUpdated() {
 }
 
 // Reflect the active tab: hidden unless its project has a workflow (or a run is in flight);
-// running shows the stop/spinner state. The button lives in the terminal-view bottom bar — CSS
-// (body.pane-diff .pf-term) already hides it in the Changes view, so this only gates on
-// workflow availability, not which pane is showing.
+// running shows the stop/spinner state. The button lives in the terminal's bottom bar, which
+// is always on in split mode, so this only gates on workflow availability.
 // Coalesced behind a rAF: callers fire it from hot paths (updateTitles on every sidebar render +
 // every panel show/hide), so several calls per frame collapse into one that runs AFTER the frame —
 // it never blocks the show/hide animation or a render with the project/workflow lookup + DOM work.
