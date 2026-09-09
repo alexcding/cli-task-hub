@@ -175,6 +175,22 @@ function worktreeFolder(branch) {
   return branch.split(/[/\\]+/).filter(Boolean).pop() || branch;
 }
 
+// Is `branch` a name git would accept (check-ref-format) AND safe to derive a folder from? Rejects
+// `.`/`..` segments, a leading `-`, control chars and git's forbidden punctuation. The folder is the
+// last segment, so a bad segment could otherwise resolve OUTSIDE `${ws}.worktrees` (e.g. `..` → the
+// repo's parent) and the override path would rm -rf it.
+function validBranchName(branch) {
+  const b = String(branch || '');
+  if (!b || b.startsWith('-') || b.endsWith('/') || b.endsWith('.') || b.endsWith('.lock')) return false;
+  if (/[\x00-\x20\x7f~^:?*\[\\]|\.\.|@\{|\/\/|^@$/.test(b)) return false;
+  return b.split('/').every(seg => seg && seg !== '.' && !seg.startsWith('.'));
+}
+
+// Does `ref` resolve in this repo? (`rev-parse --verify` is quiet and never throws here.)
+async function refExists(dir, ref) {
+  try { await gitRun(dir, ['rev-parse', '--verify', '--quiet', `${ref}^{commit}`]); return true; } catch { return false; }
+}
+
 // Files an abandoned worktree regenerates on its own — IDE/OS state that carries no work. Xcode,
 // left open on a worktree whose checkout was already removed, re-saves its UI state and recreates a
 // `<proj>.xcodeproj/project.xcworkspace/xcuserdata/…/UserInterfaceState.xcuserstate` tree; Finder
@@ -240,8 +256,12 @@ async function createWorktree(workspace, branch, opts = {}) {
   // when ws has no trailing separator ("/x/repo" → "/x/repo.worktrees"); "/x/repo/" would
   // give "/x/repo/.worktrees" — a hidden dir nested INSIDE the repo.
   const ws = String(workspace).replace(/[/\\]+$/, '');
+  if (!validBranchName(branch)) return { error: `"${branch}" is not a valid branch name` };
   const folder = worktreeFolder(branch);
-  const dest = path.join(`${ws}.worktrees`, folder);
+  const root = `${ws}.worktrees`;
+  const dest = path.join(root, folder);
+  // Belt and braces over validBranchName: the folder must sit strictly inside the worktrees root.
+  if (path.dirname(dest) !== root) return { error: `Refusing to create a worktree outside ${root}` };
   const exists = async p => { try { await fsp.access(p); return true; } catch { return false; } };
   try {
     if (await exists(dest)) {
@@ -269,6 +289,11 @@ async function createWorktree(workspace, branch, opts = {}) {
       if (entries.length && !opts.override) {
         return { error: 'A folder already exists at ' + dest, folderConflict: true, path: dest, disposable: await isDisposableLeftover(dest) };
       }
+      // The lexical containment check above can be defeated by a symlinked `${ws}.worktrees` (or a
+      // symlinked folder inside it): resolve both and refuse to rm anything that doesn't REALLY sit
+      // directly under the real worktrees root.
+      const [realRoot, realDest] = await Promise.all([fsp.realpath(root).catch(() => ''), fsp.realpath(dest).catch(() => '')]);
+      if (!realRoot || !realDest || path.dirname(realDest) !== realRoot) return { error: `Refusing to replace ${dest}: it resolves outside ${root}` };
       await fsp.rm(dest, { recursive: true, force: true }).catch(() => {}); // empty husk, or user-confirmed override → wipe, then create below
     }
     await fsp.mkdir(path.dirname(dest), { recursive: true });
@@ -286,9 +311,16 @@ async function createWorktree(workspace, branch, opts = {}) {
       // creating an unintended branch.
       if (!opts.create || !/invalid reference|unknown revision/i.test(gitErrLine(addErr, ''))) throw addErr;
       const base = opts.base || await gitDefaultBranch(workspace) || 'main';
-      try { await gitRun(workspace, ['fetch', 'origin', base]); } catch { /* offline */ }
-      try { await gitRun(workspace, ['worktree', 'add', '-b', branch, dest, `origin/${base}`]); }
-      catch { await gitRun(workspace, ['worktree', 'add', '-b', branch, dest]); } // off current HEAD as a last resort
+      if (opts.base && !validBranchName(base)) return { error: `"${base}" is not a valid base branch name` };
+      try { await gitRun(workspace, ['fetch', 'origin', '--', base]); } catch { /* offline / local-only base */ }
+      // Start point: origin/<base> (just fetched — the freshest tip) when it exists, else the local
+      // <base> (a branch never pushed / no remote). An EXPLICIT base that resolves nowhere is an
+      // error — never silently fork off whatever HEAD the main checkout has; the HEAD fallback is
+      // kept only for the implicit default-branch case (e.g. a fresh repo with no remote).
+      const start = (await refExists(workspace, `origin/${base}`)) ? `origin/${base}`
+        : (await refExists(workspace, base)) ? base : '';
+      if (!start && opts.base) return { error: `Base branch "${base}" was not found locally or on origin` };
+      await gitRun(workspace, start ? ['worktree', 'add', '-b', branch, dest, start] : ['worktree', 'add', '-b', branch, dest]);
     }
     return { ok: true, path: dest };
   } catch (err) {

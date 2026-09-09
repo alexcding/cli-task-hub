@@ -26,7 +26,7 @@ import { loadScrumboard, setBoardFilter, applyBoardQuery } from './pages/scrumbo
 import { loadLogs, setLogCategory, clearLogs } from './pages/logs.js';
 import { openTaskSession, analyzeSession, newWorktreeTask } from './components/tasks.js';
 import { loadPersistedTasks, persistTask } from './services/tasks.js';
-import { loadSettings, saveConfig, switchSettingsTab, setReviewSound, previewReviewSound, setActivityNotify, setAutostart, toggleSecret, setGitClient, setGitClientCmd, toggleHook, setWebviewPool, showEvents } from './pages/settings.js';
+import { loadSettings, saveConfig, switchSettingsTab, setReviewSound, previewReviewSound, setActivityNotify, setAutostart, toggleSecret, setGitClient, setGitClientCmd, toggleHook, setWebviewPool, setDefaultCli, showEvents } from './pages/settings.js';
 import { showActivityToast } from './components/activity-toast.js';
 import * as modal from './components/modal.js';
 
@@ -265,7 +265,7 @@ Object.assign(window, {
   loadGitTab, gitTabPick, gitTabShowCommit, gitTabBack, gitTabRemoveWorktree,
   loadLogs, setLogCategory, clearLogs, showEvents, toggleEventsPopover, // the sidebar bell
   openTaskSession, newWorktreeTask, sessionMenu, // the sidebar's session rows (click, right-click menu)
-  loadSettings, saveConfig, switchSettingsTab, setReviewSound, previewReviewSound, setActivityNotify, setAutostart, toggleSecret, setGitClient, setGitClientCmd, toggleHook, setWebviewPool, projectClick,
+  loadSettings, saveConfig, switchSettingsTab, setReviewSound, previewReviewSound, setActivityNotify, setAutostart, toggleSecret, setGitClient, setGitClientCmd, toggleHook, setWebviewPool, setDefaultCli, projectClick,
   __activityToast: showActivityToast, // main pushes activity toasts here when the app is frontmost
   // project modal
   openNewProjectModal: modal.openNewProjectModal, openEditProjectModal: modal.openEditProjectModal,
@@ -326,6 +326,7 @@ state.tabTermInit = (async () => {
     syncThemeFromSettings(settings.theme);
     syncFontsFromSettings(settings); // any terminal rehydrated before this lands is updated in place by applyFonts
     if (settings.webviewPool != null) viewer.setWebviewPoolSize(settings.webviewPool); // live-webview pool cap (Settings → System); clamped, bad values → default
+    if (settings.defaultCli != null) state.defaultCli = settings.defaultCli; // agent preselected by the New session dialog (Settings → CLIs)
   } catch {}
   populateFontMenus(); // fill the font pickers from this machine's installed fonts (replaces the static fallback)
   loadDashboard(); // renderProjectNav is called inside loadDashboard

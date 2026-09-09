@@ -276,7 +276,7 @@ function projectNavHtml() {
     // (or with nothing to show). Collapsing is a click on the already-focused folder (projectClick).
     // Hover "+" (only for projects with a local workspace): a new worktree + task.
     const add = p.workspace
-      ? `<span class="proj-add" title="New task on a new worktree" onclick="event.stopPropagation();newWorktreeTask('${p.id}')">${ICON.plus}</span>`
+      ? `<span class="proj-add" title="New session on a new worktree" onclick="event.stopPropagation();newWorktreeTask('${p.id}')">${ICON.plus}</span>`
       : '';
     const btn = `<button class="nav-btn" data-page="project" data-project="${p.id}" onclick="projectClick('${p.id}')">
       <span class="icon">${rows.length && !collapsed ? ICON.folderOpen : ICON.folder}</span>

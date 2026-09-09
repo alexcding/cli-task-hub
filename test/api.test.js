@@ -465,3 +465,45 @@ test('POST /api/worktree/remove force: removes a linked worktree, refuses the ma
   assert.equal(r.ok, true);
   assert.equal(r.gone, true);
 });
+
+// ── Worktree create: branch-name guard rails + explicit base ──────────────────────────────
+// The worktree folder is derived from the branch's last segment under `${ws}.worktrees`; a name
+// like `..` would resolve OUTSIDE that root and the folder-conflict override path would rm -rf it.
+test('POST /api/worktree rejects unsafe branch names and never touches folders outside the worktrees root', async () => {
+  const ws = fs.realpathSync(scratchRepo());
+  for (const branch of ['..', '.', '-x', 'a..b', 'a b', 'feat/.hidden', 'x:y', 'a.lock']) {
+    const r = (await send('POST', '/api/worktree', { path: ws, branch, create: true })).body;
+    assert.ok(r.error && !r.folderConflict, `${JSON.stringify(branch)} must be rejected outright, got ${JSON.stringify(r)}`);
+  }
+  assert.ok(fs.existsSync(ws), 'the repo (and its parent) are untouched');
+  assert.ok(!fs.existsSync(`${ws}.worktrees`), 'nothing was created');
+});
+
+test('POST /api/worktree create: forks a new branch off the given LOCAL base; an unknown explicit base is an error', async () => {
+  const ws = fs.realpathSync(scratchRepo());
+  const git = (...a) => execFileSync('git', ['-C', ws, '-c', 'user.email=t@t', '-c', 'user.name=t', '-c', 'commit.gpgsign=false', ...a]).toString().trim();
+  git('branch', 'develop');
+  git('checkout', '-q', 'develop');
+  git('commit', '-q', '--allow-empty', '-m', 'on develop');
+  git('checkout', '-q', 'main'); // main checkout sits on main; develop is local-only (no remote at all)
+  const r = (await send('POST', '/api/worktree', { path: ws, branch: 'worktree1', create: true, base: 'develop' })).body;
+  assert.ok(r.ok && r.path, JSON.stringify(r));
+  assert.equal(fs.realpathSync(r.path), path.join(`${ws}.worktrees`, 'worktree1'));
+  assert.equal(git('rev-parse', 'worktree1'), git('rev-parse', 'develop'), 'new branch starts at develop, not at HEAD (main)');
+  const bad = (await send('POST', '/api/worktree', { path: ws, branch: 'worktree2', create: true, base: 'nope' })).body;
+  assert.match(bad.error || '', /nope/, 'an explicit base that resolves nowhere is reported, not silently replaced by HEAD');
+  assert.ok(!fs.existsSync(path.join(`${ws}.worktrees`, 'worktree2')));
+});
+
+test('POST /api/worktree create: origin/<base> (freshest tip) is preferred over a stale local <base>', async () => {
+  const ws = fs.realpathSync(scratchRepo());
+  const git = (...a) => execFileSync('git', ['-C', ws, '-c', 'user.email=t@t', '-c', 'user.name=t', '-c', 'commit.gpgsign=false', ...a]).toString().trim();
+  git('branch', 'develop'); // local develop = init commit (stale)
+  git('commit', '-q', '--allow-empty', '-m', 'newer'); // main moves on; pretend origin/develop is here
+  git('update-ref', 'refs/remotes/origin/develop', git('rev-parse', 'HEAD'));
+  git('checkout', '-q', 'develop'); // main checkout on the stale tip, so a HEAD fallback would also be wrong
+  const r = (await send('POST', '/api/worktree', { path: ws, branch: 'worktree1', create: true, base: 'develop' })).body;
+  assert.ok(r.ok, JSON.stringify(r));
+  assert.equal(git('rev-parse', 'worktree1'), git('rev-parse', 'origin/develop'), 'forked from origin/develop, not the stale local develop');
+  assert.notEqual(git('rev-parse', 'worktree1'), git('rev-parse', 'develop'));
+});

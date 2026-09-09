@@ -14,7 +14,7 @@ import { openMenu, closeMenu } from './menu.js';
 import { ensurePrTerminal, applyPrLayout, clearPrLayout, resolveTabFolder, removeWorktree, openPrPanel, leaveReview } from './split.js';
 import { jiraTaskBranch } from '../lib/workflow.mjs';
 import { persistTask, taskForTab, taskById } from '../services/tasks.js';
-import { deleteWorktreeAt } from './tasks.js';
+import { deleteWorktreeAt, ensureWorktree } from './tasks.js';
 import { refreshWorkflowBtn, launchCli } from './workflow.js';
 import { hideDiffPane } from './diff.js';
 import { attachFind, closeFind } from './find.js';
@@ -865,20 +865,12 @@ export async function newTask(cli = '') {
     // checkout) and a task never runs on the main repo — say so instead of half-creating one.
     if (f.matched && !f.isWorktree) { toastErr(`${branch || 'This branch'} is checked out in the main repo — switch it away there first.`); return; }
     if (!f.matched && f.workspace && branch) {
-      let r = await apiJson(ROUTES.WORKTREE, 'POST', { path: f.workspace, branch, create: tab.kind === 'jira' });
-      // A non-worktree folder is already sitting where this worktree would go. We never delete a
-      // folder we didn't create without asking — confirm an override, tailoring the warning to how
-      // safe it is (only regenerable editor state vs. real files), then retry with override.
-      if (r && r.folderConflict) {
-        const what = r.disposable
-          ? `A leftover folder (only editor state, no source) is at:\n${r.path}\n\nDelete it and create the task here?`
-          : `A folder already exists at:\n${r.path}\n\nIt isn't a git worktree and may contain files. Delete it and create the task here?`;
-        if (!confirm(what)) return;
-        r = await apiJson(ROUTES.WORKTREE, 'POST', { path: f.workspace, branch, create: tab.kind === 'jira', override: true });
-      }
-      if (r && r.error) { toastErr(r.error); return; }
+      // One conflict path for every worktree create (tasks.js → ensureWorktree): a non-worktree
+      // folder in the way is confirmed in-app (the webview swallows native confirm()); failures toast.
+      const created = await ensureWorktree({ workspace: f.workspace }, branch, { create: tab.kind === 'jira' });
+      if (!created) return;
       toast(`Worktree created for ${branch}`);
-      cwd = r.path || cwd;
+      cwd = created;
       updateFolderChip(true);
     }
     tab.prSplit = true;

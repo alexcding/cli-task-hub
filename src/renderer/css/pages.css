@@ -32,6 +32,12 @@
 .modal-confirm { max-width:380px; }
 .modal-confirm h2 { margin-bottom:8px; word-break:break-word; }
 .modal-msg { font-size:13px; line-height:1.5; color:var(--text-2); }
+/* New session dialog (components/new-session-dialog.js): form fields + the agent segmented control. */
+.modal-session { max-width:400px; }
+.modal-session .form-group:has(+ .modal-actions) { margin-bottom:0; }
+.modal-session .form-hint-err { color:var(--danger); }
+.modal-session .ns-cli { gap:6px; }
+.modal-session .ns-cli .theme-opt { padding:5px 11px; font-size:13px; }
 
 /* Toast */
 #toast { position:fixed;bottom:20px;right:20px;z-index:200;background:var(--text);color:var(--bg);font-size:13px;font-weight:500;padding:10px 16px;border-radius:var(--r);box-shadow:var(--shadow-md);opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;transform:translateY(6px); }

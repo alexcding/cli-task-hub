@@ -4,6 +4,7 @@ import { state } from '../stores/store.js';
 import { api, apiJson } from '../services/api.js';
 import { esc, timeAgo, setActiveSegTab } from '../lib/util.js';
 import { toast, toastErr } from '../components/toast.js';
+import { confirmDialog } from '../components/confirm.js';
 import { renderProjectNav } from '../components/sidebar.js';
 import { loadLogs } from './logs.js';
 import { GIT_CLIENTS, resolveGitClientCmd } from '../lib/git-clients.js';
@@ -18,6 +19,7 @@ export async function loadSettings() {
   setActivityNotifyUI(settings?.activityNotify !== 'off'); // default on when unset
   populateGitClientPicker(settings);
   setWebviewPoolUI(settings?.webviewPool);
+  setDefaultCliUI(settings?.defaultCli ?? state.defaultCli);
 
   if (cfg.poll_interval)      document.getElementById('poll-interval').value = cfg.poll_interval;
   if (cfg.jira_base_url)      document.getElementById('jira-base-url').value = cfg.jira_base_url;
@@ -229,6 +231,22 @@ export async function setActivityNotify(on) {
   } catch (e) { toastErr(e.message); }
 }
 
+// ── Default agent ──────────────────────────────────────────────────────────────
+// The agent preselected in the sidebar's New session dialog ("+" on a project). Persisted as the
+// `defaultCli` setting ('claude' | 'codex' | '' for a plain shell) and mirrored in state.defaultCli.
+function setDefaultCliUI(value) {
+  const v = value == null ? 'claude' : String(value);
+  state.defaultCli = v;
+  document.querySelectorAll('#default-cli-toggle .theme-opt')
+    .forEach(b => b.classList.toggle('active', b.dataset.cli === v));
+}
+export async function setDefaultCli(value) {
+  try {
+    await apiJson(ROUTES.settingsKey('defaultCli'), 'PUT', { value: String(value ?? '') });
+    setDefaultCliUI(value);
+  } catch (e) { toastErr(e.message); }
+}
+
 // ── Memory: live-webview pool size ─────────────────────────────────────────────
 // How many embedded pages stay loaded (see the pool in components/viewer.js). Persisted as the
 // `webviewPool` setting; applied to the running viewer immediately (evicts on shrink).
@@ -336,7 +354,7 @@ function renderDbInspector(d) {
 
 export async function deleteProject(id) {
   const proj = state.projects.find(p=>p.id===id);
-  if (!confirm(`Delete project "${proj?.name}"? This also removes its links.`)) return;
+  if (!(await confirmDialog({ title: `Delete project “${proj?.name}”?`, message: 'Its links and settings are removed. Local folders and git worktrees are left alone.', label: 'Delete' }))) return;
   try {
     await api(ROUTES.project(id), {method:'DELETE'});
     toast('Project deleted');

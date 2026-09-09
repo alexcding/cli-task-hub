@@ -266,6 +266,23 @@
             </div>
           </div>
 
+          <!-- Default agent: preselected in the sidebar's New session dialog ("+" on a project).
+               Persisted as the `defaultCli` setting (settings.js setDefaultCli). -->
+          <div class="card">
+            <div class="card-header"><h3>Default agent</h3></div>
+            <div class="card-pad theme-row">
+              <div>
+                <div class="theme-row-title">New session agent</div>
+                <div class="theme-row-sub">Preselected when you start a session from a project's "+" — you can still switch it in the dialog.</div>
+              </div>
+              <div class="theme-toggle" id="default-cli-toggle" role="group" aria-label="Default agent">
+                <button class="theme-opt" data-cli="claude" onclick="setDefaultCli('claude')">Claude</button>
+                <button class="theme-opt" data-cli="codex" onclick="setDefaultCli('codex')">Codex</button>
+                <button class="theme-opt" data-cli="" onclick="setDefaultCli('')">Shell only</button>
+              </div>
+            </div>
+          </div>
+
           <!-- Workflow hooks: a separate concern from "is the CLI installed". Installs a turn-finished
                hook into Claude Code / Codex so Workflows + the Tasks live-activity get a reliable signal. -->
           <div class="card">

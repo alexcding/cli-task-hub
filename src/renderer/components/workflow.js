@@ -13,7 +13,9 @@ import { resolveTabFolder, ensurePrTerminal, applyPrLayout } from './split.js';
 import { whenTurnDone, setTermBusy } from './terminal.js';
 import { analyzeTerminal } from '../services/analyzer.js';
 import { persistTask, taskForTab } from '../services/tasks.js';
+import { ensureWorktree } from './tasks.js';
 import { toast, toastErr } from './toast.js';
+import { confirmDialog } from './confirm.js';
 import { launchCli, submitLine } from './cli-launch.js';
 export { launchCli }; // re-export: viewer.js imports it from here
 
@@ -127,7 +129,7 @@ export async function runWorkflow(tab, wf) {
   if (!st || st[wf.cli] !== 'installed') {
     const cli = CLI_LABEL[wf.cli] || wf.cli;
     // A dialog (not a transient toast) because the user must act — and offer to take them there.
-    if (confirm(`The ${cli} hook isn't installed.\n\nWorkflows need it so TaskHub knows when each step finishes. Open Settings → CLIs to install it?`)) {
+    if (await confirmDialog({ title: `${cli} hook not installed`, message: 'Workflows need it so TaskHub knows when each step finishes. Open Settings → CLIs to install it?', label: 'Open Settings' })) {
       window.showPage?.('settings');
       const btn = document.querySelector('button[onclick="switchSettingsTab(\'clis\',this)"]');
       if (btn) window.switchSettingsTab?.('clis', btn);
@@ -158,8 +160,10 @@ export async function runWorkflow(tab, wf) {
     if (!f.matched && branch) {
       // A Jira task's branch is new — ask the server to create it off the default branch; a PR's
       // head ref already exists, so don't (matches newTask in viewer.js).
-      const r = await apiJson(ROUTES.WORKTREE, 'POST', { path: f.workspace || p.workspace, branch, create: tab.kind === 'jira' });
-      if (r && r.error) throw new Error(r.error);
+      // Shared create path (tasks.js → ensureWorktree): a folder conflict is confirmed in-app; a
+      // decline or failure (already toasted) aborts the run.
+      const created = await ensureWorktree({ workspace: f.workspace || p.workspace }, branch, { create: tab.kind === 'jira' });
+      if (!created) return; // declined the folder-conflict confirm, or failed (already toasted) — not a "Workflow failed"
       f = await resolveTabFolder(tab); // re-resolve now that it exists, so the terminal opens in it
     }
 

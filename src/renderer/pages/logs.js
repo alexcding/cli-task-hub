@@ -8,6 +8,7 @@ import { api, apiJson } from '../services/api.js';
 import { esc, escJs, jiraUrl, timeAgo } from '../lib/util.js';
 import { ICON, TAB_ICON } from '../lib/icons.js';
 import { toastErr } from '../components/toast.js';
+import { confirmDialog } from '../components/confirm.js';
 
 let _logCategory = 'event'; // 'all' | 'event' | 'webhook' | …
 let _logCats = null;        // cached category list (categories change rarely); null → refetch
@@ -42,7 +43,7 @@ export function setLogCategory(c) { _logCategory = c; loadLogs(); }
 
 export async function clearLogs() {
   const scope = _logCategory === 'all' ? 'all logs' : `"${_logCategory}" logs`;
-  if (!confirm(`Clear ${scope}?`)) return;
+  if (!(await confirmDialog({ title: `Clear ${scope}?`, message: 'The entries are deleted from logs.db.', label: 'Clear' }))) return;
   try {
     await apiJson(ROUTES.LOGS_CLEAR, 'POST', { category: _logCategory });
     _logCats = null; // a cleared category may vanish — refetch the chip set

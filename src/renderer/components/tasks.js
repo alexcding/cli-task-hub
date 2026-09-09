@@ -17,41 +17,53 @@ import { confirmDialog } from './confirm.js';
 import { launchCli } from './cli-launch.js';
 import { analyzeTerminal } from '../services/analyzer.js';
 import { newTaskId, persistTask, unpersistTask, taskById, taskTerm } from '../services/tasks.js';
+import { newSessionDialog } from './new-session-dialog.js';
 
 // Create a worktree for `branch` under the project (idempotent: an existing worktree for that
-// branch is adopted). A non-worktree folder in the way is confirmed before it is replaced.
-// Returns the worktree path, or null when the user declined / it failed (toasted).
-export async function ensureWorktree(project, branch, { create = true } = {}) {
-  let r = await apiJson(ROUTES.WORKTREE, 'POST', { path: project.workspace, branch, create });
+// branch is adopted). A brand-new branch forks from `base` (else the repo's default branch). A
+// non-worktree folder in the way is confirmed (in-app — the webview swallows native confirm())
+// before it is replaced. Returns the worktree path, or null when the user declined / it failed (toasted).
+export async function ensureWorktree(project, branch, { create = true, base = '' } = {}) {
+  const body = { path: project.workspace, branch, create, ...(base && { base }) };
+  let r = await apiJson(ROUTES.WORKTREE, 'POST', body);
   if (r && r.folderConflict) {
-    const what = r.disposable
-      ? `A leftover folder (only editor state, no source) is at:\n${r.path}\n\nDelete it and create the worktree here?`
-      : `A folder already exists at:\n${r.path}\n\nIt isn't a git worktree and may contain files. Delete it and create the worktree here?`;
-    if (!confirm(what)) return null;
-    r = await apiJson(ROUTES.WORKTREE, 'POST', { path: project.workspace, branch, create, override: true });
+    const message = r.disposable
+      ? `A leftover folder (only editor state, no source) is at ${r.path}. Delete it and create the worktree here?`
+      : `A folder already exists at ${r.path}. It isn't a git worktree and may contain files. Delete it and create the worktree here?`;
+    if (!(await confirmDialog({ title: 'Replace folder?', message, label: 'Delete & create' }))) return null;
+    r = await apiJson(ROUTES.WORKTREE, 'POST', { ...body, override: true });
   }
   if (!r || r.error) { toastErr(r?.error || 'Worktree creation failed'); return null; }
   return r.path;
 }
 
-// Sidebar "+" on a project: a NEW worktree (branch name asked) with a task on it.
+// Sidebar "+" on a project: the New session dialog (branch name, base branch, agent), then a NEW
+// worktree with a task on it and the chosen agent launched in its terminal.
 export async function newWorktreeTask(projectId) {
   const project = projectById(projectId);
   if (!project?.workspace) { toastErr('Project has no local workspace'); return; }
-  const branch = (prompt('Branch name for the new worktree', '') || '').trim();
-  if (!branch) return;
-  const worktree = await ensureWorktree(project, branch);
+  const pick = await newSessionDialog(project);
+  if (!pick) return;
+  const worktree = await ensureWorktree(project, pick.branch, { base: pick.base });
   if (!worktree) return;
-  await createTask(project, worktree, { branch });
+  await createTask(project, worktree, { branch: pick.branch, cli: pick.cli });
 }
 
-// Record a task on `worktree` and open its terminal as a standalone view (no linked page).
-async function createTask(project, worktree, { branch = '' } = {}) {
+// Record a task on `worktree` and open its terminal as a standalone view (no linked page). With a
+// `cli`, drop straight into that agent and stamp it (+ minted conversation id) on the task so a
+// stopped session resumes the same conversation (openTaskSession).
+async function createTask(project, worktree, { branch = '', cli = '' } = {}) {
   const task = await persistTask({ id: newTaskId(), projectId: project.id, workspace: project.workspace, worktree,
     branch, title: basename(worktree), kind: '', url: '', jiraKey: '', cli: '', sessionId: '' });
   try {
     const termId = await createTermView(worktree, task.title, { paired: true, pairKey: task.id });
     activateTerminal(termId);
+    if (cli) {
+      // null ⇒ the shell wasn't at a prompt (e.g. a slow rc file) — nothing launched, nothing stamped; say so.
+      const r = await launchCli(termId, null, cli);
+      if (r) await persistTask({ id: task.id, cli, ...(r.sessionId && { sessionId: r.sessionId }) });
+      else toastErr(`Terminal busy — ${cli} not started. Run it from the shell when it's ready.`);
+    }
   } catch (e) { toastErr('Terminal failed: ' + e.message); }
 }
 
