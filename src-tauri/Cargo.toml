@@ -30,6 +30,8 @@ tauri-plugin-single-instance = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"
 portable-pty = "0.9.0"
+# setsid for the detached PTY daemon (terminals.rs → ptyd.rs); already in the tree transitively.
+libc = "0.2"
 sysinfo = "0.36.1"
 tauri-plugin-notification = "2.3.3"
 tauri-plugin-updater = "2.10.1"

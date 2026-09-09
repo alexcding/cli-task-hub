@@ -10,6 +10,7 @@ mod commands;
 mod glass;
 mod menu;
 mod notify;
+pub mod ptyd;
 mod terminals;
 mod tray;
 mod usage_image;
@@ -177,6 +178,14 @@ pub(crate) fn hide_main(app: &tauri::AppHandle) {
 // .quit() menu role: that terminates immediately, skipping QUITTING and the PTY cleanup.
 pub(crate) fn quit_app(app: &tauri::AppHandle) {
   QUITTING.store(true, Ordering::SeqCst);
+  // Terminals live in the detached ptyd daemon and deliberately survive this quit; the next
+  // launch reattaches them. Only quit_app_stop_terminals tears them down.
+  app.exit(0);
+}
+
+// Tray "Quit & Stop Terminals": the explicit teardown — kill every shell in ptyd, then quit.
+pub(crate) fn quit_app_stop_terminals(app: &tauri::AppHandle) {
+  QUITTING.store(true, Ordering::SeqCst);
   terminals::kill_all(app);
   app.exit(0);
 }
@@ -322,6 +331,7 @@ pub fn run() {
       terminals::term_create,
       terminals::term_write,
       terminals::term_resize,
+      terminals::term_flow,
       terminals::term_kill,
       terminals::term_list,
       terminals::term_attach,
@@ -366,6 +376,12 @@ pub fn run() {
         setup_auto_updates(app.handle());
       }
 
+      // Bring the PTY daemon up (or reconnect to the one still holding last session's shells)
+      // off the main thread so a slow spawn never delays the window.
+      {
+        let h = app.handle().clone();
+        std::thread::spawn(move || terminals::warm_up(&h));
+      }
       open_main_window(app.handle())?;
       tray::setup(app.handle())?;
       // App menu + keyboard accelerators (non-fatal: a bad accelerator must not block launch).

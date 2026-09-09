@@ -73,8 +73,10 @@ bunx tauri build       # package the macOS .app/.dmg (builds the Node sidecar fi
 
 **Tauri host** (`src-tauri/`, Rust): `src/lib.rs` (entry; builds the window in Rust, spawns
 the Node sidecar in release, wires tray/plugins) + `src/main.rs`; `src/commands.rs` (the
-`window.taskhub.*` commands — theme/dialog/open/usage/avatar); `src/terminals.rs` (PTYs via
-`portable-pty`); `src/tray.rs` + `src/menu.rs` + `src/webview_menu.rs` (tray, app menu,
+`window.taskhub.*` commands — theme/dialog/open/usage/avatar); `src/terminals.rs` (client of
+the detached PTY daemon) + `src/ptyd.rs` (the daemon: `taskhub __ptyd__ <dir>`, own session,
+`portable-pty`, socket `/tmp/taskhub-ptyd-<uid>.sock`, manifests under `<app data>/ptyd/terms/` —
+shells survive app quit/crash/rebuild; tray "Quit & Stop Terminals" is the only teardown); `src/tray.rs` + `src/menu.rs` + `src/webview_menu.rs` (tray, app menu,
 embedded-webview context menu); `src/viewer.rs` (WKWebView title/URL/nav poll for the
 embedded tabs); `src/notify.rs` (review + activity notifications); `src/usage_image.rs` +
 `src/avatars.rs`. `bridge.js` is the preload-equivalent init script that defines
@@ -101,8 +103,7 @@ official Node binary into `src-tauri/binaries/` (run by `tauri build`'s `beforeB
     you submit *any* review (even a comment), so `category` flips to `other` then.
   - **`awaitingMyReview`** — broader "still in my review orbit": requested **OR** I've left any
     review (commented / approved-but-unmerged / changes-requested), non-draft, not mine. Drives the
-    **dashboard "Review Requested"** section and the **sidebar Mine/Review grouping** (via
-    `store.prGroup`). Mirror it in any new Mine-vs-Review split — never group on raw `category`.
+    **dashboard "Review Requested"** section (via `store.prGroup`). Mirror it in any new Mine-vs-Review split — never group on raw `category`.
 - **The snapshot is *lean*** (`src/server/services/poller.js#lean`): the renderer only ever sees fields `lean()`
   copies through. If a card/view needs a new `gh` field (e.g. `reviewDecision`, `awaitingMyReview`),
   add it to both `PR_FIELDS` (`src/server/repositories/github.js`) **and** `lean()` — a field present on the raw PR but

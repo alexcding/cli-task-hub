@@ -355,7 +355,7 @@ fn build_menu(app: &AppHandle, tabs: &[Tab], prs: &[Pr], usage: &Usage, settings
     }
   }
 
-  b = b.separator().text("quit", "Quit TaskHub");
+  b = b.separator().text("quit", "Quit TaskHub").text("quit-stop", "Quit & Stop Terminals");
   b.build()
 }
 
@@ -385,6 +385,7 @@ fn on_event(app: &AppHandle, id: &str) {
   match id {
     "open" => crate::show_main(app),
     "quit" => crate::quit_app(app),
+    "quit-stop" => crate::quit_app_stop_terminals(app),
     _ if id.starts_with("usage:") => {
       crate::show_main(app);
       if let Some(w) = app.get_webview("main") {

@@ -4236,6 +4236,7 @@ dependencies = [
  "block2",
  "chrono",
  "image",
+ "libc",
  "log",
  "mac-notification-sys",
  "objc2",

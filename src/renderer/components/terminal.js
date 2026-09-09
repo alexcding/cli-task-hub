@@ -6,8 +6,12 @@ import { codeFontStack, loadScript } from '../lib/util.js';
 import { agentOutput } from '../lib/terminal-tail.mjs';
 import { termTheme } from '../services/theme.js';
 import { renderTabs, refreshTermBusy } from './sidebar.js';
+import { taskById } from '../services/tasks.js';
 import { ensurePanelOpen, hideAllPanes, updateNavButtons, closeSplit, activateTab as activateWebTab } from './viewer.js';
 import { clearPrLayout } from './split.js';
+
+const FLOW_HIGH = 1024 * 1024; // bytes queued in xterm before we pause the PTY
+const FLOW_LOW = 256 * 1024;   // …and the level at which we resume
 
 // Load the vendored xterm bundle + addons once, on first use (keeps it off the
 // initial page load). Resolves when window.Terminal / FitAddon / WebglAddon exist.
@@ -219,9 +223,21 @@ export async function attachTermView(id, dir, title, { paired = false, pairKey =
   // during the attach round-trip is neither dropped nor duplicated at the boundary.
   let flushing = !!replay;
   const queued = [];
+  // Flow control: xterm parses asynchronously, so under a flood its write buffer can run far ahead
+  // of what's painted. Track bytes handed to xterm but not yet consumed (write callback); above
+  // FLOW_HIGH ask the daemon to pause this PTY's reads, resume once it drains below FLOW_LOW.
+  let inflight = 0, flowPaused = false;
+  const flowWrite = chunk => {
+    inflight += chunk.length;
+    if (!flowPaused && inflight > FLOW_HIGH) { flowPaused = true; taskhub.term.flow?.(id, true); }
+    term.write(chunk, () => {
+      inflight -= chunk.length;
+      if (flowPaused && inflight < FLOW_LOW) { flowPaused = false; taskhub.term.flow?.(id, false); }
+    });
+  };
   entry.off = taskhub.term.onData(id, (chunk, seq) => {
     if (flushing) queued.push({ seq, chunk });
-    else term.write(chunk);
+    else flowWrite(chunk);
   });
   if (replay) {
     let attachSeq = 0;
@@ -235,7 +251,7 @@ export async function attachTermView(id, dir, title, { paired = false, pairKey =
     // rather than writing to a disposed xterm (re-adding happened above, before the await).
     if (state.terms.get(id) !== entry) return id;
     flushing = false;
-    for (const q of queued) if (q.seq > attachSeq) term.write(q.chunk);
+    for (const q of queued) if (q.seq > attachSeq) flowWrite(q.chunk);
   }
   return id;
 }
@@ -312,15 +328,17 @@ export function whenTurnDone(id, { timeoutMs = 0, signal } = {}) {
   });
 }
 
+// pairKey is the task id; a task linked to a page binds to that page's open tab (if any).
 function bindPairedTermToTab(id, pairKey) {
-  if (!pairKey) return;
-  const tab = state.tabs.find(t => t.url === pairKey);
+  const task = pairKey ? taskById(pairKey) : null;
+  if (!task?.url) return;
+  const tab = state.tabs.find(t => t.url === task.url);
   if (tab && !tab.termId) tab.termId = id;
 }
 
-// After the window is reopened, the renderer is fresh but the main-process PTYs can still
-// be alive. Terminals are kept hidden until their matching GitHub/Jira tab is opened again.
-// There is no standalone terminal group; older unkeyed PTYs can still be claimed by cwd.
+// After the window is reopened (or the app relaunched — PTYs live in the daemon), the renderer is
+// fresh but the terminals are still alive. They are reattached hidden, keyed by their task url,
+// until their matching GitHub/Jira tab is opened again.
 export async function rehydrateTerminals() {
   if (!window.taskhub?.term?.list) return;
   let live = [];
