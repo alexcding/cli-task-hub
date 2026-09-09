@@ -55,11 +55,18 @@ separation everything follows:
 - Escape everything interpolated into HTML with `esc()` (`lib/util.js`).
 - PR links open the embedded viewer: `openPrSplit(url, '#<num>', repo, branch)`.
 - **Mine vs Review splits use `store.prGroup(pr)`, never raw `pr.category`.** The dashboard
-  "Review Requested" section and the sidebar's GitHub groups must agree, so both route through
-  `prGroup` (`'review'` when `awaitingMyReview`, else `'mine'`). A PR I've only commented on is
-  `category:'other'` but belongs under Review — grouping on `category` sends it to Mine. Persist
-  the *group* on a tab (`prGroup`), not the raw category, so restored tabs land correctly. The
-  tray/sound are the exception: they intentionally stay on `category==='review'` (see AGENTS.md).
+  "Review Requested" section routes through `prGroup` (`'review'` when `awaitingMyReview`, else
+  `'mine'`). A PR I've only commented on is `category:'other'` but belongs under Review — grouping
+  on `category` sends it to Mine. The tray/sound are the exception: they intentionally stay on
+  `category==='review'` (see AGENTS.md).
+- **The sidebar is always laid out by project → worktree → task.** Each project folder nests its
+  linked worktrees (`state.worktrees`, from `/api/worktrees`), each worktree its tasks (agent
+  sessions, live or stopped — `services/tasks.js → taskSessions()`), then the project's plain
+  open-tab rows. A task is keyed by id (its terminal's `pairKey`), always sits on a worktree, and
+  may link to a PR/Jira tab by `url`; several tasks may share one worktree. Hover "+" on a project
+  creates a worktree + task, on a worktree another task; a task's trash stops only its terminal,
+  the worktree row's trash force-removes the folder with its tasks. A tab whose URL is a task renders only as
+  a task row. There is no Tasks page, no Tasks group, and no grouping setting.
 - **Embedded webviews are pooled.** `tab.wv` / `link.wv` are built lazily on first show and torn
   down when they fall out of the LRU pool (`state.webviewPool`, Settings → System), then rebuilt
   from `tab.cur` / `link.url`. Never cache a `wv` reference; re-read `owner.wv` (may be null) and

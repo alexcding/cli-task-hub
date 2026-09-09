@@ -50,13 +50,11 @@
     </div>
     <nav>
       <button class="nav-btn active" data-page="dashboard" onclick="showPage('dashboard')"><span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="2.5"/><rect x="14" y="3" width="7" height="7" rx="2.5"/><rect x="3" y="14" width="7" height="7" rx="2.5"/><rect x="14" y="14" width="7" height="7" rx="2.5"/></svg></span> Dashboard</button>
-      <button class="nav-btn" data-page="tasks" onclick="showPage('tasks')"><span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="3"/><path d="M18 3 21 6 18 9 15 6Z"/><rect x="3" y="15" width="6" height="6" rx="2"/><circle cx="18" cy="18" r="3"/><path d="M9 6h6"/><path d="M6 9v6"/><path d="M18 9v6"/></svg></span> Tasks<span class="nav-count" id="tasks-nav-count"></span></button>
-      <button class="nav-btn" data-page="activity" onclick="showPage('activity')"><span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><line x1="8.5" y1="13" x2="15.5" y2="13"/><line x1="8.5" y1="16.5" x2="14" y2="16.5"/></svg></span> Events</button>
 
       <div class="nav-label" style="margin-top:4px">Projects</div>
       <div id="project-nav"></div>
 
-      <!-- Open links (sidebar mode): grouped GitHub / Jira tabs render here -->
+      <!-- Open tabs that belong to no configured project (and are not tasks) -->
       <div id="opentabs-nav"></div>
     </nav>
     <div class="sidebar-footer">
@@ -88,26 +86,6 @@
         <div id="project-page-content"></div>
       </div>
 
-      <!-- ACTIVITY (timeline of PR / Jira / system events) -->
-      <div id="page-activity" class="page">
-        <div style="max-width:860px">
-          <div class="log-toolbar">
-            <div id="log-cats" class="seg-tabs"></div>
-            <label class="log-errors"><input type="checkbox" id="log-errors-only" onchange="loadLogs()"> Errors only</label>
-            <button class="btn btn-secondary btn-sm" onclick="clearLogs()">Clear</button>
-          </div>
-          <div id="events-list"></div>
-        </div>
-      </div>
-
-      <!-- TASKS (live CLI sessions + workflow status) -->
-      <div id="page-tasks" class="page">
-        <div style="max-width:860px">
-          <div style="margin-bottom:12px"><span id="tasks-count" class="task-count"></span></div>
-          <div id="tasks-list"></div>
-        </div>
-      </div>
-
       <!-- SETTINGS -->
       <div id="page-settings" class="page">
         <div style="max-width:760px">
@@ -117,6 +95,17 @@
             <button class="seg-tab" onclick="switchSettingsTab('clis',this)">CLIs</button>
             <button class="seg-tab" onclick="switchSettingsTab('jira',this)">Jira</button>
             <button class="seg-tab" onclick="switchSettingsTab('system',this)">System</button>
+            <button class="seg-tab" id="settings-seg-events" onclick="switchSettingsTab('events',this)">Events</button>
+          </div>
+
+          <!-- Events: the activity log (pages/logs.js). Reached from Settings or a notification click. -->
+          <div class="tab-panel" id="settings-tab-events">
+            <div class="log-toolbar">
+              <div id="log-cats" class="seg-tabs"></div>
+              <label class="log-errors"><input type="checkbox" id="log-errors-only" onchange="loadLogs()"> Errors only</label>
+              <button class="btn btn-secondary btn-sm" onclick="clearLogs()">Clear</button>
+            </div>
+            <div id="events-list"></div>
           </div>
 
           <div class="tab-panel active" id="settings-tab-appearance">
@@ -139,18 +128,6 @@
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
                   System
                 </button>
-              </div>
-            </div>
-            <!-- Sidebar grouping: how the open-tab rows are grouped in the left nav.
-                 "By status" = Mine/Review/Jira (default); "By project" = one group per project. -->
-            <div class="card-pad theme-row" style="border-top:1px solid var(--border)">
-              <div>
-                <div class="theme-row-title">Sidebar grouping</div>
-                <div class="theme-row-sub">Group open tabs by review status or by project</div>
-              </div>
-              <div class="theme-toggle" id="sidebar-group-toggle" role="group" aria-label="Sidebar grouping">
-                <button class="theme-opt" data-group-opt="category" onclick="setSidebarGroup('category')">By status</button>
-                <button class="theme-opt" data-group-opt="project" onclick="setSidebarGroup('project')">By project</button>
               </div>
             </div>
             <!-- Code fonts, one row per pane, each with a live preview. Saved on change
@@ -289,7 +266,7 @@
           <div class="card">
             <div class="card-header"><h3>Workflow hooks</h3></div>
             <div class="card-pad">
-              <p class="card-intro">Install a turn-finished hook into Claude Code / Codex so TaskHub knows the moment a command finishes — what lets Workflows run reliably and drives the live status on the Tasks page. It's merged into your <code class="code-chip">~/.claude</code> / <code class="code-chip">~/.codex</code> config and leaves your existing hooks untouched.</p>
+              <p class="card-intro">Install a turn-finished hook into Claude Code / Codex so TaskHub knows the moment a command finishes — what lets Workflows run reliably and drives the live status on the sidebar's task rows. It's merged into your <code class="code-chip">~/.claude</code> / <code class="code-chip">~/.codex</code> config and leaves your existing hooks untouched.</p>
               <div class="hook-row">
                 <div class="hook-row-text"><span class="hook-row-title">Claude Code</span><span class="hook-pill" id="hook-status-claude">Checking…</span></div>
                 <button class="btn btn-sm btn-primary" id="hook-btn-claude" onclick="toggleHook('claude')">Install hook</button>

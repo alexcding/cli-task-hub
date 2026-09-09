@@ -337,14 +337,59 @@ async function worktreeHolders(dir) {
   return [...holders.entries()].map(([p, command]) => ({ command, pid: Number(p) || 0 }));
 }
 
+// Ask Xcode to close every workspace/project document under `dir` (AppleScript; macOS only). Runs
+// only when lsof reported Xcode holding files there, so it never launches Xcode. Best effort.
+async function closeInXcode(dir) {
+  if (process.platform !== 'darwin') return;
+  const script = `tell application "Xcode"
+  repeat with d in (every workspace document)
+    try
+      if (path of d as string) starts with "${String(dir).replace(/\\/g, '\\\\').replace(/"/g, '\\"')}" then close d saving no
+    end try
+  end repeat
+end tell`;
+  try { await execFileAsync('osascript', ['-e', script], { timeout: 8000 }); } catch { /* Xcode not scriptable right now */ }
+}
+
 // Remove a git worktree (the folder + its admin entry) via `git -C <workspace> worktree
 // remove <dest>`, run from the MAIN checkout so git never refuses "can't remove current
-// worktree". NOT forced: git declines if the worktree has uncommitted/untracked changes,
-// and that error surfaces to the user rather than silently destroying work. The branch
-// itself is left intact. Never throws — failures come back as { error }.
-async function removeWorktree(workspace, dest) {
+// worktree". Plain: git declines if the worktree has uncommitted/untracked changes, and that
+// error surfaces to the user. `force` (the task delete, after its confirm): close it in Xcode if
+// Xcode holds it, `worktree remove --force` (discards uncommitted changes), and if anything is
+// still left, delete the folder outright and prune git's bookkeeping — everything goes. The
+// branch itself is left intact either way. Never throws — failures come back as { error }.
+async function removeWorktree(workspace, dest, { force = false } = {}) {
   if (!workspace || !dest) return { error: 'workspace and worktree path required' };
+  if (force) {
+    // Force still only ever deletes something that IS (or was) a linked worktree of this workspace:
+    // git-registered and not the main checkout, or an unregistered folder that is either gone or a
+    // disposable IDE husk. Anything else — the main checkout itself, an arbitrary folder — is refused,
+    // so a bad path from the renderer can never rm -rf a repo.
+    const norm = p => String(p).replace(/[/\\]+$/, '');
+    if (norm(dest) === norm(workspace)) return { error: 'refusing to remove the main checkout' };
+    const trees = await listWorktrees(workspace);
+    const tree = trees.find(w => norm(w.path) === norm(dest));
+    if (tree?.isMain) return { error: 'refusing to remove the main checkout' };
+    const present = await fsp.access(dest).then(() => true, () => false);
+    if (!tree && present && !(await isDisposableLeftover(dest))) return { error: `${dest} is not a worktree of this project` };
+    const holders = await worktreeHolders(dest);
+    if (holders.some(h => /xcode/i.test(h.command))) await closeInXcode(dest);
+    if (tree) { try { await gitRun(workspace, ['worktree', 'remove', '--force', dest]); } catch { /* fall through to the sweep */ } }
+    try { await fsp.rm(dest, { recursive: true, force: true }); } catch (err) { return { error: `could not delete ${dest}: ${err.message}` }; }
+    try { await gitRun(workspace, ['worktree', 'prune']); } catch { /* best effort */ }
+    return { ok: true, forced: true };
+  }
   try {
+    // Already gone (folder deleted by hand, or removed while the task record outlived it): git says
+    // "is not a working tree" — that is success for the caller, not a reason to keep the task. Prune
+    // any stale admin entry so the next create is clean. A folder that still EXISTS but isn't a
+    // registered worktree falls through to git's error: we never delete a folder we don't own.
+    const registered = (await listWorktrees(workspace)).some(w => w.path === dest);
+    const present = await fsp.access(dest).then(() => true, () => false);
+    if (!registered && !present) {
+      try { await gitRun(workspace, ['worktree', 'prune']); } catch { /* best effort */ }
+      return { ok: true, gone: true };
+    }
     await gitRun(workspace, ['worktree', 'remove', dest]);
     // `worktree remove` deletes the folder, but an IDE still open on the checkout (Xcode) re-saves
     // its UI state to the just-removed path moments later, recreating an `xcuserdata` husk that then

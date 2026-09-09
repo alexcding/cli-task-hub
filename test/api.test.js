@@ -149,24 +149,33 @@ test('tabs round-trip through /api/tabs', async () => {
   assert.equal(body.active, tabs[0].url);
 });
 
-test('tasks: upsert, list, and delete through /api/tasks', async () => {
-  const url = 'https://example.atlassian.net/browse/REC-42';
-  const rec = { url, kind: 'jira', title: 'REC-42 Thing', repo: 'o/r', branch: 'REC-42-thing',
-    jiraKey: 'REC-42', workspace: '/ws/repo', worktree: '/ws/repo.worktrees/REC-42-thing', cli: 'claude' };
+test('tasks: upsert, list, and delete through /api/tasks (keyed by id)', async () => {
+  const id = 'task-test-0001';
+  const rec = { id, projectId: 'p1', workspace: '/ws/repo', worktree: '/ws/repo.worktrees/REC-42-thing', branch: 'REC-42-thing',
+    title: 'REC-42 Thing', kind: 'jira', url: 'https://example.atlassian.net/browse/REC-42', jiraKey: 'REC-42', cli: 'claude' };
   assert.equal((await send('POST', '/api/tasks', rec)).status, 200);
-  let body = (await get('/api/tasks')).body;
-  const t = body.find(x => x.url === url);
+  let t = (await get('/api/tasks')).body.find(x => x.id === id);
   assert.ok(t, 'task is listed after upsert');
   assert.equal(t.worktree, rec.worktree);
   assert.equal(t.cli, 'claude');
-  // Upsert is idempotent (keyed by url) — title change updates in place, no duplicate row.
-  assert.equal((await send('POST', '/api/tasks', { ...rec, title: 'REC-42 Renamed' })).status, 200);
-  body = (await get('/api/tasks')).body;
-  assert.equal(body.filter(x => x.url === url).length, 1);
-  assert.equal(body.find(x => x.url === url).title, 'REC-42 Renamed');
-  // Delete by url removes it.
-  assert.equal((await send('DELETE', `/api/tasks?url=${encodeURIComponent(url)}`)).status, 200);
-  assert.equal((await get('/api/tasks')).body.some(x => x.url === url), false);
+  assert.equal(t.sessionId, '', 'no session id until one is captured');
+  // Upsert is idempotent (keyed by id) — a change updates in place, no duplicate row; the
+  // conversation id round-trips.
+  assert.equal((await send('POST', '/api/tasks', { ...rec, title: 'Renamed', sessionId: '0b1e6e2a-1111-4222-8333-444455556666' })).status, 200);
+  const body = (await get('/api/tasks')).body;
+  assert.equal(body.filter(x => x.id === id).length, 1);
+  t = body.find(x => x.id === id);
+  assert.equal(t.title, 'Renamed');
+  assert.equal(t.sessionId, '0b1e6e2a-1111-4222-8333-444455556666');
+  // Two tasks may share one worktree.
+  assert.equal((await send('POST', '/api/tasks', { ...rec, id: 'task-test-0002', url: '' })).status, 200);
+  assert.equal((await get('/api/tasks')).body.filter(x => x.worktree === rec.worktree).length, 2);
+  // A record missing its required fields is rejected.
+  assert.equal((await send('POST', '/api/tasks', { id: 'task-test-0003' })).status, 400);
+  // Delete by id removes exactly that task.
+  assert.equal((await send('DELETE', `/api/tasks?id=${encodeURIComponent(id)}`)).status, 200);
+  assert.equal((await send('DELETE', '/api/tasks?id=task-test-0002')).status, 200);
+  assert.equal((await get('/api/tasks')).body.some(x => x.id.startsWith('task-test-')), false);
 });
 
 test('links: validation and round-trip', async () => {
@@ -400,4 +409,59 @@ test('webhook ignores non-merge events', async () => {
     body: JSON.stringify({ action: 'opened', pull_request: { number: 1, merged: false }, repository: { full_name: 'o/r' } }),
   });
   assert.equal(res.status, 200); // always 200s, then ignores
+});
+
+// ── Worktrees: listing + forced removal guard rails ────────────────────────────────────────
+// A scratch git repo (no commits needed for `worktree list`; signing disabled so nothing prompts).
+const { execFileSync } = require('child_process');
+const fs = require('fs');
+const path = require('path');
+function scratchRepo() {
+  const ws = fs.mkdtempSync(path.join(require('os').tmpdir(), 'taskhub-ws-'));
+  execFileSync('git', ['-c', 'init.defaultBranch=main', 'init', '-q', ws]);
+  execFileSync('git', ['-C', ws, '-c', 'user.email=t@t', '-c', 'user.name=t', '-c', 'commit.gpgsign=false', 'commit', '-q', '--allow-empty', '-m', 'init']);
+  return ws;
+}
+
+test('GET /api/worktrees lists linked worktrees only (main checkout excluded)', async () => {
+  const ws = scratchRepo();
+  assert.deepEqual((await get(`/api/worktrees?path=${encodeURIComponent(ws)}`)).body, [], 'a bare checkout has no linked worktrees');
+  const wt = path.join(`${ws}.worktrees`, 'feat-x');
+  fs.mkdirSync(path.dirname(wt), { recursive: true });
+  execFileSync('git', ['-C', ws, 'worktree', 'add', '-q', '-b', 'feat-x', wt]);
+  const list = (await get(`/api/worktrees?path=${encodeURIComponent(ws)}`)).body;
+  assert.equal(list.length, 1);
+  assert.equal(fs.realpathSync(list[0].path), fs.realpathSync(wt));
+  assert.equal(list[0].branch, 'feat-x');
+  assert.deepEqual((await get('/api/worktrees')).body, [], 'no path → empty, never an error');
+});
+
+test('POST /api/worktree/remove force: removes a linked worktree, refuses the main checkout and foreign folders', async () => {
+  const ws = scratchRepo();
+  const realWs = fs.realpathSync(ws);
+  const wt = path.join(`${realWs}.worktrees`, 'feat-y');
+  fs.mkdirSync(path.dirname(wt), { recursive: true });
+  execFileSync('git', ['-C', realWs, 'worktree', 'add', '-q', '-b', 'feat-y', wt]);
+  fs.writeFileSync(path.join(wt, 'dirty.txt'), 'uncommitted'); // a plain remove would refuse this
+  // The main checkout is never removable, forced or not.
+  let r = (await send('POST', '/api/worktree/remove', { path: realWs, worktree: realWs, force: true })).body;
+  assert.match(r.error || '', /main checkout/);
+  assert.ok(fs.existsSync(path.join(realWs, '.git')), 'main checkout intact');
+  // An arbitrary folder with real content is not a worktree of the project → refused, left intact.
+  const foreign = fs.mkdtempSync(path.join(require('os').tmpdir(), 'taskhub-foreign-'));
+  fs.writeFileSync(path.join(foreign, 'keep.txt'), 'x');
+  r = (await send('POST', '/api/worktree/remove', { path: realWs, worktree: foreign, force: true })).body;
+  assert.match(r.error || '', /not a worktree/);
+  assert.ok(fs.existsSync(path.join(foreign, 'keep.txt')), 'foreign folder intact');
+  // The dirty linked worktree goes with force (and would not without it).
+  r = (await send('POST', '/api/worktree/remove', { path: realWs, worktree: wt })).body;
+  assert.ok(r.error, 'plain remove refuses a dirty tree');
+  r = (await send('POST', '/api/worktree/remove', { path: realWs, worktree: wt, force: true })).body;
+  assert.equal(r.ok, true);
+  assert.equal(fs.existsSync(wt), false, 'worktree folder removed');
+  assert.deepEqual((await get(`/api/worktrees?path=${encodeURIComponent(realWs)}`)).body, []);
+  // Already gone → success, not an error (the task delete flow relies on this).
+  r = (await send('POST', '/api/worktree/remove', { path: realWs, worktree: wt })).body;
+  assert.equal(r.ok, true);
+  assert.equal(r.gone, true);
 });

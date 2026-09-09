@@ -26,7 +26,7 @@ pub static REVIEW_SEEDED: AtomicBool = AtomicBool::new(false);
 pub static NOTIFIED_AT: LazyLock<Mutex<HashMap<String, String>>> = LazyLock::new(|| Mutex::new(HashMap::new()));
 
 // What a notification body-click should do — the port of notifications.js's click handlers
-// (openLinkInApp for a PR url, else showPage('activity')).
+// (openLinkInApp for a PR url, else showEvents → Settings → Events).
 #[derive(Clone)]
 pub enum NotifyClick {
   // Open `url` in the embedded viewer (window.__openTab). `category` lands the restored tab in the
@@ -73,7 +73,7 @@ fn route_click(app: &AppHandle, click: NotifyClick) {
     NotifyClick::ShowActivity => {
       crate::show_main(&app2);
       if let Some(w) = app2.get_webview("main") {
-        let _ = w.eval("window.showPage&&window.showPage('activity')");
+        let _ = w.eval("window.showEvents&&window.showEvents()");
       }
     }
   });

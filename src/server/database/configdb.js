@@ -36,6 +36,12 @@ try {
 
 const db = openDb(dbPath); // WAL + busy_timeout so concurrent access doesn't throw "database is locked"
 
+// The old url-keyed tasks table is not migrated: drop it so the id-keyed one below is created fresh.
+{
+  const cols = db.prepare('PRAGMA table_info(tasks)').all().map(c => c.name);
+  if (cols.length && !cols.includes('id')) db.exec('DROP TABLE tasks');
+}
+
 db.exec(`
   CREATE TABLE IF NOT EXISTS config   (key TEXT PRIMARY KEY, value TEXT);
   CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT);
@@ -81,19 +87,22 @@ db.exec(`
     position  INTEGER NOT NULL DEFAULT 0,
     active    INTEGER NOT NULL DEFAULT 0
   );
-  -- Tasks: a deliberately-created "New Task" (a git worktree + its terminal). Unlike tabs, a task
-  -- is durable — it survives the tab closing, the terminal dying, and an app restart, so people can
-  -- resume work from the Tasks page. Keyed by the PR/Jira url. Removed only by the Tasks-page trash.
+  -- Tasks: one agent session on a worktree of a project. A task is created from the sidebar (the
+  -- "+" on a project = new worktree + task; the "+" on a worktree = another task there) or from a
+  -- PR/Jira tab New Task (then url/kind link it to that tab). Durable — survives the tab
+  -- closing, the terminal dying, and an app restart. Removed only by the row's trash.
   CREATE TABLE IF NOT EXISTS tasks (
-    url        TEXT PRIMARY KEY,
-    kind       TEXT NOT NULL,
-    title      TEXT,
-    repo       TEXT,
+    id         TEXT PRIMARY KEY,   -- uuid; the paired terminal's pairKey
+    project_id TEXT NOT NULL,
+    workspace  TEXT NOT NULL,      -- the project checkout the worktree hangs off
+    worktree   TEXT NOT NULL,      -- the task's checkout (several tasks may share one)
     branch     TEXT,
+    title      TEXT,
+    kind       TEXT,               -- 'github' | 'jira' | '' (no linked page)
+    url        TEXT,               -- the linked PR/Jira url ('' when none)
     jira_key   TEXT,
-    workspace  TEXT,
-    worktree   TEXT,
-    cli        TEXT,
+    cli        TEXT,               -- 'claude' | 'codex' | ''
+    session_id TEXT,               -- the CLI's conversation id: exact resume on click
     created_at TEXT NOT NULL
   );
   -- Per-PR review-request tracking, keyed "repo#number". requested_at is the latest
@@ -266,27 +275,28 @@ function setTabs(tabs = [], active = null) {
   } catch (err) { db.exec('ROLLBACK'); throw err; }
 }
 
-// ── Tasks (durable New Task sessions — a worktree + its terminal; see services/tasks.js) ────────
+// ── Tasks (see the table comment; renderer: services/tasks.js) ─────────────────────────────
 function getTasks() {
   return db.prepare('SELECT * FROM tasks ORDER BY created_at ASC').all().map(r => ({
-    url: r.url, kind: r.kind, title: r.title || '', repo: r.repo || '', branch: r.branch || '',
-    jiraKey: r.jira_key || '', workspace: r.workspace || '', worktree: r.worktree || '',
-    cli: r.cli || '', createdAt: r.created_at,
+    id: r.id, projectId: r.project_id, workspace: r.workspace, worktree: r.worktree, branch: r.branch || '',
+    title: r.title || '', kind: r.kind || '', url: r.url || '', jiraKey: r.jira_key || '', cli: r.cli || '',
+    sessionId: r.session_id || '', createdAt: r.created_at,
   }));
 }
 const _upsertTask = db.prepare(
-  `INSERT INTO tasks (url, kind, title, repo, branch, jira_key, workspace, worktree, cli, created_at)
-   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-   ON CONFLICT(url) DO UPDATE SET kind=excluded.kind, title=excluded.title, repo=excluded.repo,
-     branch=excluded.branch, jira_key=excluded.jira_key, workspace=excluded.workspace,
-     worktree=excluded.worktree, cli=excluded.cli`
+  `INSERT INTO tasks (id, project_id, workspace, worktree, branch, title, kind, url, jira_key, cli, session_id, created_at)
+   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+   ON CONFLICT(id) DO UPDATE SET project_id=excluded.project_id, workspace=excluded.workspace, worktree=excluded.worktree,
+     branch=excluded.branch, title=excluded.title, kind=excluded.kind, url=excluded.url, jira_key=excluded.jira_key,
+     cli=excluded.cli, session_id=excluded.session_id`
 );
 function upsertTask(t = {}) {
-  if (!t.url) return;
-  _upsertTask.run(t.url, t.kind === 'jira' ? 'jira' : 'github', t.title || t.url, t.repo || '',
-    t.branch || '', t.jiraKey || '', t.workspace || '', t.worktree || '', t.cli || '', t.createdAt || now());
+  if (!t.id || !t.projectId || !t.workspace || !t.worktree) return false;
+  _upsertTask.run(t.id, t.projectId, t.workspace, t.worktree, t.branch || '', t.title || '', t.kind || '', t.url || '',
+    t.jiraKey || '', t.cli || '', t.sessionId || '', t.createdAt || now());
+  return true;
 }
-const removeTask = url => db.prepare('DELETE FROM tasks WHERE url = ?').run(url);
+const removeTask = id => db.prepare('DELETE FROM tasks WHERE id = ?').run(id);
 
 // ── Review state (per-PR review-request tracking — see the review_state table) ────
 const getReviewState = key => db.prepare('SELECT requested_at, viewed_at FROM review_state WHERE key = ?').get(key) || null;

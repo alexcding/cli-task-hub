@@ -6,13 +6,15 @@
 import { ROUTES } from '/shared/routes.mjs';
 import { state, activeTab, projectByRepo, projectByPrUrl, projectByJiraKey } from '../stores/store.js';
 import { api, apiJson } from '../services/api.js';
-import { jiraKeyFromUrl, canSplitTerminal, errMsg } from '../lib/util.js';
+import { jiraKeyFromUrl, canSplitTerminal, errMsg, basename } from '../lib/util.js';
 import { toastErr } from './toast.js';
 import { createTermView, disposeTerm, fitTerm, visibleTerm } from './terminal.js';
 import { hideDiffPane } from './diff.js';
 import { hideHistory, applyReview } from './history.js';
 import { saveTabs, updateTitles, activeLeftWebview, paintLeft } from './viewer.js';
 import { renderContentTabs, markActiveTab } from './content-tabs.js';
+import { launchCli } from './cli-launch.js';
+import { persistTask, taskForTab, taskTerm, newTaskId } from '../services/tasks.js';
 
 // Resolve a tab's local folder: the matching git checkout if its branch/key is checked
 // out, else the project workspace. GitHub PR → the PR's branch. Jira ticket → the worktree
@@ -53,9 +55,9 @@ async function prCwd(tab) {
 // Remove a worktree via the server (non-forced — a dirty tree comes back as { error }, never a
 // throw). Shared by the folder-chip delete (viewer.js) and the Tasks-page task delete (tasks.js)
 // so the API call + error normalization live in one place.
-export async function removeWorktree(workspace, worktree) {
+export async function removeWorktree(workspace, worktree, { force = false } = {}) {
   if (!workspace || !worktree) return { error: 'workspace and worktree required' };
-  try { return await apiJson(ROUTES.WORKTREE_REMOVE, 'POST', { path: workspace, worktree }); }
+  try { return await apiJson(ROUTES.WORKTREE_REMOVE, 'POST', { path: workspace, worktree, force }); }
   catch (e) { return { error: e.message }; }
 }
 
@@ -69,37 +71,58 @@ export async function worktreeHolders(worktree) {
   catch { return []; }
 }
 
-// Re-adopt a surviving paired terminal for this tab by its URL (kept alive after a close, or
-// rehydrated after a window reload). Sets tab.termId and returns it, or null if none — never
-// creates one (that's ensurePrTerminal / New Task). The single source for URL-keyed adoption,
-// shared by ensurePrTerminal and applyPrLayout so the lookup can't drift between them.
+// Re-adopt a surviving paired terminal for this tab (kept alive after a close, or rehydrated after
+// a window reload / app relaunch): the terminal of the tab's task (tasks link to a tab by url; the
+// terminal is keyed by task id). Sets tab.termId and returns it, or null if none — never creates
+// one (that's ensurePrTerminal / New Task). Shared by ensurePrTerminal and applyPrLayout.
 export function adoptPairedTerminal(tab) {
   if (tab.termId && state.terms.has(tab.termId)) return tab.termId;
-  const found = [...state.terms.entries()].find(([, t]) => t.paired && t.pairKey === tab.url);
+  const task = taskForTab(tab);
+  const found = task ? taskTerm(task) : null;
   tab.termId = found ? found[0] : null;
   return tab.termId;
 }
 
-// Lazily create or resume the tab's paired terminal. A live PTY from a previous window
-// instance is matched by URL first, then by cwd for older sessions that predate pairKey.
-// `cwd0` lets a caller that has already resolved the folder (openPrPanel) skip the prCwd resolve.
-export function ensurePrTerminal(tab, cwd0) {
+// The project a tab belongs to (by repo / Jira key / PR url).
+const tabProject = tab => tab.kind === 'jira'
+  ? projectByJiraKey(tab.jiraKey || jiraKeyFromUrl(tab.url))
+  : (projectByRepo(tab.repo) || projectByPrUrl(tab.url));
+
+// Lazily create or resume the tab's paired terminal. A live PTY from a previous window instance
+// (or app run — PTYs live in the daemon) is matched through the tab's task. With no surviving
+// terminal, the tab's task record is created if missing (a paired terminal IS a task: it always
+// sits on a worktree of the tab's project) and a shell opens in that worktree.
+// `cwd0` lets a caller that has already resolved the folder (openPrPanel / newTask) skip the resolve;
+// `meta.branch` records the branch the caller just created the worktree for.
+export function ensurePrTerminal(tab, cwd0, meta = {}) {
   if (tab.termId && state.terms.has(tab.termId)) return Promise.resolve();
   if (tab._termPromise) return tab._termPromise;
   tab._termPromise = (async () => {
     if (state.tabTermInit) { try { await state.tabTermInit; } catch {} }
     if (tab.termId && state.terms.has(tab.termId)) return tab.termId;
-    if (!adoptPairedTerminal(tab)) {           // no surviving terminal for this URL → adopt-by-cwd or create
-      const cwd = cwd0 != null ? cwd0 : await prCwd(tab);
-      const byCwd = [...state.terms.entries()].find(([, t]) => t.paired && !t.pairKey && t.cwd === cwd);
-      if (byCwd) { byCwd[1].pairKey = tab.url; tab.termId = byCwd[0]; }
-      else tab.termId = await createTermView(cwd, null, { paired: true, pairKey: tab.url }); // title defaults to the folder/worktree name
+    if (!adoptPairedTerminal(tab)) {           // no surviving terminal for this tab's task → create one
+      const f = cwd0 != null ? null : await resolveTabFolder(tab);
+      const cwd = cwd0 != null ? cwd0 : f?.path;
+      if (!cwd) throw new Error('no local folder for this tab');
+      let task = taskForTab(tab);
+      if (!task) {
+        const proj = tabProject(tab);
+        if (!proj?.workspace) throw new Error('tab belongs to no project with a workspace');
+        // A task lives on a linked worktree of the project, never on the main checkout: the sidebar
+        // renders a worktree row (with a force-delete trash) for every task's folder.
+        const norm = p => String(p).replace(/[/\\]+$/, '');
+        if (norm(cwd) === norm(proj.workspace)) throw new Error('this branch is checked out in the main repo — a task needs its own worktree');
+        task = await persistTask({ id: newTaskId(), projectId: proj.id, workspace: proj.workspace, worktree: cwd,
+          branch: meta.branch || tab.branch || '', title: tab.title || basename(cwd), kind: tab.kind, url: tab.url,
+          jiraKey: tab.kind === 'jira' ? (tab.jiraKey || jiraKeyFromUrl(tab.url)) : '', cli: '', sessionId: '' });
+      }
+      tab.termId = await createTermView(cwd, task.title, { paired: true, pairKey: task.id });
     }
     // The tab may have been closed while the awaits above were in flight (its closeTab
     // saw termId still null). Mirror the close policy: a bare shell with no context is
     // disposed — nothing references it and the PTY would just leak — but a terminal with
-    // context (running process / typed input) is deliberately kept alive; it stays
-    // paired by URL, so reopening the same tab re-adopts it via the byKey match above.
+    // context (running process / typed input) is deliberately kept alive; it stays keyed to
+    // the task, so reopening the same tab re-adopts it via adoptPairedTerminal above.
     if (!state.tabs.includes(tab)) {
       const t = state.terms.get(tab.termId);
       if (t && !t.hasContext) disposeTerm(tab.termId);
@@ -258,9 +281,15 @@ export function clearPrLayout(tab = null, animate = false) {
 // one — never auto-conjured from a stray worktree.
 export async function openPrPanel(tab, animate = false) {
   if (adoptPairedTerminal(tab)) { applyPrLayout(tab, animate); return; } // a live terminal survived
-  const task = state.tasks.find(t => t.url === tab.url);
+  const task = taskForTab(tab);
   if (task && task.worktree) {
     await ensurePrTerminal(tab, task.worktree);
+    // The shell is fresh (the old one is gone) — pick the agent's conversation back up: exact
+    // resume with the stored id, else a fresh launch of the task's CLI (which mints a new id).
+    if (task.cli && tab.termId && state.terms.has(tab.termId)) {
+      const r = await launchCli(tab.termId, null, task.cli, { sessionId: task.sessionId || '', resume: !!task.sessionId });
+      if (r?.sessionId && r.sessionId !== task.sessionId) persistTask({ id: task.id, sessionId: r.sessionId });
+    }
     if (state.activeTabId !== tab.id || !tab.prSplit) return;
   }
   applyPrLayout(tab, animate);

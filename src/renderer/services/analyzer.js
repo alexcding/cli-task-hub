@@ -1,5 +1,5 @@
 // Headless analysis of a paired terminal's last agent message — the single entry point the Tasks
-// card (pages/tasks.js) and the workflow runner (components/workflow.js) both commit to, so the
+// row (components/tasks.js) and the workflow runner (components/workflow.js) both commit to, so the
 // read + analyze + record flow lives in ONE place. It owns:
 //   • the settle delay (let the final output paint into the xterm buffer before we read it),
 //   • the generation guard (a new turn bumps term.gen and supersedes an in-flight call),

@@ -510,8 +510,18 @@ body.find-open .split-body webview, body.find-open .split-body .wcv-shim { botto
 /* Open tabs render as nav rows under GitHub / Jira group labels. */
 /* Sidebar section headers (Mine/Review) share the exact box of the Projects label (.nav-label)
    so all three section headers line up identically. */
-#opentabs-nav .tab-group { display:block; margin-top:4px; }
-#opentabs-nav .tab-group-label { display:block; padding:10px 8px 4px; }
+/* Task row (nested under its project folder): state dot (idle grey; working green + pulse via .busy; needs input amber; blocked red;
+   done green; stopped hollow) + CLI mark. .busy also shows the shared .tab-spin. */
+.task-row .task-dot { width:7px; height:7px; border-radius:50%; flex-shrink:0; background:var(--text-3); }
+.task-row.busy .task-dot { background:var(--success); box-shadow:0 0 0 3px var(--success-bg); animation:task-pulse 1.4s ease-in-out infinite; }
+.task-row[data-state="needs_input"] .task-dot { background:var(--warn); box-shadow:0 0 0 3px var(--warn-bg); }
+.task-row[data-state="blocked"] .task-dot { background:var(--danger); }
+.task-row[data-state="done"] .task-dot { background:var(--success); }
+.task-row.stopped .task-dot { background:transparent; border:1.5px solid var(--text-3); }
+.task-row.stopped .tab-title, .task-row.stopped .tab-ic { opacity:.6; }
+.task-row .task-cli { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.4px; color:var(--text-3); flex-shrink:0; }
+.task-row:hover .task-cli, .task-row.busy .task-cli { display:none; } /* make room for the trash / spinner */
+@keyframes task-pulse { 50% { opacity:.35; } }
 /* Project grouping mode: a project's open-tab rows nest directly under its folder (no separate
    section). Indent them past the folder's icon + gap so they read as children. The orphan group
    (tabs matching no project) shows un-nested in #opentabs-nav. */
@@ -526,6 +536,34 @@ body.find-open .split-body webview, body.find-open .split-body .wcv-shim { botto
 .proj-toggle:hover { opacity:1; color:var(--text-2); }
 .proj-toggle svg { width:13px; height:13px; }
 .proj-toggle.collapsed { transform:rotate(-90deg); }
+/* Hover "+" on a project folder: a new worktree + task. Hidden until the row is hovered. */
+.proj-add { flex-shrink:0; display:flex; align-items:center; justify-content:center; width:16px; height:16px; color:var(--text-3); opacity:0; border-radius:4px; }
+.nav-btn:hover .proj-add { opacity:.7; }
+.proj-add:hover { opacity:1 !important; color:var(--text); background:var(--surface-hover); }
+.proj-add svg { width:13px; height:13px; }
+/* Worktree row under a project: folder + branch, with a hover "+" for another task on it. Task rows
+   nest one level deeper. */
+.wt-row { position:relative; display:flex; align-items:center; gap:8px; padding:4px 8px 4px 20px; font-size:13px; color:var(--text-2); border-radius:var(--rs); }
+.wt-row:hover { background:var(--surface-hover); }
+.wt-row .tab-ic svg { width:16px; height:16px; }
+.wt-row .tab-title { flex:0 1 auto; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.wt-branch { font-size:11px; color:var(--text-3); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; }
+.wt-actions { position:absolute; right:5px; top:50%; transform:translateY(-50%); display:inline-flex; gap:3px; opacity:0; }
+.wt-row:hover .wt-actions { opacity:1; }
+.wt-btn { width:20px; height:20px; border:none; border-radius:50%; background:var(--surface-hover); color:var(--text-3); display:inline-flex; align-items:center; justify-content:center; cursor:pointer; padding:0; }
+.wt-btn:hover { background:var(--border); color:var(--text); }
+.wt-del:hover { color:var(--danger); background:var(--danger-bg); }
+.wt-btn svg { width:14px; height:14px; display:block; }
+#project-nav .proj-tabs .task-row { padding-left:34px; }
+/* Inline Delete/Cancel strip under a task/worktree row (components/inline-confirm.js). */
+.row-confirm { display:flex; align-items:center; gap:6px; margin:2px 8px 4px 20px; padding:6px 8px; font-size:12px; line-height:1.35; color:var(--text-2); background:var(--surface); border:1px solid var(--border); border-radius:var(--rs); }
+.row-confirm .rc-text { flex:1; min-width:0; }
+.rc-btn { flex-shrink:0; font-size:12px; font-weight:600; padding:3px 9px; border-radius:var(--rs); border:1px solid var(--border); background:var(--surface-hover); color:var(--text); cursor:pointer; }
+.rc-btn:hover { background:var(--border); }
+.rc-del { color:#fff; background:var(--danger); border-color:var(--danger); }
+.rc-del:hover { filter:brightness(1.1); background:var(--danger); }
+.opentab.confirming, .wt-row.confirming { background:var(--surface-hover); }
+#opentabs-nav .proj-tabs .task-row { padding-left:8px; }
 /* Box, text, and hover/active highlight all come from the shared `.nav-btn, .opentab` rule in
    layout.css (sidebar rows are one component) — only .opentab's own extras live here. */
 .opentab { position:relative; }

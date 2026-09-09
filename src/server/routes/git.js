@@ -20,6 +20,15 @@ function register(app) {
     res.json({ path: found?.path || '', matched: !!found, isWorktree: !!(found && !found.isMain) });
   });
 
+  // Every linked worktree of a project workspace (the main checkout excluded) — the sidebar nests
+  // each project's tasks under these. Local git only.
+  app.get(ROUTES.WORKTREES, async (req, res) => {
+    const dir = req.query.path;
+    if (!dir) return res.json([]);
+    try { res.json((await github.listWorktrees(String(dir))).filter(w => !w.isMain).map(w => ({ path: w.path, branch: w.branch }))); }
+    catch { res.json([]); }
+  });
+
   // Create a git worktree for a PR branch as a sibling of the project workspace, so the
   // tab can get its own checkout. Local git only. Returns { path } on success or { error }.
   app.post(ROUTES.WORKTREE, async (req, res) => {
@@ -29,10 +38,11 @@ function register(app) {
   });
 
   // Remove a worktree (folder + admin entry), run from the project workspace. Local git only.
+  // `force` (task delete): discard uncommitted changes, close it in Xcode, delete the folder outright.
   app.post(ROUTES.WORKTREE_REMOVE, async (req, res) => {
-    const { path: dir, worktree } = req.body || {};
+    const { path: dir, worktree, force } = req.body || {};
     if (!dir || !worktree) return res.status(400).json({ error: 'path and worktree required' });
-    res.json(await github.removeWorktree(String(dir), String(worktree)));
+    res.json(await github.removeWorktree(String(dir), String(worktree), { force: !!force }));
   });
 
   // External processes (e.g. Xcode) with files open under a worktree, so the delete flow can warn

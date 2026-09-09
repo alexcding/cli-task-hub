@@ -9,7 +9,7 @@
 //
 // Factored out (DOM-free, unit-tested in test/terminal-tail.test.js) because this same "what did
 // it just say" read is what a later step will hand to a CLI to decide the next workflow action.
-// For now it only drives the Tasks-page preview (pages/tasks.js).
+// Drives the workflow runner's terminal reads (components/workflow.js).
 
 const DOT = /^[⏺●◉•]\s+/;                                     // assistant-message marker (Claude ⏺ / Codex bullet)
 const SPINNER = /^[✻✽✶✷✸✹✺✱✲❋❉⁂∗*]/;                          // Claude's working / "Brewed for…" line

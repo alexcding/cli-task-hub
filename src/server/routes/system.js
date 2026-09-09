@@ -96,10 +96,13 @@ function register(app) {
   // cli/runId arrive as query params; the CLI's own hook payload is the JSON body. We broadcast
   // over SSE; the renderer maps runId (= the terminal id we injected as TASKHUB_RUN_ID) to a
   // terminal and drives its busy spinner. runId is empty for sessions TaskHub didn't launch.
+  // sessionId is the CLI's conversation id from its payload (Claude and Codex both send
+  // `session_id`); the renderer stamps it on the task so a stopped task resumes exactly.
   const relayHook = sseType => (req, res) => {
     res.sendStatus(204);
     const { cli, runId } = req.query;
-    try { sse.broadcast({ type: sseType, cli: cli || '', runId: runId || '', payload: req.body || null }); } catch { /* no listeners */ }
+    const sessionId = typeof req.body?.session_id === 'string' ? req.body.session_id : '';
+    try { sse.broadcast({ type: sseType, cli: cli || '', runId: runId || '', sessionId, payload: req.body || null }); } catch { /* no listeners */ }
   };
   app.post(ROUTES.HOOK_TURN_START, relayHook('agent-turn-start'));
   app.post(ROUTES.HOOK_TURN_DONE, relayHook('agent-turn-done'));

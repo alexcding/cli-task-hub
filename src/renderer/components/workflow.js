@@ -12,11 +12,11 @@ import { resolvePlaceholders, wfBranchName } from '../lib/workflow.mjs';
 import { resolveTabFolder, ensurePrTerminal, applyPrLayout } from './split.js';
 import { whenTurnDone, setTermBusy } from './terminal.js';
 import { analyzeTerminal } from '../services/analyzer.js';
-import { persistTask } from '../services/tasks.js';
+import { persistTask, taskForTab } from '../services/tasks.js';
 import { toast, toastErr } from './toast.js';
+import { launchCli, submitLine } from './cli-launch.js';
+export { launchCli }; // re-export: viewer.js imports it from here
 
-const shq = s => "'" + String(s).replace(/'/g, "'\\''") + "'"; // single-quote a path for the shell
-const LAUNCH_SETTLE_MS = 2000; // a CLI launch isn't a "turn" — give the TUI a moment before typing
 const CLI_LABEL = { claude: 'Claude', codex: 'Codex' };
 
 function projectForTab(tab) {
@@ -31,11 +31,11 @@ const workflowsForTab = tab => {
 
 // In-flight runs, keyed by tab id → { ac, name, cli, step, total, stepTitle }. The toolbar button
 // reflects the ACTIVE tab: a play triangle when idle, a spinner+stop when that tab's workflow is
-// running. The Tasks page reads `step`/`total` live via workflowRunState (mutated as steps advance).
+// running. The sidebar's task rows read it via workflowRunState (mutated as steps advance).
 const _runs = new Map();
 const isRunning = tabId => _runs.has(tabId);
 
-// Live run state for the Tasks page (pages/tasks.js): which workflow is running on this tab and
+// Live run state for the sidebar's task rows (components/sidebar.js): which workflow is running on this tab and
 // how far along. null when no workflow is in flight (a bare/manual session). Returns a snapshot
 // copy so callers can't mutate the live record.
 export const workflowRunState = tabId => {
@@ -43,11 +43,10 @@ export const workflowRunState = tabId => {
   return r ? { name: r.name, cli: r.cli, step: r.step, total: r.total, stepTitle: r.stepTitle } : null;
 };
 
-// Nudge the Tasks page to re-render when a run's step advances (busy↔idle edges already refresh it
+// Nudge the sidebar to re-render when a run's step advances (busy↔idle edges already refresh it
 // via the SSE turn hooks; this covers the between-turns step bump). No-op unless that page is open.
 function notifyTasksUpdated() {
-  window.updateTasksBadge?.(); // keep the left-nav running count live even when the page is closed
-  if (document.querySelector('.page.active')?.id === 'page-tasks') window.loadTasks?.();
+  window.__refreshTabs?.(); // sidebar Tasks group: running count + row state (bridge avoids a sidebar import cycle)
 }
 
 // Reflect the active tab: hidden unless its project has a workflow (or a run is in flight);
@@ -101,28 +100,6 @@ export function toggleWorkflowRun() {
 // Type a line then press Enter. Interactive TUIs (claude/codex) read raw input and treat CR (\r),
 // not LF (\n), as Enter — and sending text+Enter in one write can register as a paste (inserts a
 // newline instead of submitting). So write the text, pause, then send \r as a separate keypress.
-async function submitLine(termId, line) {
-  window.taskhub?.term?.write(termId, line);
-  await delay(60);
-  window.taskhub?.term?.write(termId, '\r');
-}
-
-// Launch an interactive CLI (claude/codex) in a terminal sitting at a shell prompt: cd into the
-// worktree first (a reused PTY may be rooted at the workspace, so the session must not run there),
-// then type the CLI name. If a program is already in the foreground (e.g. a CLI left running —
-// terminals outlive tabs) typing would go INTO it as input, so skip the launch and reuse the session.
-// Our hook/busy flag is the reliable signal; fall back to the PTY foreground probe. Shared by the
-// workflow runner and the "New Claude/Codex Task" buttons (viewer.js).
-export async function launchCli(termId, dir, cli) {
-  if (!termId || !cli) return;
-  let atShell = !(state.terms.get(termId)?.busy);
-  if (atShell) { try { atShell = (await window.taskhub?.term?.foreground(termId))?.atShell !== false; } catch {} }
-  if (!atShell) return;
-  if (dir) await submitLine(termId, `cd ${shq(dir)}`);
-  await submitLine(termId, cli);
-  await delay(LAUNCH_SETTLE_MS);
-}
-
 // After a step's turn finishes, hand the agent's last message + step context to the shared analyzer
 // (one headless CLI call — settle/read/record all live in the service) and return its decision
 // (proceed / retry / stop). Any skip/failure → 'proceed' (the prior behavior: keep advancing). The
@@ -188,12 +165,10 @@ export async function runWorkflow(tab, wf) {
 
     // 2. Open the split terminal in that worktree (pass the resolved path so it isn't re-resolved).
     tab.prSplit = true;
-    await ensurePrTerminal(tab, (f && f.path) || p.workspace);
+    await ensurePrTerminal(tab, (f && f.path) || p.workspace, { branch }); // creates the task record if missing
     if (state.activeTabId === tab.id) applyPrLayout(tab, true);
-    // Track the task durably (survives tab close / restart — resumable from the Tasks page).
-    persistTask({ url: tab.url, kind: tab.kind, title: tab.title, repo: tab.repo || '', branch,
-      jiraKey: tab.kind === 'jira' ? key : '', workspace: (f && f.workspace) || p.workspace || '',
-      worktree: (f && f.path) || '', cli: wf.cli || '' });
+    const task = taskForTab(tab);
+    if (task && wf.cli) persistTask({ id: task.id, cli: wf.cli });
     const termId = tab.termId;
     if (!termId) throw new Error('terminal not ready');
     const dir = (f && f.path) || p.workspace;

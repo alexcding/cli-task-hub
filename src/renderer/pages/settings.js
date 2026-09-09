@@ -4,7 +4,8 @@ import { state } from '../stores/store.js';
 import { api, apiJson } from '../services/api.js';
 import { esc, timeAgo, setActiveSegTab } from '../lib/util.js';
 import { toast, toastErr } from '../components/toast.js';
-import { renderProjectNav, applySidebarGroupUI } from '../components/sidebar.js';
+import { renderProjectNav } from '../components/sidebar.js';
+import { loadLogs } from './logs.js';
 import { GIT_CLIENTS, resolveGitClientCmd } from '../lib/git-clients.js';
 import { updateGitClient, setWebviewPoolSize, clampWebviewPool, WEBVIEW_POOL_DEFAULT } from '../components/viewer.js';
 
@@ -15,7 +16,6 @@ export async function loadSettings() {
 
   populateSoundPicker(sounds, settings?.reviewSound);
   setActivityNotifyUI(settings?.activityNotify !== 'off'); // default on when unset
-  applySidebarGroupUI(); // reflect the persisted sidebar-grouping choice on its toggle
   populateGitClientPicker(settings);
   setWebviewPoolUI(settings?.webviewPool);
 
@@ -116,13 +116,20 @@ export function toggleSecret(btn) {
 // index.html (#settings-tab-<name>); all fields stay in the DOM regardless of the
 // active tab, so loadSettings() can populate them whether or not a panel is shown.
 export function switchSettingsTab(tab, btn) {
-  ['appearance','clis','jira','system'].forEach(t => {
+  ['appearance','clis','jira','system','events'].forEach(t => {
     document.getElementById(`settings-tab-${t}`)?.classList.toggle('active', t === tab);
   });
   setActiveSegTab(btn);
   // Lazily probe the CLIs (process spawns + a network auth check) only when that tab is opened,
   // and re-probe on each visit so a just-completed install/login is reflected (no server cache).
   if (tab === 'clis') loadCliTools();
+  if (tab === 'events') loadLogs();
+}
+
+// Open Settings → Events (notification body-clicks land here via window.showEvents).
+export function showEvents() {
+  window.showPage?.('settings');
+  switchSettingsTab('events', document.getElementById('settings-seg-events'));
 }
 
 // ── Review sound ──────────────────────────────────────────────────────────────

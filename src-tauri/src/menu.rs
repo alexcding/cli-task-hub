@@ -85,8 +85,6 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
 
   let go = SubmenuBuilder::new(app, "Go")
     .item(&mi("nav:dashboard", "Dashboard", "Cmd+1")?)
-    .item(&mi("nav:tasks", "Tasks", "Cmd+2")?)
-    .item(&mi("nav:activity", "Events", "Cmd+3")?)
     .separator()
     .item(&mi("nav:back", "Back", "Cmd+BracketLeft")?)
     .item(&mi("nav:forward", "Forward", "Cmd+BracketRight")?)

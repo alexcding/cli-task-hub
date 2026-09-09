@@ -7,7 +7,7 @@ import { api, forceSync } from './services/api.js';
 import { canSplitTerminal } from './lib/util.js';
 import { initTheme, setAppTheme, syncThemeFromSettings } from './services/theme.js';
 import { setFontFamily, bumpFontSize, resetFontSize, zoomTarget, syncFontsFromSettings, populateFontMenus } from './services/fonts.js';
-import { renderTabs, renderProjectNav, tabMenu, initSidebarResize, setSidebarGroup, syncSidebarGroupFromSettings, toggleProjectTabs } from './components/sidebar.js';
+import { renderTabs, renderProjectNav, tabMenu, initSidebarResize, toggleProjectTabs } from './components/sidebar.js';
 import { closeMenu, isMenuOpen } from './components/menu.js';
 import * as viewer from './components/viewer.js';
 import * as terminal from './components/terminal.js';
@@ -23,9 +23,9 @@ import { loadGitTab, gitTabPick, gitTabShowCommit, gitTabBack, gitTabRemoveWorkt
 import * as jiraView from './pages/jira.js';
 import { loadScrumboard, setBoardFilter, applyBoardQuery } from './pages/scrumboard.js';
 import { loadLogs, setLogCategory, clearLogs } from './pages/logs.js';
-import { loadTasks, openTaskSession, deleteTaskSession, analyzeSession, updateTasksBadge } from './pages/tasks.js';
-import { loadPersistedTasks } from './services/tasks.js';
-import { loadSettings, saveConfig, switchSettingsTab, setReviewSound, previewReviewSound, setActivityNotify, setAutostart, toggleSecret, setGitClient, setGitClientCmd, toggleHook, setWebviewPool } from './pages/settings.js';
+import { openTaskSession, deleteTaskSession, deleteWorktree, analyzeSession, newWorktreeTask, newWorktreeTaskIn } from './components/tasks.js';
+import { loadPersistedTasks, persistTask } from './services/tasks.js';
+import { loadSettings, saveConfig, switchSettingsTab, setReviewSound, previewReviewSound, setActivityNotify, setAutostart, toggleSecret, setGitClient, setGitClientCmd, toggleHook, setWebviewPool, showEvents } from './pages/settings.js';
 import { showActivityToast } from './components/activity-toast.js';
 import * as modal from './components/modal.js';
 
@@ -62,14 +62,9 @@ function showPage(name, projectId) {
     // Edit lives on the page now — the gear button beside the project title (project.js).
     document.querySelectorAll('.nav-btn[data-project]').forEach(b => { if(b.dataset.project===projectId) b.classList.add('active'); });
     loadProjectPage(projectId);
-  } else if (name === 'tasks') {
-    document.getElementById('page-title').textContent = 'Tasks';
-    loadTasks();
-  } else if (name === 'activity') {
-    document.getElementById('page-title').textContent = 'Events';
-    loadLogs();
   } else if (name === 'settings') {
     document.getElementById('page-title').textContent = 'Settings';
+    switchSettingsTab('appearance', document.querySelector('#page-settings .seg-tab')); // default panel (showEvents switches after)
     loadSettings();
     populateFontMenus(); // a settings visit is a user gesture — a chance to upgrade to the full list if the permission was deferred
   }
@@ -105,8 +100,6 @@ function handleShortcut(action) {
   const tab = activeTab(); // non-null only while a tab is the active view
   switch (action) {
     case 'nav:dashboard': showPage('dashboard'); break;
-    case 'nav:tasks':     showPage('tasks'); break;
-    case 'nav:activity':  showPage('activity'); break;
     case 'nav:settings':  showPage('settings'); break;
     case 'project:new':   modal.openNewProjectModal(); break;
     case 'nav:back':      viewer.splitBack(); break;
@@ -164,10 +157,8 @@ function refreshActivePage() {
   const active = document.querySelector('.page.active')?.id;
   if (active === 'page-dashboard') {
     loadDashboard();
-  } else if (active === 'page-activity') {
+  } else if (active === 'page-settings' && document.getElementById('settings-tab-events')?.classList.contains('active')) {
     loadLogs();
-  } else if (active === 'page-tasks') {
-    loadTasks();
   } else if (active === 'page-project' && state.activeProjectId) {
     // The digest loads PRs and Jira on open — refresh both. PRs keep the chosen state filter.
     const id = state.activeProjectId;
@@ -210,6 +201,13 @@ function connectStream() {
       if (d.runId) {
         terminal.setTermBusy(d.runId, d.type === 'agent-turn-start');
         if (d.cli) terminal.setTermCli(d.runId, d.cli); // label the session's CLI on the Tasks page
+        // Stamp the CLI's conversation id on the terminal's task so a stopped task resumes exactly.
+        // Codex only tells us here; for Claude this also follows an in-tool /resume or /clear.
+        if (d.sessionId) {
+          const taskId = state.terms.get(d.runId)?.pairKey;
+          const task = taskId && state.tasks.find(t => t.id === taskId);
+          if (task && (task.sessionId !== d.sessionId || (d.cli && task.cli !== d.cli))) persistTask({ id: task.id, sessionId: d.sessionId, ...(d.cli && { cli: d.cli }) });
+        }
         // A new turn invalidates the previous analysis (and supersedes any in-flight one via gen).
         if (d.type === 'agent-turn-start') { const e = state.terms.get(d.runId); if (e) { e.summary = ''; e.state = ''; e.summaryFor = ''; e.gen = (e.gen || 0) + 1; } }
         // The done (Stop) hook is the ONLY trigger for a session's headless analysis — and it runs
@@ -217,13 +215,13 @@ function connectStream() {
         // automation consumes, not just card decoration, so it must not be gated on UI visibility.
         if (d.type === 'agent-turn-done') analyzeSession(d.runId);
       }
-      // The Tasks page shows live working/idle per session, so a turn edge IS a change for it.
-      if (document.querySelector('.page.active')?.id === 'page-tasks') loadTasks();
+      // A turn start may have just labeled the terminal's CLI — re-render the Tasks group rows.
+      if (d.type === 'agent-turn-start') renderTabs();
       return; // otherwise not a data change — no page refresh
     }
     // Activity toasts are NOT triggered here: the main process is the single decider (it
     // alone can tell if the app is frontmost vs an embedded webview holding focus) and pushes
-    // the toast via window.__activityToast. An 'activity' event still refreshes the page below.
+    // the toast via window.__activityToast. An 'activity' event still refreshes Settings → Events below.
     scheduleRefresh();
   };
   es.onerror = () => {}; // EventSource auto-reconnects
@@ -261,12 +259,9 @@ Object.assign(window, {
   projShowSection, projJiraView, reloadProjectPRs, loadProjectWebhooks, saveProjectWebhooks, previewFixVersion, scrollDash, setUsageTab,
   wfNew, wfDelete, wfSetName, wfSetCli, wfAddStep, wfRemoveStep, wfEditStepCommand, wfEditStepTitle, saveWorkflows,
   loadGitTab, gitTabPick, gitTabShowCommit, gitTabBack, gitTabRemoveWorktree,
-  loadLogs, setLogCategory, clearLogs,
-  // openTaskSession is used by inline card onclick; loadTasks/updateTasksBadge are reached via
-  // window.* from workflow.js (notifyTasksUpdated) and sidebar.js (refreshTermBusy) so the running
-  // count stays live off-page, without a tasks↔workflow/sidebar import cycle — keep all three.
-  loadTasks, openTaskSession, deleteTaskSession, updateTasksBadge,
-  loadSettings, saveConfig, switchSettingsTab, setReviewSound, previewReviewSound, setActivityNotify, setAutostart, toggleSecret, setGitClient, setGitClientCmd, toggleHook, setWebviewPool, setSidebarGroup, toggleProjectTabs,
+  loadLogs, setLogCategory, clearLogs, showEvents,
+  openTaskSession, deleteTaskSession, deleteWorktree, newWorktreeTask, newWorktreeTaskIn, // the sidebar's task/worktree rows (inline onclick)
+  loadSettings, saveConfig, switchSettingsTab, setReviewSound, previewReviewSound, setActivityNotify, setAutostart, toggleSecret, setGitClient, setGitClientCmd, toggleHook, setWebviewPool, toggleProjectTabs,
   __activityToast: showActivityToast, // main pushes activity toasts here when the app is frontmost
   // project modal
   openNewProjectModal: modal.openNewProjectModal, openEditProjectModal: modal.openEditProjectModal,
@@ -307,18 +302,17 @@ function initWindowFocus() {
 // The state.tabsReady guard in saveTabs() means a tab opened from the tray before this
 // lands can't clobber the saved set — restore merges it in instead.
 state.tabTermInit = (async () => {
+  await loadPersistedTasks();          // tasks first: terminals are keyed by task id and bind to tabs through the task
   await viewer.restoreTabs();          // rehydrate GitHub/Jira tabs from the last session
-  await terminal.rehydrateTerminals(); // reattach PTYs that outlived a window close/reopen
+  await terminal.rehydrateTerminals(); // reattach PTYs that outlived a window close / app relaunch
 })().catch(e => console.error('[init] tab/terminal restore failed:', e)); // never leave it unhandled — awaiters in ensurePrTerminal() still try/catch
 
-// Durable tasks (worktree + terminal, persisted) — load them so the Tasks page lists every task
-// (resumable) even after a restart, independent of which tabs/terminals are live.
-loadPersistedTasks().then(() => { if (document.querySelector('.page.active')?.id === 'page-tasks') loadTasks(); updateTasksBadge(); });
 
 (async () => {
   try {
     const [site, settings] = await Promise.all([api(ROUTES.JIRA_SITE), api(ROUTES.SETTINGS)]);
     state.jiraBase = site.baseUrl || '';
+    if (site.me) state.jiraMe = site.me;
     // Chosen git GUI for the viewer's folder-chip action (Settings → Appearance). Only the id
     // is authoritative; the command is derived (preset from GIT_CLIENTS, custom from gitClientCmd).
     const gcId = settings.gitClient || '';
@@ -326,8 +320,6 @@ loadPersistedTasks().then(() => { if (document.querySelector('.page.active')?.id
     // taskhub.db is authoritative (survives a localStorage clear, shared across windows);
     // re-sync the theme from it and re-apply if it differs from the pre-paint guess.
     syncThemeFromSettings(settings.theme);
-    if (site.me) state.jiraMe = site.me;
-    syncSidebarGroupFromSettings(settings.sidebarGroup); // re-render the sidebar in the saved grouping
     syncFontsFromSettings(settings); // any terminal rehydrated before this lands is updated in place by applyFonts
     if (settings.webviewPool != null) viewer.setWebviewPoolSize(settings.webviewPool); // live-webview pool cap (Settings → System); clamped, bad values → default
   } catch {}

@@ -42,6 +42,7 @@ export const ROUTES = Object.freeze({
   // ── Repo / worktree / git ──────────────────────────────────────────────────
   DETECT_REPO: '/api/detect-repo',
   WORKTREE: '/api/worktree',
+  WORKTREES: '/api/worktrees',                // GET ?path=<workspace> → [{ path, branch }] linked worktrees
   WORKTREE_REMOVE: '/api/worktree/remove',
   WORKTREE_HOLDERS: '/api/worktree/holders',
   DIFF: '/api/diff',

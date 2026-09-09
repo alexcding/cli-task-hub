@@ -53,12 +53,14 @@ function register(app) {
   }));
 
   // ── Tasks (taskhub.db — durable New Task sessions, survive restart) ──────────────
-  // GET lists them; POST upserts one (keyed by url, sent when a task is created); DELETE ?url=
-  // removes one (the Tasks-page trash). Unlike tabs they aren't a full-set PUT — tasks are
+  // GET lists them; POST upserts one (keyed by id); DELETE ?id= removes one (the row's trash). Unlike tabs they aren't a full-set PUT — tasks are
   // added/removed one at a time over their lifecycle.
   app.get(ROUTES.TASKS, wrap((req, res) => res.json(configdb.getTasks())));
-  app.post(ROUTES.TASKS, wrap((req, res) => { configdb.upsertTask(req.body || {}); res.json({ ok: true }); }));
-  app.delete(ROUTES.TASKS, wrap((req, res) => { if (req.query.url) configdb.removeTask(String(req.query.url)); res.json({ ok: true }); }));
+  app.post(ROUTES.TASKS, wrap((req, res) => {
+    if (!configdb.upsertTask(req.body || {})) return res.status(400).json({ error: 'id, projectId, workspace, worktree required' });
+    res.json({ ok: true });
+  }));
+  app.delete(ROUTES.TASKS, wrap((req, res) => { if (req.query.id) configdb.removeTask(String(req.query.id)); res.json({ ok: true }); }));
 }
 
 module.exports = { register };

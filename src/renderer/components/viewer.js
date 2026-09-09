@@ -13,7 +13,7 @@ import { renderTabs } from './sidebar.js';
 import { openMenu, closeMenu } from './menu.js';
 import { ensurePrTerminal, applyPrLayout, clearPrLayout, resolveTabFolder, removeWorktree, openPrPanel, leaveReview } from './split.js';
 import { jiraTaskBranch } from '../lib/workflow.mjs';
-import { persistTask } from '../services/tasks.js';
+import { persistTask, taskForTab, taskById } from '../services/tasks.js';
 import { refreshWorkflowBtn, launchCli } from './workflow.js';
 import { hideDiffPane } from './diff.js';
 import { attachFind, closeFind } from './find.js';
@@ -467,7 +467,8 @@ export function openFileTab(filePath, line = 0) {
   let tab = activeTab();
   if (!tab && state.activeTermId) {
     const term = state.terms.get(state.activeTermId);
-    if (term?.pairKey) tab = state.tabs.find(t => t.url === term.pairKey) || null;
+    const task = term?.pairKey ? taskById(term.pairKey) : null;
+    if (task?.url) tab = state.tabs.find(t => t.url === task.url) || null;
   }
   if (!tab) return;
   tab.links = tab.links || [];
@@ -593,9 +594,9 @@ export function hideAllPanes() {
 
 // Closing a web tab NEVER kills its task. A paired terminal is a deliberately-started task (worktree
 // + terminal) — there are no auto-spawned bare shells anymore — so it keeps running in the background
-// and shows on the Tasks page; only the Tasks-page trash button (deleteTaskSession) or the shell
-// exiting stops it. Closing the tab just unbinds + hides the pane; the PTY lives on (it's keyed to the
-// tab's URL, so reopening the link re-adopts it).
+// and shows in the sidebar; only the row's trash (deleteTaskSession) or the shell exiting stops it.
+// Closing the tab just unbinds + hides the pane; the PTY lives on (keyed to the task, so reopening
+// the link re-adopts it).
 export function closePairedTerm(tab) {
   if (!tab?.termId) return;
   const term = state.terms.get(tab.termId);
@@ -849,6 +850,9 @@ export async function newTask(cli = '') {
     const branch = tab.kind === 'jira'
       ? jiraTaskBranch(key, jiraByKey(key)?.summary || '')
       : (tab.branch || prByUrl(tab.url)?.headRefName || '');
+    // A branch already checked out in the MAIN checkout can't get a worktree (git refuses a second
+    // checkout) and a task never runs on the main repo — say so instead of half-creating one.
+    if (f.matched && !f.isWorktree) { toastErr(`${branch || 'This branch'} is checked out in the main repo — switch it away there first.`); return; }
     if (!f.matched && f.workspace && branch) {
       let r = await apiJson(ROUTES.WORKTREE, 'POST', { path: f.workspace, branch, create: tab.kind === 'jira' });
       // A non-worktree folder is already sitting where this worktree would go. We never delete a
@@ -868,16 +872,16 @@ export async function newTask(cli = '') {
     }
     tab.prSplit = true;
     saveTabs();
-    await ensurePrTerminal(tab, cwd); // pass the resolved/created path so it isn't re-resolved
+    await ensurePrTerminal(tab, cwd, { branch }); // creates the task record if this tab has none
     if (state.activeTabId === tab.id) applyPrLayout(tab, true);
     document.getElementById('split-toggle-term')?.classList.add('on');
     updateTitles(); // hide the New Task buttons now the tab has a terminal; set the worktree title
     // Drop straight into the chosen CLI (no-op for plain New Task, or if one's already running).
-    if (cli) await launchCli(tab.termId, cwd, cli);
-    // Track the task durably — it now survives tab close / terminal death / app restart (Tasks page).
-    persistTask({ url: tab.url, kind: tab.kind, title: tab.title, repo: tab.repo || '', branch,
-      jiraKey: tab.kind === 'jira' ? key : '', workspace: f.workspace || '', worktree: cwd || '',
-      ...(cli && { cli }) }); // only stamp cli when launching one — plain New Task must not wipe a stored cli
+    const launched = cli ? await launchCli(tab.termId, cwd, cli) : null;
+    // Stamp the chosen CLI (+ minted conversation id) on the task — only when launching one, so a
+    // plain New Task never wipes stored values.
+    const task = taskForTab(tab);
+    if (task && cli) persistTask({ id: task.id, cli, ...(launched?.sessionId && { sessionId: launched.sessionId }) });
   } catch (e) {
     toastErr('Failed to start task: ' + e.message);
   } finally {
