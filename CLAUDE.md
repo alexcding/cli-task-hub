@@ -62,7 +62,7 @@ separation everything follows:
 - **The sidebar is laid out by project → session, and reads ONLY session records.** A session
   (`services/tasks.js → taskSessions()`, one task record per worktree) is the agent running on a
   worktree — live or stopped — keyed by id (its terminal's `pairKey`), titled by its worktree folder,
-  optionally linked to a PR/Jira/web tab by `url`. The renderer keeps no worktree list and shows no
+  linked to its context tab by `url`. The renderer keeps no worktree list and shows no
   worktree UI: git worktrees without a session are invisible here (the project Git tab lists them).
   **Open tabs that are not tasks never sit under a project folder**: every task-less tab — PR, Jira
   issue or plain web page (`kind:'web'`, any URL that isn't a PR) — renders in one "Tabs" group below
@@ -77,6 +77,29 @@ separation everything follows:
   default chip's ×, the native tab menu): `closeTab` refuses task tabs; only `removeTaskRecord` drops
   one via `removeTaskTab`. A tab whose URL is a task renders only as a session row. There is no
   Tasks page, no Tasks group, no worktree row, and no grouping setting.
+- **Every session has a CONTEXT tab — one implementation, different UI states.** A session started
+  from a PR/Jira/web tab uses that tab as its context; one started from the sidebar's "+" has no page
+  of its own and gets a synthetic `session:<taskId>` url (`lib/util.js → sessionUrl`, `hasPage`), so it
+  is an ordinary `kind:'web'` viewer tab. Everything downstream — the toolbar (folder chip, Run,
+  split toggle), `canSplitTerminal`, the split, the diff view, the extra web/file tabs, the sidebar
+  row, `taskUrls()` — therefore has ONE code path; a bare session differs only in having no page
+  (no default content-tab chip, and `paintLeft` paints nothing for it). Never add a kind-specific
+  branch for it. Creating and reopening a session both go through
+  `openInSplit → activateTab → openPrPanel` (`openTaskSession` has no second path), which is also
+  the single place an agent is launched or resumed.
+- **The right pane is one toggled state: `tab.paneView`.** `'off'` (hidden — the terminal fills the
+  panel, `body.split-closed`), `'term'` (the context's page; blank for a bare session,
+  `body.pane-blank`) or `'diff'` (the worktree diff, `body.pane-diff`). `applyPrLayout` is the only
+  place that turns that state into geometry; `setPaneView` the only mutator (it persists + calls it).
+  The toolbar's split toggle (`#split-toggle`, terminal segment, right edge) and ⌥⌘Return flip
+  `'off'` ↔ the last shown view. `--pr-split` is the RIGHT pane's width, so `applyPrLayout`'s
+  `animate` names the edge that moves: `'pane'` (the toggle — the pane grows out of / collapses into
+  the right edge) or `'term'` (a session was just created — the terminal slides in from the left).
+  Only a change in the pane's visibility animates; swapping page↔diff inside an open pane does not.
+  During a `'pane'` animation `body.pane-resizing` pins the terminal at full width under the pane
+  (it never moves or reflows mid-animation); `body.pr-tweening` is on for any boundary tween and
+  tells the terminals' ResizeObserver to hold its refit until the boundary lands. A context with no live terminal always shows its page, whatever
+  the persisted state says (`rightPaneHidden`).
 - **Embedded webviews are pooled.** `tab.wv` / `link.wv` are built lazily on first show and torn
   down when they fall out of the LRU pool (`state.webviewPool`, Settings → System), then rebuilt
   from `tab.cur` / `link.url`. Never cache a `wv` reference; re-read `owner.wv` (may be null) and

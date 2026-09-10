@@ -169,7 +169,7 @@ export async function runWorkflow(tab, wf) {
 
     // 2. Open the split terminal in that worktree (pass the resolved path so it isn't re-resolved).
     await ensurePrTerminal(tab, (f && f.path) || p.workspace, { branch }); // creates the task record if missing
-    if (state.activeTabId === tab.id) applyPrLayout(tab, true);
+    if (state.activeTabId === tab.id) applyPrLayout(tab, 'term'); // the session is new: slide the terminal in from the left
     const task = taskForTab(tab);
     if (task && wf.cli) persistTask({ id: task.id, cli: wf.cli });
     const termId = tab.termId;

@@ -6,15 +6,14 @@
 import { ROUTES } from '/shared/routes.mjs';
 import { state, projectById } from '../stores/store.js';
 import { apiJson } from '../services/api.js';
-import { basename } from '../lib/util.js';
+import { basename, sessionUrl } from '../lib/util.js';
 import { toast, toastErr } from './toast.js';
 import { workflowRunState } from './workflow.js';
 import { openInSplit, activateTab, removeTaskTab } from './viewer.js';
-import { createTermView, activateTerminal, closeTerminal, disposeTerm } from './terminal.js';
+import { closeTerminal, disposeTerm } from './terminal.js';
 import { removeWorktree, worktreeHolders } from './split.js';
 import { renderTabs } from './sidebar.js';
 import { confirmDialog } from './confirm.js';
-import { launchCli } from './cli-launch.js';
 import { analyzeTerminal } from '../services/analyzer.js';
 import { newTaskId, persistTask, unpersistTask, taskById, taskTerm } from '../services/tasks.js';
 import { newSessionDialog } from './new-session-dialog.js';
@@ -49,22 +48,17 @@ export async function newWorktreeTask(projectId) {
   await createTask(project, worktree, { branch: pick.branch, cli: pick.cli });
 }
 
-// Record a task on `worktree` and open its terminal as a standalone view (no linked page). With a
-// `cli`, drop straight into that agent and stamp it (+ minted conversation id) on the task so a
-// stopped session resumes the same conversation (openTaskSession).
+// Record a task on `worktree` and open it. A session with no page of its own still gets a CONTEXT
+// (a viewer tab on a synthetic `session:` url), so from here on it is indistinguishable from a
+// PR/Jira-backed session: the same tab opens the same terminal panel, split toggle, diff view and
+// web tabs. `cli` is stamped on the record first, which is what makes openPrPanel launch that agent
+// (and, later, resume the same conversation) — one launch path, not a second one here.
 async function createTask(project, worktree, { branch = '', cli = '' } = {}) {
-  const task = await persistTask({ id: newTaskId(), projectId: project.id, workspace: project.workspace, worktree,
-    branch, title: basename(worktree), kind: '', url: '', jiraKey: '', cli: '', sessionId: '' });
-  try {
-    const termId = await createTermView(worktree, task.title, { paired: true, pairKey: task.id });
-    activateTerminal(termId);
-    if (cli) {
-      // null ⇒ the shell wasn't at a prompt (e.g. a slow rc file) — nothing launched, nothing stamped; say so.
-      const r = await launchCli(termId, null, cli);
-      if (r) await persistTask({ id: task.id, cli, ...(r.sessionId && { sessionId: r.sessionId }) });
-      else toastErr(`Terminal busy — ${cli} not started. Run it from the shell when it's ready.`);
-    }
-  } catch (e) { toastErr('Terminal failed: ' + e.message); }
+  const id = newTaskId();
+  const title = basename(worktree);
+  const task = await persistTask({ id, projectId: project.id, workspace: project.workspace, worktree,
+    branch, title, kind: 'web', url: sessionUrl(id), jiraKey: '', cli, sessionId: '' });
+  openInSplit(task.url, title, 'web', {});
 }
 
 // Analyze a session's last message into { summary, state } — called ONLY when its turn-done (Stop)
@@ -81,30 +75,18 @@ export function analyzeSession(termId) {
   analyzeTerminal(termId).then(r => { if (r) renderTabs(); });
 }
 
-// Click a task row. A task linked to a page: focus its open tab (revealing the working terminal),
-// or reopen the link — the panel re-adopts the surviving terminal by task id, and a stopped task's
-// agent is resumed by openPrPanel. A standalone task: show its terminal full-width, recreating it
-// on its worktree (and resuming the agent) if the shell is gone.
+// Click a task row — ONE path for every session, page-backed or not: focus its context tab if it's
+// open, else open it. The panel re-adopts the surviving terminal by task id, and a stopped task's
+// terminal is recreated on its recorded worktree with its agent resumed (openPrPanel). A session
+// recorded before contexts were universal has no url — give it one now (its terminal, if still
+// running, is keyed by task id, so it is re-adopted rather than restarted).
 export async function openTaskSession(id) {
-  const task = taskById(id);
+  let task = taskById(id);
   if (!task) return;
-  if (task.url) {
-    const tab = state.tabs.find(t => t.url === task.url);
-    if (tab) { activateTab(tab.id); return; }
-    const kind = task.kind || 'github';
-    openInSplit(task.url, task.title || task.url, kind, { jiraKey: task.jiraKey });
-    return;
-  }
-  const live = taskTerm(task);
-  if (live) { activateTerminal(live[0]); return; }
-  try {
-    const termId = await createTermView(task.worktree, task.title, { paired: true, pairKey: task.id });
-    activateTerminal(termId);
-    if (task.cli) {
-      const r = await launchCli(termId, null, task.cli, { sessionId: task.sessionId || '', resume: !!task.sessionId });
-      if (r?.sessionId && r.sessionId !== task.sessionId) persistTask({ id: task.id, sessionId: r.sessionId });
-    }
-  } catch (e) { toastErr('Terminal failed: ' + e.message); }
+  if (!task.url) task = await persistTask({ id: task.id, kind: 'web', url: sessionUrl(task.id) });
+  const tab = state.tabs.find(t => t.url === task.url);
+  if (tab) { activateTab(tab.id); return; }
+  openInSplit(task.url, task.title || task.url, task.kind || 'github', { jiraKey: task.jiraKey });
 }
 
 // Stop a task's terminal (if any), drop its linked tab, and forget the record. This is the ONLY

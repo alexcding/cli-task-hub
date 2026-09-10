@@ -50,6 +50,16 @@ export const isPrUrl = url => /^https?:\/\/github\.com\/[^/]+\/[^/]+\/pull\/\d+/
 export const canSplitTerminal = t => !!t && !!t.url
   && (state.tasks.some(x => x.url === t.url) || (!!t.termId && state.terms.has(t.termId)));
 
+// A session started from the sidebar's project "+" has no page of its own — but it still needs a
+// CONTEXT, so it gets a synthetic url and becomes an ordinary viewer tab. That's what keeps the
+// toolbar, the split, the diff view and the extra web tabs ONE implementation for every session:
+// a PR-backed one and a bare one differ only in whether their context has a page to show.
+export const sessionUrl = id => 'session:' + id;
+export const isSessionUrl = u => /^session:/.test(String(u || ''));
+// Does this context have a page for the right pane? (A bare session's pane holds only the diff
+// view or the web tabs the user adds.)
+export const hasPage = t => !!t && !!t.url && !isSessionUrl(t.url);
+
 // Last path segment (folder/file name), ignoring trailing slashes. '' for empty input.
 export const basename = p => String(p || '').split('/').filter(Boolean).pop() || '';
 

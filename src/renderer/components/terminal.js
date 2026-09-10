@@ -401,7 +401,7 @@ export function activateTerminal(id) {
   state.activeTabId = null; state.activeTermId = id;
   ensurePanelOpen();
   hideAllPanes();
-  document.body.classList.remove('pr-split'); // a direct terminal is full-width
+  document.body.classList.remove('pr-split', 'split-closed', 'pane-blank'); // a direct terminal is full-width
   t.el.style.display = '';
   document.body.classList.add('viewing-term'); // hide the webview-only toolbar buttons
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));

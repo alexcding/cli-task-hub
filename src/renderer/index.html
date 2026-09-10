@@ -427,7 +427,8 @@
              chosen git client (Settings → Appearance), else reveals in Finder; right-click for both;
              filled by updateFolderChip — and the Run + workflow picker as one outlined segmented
              control (Run executes the picker's workflow; refreshWorkflowBtn shows/hides the group and
-             populates it). Both hide when there's no terminal beside the page. -->
+             populates it). Both hide when there's no terminal beside the page. The split toggle at
+             the segment's right edge shows/hides the whole right pane. -->
         <!-- No session for this page yet: start one here (viewer.js newSession — a PR/Jira tab knows
              its branch; a web page takes the next free worktree name, asking only which project when
              there's more than one). viewer.js syncSessionButton shows/hides it. -->
@@ -442,6 +443,13 @@
           </button>
           <select class="wf-select" id="wf-select" title="Workflow to run"></select>
         </div>
+        <!-- Split toggle (right edge of the terminal segment): hide/show this context's RIGHT pane.
+             Same control for every session — with the pane open you pick what it shows (the page,
+             the Diff chip, or a web tab) from the content-tab bar. viewer.js syncSplitToggle shows
+             it only when there's a terminal to fill the panel. -->
+        <button class="split-btn bar-toggle" id="split-toggle" hidden title="Show/hide the right panel (⌥⌘Return)" onclick="toggleSplitPane()">
+          <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="15" rx="2.5"/><path d="M14 4.5v15"/></svg>
+        </button>
       </div>
       <!-- Webview segment (over the PR pane — the RIGHT pane in split mode, full-width otherwise).
            Holds the back/home controls, then the Safari-compact horizontal tab bar (#ctabs) for the content pane:
@@ -465,6 +473,16 @@
     <div class="split-body" id="split-body">
       <!-- Diff pane: takes the RIGHT (page) pane while Review is on — the webview hides under it; diff.js renders into it. -->
       <div class="diff-pane" id="diff-pane" style="display:none"></div>
+      <!-- The right pane with nothing in it: a session that has no page of its own (started from a
+           project's "+") and is showing neither the diff nor a web tab. It's a real surface, not a
+           void — it names what the pane is for, and it gives the open/close animation something to
+           resize. viewer.js paintLeft toggles it (body.pane-blank). -->
+      <div class="pane-empty" id="pane-empty" hidden>
+        <div class="pane-empty-in">
+          <div class="pane-empty-t">Nothing open in this panel</div>
+          <div class="pane-empty-s">Pick <b>Diff</b> for this worktree’s changes, or ＋ to open a page.</div>
+        </div>
+      </div>
       <!-- Inline commit history for the tab's worktree, drawn over the diff pane when the
            Changes-view History button is toggled on (history.js renders into it). -->
       <div class="history-pane" id="history-pane" hidden></div>

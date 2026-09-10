@@ -5,7 +5,7 @@
 // whose project is gone fall into the unlabeled orphan group.
 import { state, prByUrl, setProjects, projectById } from '../stores/store.js';
 import { dragDivider } from '../lib/drag.js';
-import { esc, escJs, ghAvatarSrc, setHtmlIfChanged, basename } from '../lib/util.js';
+import { esc, escJs, ghAvatarSrc, setHtmlIfChanged, basename, isSessionUrl } from '../lib/util.js';
 import { ensureAvatar } from '../lib/avatars.js';
 import { ICON, TAB_ICON } from '../lib/icons.js';
 import { ciInfo } from './cards.js';
@@ -172,7 +172,7 @@ function tabRowHtml(t) {
 // are not drag-reorderable (they sort by state).
 function sessionRowHtml(s) {
   const st = !s.live ? 'stopped' : (s.state || 'idle');
-  const where = s.url || s.worktree;
+  const where = (!s.url || isSessionUrl(s.url)) ? s.worktree : s.url; // a bare session's url is synthetic — show the folder
   const tip = s.summary ? `${s.title}\n${s.summary}` : (s.live ? where : `${where}\nStopped — click to resume`);
   const attrs = [
     `data-state="${esc(st)}"`, `data-task="${esc(s.id)}"`,

@@ -1,17 +1,22 @@
 // PR ↔ terminal split: the terminal panel (left pane) is ALWAYS shown on a tab that can carry one
 // (canSplitTerminal) — a paired terminal, or the New Task empty state when no worktree exists yet.
-// There is no per-tab on/off. Opening a tab recreates the task's terminal when its worktree exists
-// on disk, else shows New Task; we never auto-spawn a terminal on a fresh link.
+// Opening a tab recreates the task's terminal when its worktree exists on disk, else shows New
+// Task; we never auto-spawn a terminal on a fresh link.
+// The RIGHT pane is the one thing the user toggles (toolbar split toggle / ⌥⌘Return): `paneView`
+// holds its whole state — 'off' (hidden, the terminal fills the panel), 'term' (the context's page)
+// or 'diff' (the worktree diff) — and applyPrLayout is the single place that turns that state into
+// geometry. Every context takes the same path: a PR, a Jira issue, a plain web page and a bare
+// session (a `session:` url, no page) differ only in what the pane has to show.
 import { ROUTES } from '/shared/routes.mjs';
 import { state, activeTab, projectByRepo, projectByPrUrl, projectByJiraKey, projectById } from '../stores/store.js';
 import { api, apiJson } from '../services/api.js';
-import { jiraKeyFromUrl, canSplitTerminal, errMsg, basename } from '../lib/util.js';
+import { jiraKeyFromUrl, canSplitTerminal, errMsg, basename, hasPage } from '../lib/util.js';
 import { toastErr } from './toast.js';
 import { createTermView, disposeTerm, fitTerm, visibleTerm } from './terminal.js';
 import { dragDivider } from '../lib/drag.js';
 import { hideDiffPane } from './diff.js';
 import { hideHistory, applyReview } from './history.js';
-import { saveTabs, updateTitles, activeLeftWebview, paintLeft } from './viewer.js';
+import { saveTabs, updateTitles, activeLeftWebview, paintLeft, hideTabPanes } from './viewer.js';
 import { renderContentTabs, markActiveTab } from './content-tabs.js';
 import { launchCli } from './cli-launch.js';
 import { persistTask, taskForTab, taskTerm, newTaskId } from '../services/tasks.js';
@@ -146,7 +151,10 @@ export function ensurePrTerminal(tab, cwd0, meta = {}) {
 }
 
 let _prAnimRaf = 0;
-export function stopPrTween() { if (_prAnimRaf) { cancelAnimationFrame(_prAnimRaf); _prAnimRaf = 0; } }
+export function stopPrTween() {
+  if (_prAnimRaf) { cancelAnimationFrame(_prAnimRaf); _prAnimRaf = 0; }
+  document.body.classList.remove('pr-tweening', 'pane-resizing');
+}
 function setPrSplit(toPct) {
   document.documentElement.style.setProperty('--pr-split', toPct + '%');
   // The native child webview (Tauri shim) follows the new boundary now rather than on the next rAF
@@ -160,7 +168,11 @@ function setPrSplit(toPct) {
 // table reflows every frame) before the slide, so only the webview width animates — that's smooth.
 function tweenPrSplit(toPct, onDone) {
   stopPrTween();
-  const from = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--pr-split')) || 100;
+  // Start from the boundary's CURRENT value. Not `|| 100`: a pane opening from zero width reads as
+  // 0, which is falsy — that fallback silently started it at 100 (full width) and made it shrink
+  // leftward, revealing the terminal from the left instead of growing the pane out of the right edge.
+  const cur = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--pr-split'));
+  const from = Number.isFinite(cur) ? cur : 100;
   const dur = 200; let t0 = 0;
   const tick = ts => {
     if (!t0) t0 = ts;
@@ -168,9 +180,70 @@ function tweenPrSplit(toPct, onDone) {
     const e = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2; // easeInOutQuad
     setPrSplit((from + (toPct - from) * e).toFixed(2));
     if (k < 1) _prAnimRaf = requestAnimationFrame(tick);
-    else { _prAnimRaf = 0; onDone && onDone(); }
+    else { _prAnimRaf = 0; document.body.classList.remove('pr-tweening'); onDone && onDone(); }
   };
+  document.body.classList.add('pr-tweening'); // terminals skip their ResizeObserver refit meanwhile
   _prAnimRaf = requestAnimationFrame(tick);
+}
+
+// The empty-pane surface (#pane-empty). Shown only while the open pane has nothing in it; the
+// single toggle, so no caller has to remember to take it down.
+export function showEmptyPane(on) {
+  const el = document.getElementById('pane-empty');
+  if (el) el.hidden = !on;
+}
+
+// The RIGHT pane's state, for every context alike: 'off' hides it (the terminal fills the panel),
+// 'term' shows the context's page (blank for a bare session — pick a view or add a web tab), 'diff'
+// shows the worktree diff. The toolbar's split toggle flips between 'off' and the last shown view.
+export const rightPaneOpen = tab => !!tab && (tab.paneView || 'term') !== 'off';
+// …and it is actually hidden only when a terminal is there to fill the panel: a context whose
+// session has stopped shows its page again regardless of the persisted state (there'd be nothing
+// on screen otherwise), and gets the toolbar's "Reopen session" button instead of the toggle.
+export const rightPaneHidden = tab => !rightPaneOpen(tab) && !!(tab?.termId && state.terms.get(tab.termId));
+
+// Resize the right pane to `toPct` with the terminal PINNED at full width underneath
+// (body.pane-resizing, see viewer.css): only the pane changes size, the terminal neither moves nor
+// reflows until the boundary lands. Used for both directions of the split toggle; `onDone` runs
+// after the pin comes off (skipped if the tab is no longer the one on screen).
+function resizePane(tab, toPct, onDone) {
+  document.body.classList.add('pane-resizing');
+  tweenPrSplit(toPct, () => {
+    document.body.classList.remove('pane-resizing');
+    if (state.activeTabId === tab.id) onDone();
+  });
+}
+
+// Right pane hidden: the page/diff go away and the terminal fills the panel. Same end state as
+// clearPrLayout, except the terminal stays on screen (there it's the terminal that goes).
+function collapseRightPane(tab, t, animate) {
+  // Nothing about the pane's state is torn down until it has finished closing — its content stays
+  // painted so what you see narrowing is the real pane, not an empty box. The feet span the PANEL
+  // rather than the pane, so they can't narrow with it: CSS keeps them away for the duration
+  // (body.pane-resizing) and they land with the pane.
+  t.el.style.display = '';
+  const finish = () => {
+    document.body.classList.remove('pane-diff', 'pane-blank');
+    hideHistory();
+    hideDiffPane();
+    showEmptyPane(false);
+    setPrSplit(0);                               // the pane is gone: the boundary belongs at the right edge
+    document.body.classList.remove('pr-split');
+    document.body.classList.add('split-closed'); // the toolbar's webview segment goes with the pane
+    hideTabPanes(tab);                           // no page painted behind a closed pane
+    fitTerm(t);                                  // the terminal owns the full width
+    renderContentTabs(); markActiveTab();
+    updateTitles();
+  };
+  // Toggled closed: the pane resizes back into the right edge. The terminal is reflowed to full
+  // width UP FRONT — pinned, and still covered by the pane over the strip it's about to take — so
+  // the pane narrows over a terminal that is already complete. Without that pre-fit the widening
+  // strip would be empty background growing out of the left.
+  if (animate && document.body.classList.contains('pr-split')) {
+    document.body.classList.add('pane-resizing');   // pin first: fitTerm must measure the full width
+    fitTerm(t);
+    resizePane(tab, 0, finish);
+  } else { stopPrTween(); finish(); }
 }
 
 // Show the tab's split content. The terminal (left) is always on; `paneView` picks what the
@@ -201,9 +274,10 @@ export function leaveReview(tab) {
   if (tab === activeTab()) { document.body.classList.remove('pane-diff'); hideHistory(); hideDiffPane(); }
 }
 
-// Show the tab's paired terminal beside (left of) its webview. With `animate` (a session just
-// created) the split slides open from the left; otherwise (switching to a tab that already has one)
-// it appears at the resting boundary immediately.
+// Show the tab's paired terminal beside (left of) its webview. `animate` picks WHICH edge moves —
+// 'term' (a session was just created: the terminal slides in from the left, the page shrinking to
+// make room) or 'pane' (the split toggle: the right pane expands out of / collapses into the right
+// edge, the terminal giving up or taking the width). false = land at the resting boundary at once.
 export function applyPrLayout(tab, animate = false) {
   adoptPairedTerminal(tab);                 // re-adopt a surviving terminal by URL; never creates one
   const t = tab.termId && state.terms.get(tab.termId);
@@ -211,11 +285,18 @@ export function applyPrLayout(tab, animate = false) {
   // No terminal (the session's shell is gone and couldn't be recreated) → just the page. There is
   // no empty state: a tab without a session shows the toolbar's "New session" button instead.
   if (!t) { clearPrLayout(tab); return; }
+  if (!rightPaneOpen(tab)) { collapseRightPane(tab, t, animate); return; }
+  document.body.classList.remove('split-closed');
   document.body.classList.add('pr-split');
   showPaneContent(tab, t);
-  if (animate) {
+  if (animate === 'pane') {
+    // Toggled open: the PANE resizes out of the right edge, from zero width, over a pinned terminal;
+    // the terminal takes its final width (and refits) once the pane lands.
+    setPrSplit(0);
+    resizePane(tab, target, () => fitTerm(t));
+  } else if (animate) {
     setPrSplit(target); fitTerm(t);              // park at final geometry so the terminal grid sizes correctly…
-    setPrSplit(100);                             // …then start fully collapsed and slide open
+    setPrSplit(100);                             // …then start with the terminal collapsed and slide it in
     tweenPrSplit(target, () => { if (state.activeTabId === tab.id) fitTerm(t); });
   } else {
     setPrSplit(target); fitTerm(t);
@@ -229,17 +310,29 @@ export function applyPrLayout(tab, animate = false) {
 export function setPaneView(view) {
   const tab = activeTab();
   if (!canSplitTerminal(tab)) return;
-  const next = view === 'diff' ? 'diff' : 'term';
-  if ((tab.paneView || 'term') === next) return;
+  const next = ['off', 'diff', 'term'].includes(view) ? view : 'term';
+  const cur = tab.paneView || 'term';
+  if (cur === next) return;
   const t = tab.termId && state.terms.get(tab.termId);
-  // No live terminal (New Task empty state / still spawning) → there's no worktree to diff and no
-  // Diff chip on screen. Don't persist 'diff' from here: it would silently cover the page with an
-  // empty diff the moment the task's terminal lands.
+  // No live terminal (New Task empty state / still spawning) → there's no worktree to diff, no Diff
+  // chip on screen and nothing to collapse to. Don't persist a view from here: it would silently
+  // cover (or hide) the page the moment the task's terminal lands.
   if (!t) return;
+  if (cur !== 'off') tab.paneLast = cur;      // what the toggle reopens to (view-only, not persisted)
   tab.paneView = next;
   saveTabs();
-  showPaneContent(tab, t);
-  updateTitles();
+  // ONE geometry path. Only a change in the pane's VISIBILITY slides the boundary; swapping the
+  // page for the diff inside an open pane must not flash it shut and back.
+  applyPrLayout(tab, (cur === 'off') !== (next === 'off') ? 'pane' : false);
+}
+
+// Toolbar split toggle (terminal segment, right edge): hide or show the right pane of THIS context.
+// Reopening restores the view it had ('term' page / 'diff'), defaulting to the diff for a bare
+// session — its pane has no page, so the diff is the only thing it can show without a web tab.
+export function toggleSplitPane() {
+  const tab = activeTab();
+  if (!tab) return;
+  setPaneView(rightPaneOpen(tab) ? 'off' : (tab.paneLast || (hasPage(tab) ? 'term' : 'diff')));
 }
 
 // Collapse the split — a tab that can't carry a terminal became the view, or the shell exited.
@@ -256,11 +349,12 @@ export function clearPrLayout(tab = null, animate = false) {
   // slide animates the page growing (not a bare pane with the page popping in at the end). `tab`
   // is null for the argument-less callers (shell exit, tab switch) — the active tab is the one
   // whose pane needs repainting then.
-  document.body.classList.remove('pane-diff');
+  document.body.classList.remove('pane-diff', 'pane-blank');
+  showEmptyPane(false);
   const shown = tab || activeTab();
   if (shown) paintLeft(shown);
   const finish = () => {
-    document.body.classList.remove('pr-split');
+    document.body.classList.remove('pr-split', 'split-closed');
     if (t) t.el.style.display = 'none';
     renderContentTabs(); markActiveTab();              // the Diff chip goes with the split
     updateTitles();                                    // …and the toolbar offers the session back
@@ -295,7 +389,9 @@ async function _openPrPanel(tab, animate) {
     // resume with the stored id, else a fresh launch of the task's CLI (which mints a new id).
     if (task.cli && tab.termId && state.terms.has(tab.termId)) {
       const r = await launchCli(tab.termId, null, task.cli, { sessionId: task.sessionId || '', resume: !!task.sessionId });
-      if (r?.sessionId && r.sessionId !== task.sessionId) persistTask({ id: task.id, sessionId: r.sessionId });
+      // null ⇒ the shell wasn't at a prompt (e.g. a slow rc file): nothing launched, nothing stamped.
+      if (!r) toastErr(`Terminal busy — ${task.cli} not started. Run it from the shell when it's ready.`);
+      else if (r.sessionId && r.sessionId !== task.sessionId) persistTask({ id: task.id, sessionId: r.sessionId });
     }
     if (state.activeTabId !== tab.id) return;
   }

@@ -44,7 +44,7 @@ function showPage(name, projectId) {
   document.getElementById('split').hidden = true;
   viewer.hideAllPanes(); // hide native child webviews now — hiding #split alone leaves them painted over the page until the next rAF (throttled in a debug build)
   window.taskhub?.wcv?.hideAll?.(); // a non-web page is showing now: force EVERY embedded webview out of view, incl. orphans this session doesn't track (Tauri)
-  document.body.classList.remove('viewing-tab', 'viewing-term', 'pr-split', 'pane-diff');
+  document.body.classList.remove('viewing-tab', 'viewing-term', 'pr-split', 'pane-diff', 'pane-blank', 'split-closed');
   state.activeTabId = null; state.activeTermId = null;  // terminals stay alive, just unfocused
   renderTabs();
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
@@ -123,6 +123,8 @@ function handleShortcut(action) {
     case 'pane:toggleView':
       split.setPaneView(tab?.paneView === 'diff' ? 'term' : 'diff'); // setPaneView re-checks the tab
       break;
+    // Hide/show the right pane of the context in view (the toolbar's split toggle).
+    case 'pane:toggleSplit': split.toggleSplitPane(); break;
     // ⌘+ / ⌘− / ⌘0: font size of the pane in view (terminal or diff), persisted.
     // zoomTarget() is null when nothing zoomable is on screen → no-op.
     case 'font:bigger':   { const z = zoomTarget(); if (z) bumpFontSize(z, 1); break; }
@@ -253,7 +255,7 @@ Object.assign(window, {
   // viewer toolbar
   splitBack: viewer.splitBack, splitForward: viewer.splitForward, splitHome: viewer.splitHome,
   toggleWorkflowRun,
-  setPaneView: split.setPaneView, toggleCommitPop, commitAction,
+  setPaneView: split.setPaneView, toggleSplitPane: split.toggleSplitPane, toggleCommitPop, commitAction,
   setReviewView, histShowCommit,
   // find-in-page bar
   onFindInput: find.onFindInput, onFindKey: find.onFindKey, closeFind: () => find.closeFind(true),

@@ -13,7 +13,7 @@
 // Data lives on the active viewer tab: tab.links[] + tab.activeLink (null = default). All
 // mutations live in viewer.js (added to window.*); this module only renders + reads.
 import { state, activeTab, prByUrl } from '../stores/store.js';
-import { esc, ghAvatarSrc, setHtmlIfChanged } from '../lib/util.js';
+import { esc, ghAvatarSrc, setHtmlIfChanged, hasPage } from '../lib/util.js';
 import { ICON, TAB_ICON } from '../lib/icons.js';
 import { ciInfo } from './cards.js';
 import { taskForTab } from '../services/tasks.js';
@@ -109,11 +109,14 @@ export function renderContentTabs(force = false) {
   // With just the default tab (no extra tabs), center a larger pill against the whole bar
   // (CSS .bar-wv.single balances the side groups). Multiple tabs share the bar equally.
   const diffTab = hasDiffTab(t);
-  const single = !(t.links && t.links.length) && !diffTab;
+  // A bare session's context has no page, so it has no default chip — the bar is just the Diff
+  // chip and whatever web tabs the user added (plus the toolbar's "+"). Same bar, one chip fewer.
+  const page = hasPage(t);
+  const single = page && !(t.links && t.links.length) && !diffTab;
   el.classList.toggle('ctabs-single', single);
   el.closest('.bar-wv')?.classList.toggle('single', single);
   // The New-tab "+" is a static button in the toolbar (pinned far right), not rendered here.
-  const html = defaultChipHtml(t) + (diffTab ? diffChipHtml(t) : '')
+  const html = (page ? defaultChipHtml(t) : '') + (diffTab ? diffChipHtml(t) : '')
     + (t.links || []).map(l => linkChipHtml(t, l)).join('');
   setHtmlIfChanged(el, html);
 }
@@ -138,7 +141,7 @@ export function markActiveTab() {
     const active = node.classList.contains('source') ? diff
       : diff ? false
       : node.classList.contains('default') ? !t.activeLink
-      : node.dataset.id === t.activeLink;
+      : node.dataset.id === t.activeLink;   // a page-less context has no default chip: nothing is active until a view is picked
     node.classList.toggle('active', active);
   });
 }

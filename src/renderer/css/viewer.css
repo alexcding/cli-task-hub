@@ -37,6 +37,16 @@ body.pr-split .bar-term { width:var(--term-w); border-right:none; }
 /* Solo terminal: the segment is the whole toolbar. */
 body.viewing-term .bar-wv   { display:none; }
 body.viewing-term .bar-term { flex:1; border-right:none; }
+/* Right pane hidden (the split toggle): the terminal fills the panel, so its segment becomes the
+   whole toolbar — the same end state as a solo terminal, reached from a context that still has a
+   page/diff waiting behind the toggle. */
+body.split-closed .bar-wv   { display:none; }
+body.split-closed .bar-term { flex:1; border-right:none; }
+/* Split toggle — pinned to the terminal segment's right edge (the divider, in split mode). Its
+   pressed state marks the pane as open: the neutral hover fill, not the accent — a layout control,
+   not a status. */
+.bar-toggle { margin-left:auto; }
+.split-btn.on { color:var(--text); background:var(--surface-hover); }
 .split-btn { background:none; border:none; color:var(--text-2); cursor:pointer; padding:6px; border-radius:6px; flex-shrink:0; display:inline-flex; align-items:center; justify-content:center; transition:color .28s ease, background-color .12s ease; }
 .split-btn:hover { background:var(--surface-hover); color:var(--text); }
 .split-btn:disabled { opacity:.3; cursor:default; }
@@ -225,14 +235,37 @@ body.pr-split .split-body .editor-pane { left:var(--term-w); }
    The 1px inset keeps the seam pixel in DOM territory so the divider always renders. */
 body.pr-split .split-body webview, body.pr-split .split-body .wcv-shim { left: calc(var(--term-w) + 1px); width:auto; }
 body.pr-split .split-body .term-pane { right: var(--pr-split, 60%); }
+/* Split toggle animation (applyPrLayout 'pane' / collapseRightPane): the RIGHT pane resizes at the
+   right edge — --pr-split runs 0 ↔ its resting width — while the terminal is PINNED at full width
+   underneath, so only the pane changes size and the terminal neither moves nor reflows. Same
+   specificity as the .pr-split rule above, so source order decides.
+   The pane is LIFTED over the terminal: term panes are appended to #split-body as sessions open, so
+   DOM order would put them on top. Lift the pane rather than pushing the terminal to a negative
+   z-index — neither #split nor .split-body is a stacking context, so a negative child drops behind
+   their backgrounds and the terminal vanishes for the length of the animation. 3 stays under
+   .history-pane (4), .pane-foot (5) and #pr-divider (6). */
+body.pane-resizing .split-body .term-pane { right: 0; }
+body.pane-resizing .split-body webview,
+body.pane-resizing .split-body .wcv-shim,
+body.pane-resizing .split-body .editor-pane,
+body.pane-resizing .split-body .diff-pane,
+body.pane-resizing .split-body .pane-empty,
+body.pane-resizing .split-body .history-pane { z-index:3; }
 #pr-divider { position:absolute; top:0; bottom:0; left:var(--term-w); width:7px; transform:translateX(-50%); cursor:col-resize; z-index:6; display:none; }
 #pr-divider::before { content:''; position:absolute; left:50%; top:0; bottom:0; width:1px; transform:translateX(-50%); background:var(--border); }
 #pr-divider:hover::before { background:var(--border-focus); }
 body.pr-split #pr-divider { display:block; }
-.split-btn.on { color:var(--accent); background:var(--accent-bg); }
+/* The feet (browser controls / Review switch) span the PANEL, not the pane, so they can't resize
+   with it — they stay away for the length of the animation and land with the pane. !important
+   because the rules that show them are long :not() chains that would otherwise out-specify this. */
+body.pane-resizing .pane-foot { display:none !important; }
+/* The divider sits on the moving boundary; while the pane resizes it would read as a hairline
+   sweeping over the terminal, so it appears only once the pane has landed. Must sit AFTER the
+   .pr-split rule above: same specificity, so source order is what decides. */
+body.pane-resizing #pr-divider { display:none; }
 
 /* With no terminal beside the page the terminal segment's actions (folder chip, Run) are gone. */
-body:not(.pr-split):not(.viewing-term) .pf-term { display:none; }
+body:not(.pr-split):not(.viewing-term):not(.split-closed) .pf-term { display:none; }
 
 /* Diff pane — read-only `git diff` of the tab's worktree, switchable with the paired
    terminal (split.js toggles body.pane-diff). Semantic add/remove colors live here
@@ -247,6 +280,15 @@ html[data-theme="dark"] {
 }
 .diff-pane { position:absolute; inset:0; bottom:var(--foot-h); overflow:auto; overscroll-behavior:contain; background:var(--bg); font:var(--diff-font-size)/1.5 var(--diff-font); }
 body.pr-split .split-body .diff-pane { left:var(--term-w); }
+
+/* Empty right pane (a bare session showing neither diff nor page). A plain surface with the panel
+   background so the pane still reads as a panel — and so the toggle has something to resize. */
+.pane-empty { position:absolute; inset:0; background:var(--bg); display:flex; align-items:center; justify-content:center; padding:24px; }
+body.pr-split .split-body .pane-empty { left:var(--term-w); }
+.pane-empty-in { max-width:260px; text-align:center; }
+.pane-empty-t { font-size:13px; font-weight:600; color:var(--text-2); }
+.pane-empty-s { margin-top:5px; font-size:12px; line-height:1.5; color:var(--text-3); }
+.pane-empty-s b { font-weight:600; color:var(--text-2); }
 /* Discard confirm: dims + covers only the diff pane's region (same left offset as the
    pane in split mode), so it never blocks the webview or the rest of the window. */
 .diff-confirm { position:absolute; inset:0; z-index:20; display:flex; align-items:center; justify-content:center; padding:16px; background:rgba(0,0,0,.32); }
@@ -294,7 +336,7 @@ body.pr-split.pane-diff .review-foot { display:flex; }
    without a terminal, the right pane beside one. Gone under Source and in a solo terminal. */
 .browser-foot { justify-content:flex-start; }
 body.pr-split .browser-foot { left:var(--term-w); }
-body:not(.pane-diff):not(.viewing-term) .browser-foot { display:flex; }
+body:not(.pane-diff):not(.viewing-term):not(.split-closed):not(.pane-blank) .browser-foot { display:flex; }
 /* The find bar docks in the same bottom strip (same height, higher z) — yield to it while open. */
 body.find-open .browser-foot { display:none; }
 .pf-side { display:flex; align-items:center; gap:6px; min-width:0; }

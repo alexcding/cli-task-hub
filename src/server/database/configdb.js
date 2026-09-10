@@ -271,7 +271,7 @@ function setTabs(tabs = [], active = null) {
       if (!t || !t.url) return;
       const links = JSON.stringify(Array.isArray(t.links) ? t.links : []);
       _insertTab.run(t.url, t.kind === 'jira' ? 'jira' : t.kind === 'web' ? 'web' : 'github', t.title || t.url, typeof t.cur === 'string' ? t.cur : '',
-        t.repo || '', t.branch || '', t.paneView === 'diff' ? 'diff' : 'term',
+        t.repo || '', t.branch || '', ['off', 'diff'].includes(t.paneView) ? t.paneView : 'term',
         t.category || '', t.login || '', t.avatar || '', links, i, active && t.url === active ? 1 : 0);
     });
     db.exec('COMMIT');

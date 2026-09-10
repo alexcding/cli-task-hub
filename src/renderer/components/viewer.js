@@ -4,14 +4,14 @@
 import { ROUTES } from '/shared/routes.mjs';
 import { state, activeTab, prByUrl, prGroup, prTabTitle, jiraTabTitle, jiraByKey } from '../stores/store.js';
 import { api, apiJson } from '../services/api.js';
-import { esc, jiraKeyFromUrl, canSplitTerminal, isPrUrl, ghAvatarSrc, basename } from '../lib/util.js';
+import { esc, jiraKeyFromUrl, canSplitTerminal, isPrUrl, ghAvatarSrc, basename, hasPage, isSessionUrl } from '../lib/util.js';
 import { seedAvatar } from '../lib/avatars.js';
 import { ICON } from '../lib/icons.js';
 import { gitClientLabel, gitClientIcon } from '../lib/git-clients.js';
 import { toast, toastErr } from './toast.js';
 import { renderTabs } from './sidebar.js';
 import { openMenu, closeMenu } from './menu.js';
-import { ensurePrTerminal, applyPrLayout, clearPrLayout, resolveTabFolder, removeWorktree, openPrPanel, leaveReview } from './split.js';
+import { ensurePrTerminal, applyPrLayout, clearPrLayout, resolveTabFolder, removeWorktree, openPrPanel, leaveReview, rightPaneOpen, rightPaneHidden, setPaneView, showEmptyPane } from './split.js';
 import { jiraTaskBranch } from '../lib/workflow.mjs';
 import { persistTask, taskForTab, taskById } from '../services/tasks.js';
 import { deleteWorktreeAt, ensureWorktree } from './tasks.js';
@@ -71,10 +71,14 @@ export function createTab(url, title, kind, meta = {}) {
   // kind: 'jira' when asked; otherwise a GitHub PR page is 'github' and any other URL is a plain
   // 'web' tab (no project, no terminal until a session is created for it — see newSession).
   const k = kind === 'jira' ? 'jira' : isPrUrl(url) ? 'github' : 'web';
+  // paneView is the RIGHT pane's single state: 'off' (hidden — the terminal fills the panel),
+  // 'term' (the context's page) or 'diff' (the worktree diff). A bare session has no page, so its
+  // pane starts hidden; a page-backed context starts showing its page, as it always did.
+  const pv = ['off', 'diff', 'term'].includes(meta.paneView) ? meta.paneView : (isSessionUrl(url) ? 'off' : 'term');
   const tab = { id, kind: k, title: title || url, url, cur: meta.cur || '', wv: null,
     loaded: false, started: false, repo: meta.repo || '', branch: meta.branch || '',
     jiraKey: meta.jiraKey || jiraKeyFromUrl(url),
-    paneView: meta.paneView === 'diff' ? 'diff' : 'term', category: meta.category || '',
+    paneView: pv, category: meta.category || '',
     login: meta.login || '', avatar: meta.avatar || '',
     links: (meta.links || []).map(rebuildLink), activeLink: null };
   return tab;
@@ -243,8 +247,19 @@ export function paintLeft(tab) {
   if (tab.wv) tab.wv.style.display = 'none';
   (tab.links || []).forEach(l => { if (l.wv) l.wv.style.display = 'none'; if (l.ed) l.ed.style.display = 'none'; });
   const link = tab.activeLink ? (tab.links || []).find(l => l.id === tab.activeLink) : null;
+  if (rightPaneHidden(tab)) return;               // pane collapsed onto the terminal — paint no page
+  // Pane open with nothing in it — a bare session showing neither the diff nor a web tab (its
+  // context has no page). It gets the #pane-empty surface, which says what the pane is for instead
+  // of leaving a void, and the browser foot (back/forward/home for a page that isn't there) goes.
+  // Decided HERE because paintLeft is the one path every view change goes through: closing the last
+  // web tab of a bare session lands in exactly this state without going near the split code.
+  const blank = !inDiff(tab) && !hasPage(tab) && !link;
+  document.body.classList.toggle('pane-blank', blank);
+  showEmptyPane(blank);
   if (inDiff(tab)) {
     /* the Diff view covers the pane — leave the page hidden */
+  } else if (!hasPage(tab)) {                     // bare session: the context has no page at all
+    /* nothing to show — the pane holds the diff view or the web tabs the user adds */
   } else if (!link) {                                   // default tab — the PR/Jira page
     if (!tab.wv) buildTabWebview(tab);
     if (!tab.started) { tab.started = true; tab.wv.setAttribute('src', tab.cur || tab.url); }
@@ -278,6 +293,14 @@ export function activeLeftWebview() {
   return t.wv || null;
 }
 
+// A context's active view just changed (a content tab picked, a file link opened): paint it — and
+// open the right pane first when it's collapsed, since asking to see something implies showing it.
+// setPaneView persists the state and repaints through applyPrLayout, so it replaces the paint.
+function showActiveView(tab) {
+  if (rightPaneHidden(tab)) setPaneView('term');
+  else paintLeft(tab);
+}
+
 // Switch which horizontal tab is shown in the content pane. linkId null = the default PR tab.
 // Deliberately does NOT call openPrPanel/clearPrLayout — the terminal split stays put. Picking
 // a tab is asking to see a page, so it also leaves Review if that was covering the pane.
@@ -287,7 +310,7 @@ export function setActiveLink(linkId) {
   closeFind();
   tab.activeLink = linkId || null;
   leaveReview(tab);
-  paintLeft(tab);
+  showActiveView(tab);        // …opening the right pane first if it was collapsed
   updateNavButtons();
   markActiveTab();           // class toggle (not a rebuild) so the pill fill animates
   saveTabs();
@@ -484,7 +507,7 @@ export function openFileTab(filePath, line = 0) {
   tab.activeLink = link.id;
   leaveReview(tab);          // a file link wants to be SEEN — even if the Diff view was up
   if (state.activeTabId === tab.id) {
-    paintLeft(tab);
+    showActiveView(tab);     // a ⌘-clicked path can arrive while the right pane is collapsed
     renderContentTabs(true);
   } else {
     activateTab(tab.id);   // bring the owning context into view (leaving the solo terminal)
@@ -543,6 +566,9 @@ export async function restoreTabs() {
   for (const t of saved) {
     // A tab opened from the tray may already be in state.tabs by the time restore lands —
     // skip it so we don't double-add.
+    // A bare session's tab exists only for its task; if the task was removed while the window was
+    // closed, the context is dead — don't rehydrate a tab with no session behind it.
+    if (isSessionUrl(t?.url) && !state.tasks.some(x => x.url === t.url)) continue;
     if (t && t.url && !state.tabs.some(x => x.url === t.url)) {
       state.tabs.push(createTab(t.url, t.title, t.kind, { cur: t.cur, repo: t.repo, branch: t.branch, jiraKey: t.jiraKey, paneView: t.paneView, category: t.category, login: t.login, avatar: t.avatar, links: Array.isArray(t.links) ? t.links : [] }));
       seedAvatar(t.login, t.avatar);   // share the restored data URI so the dashboard reuses it
@@ -587,14 +613,19 @@ export function activateTab(id) {
   saveTabs();
 }
 
+// Hide ONE context's page elements (its default webview + every link webview/editor pane). The
+// single teardown of "show no page here", shared by hideAllPanes and the collapsed split (split.js).
+export function hideTabPanes(t) {
+  if (t.wv) { t.wv.style.display = 'none'; t.wv.syncBounds?.(); }     // hide native child webview now, not on next rAF
+  (t.links || []).forEach(l => { if (l.wv) { l.wv.style.display = 'none'; l.wv.syncBounds?.(); } if (l.ed) l.ed.style.display = 'none'; });
+}
+
 // Hide every left-pane element (default webviews + per-context link webviews/editor panes) +
 // terminals + diff. The caller then shows one; applyPrLayout re-adds pane-diff when the
 // incoming tab is in diff view.
 export function hideAllPanes() {
-  state.tabs.forEach(t => {
-    if (t.wv) { t.wv.style.display = 'none'; t.wv.syncBounds?.(); }     // hide native child webview now, not on next rAF
-    (t.links || []).forEach(l => { if (l.wv) { l.wv.style.display = 'none'; l.wv.syncBounds?.(); } if (l.ed) l.ed.style.display = 'none'; });
-  });
+  state.tabs.forEach(hideTabPanes);
+  showEmptyPane(false);   // the blank-pane surface belongs to whichever context is showing
   for (const t of state.terms.values()) t.el.style.display = 'none';
   hideDiffPane();
   document.body.classList.remove('pane-diff');
@@ -648,7 +679,7 @@ export function closeSplit() {
   state.tabs.forEach(t => { closePairedTerm(t); disposeWebview(t); (t.links || []).forEach(disposeLink); });
   state.tabs = []; state.activeTabId = null; state.activeTermId = null;
   document.getElementById('split').hidden = true;
-  document.body.classList.remove('viewing-tab', 'viewing-term', 'pr-split', 'pane-diff'); // restore <main>
+  document.body.classList.remove('viewing-tab', 'viewing-term', 'pr-split', 'pane-diff', 'pane-blank', 'split-closed'); // restore <main>
   renderTabs(); // clear tab rows; paired terminals were stopped above
   saveTabs();
 }
@@ -724,6 +755,21 @@ export function updateTitles() {
   updateFolderChip();
   refreshWorkflowBtn();
   syncSessionButton(activeTab());
+  syncSplitToggle(activeTab());
+}
+
+// Split toggle (terminal segment, right edge). It exists wherever a terminal fills the panel — a
+// PR/Jira session, a web-page session and a bare one alike — and only its pressed state differs;
+// with no terminal there is nothing to collapse the pane onto, so it goes away.
+function syncSplitToggle(tab) {
+  const b = document.getElementById('split-toggle');
+  if (!b) return;
+  const live = !!(tab && tab.termId && state.terms.has(tab.termId));
+  b.hidden = !live;
+  if (!live) return;
+  const open = rightPaneOpen(tab);
+  b.classList.toggle('on', open);
+  b.title = (open ? 'Hide the right panel' : 'Show the right panel') + ' (⌥⌘Return)';
 }
 
 // Folder chip (right of the webview segment): shows the active tab's local folder — the
@@ -754,7 +800,10 @@ async function updateFolderChip(force = false) {
   _folderAt = now;
   _folderKey = key;
 
-  if (!t || (t.kind !== 'github' && t.kind !== 'jira')) { hideChip(); return; }
+  // Any context with a session resolves a folder (its task's worktree — resolveTabFolder); a PR or
+  // Jira page resolves one from its project even before a session exists. A plain web page with
+  // neither has no folder to show.
+  if (!t || (t.kind === 'web' && !taskForTab(t))) { hideChip(); return; }
   const reqId = ++_folderReq;
   const tabId = t.id;
   const info = await resolveTabFolder(t).catch(() => null);
@@ -887,7 +936,7 @@ export async function newSession(ev, project = null) {
   // recreates the terminal on the recorded worktree and resumes the agent); failures toast there.
   if (taskForTab(tab)) {
     busy(true);
-    try { await openPrPanel(tab, true); } finally { busy(false); updateTitles(); }
+    try { await openPrPanel(tab, 'term'); } finally { busy(false); updateTitles(); }
     return;
   }
   // ── A page that names no branch of its own: pick the project, then take the next free name.
@@ -947,7 +996,7 @@ export async function newSession(ev, project = null) {
 // now), and drop into the agent — stamping it (+ its minted conversation id) on the task so a
 // stopped session resumes the same conversation.
 async function afterSession(tab, cwd, cli) {
-  if (state.activeTabId === tab.id) applyPrLayout(tab, true);
+  if (state.activeTabId === tab.id) applyPrLayout(tab, 'term'); // the session is new: slide the terminal in from the left
   syncSessionButton(tab);
   updateTitles();
   renderTabs();
