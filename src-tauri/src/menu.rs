@@ -73,7 +73,6 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
   let view = SubmenuBuilder::new(app, "View")
     .item(&mi("view:reload", "Reload", "Cmd+R")?)
     .separator()
-    .item(&mi("pane:toggleTerm", "Toggle Terminal Panel", "Cmd+J")?)
     .item(&mi("pane:toggleView", "Switch Terminal / Changes", "Shift+Cmd+D")?)
     .separator()
     .item(&mi("font:bigger", "Bigger Font", "Cmd+=")?)

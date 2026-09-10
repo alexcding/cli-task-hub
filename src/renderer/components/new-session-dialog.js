@@ -27,6 +27,19 @@ export function branchNameError(b) {
   return '';
 }
 
+// The defaults the dialog would show for a project — a free branch name and the base it forks from
+// — for callers that create a session WITHOUT asking (the viewer's "New session" button on a page
+// that names no branch of its own). Returns null when the repo's refs can't be read.
+export async function suggestSession(project) {
+  let refs;
+  try { refs = await api(`${ROUTES.GIT_REFS}?path=${encodeURIComponent(project.workspace)}`); } catch { return null; }
+  if (!refs) return null;
+  const branches = Array.isArray(refs.branches) ? refs.branches : [];
+  const names = branches.map(b => b.name);
+  const base = names.includes(PREFERRED_BASE) ? PREFERRED_BASE : (refs.defaultBranch || names[0] || PREFERRED_BASE);
+  return { branch: suggestBranch(branches, Array.isArray(refs.worktrees) ? refs.worktrees : []), base };
+}
+
 // A placeholder branch name not already taken: worktree1, worktree2, …
 function suggestBranch(branches, worktrees) {
   const taken = new Set([...branches.map(b => b.name), ...worktrees.map(w => w.branch)].filter(Boolean));

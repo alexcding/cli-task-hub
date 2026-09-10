@@ -13,7 +13,7 @@
 // Data lives on the active viewer tab: tab.links[] + tab.activeLink (null = default). All
 // mutations live in viewer.js (added to window.*); this module only renders + reads.
 import { state, activeTab, prByUrl } from '../stores/store.js';
-import { esc, ghAvatarSrc, setHtmlIfChanged, canSplitTerminal } from '../lib/util.js';
+import { esc, ghAvatarSrc, setHtmlIfChanged } from '../lib/util.js';
 import { ICON, TAB_ICON } from '../lib/icons.js';
 import { ciInfo } from './cards.js';
 import { taskForTab } from '../services/tasks.js';
@@ -43,7 +43,7 @@ function linkIcon(l) {
 // worktree). While it's the shown view no page chip is active. Both are PURE STATE predicates
 // (no DOM class) so a paint that runs before split.js has synced body.pane-diff — activateTab's
 // first paintLeft — still agrees with what the split will show; viewer.js imports inDiff for that.
-export const hasDiffTab = t => !!(t && canSplitTerminal(t) && t.prSplit && t.termId && state.terms.get(t.termId));
+export const hasDiffTab = t => !!(t && t.termId && state.terms.get(t.termId));
 export const inDiff = t => hasDiffTab(t) && t.paneView === 'diff';
 
 function diffChipHtml(t) {

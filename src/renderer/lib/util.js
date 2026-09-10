@@ -43,11 +43,12 @@ export const jiraKeyFromUrl = url => (String(url || '').match(/\/browse\/([A-Z][
 // A GitHub pull-request page — the one github.com URL that is a PR tab; every other web URL
 // opens as a plain web tab (kind 'web').
 export const isPrUrl = url => /^https?:\/\/github\.com\/[^/]+\/[^/]+\/pull\/\d+/i.test(String(url || ''));
-// Tabs that can carry a terminal beside the page: PR and Jira tabs always (they map to a project
-// worktree); a web tab only if a task record links to it by url, since a bare URL belongs to no
-// project.
-export const canSplitTerminal = t => !!t && (t.kind === 'github' || t.kind === 'jira'
-  || (t.kind === 'web' && state.tasks.some(x => x.url === t.url)));
+// A tab carries a terminal beside the page only once a SESSION exists for it — a task record
+// linked by url, or a live paired terminal already attached. No session means just the page, with
+// the toolbar's "New session" button (viewer.js newSession) as the way to start one. Kind doesn't
+// enter into it: a PR, a Jira issue and a plain web page all follow this rule.
+export const canSplitTerminal = t => !!t && !!t.url
+  && (state.tasks.some(x => x.url === t.url) || (!!t.termId && state.terms.has(t.termId)));
 
 // Last path segment (folder/file name), ignoring trailing slashes. '' for empty input.
 export const basename = p => String(p || '').split('/').filter(Boolean).pop() || '';

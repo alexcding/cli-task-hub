@@ -90,9 +90,9 @@ export async function openTaskSession(id) {
   if (!task) return;
   if (task.url) {
     const tab = state.tabs.find(t => t.url === task.url);
-    if (tab) { tab.prSplit = true; activateTab(tab.id); return; }
+    if (tab) { activateTab(tab.id); return; }
     const kind = task.kind || 'github';
-    openInSplit(task.url, task.title || task.url, kind, { prSplit: true, jiraKey: task.jiraKey });
+    openInSplit(task.url, task.title || task.url, kind, { jiraKey: task.jiraKey });
     return;
   }
   const live = taskTerm(task);

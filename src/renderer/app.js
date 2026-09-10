@@ -4,7 +4,6 @@ import { ROUTES } from '/shared/routes.mjs';
 import { state, activeTab, projectById } from './stores/store.js';
 import { resolveGitClientCmd } from './lib/git-clients.js';
 import { api, forceSync } from './services/api.js';
-import { canSplitTerminal } from './lib/util.js';
 import { initTheme, setAppTheme, syncThemeFromSettings } from './services/theme.js';
 import { setFontFamily, bumpFontSize, resetFontSize, zoomTarget, syncFontsFromSettings, populateFontMenus } from './services/fonts.js';
 import { renderTabs, renderProjectNav, tabMenu, sessionMenu, initSidebarResize, projectClick } from './components/sidebar.js';
@@ -117,9 +116,8 @@ function handleShortcut(action) {
     case 'find:open':     find.openFind(); break;
     case 'find:next':     find.findNext(true); break;
     case 'find:prev':     find.findNext(false); break;
-    case 'pane:toggleTerm': split.togglePrSplit(); break;
     case 'pane:toggleView':
-      if (canSplitTerminal(tab) && tab.prSplit) split.setPaneView(tab.paneView === 'diff' ? 'term' : 'diff');
+      split.setPaneView(tab?.paneView === 'diff' ? 'term' : 'diff'); // setPaneView re-checks the tab
       break;
     // ⌘+ / ⌘− / ⌘0: font size of the pane in view (terminal or diff), persisted.
     // zoomTarget() is null when nothing zoomable is on screen → no-op.
@@ -245,12 +243,12 @@ Object.assign(window, {
   saveLinkFile: viewer.saveLinkFile, openFileTab: viewer.openFileTab,
   saveTabs: viewer.saveTabs, __refreshTabs: renderTabs,
   openPrSplit: viewer.openPrSplit, openRepo: viewer.openRepo, openExternal: viewer.openExternal, jiraClick: viewer.jiraClick,
-  openTabFolder: viewer.openTabFolder, newTask: viewer.newTask,
+  openTabFolder: viewer.openTabFolder, newSession: viewer.newSession,
   folderMenu: viewer.folderMenu, removeTabWorktree: viewer.removeTabWorktree,
   folderChipClick: viewer.folderChipClick,
   // viewer toolbar
   splitBack: viewer.splitBack, splitForward: viewer.splitForward, splitHome: viewer.splitHome,
-  togglePrSplit: split.togglePrSplit, toggleWorkflowRun,
+  toggleWorkflowRun,
   setPaneView: split.setPaneView, toggleCommitPop, commitAction,
   setReviewView, histShowCommit,
   // find-in-page bar

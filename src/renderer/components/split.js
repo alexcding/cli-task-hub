@@ -1,8 +1,7 @@
-// PR ↔ terminal split: each GitHub/Jira tab can show its terminal panel (left pane) — a paired terminal, or the
-// New Task empty state when no worktree exists yet. The on/off choice is PER TAB (`tab.prSplit`,
-// persisted) and defaults OFF — opening a link shows just the page until the user expands the panel
-// (⌘J). Expanding recreates the task's terminal when its worktree exists on disk, else shows New
-// Task; we never auto-spawn a terminal on a fresh link.
+// PR ↔ terminal split: the terminal panel (left pane) is ALWAYS shown on a tab that can carry one
+// (canSplitTerminal) — a paired terminal, or the New Task empty state when no worktree exists yet.
+// There is no per-tab on/off. Opening a tab recreates the task's terminal when its worktree exists
+// on disk, else shows New Task; we never auto-spawn a terminal on a fresh link.
 import { ROUTES } from '/shared/routes.mjs';
 import { state, activeTab, projectByRepo, projectByPrUrl, projectByJiraKey, projectById } from '../stores/store.js';
 import { api, apiJson } from '../services/api.js';
@@ -101,8 +100,9 @@ const tabProject = tab => tab.kind === 'jira'
 // (or app run — PTYs live in the daemon) is matched through the tab's task. With no surviving
 // terminal, the tab's task record is created if missing (a paired terminal IS a task: it always
 // sits on a worktree of the tab's project) and a shell opens in that worktree.
-// `cwd0` lets a caller that has already resolved the folder (openPrPanel / newTask) skip the resolve;
-// `meta.branch` records the branch the caller just created the worktree for.
+// `cwd0` lets a caller that has already resolved the folder (openPrPanel / newSession) skip the resolve;
+// `meta.branch` records the branch the caller just created the worktree for; `meta.project` names
+// the project for a tab that can't resolve one itself (a web tab getting its first session).
 export function ensurePrTerminal(tab, cwd0, meta = {}) {
   if (tab.termId && state.terms.has(tab.termId)) return Promise.resolve();
   if (tab._termPromise) return tab._termPromise;
@@ -115,7 +115,7 @@ export function ensurePrTerminal(tab, cwd0, meta = {}) {
       if (!cwd) throw new Error('no local folder for this tab');
       let task = taskForTab(tab);
       if (!task) {
-        const proj = tabProject(tab);
+        const proj = meta.project || tabProject(tab);
         if (!proj?.workspace) throw new Error('tab belongs to no project with a workspace');
         // A task lives on a linked worktree of the project, never on the main checkout: the sidebar
         // renders a session row for it, removable (folder included) via right-click.
@@ -201,34 +201,22 @@ export function leaveReview(tab) {
   if (tab === activeTab()) { document.body.classList.remove('pane-diff'); hideHistory(); hideDiffPane(); }
 }
 
-// Show the PR's paired terminal beside (left of) its webview. With `animate` (toolbar toggle) the split
-// slides open from the left; otherwise (switching to an already-split tab) it appears at the resting
-// boundary immediately.
+// Show the tab's paired terminal beside (left of) its webview. With `animate` (a session just
+// created) the split slides open from the left; otherwise (switching to a tab that already has one)
+// it appears at the resting boundary immediately.
 export function applyPrLayout(tab, animate = false) {
   adoptPairedTerminal(tab);                 // re-adopt a surviving terminal by URL; never creates one
   const t = tab.termId && state.terms.get(tab.termId);
   const target = Math.round(state.prRatio * 100);
-  const empty = document.getElementById('term-empty');
+  // No terminal (the session's shell is gone and couldn't be recreated) → just the page. There is
+  // no empty state: a tab without a session shows the toolbar's "New session" button instead.
+  if (!t) { clearPrLayout(tab); return; }
   document.body.classList.add('pr-split');
-  // No terminal yet → show the New Task empty state in the terminal (left) pane: no Terminal/Review tabs,
-  // just the button (newTask creates the worktree + opens the terminal, then re-runs this).
-  if (!t) {
-    document.body.classList.add('pr-empty');
-    document.body.classList.remove('pane-diff');
-    renderContentTabs(); markActiveTab();   // no terminal → no Diff chip
-    hideHistory(); hideDiffPane();
-    if (empty) empty.hidden = false;
-    if (animate) { setPrSplit(100); tweenPrSplit(target); } else setPrSplit(target);
-    updateTitles();
-    return;
-  }
-  document.body.classList.remove('pr-empty');
-  if (empty) empty.hidden = true;
   showPaneContent(tab, t);
   if (animate) {
     setPrSplit(target); fitTerm(t);              // park at final geometry so the terminal grid sizes correctly…
     setPrSplit(100);                             // …then start fully collapsed and slide open
-    tweenPrSplit(target, () => { if (state.activeTabId === tab.id && tab.prSplit) fitTerm(t); });
+    tweenPrSplit(target, () => { if (state.activeTabId === tab.id) fitTerm(t); });
   } else {
     setPrSplit(target); fitTerm(t);
   }
@@ -236,11 +224,11 @@ export function applyPrLayout(tab, animate = false) {
 }
 
 // Diff chip (content-tab bar) / ⇧⌘D: show the page or the worktree diff in THIS tab's right pane
-// (persisted per tab, like prSplit). The page's webview is only hidden, not torn down,
+// (persisted per tab, as `paneView`). The page's webview is only hidden, not torn down,
 // so flipping back is instant and loses nothing.
 export function setPaneView(view) {
   const tab = activeTab();
-  if (!canSplitTerminal(tab) || !tab.prSplit) return;
+  if (!canSplitTerminal(tab)) return;
   const next = view === 'diff' ? 'diff' : 'term';
   if ((tab.paneView || 'term') === next) return;
   const t = tab.termId && state.terms.get(tab.termId);
@@ -254,8 +242,9 @@ export function setPaneView(view) {
   updateTitles();
 }
 
-// Collapse the split. With `tab`/`animate` it slides the boundary closed (webview grows to fill)
-// then tears down; without them (e.g. a tab closed) it drops the layout immediately.
+// Collapse the split — a tab that can't carry a terminal became the view, or the shell exited.
+// With `tab`/`animate` it slides the boundary closed (webview grows to fill) then tears down;
+// without them (the common case) it drops the layout immediately.
 export function clearPrLayout(tab = null, animate = false) {
   const t = animate && tab && tab.termId && state.terms.get(tab.termId);
   // Hide the heavy Review CONTENT up front — a diff table reflows on every frame as its width
@@ -263,7 +252,6 @@ export function clearPrLayout(tab = null, animate = false) {
   // stays set during the slide and drops at the end, so only the boundary animates in between.
   hideHistory();
   hideDiffPane();
-  document.getElementById('term-empty')?.setAttribute('hidden', '');
   // The Diff view may have been covering the page: drop pane-diff and re-show the page NOW, so the
   // slide animates the page growing (not a bare pane with the page popping in at the end). `tab`
   // is null for the argument-less callers (shell exit, tab switch) — the active tab is the one
@@ -272,22 +260,22 @@ export function clearPrLayout(tab = null, animate = false) {
   const shown = tab || activeTab();
   if (shown) paintLeft(shown);
   const finish = () => {
-    document.body.classList.remove('pr-split', 'pr-empty');
+    document.body.classList.remove('pr-split');
     if (t) t.el.style.display = 'none';
     renderContentTabs(); markActiveTab();              // the Diff chip goes with the split
+    updateTitles();                                    // …and the toolbar offers the session back
   };
   if (!t) { stopPrTween(); finish(); return; }        // nothing to animate → collapse immediately
   tweenPrSplit(100, () => {                            // 100% = panel fully collapsed off the right
-    if (state.activeTabId === tab.id && !tab.prSplit) finish(); // still collapsed (not re-toggled mid-slide)
+    if (state.activeTabId === tab.id) finish();
   });
 }
 
-// Open the tab's terminal panel (left pane). A surviving live terminal → show it. Else recovery is RECORD-based
-// ONLY: recreate the terminal for an explicitly-created task (persisted in state.tasks) using its
-// recorded worktree — that's how opening the link from anywhere (dashboard, tray) "finds the task"
-// and resumes it. A worktree merely existing on disk is NOT a task; with no record we show the New
-// Task empty state, so a task (and its Tasks-page card) appears only when the user explicitly starts
-// one — never auto-conjured from a stray worktree.
+// Open the tab's terminal panel (left pane). A surviving live terminal → show it. Else recovery is
+// RECORD-based ONLY: recreate the terminal for an explicitly-created task (persisted in state.tasks)
+// using its recorded worktree — that's how opening the link from anywhere (dashboard, tray) "finds
+// the session" and resumes it. A worktree merely existing on disk is NOT a session, so a session
+// appears only when the user explicitly starts one — never auto-conjured from a stray worktree.
 export async function openPrPanel(tab, animate = false) {
   if (adoptPairedTerminal(tab)) { applyPrLayout(tab, animate); return; } // a live terminal survived
   const task = taskForTab(tab);
@@ -299,22 +287,9 @@ export async function openPrPanel(tab, animate = false) {
       const r = await launchCli(tab.termId, null, task.cli, { sessionId: task.sessionId || '', resume: !!task.sessionId });
       if (r?.sessionId && r.sessionId !== task.sessionId) persistTask({ id: task.id, sessionId: r.sessionId });
     }
-    if (state.activeTabId !== tab.id || !tab.prSplit) return;
+    if (state.activeTabId !== tab.id) return;
   }
   applyPrLayout(tab, animate);
-}
-
-// Toolbar toggle: flip THIS tab's own panel on/off (persisted) and slide it in/out. Opening
-// recreates the task's terminal if its worktree exists, else shows New Task (openPrPanel). Only
-// meaningful for GitHub/Jira tabs.
-export function togglePrSplit() {
-  const cur = activeTab();
-  if (!canSplitTerminal(cur)) return;
-  cur.prSplit = !cur.prSplit;
-  saveTabs();
-  document.getElementById('split-toggle-term')?.classList.toggle('on', cur.prSplit);
-  if (cur.prSplit) openPrPanel(cur, true);
-  else clearPrLayout(cur, true);
 }
 
 // Drag the PR/terminal divider: update the split fraction (CSS var) live and refit the terminal

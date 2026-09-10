@@ -159,7 +159,7 @@ export async function runWorkflow(tab, wf) {
       : (tab.branch || (p.prs || []).find(pr => pr.url === tab.url)?.headRefName || '');
     if (!f.matched && branch) {
       // A Jira task's branch is new — ask the server to create it off the default branch; a PR's
-      // head ref already exists, so don't (matches newTask in viewer.js).
+      // head ref already exists, so don't (matches newSession in viewer.js).
       // Shared create path (tasks.js → ensureWorktree): a folder conflict is confirmed in-app; a
       // decline or failure (already toasted) aborts the run.
       const created = await ensureWorktree({ workspace: f.workspace || p.workspace }, branch, { create: tab.kind === 'jira' });
@@ -168,7 +168,6 @@ export async function runWorkflow(tab, wf) {
     }
 
     // 2. Open the split terminal in that worktree (pass the resolved path so it isn't re-resolved).
-    tab.prSplit = true;
     await ensurePrTerminal(tab, (f && f.path) || p.workspace, { branch }); // creates the task record if missing
     if (state.activeTabId === tab.id) applyPrLayout(tab, true);
     const task = taskForTab(tab);

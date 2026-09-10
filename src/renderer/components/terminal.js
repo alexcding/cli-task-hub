@@ -8,7 +8,7 @@ import { termTheme } from '../services/theme.js';
 import { renderTabs, refreshTermBusy } from './sidebar.js';
 import { taskById } from '../services/tasks.js';
 import { ensurePanelOpen, hideAllPanes, updateNavButtons, closeSplit, activateTab as activateWebTab } from './viewer.js';
-import { clearPrLayout } from './split.js';
+import { clearPrLayout, applyPrLayout } from './split.js';
 
 const FLOW_HIGH = 1024 * 1024; // bytes queued in xterm before we pause the PTY
 const FLOW_LOW = 256 * 1024;   // …and the level at which we resume
@@ -333,7 +333,11 @@ function bindPairedTermToTab(id, pairKey) {
   const task = pairKey ? taskById(pairKey) : null;
   if (!task?.url) return;
   const tab = state.tabs.find(t => t.url === task.url);
-  if (tab && !tab.termId) tab.termId = id;
+  if (!tab || tab.termId) return;
+  tab.termId = id;
+  // The tab may already be on screen — opened from the tray before this rehydrate landed, so it
+  // painted as a page with no session. Now that its terminal is here, show the split.
+  if (state.activeTabId === tab.id) applyPrLayout(tab);
 }
 
 // After the window is reopened (or the app relaunched — PTYs live in the daemon), the renderer is

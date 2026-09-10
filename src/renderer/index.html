@@ -417,14 +417,21 @@
   <div id="split" class="split" hidden>
     <div class="split-bar">
       <!-- Terminal segment (over the LEFT pane — always the paired terminal — in split mode, or
-           full-width when a terminal is the sole view). -->
+           full-width when a terminal is the sole view). The terminal panel is always shown on a tab
+           that has a session, so there is no on/off control here. -->
       <div class="bar-seg bar-term">
         <!-- Terminal actions live here (no bottom bar under the terminal): the task's local folder
              chip — the worktree (or the project workspace before one exists); click opens it in the
              chosen git client (Settings → Appearance), else reveals in Finder; right-click for both;
              filled by updateFolderChip — and the Run + workflow picker as one outlined segmented
              control (Run executes the picker's workflow; refreshWorkflowBtn shows/hides the group and
-             populates it). Both hide while the New Task empty state shows (body.pr-empty). -->
+             populates it). Both hide when there's no terminal beside the page. -->
+        <!-- No session for this page yet: start one here (viewer.js newSession — a PR/Jira tab knows
+             its branch; a web page takes the next free worktree name, asking only which project when
+             there's more than one). viewer.js syncSessionButton shows/hides it. -->
+        <button class="bar-session" id="split-new-session" hidden title="Create a session for this page" onclick="newSession(event)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg><span>New session</span>
+        </button>
         <div class="folder-chip pf-term" id="split-folder" hidden oncontextmenu="return folderMenu(event)"></div>
         <div class="wf-group pf-term" id="wf-group" hidden>
           <button class="pf-btn wf-btn" id="term-workflow" title="Run the selected workflow" onclick="toggleWorkflowRun()">
@@ -433,12 +440,6 @@
           </button>
           <select class="wf-select" id="wf-select" title="Workflow to run"></select>
         </div>
-        <!-- Terminal-panel on/off (⌘J), at the right end of the terminal tab bar. When the split is
-             closed the segment collapses to just this button at the toolbar's left edge, so the
-             terminal can still be opened from where it will appear. Hidden in a solo terminal view. -->
-        <button class="split-btn" id="split-toggle-term" title="Show/hide the terminal panel (⌘J)" onclick="togglePrSplit()">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="4.5" width="19" height="15" rx="2.5"/><path d="M9.5 4.5v15"/></svg>
-        </button>
       </div>
       <!-- Webview segment (over the PR pane — the RIGHT pane in split mode, full-width otherwise).
            Holds the back/home controls, then the Safari-compact horizontal tab bar (#ctabs) for the content pane:
@@ -460,26 +461,6 @@
       </div>
     </div>
     <div class="split-body" id="split-body">
-      <!-- Terminal-pane empty state: a GitHub/Jira tab with no terminal yet shows no Terminal/Review
-           tabs — just these New Task buttons. Each creates the branch's worktree (if absent) then
-           opens the terminal in it (newTask in viewer.js); the Claude/Codex variants additionally
-           launch that CLI at the shell. Occupies the terminal slot; split.js toggles it. -->
-      <div class="term-empty" id="term-empty" hidden>
-        <div class="nt-choices">
-          <button class="new-task-cta" onclick="newTask()">
-            <span class="ntc-ic"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 7l4 5-4 5"/><path d="M12 17h7"/></svg></span>
-            <span>New Task</span>
-          </button>
-          <button class="new-task-cta nt-cli nt-claude" onclick="newTask('claude')">
-            <span class="ntc-ic"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 7l4 5-4 5"/><path d="M12 17h7"/></svg></span>
-            <span>New Claude Task</span>
-          </button>
-          <button class="new-task-cta nt-cli nt-codex" onclick="newTask('codex')">
-            <span class="ntc-ic"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 7l4 5-4 5"/><path d="M12 17h7"/></svg></span>
-            <span>New Codex Task</span>
-          </button>
-        </div>
-      </div>
       <!-- Diff pane: takes the RIGHT (page) pane while Review is on — the webview hides under it; diff.js renders into it. -->
       <div class="diff-pane" id="diff-pane" style="display:none"></div>
       <!-- Inline commit history for the tab's worktree, drawn over the diff pane when the

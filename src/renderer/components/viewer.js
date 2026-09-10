@@ -15,6 +15,7 @@ import { ensurePrTerminal, applyPrLayout, clearPrLayout, resolveTabFolder, remov
 import { jiraTaskBranch } from '../lib/workflow.mjs';
 import { persistTask, taskForTab, taskById } from '../services/tasks.js';
 import { deleteWorktreeAt, ensureWorktree } from './tasks.js';
+import { suggestSession } from './new-session-dialog.js';
 import { refreshWorkflowBtn, launchCli } from './workflow.js';
 import { hideDiffPane } from './diff.js';
 import { attachFind, closeFind } from './find.js';
@@ -68,11 +69,11 @@ export function createTab(url, title, kind, meta = {}) {
   // webview pool below) reloads where they left off rather than at the PR root.
   // wv is built lazily on first show (buildTabWebview) — a tab that's never shown costs no process.
   // kind: 'jira' when asked; otherwise a GitHub PR page is 'github' and any other URL is a plain
-  // 'web' tab (no project, no terminal until a task is created for it — see newTask).
+  // 'web' tab (no project, no terminal until a session is created for it — see newSession).
   const k = kind === 'jira' ? 'jira' : isPrUrl(url) ? 'github' : 'web';
   const tab = { id, kind: k, title: title || url, url, cur: meta.cur || '', wv: null,
     loaded: false, started: false, repo: meta.repo || '', branch: meta.branch || '',
-    jiraKey: meta.jiraKey || jiraKeyFromUrl(url), prSplit: !!meta.prSplit,
+    jiraKey: meta.jiraKey || jiraKeyFromUrl(url),
     paneView: meta.paneView === 'diff' ? 'diff' : 'term', category: meta.category || '',
     login: meta.login || '', avatar: meta.avatar || '',
     links: (meta.links || []).map(rebuildLink), activeLink: null };
@@ -512,7 +513,7 @@ export function saveTabs() {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      tabs: state.tabs.map(t => ({ kind: t.kind, title: t.title, url: t.url, cur: t.cur || '', repo: t.repo, branch: t.branch, jiraKey: t.jiraKey, prSplit: t.prSplit, paneView: t.paneView, category: t.category, login: t.login, avatar: t.avatar,
+      tabs: state.tabs.map(t => ({ kind: t.kind, title: t.title, url: t.url, cur: t.cur || '', repo: t.repo, branch: t.branch, jiraKey: t.jiraKey, paneView: t.paneView, category: t.category, login: t.login, avatar: t.avatar,
         // The context's extra horizontal tabs (web pages + local files). Only committed ones
         // (with a url) — a blank, never-entered tab isn't persisted.
         links: (t.links || []).filter(l => l.url).map(l => ({ kind: l.kind, url: l.url, title: l.title, path: l.path || '', icon: l.icon || '' })) })),
@@ -543,7 +544,7 @@ export async function restoreTabs() {
     // A tab opened from the tray may already be in state.tabs by the time restore lands —
     // skip it so we don't double-add.
     if (t && t.url && !state.tabs.some(x => x.url === t.url)) {
-      state.tabs.push(createTab(t.url, t.title, t.kind, { cur: t.cur, repo: t.repo, branch: t.branch, jiraKey: t.jiraKey, prSplit: t.prSplit, paneView: t.paneView, category: t.category, login: t.login, avatar: t.avatar, links: Array.isArray(t.links) ? t.links : [] }));
+      state.tabs.push(createTab(t.url, t.title, t.kind, { cur: t.cur, repo: t.repo, branch: t.branch, jiraKey: t.jiraKey, paneView: t.paneView, category: t.category, login: t.login, avatar: t.avatar, links: Array.isArray(t.links) ? t.links : [] }));
       seedAvatar(t.login, t.avatar);   // share the restored data URI so the dashboard reuses it
     }
   }
@@ -573,12 +574,12 @@ export function activateTab(id) {
   document.body.classList.add('viewing-tab');
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active')); // a tab is the view now
   updateNavButtons();
-  // PR ↔ terminal split: the right panel is per-tab (`prSplit`, default OFF). It belongs to the
-  // CONTEXT (the default tab), not to which horizontal link is showing — switching links won't
-  // re-run this (see setActiveLink). When expanded, openPrPanel shows the live terminal, etc.
-  if (canSplitTerminal(cur) && cur.prSplit) openPrPanel(cur);
+  // The terminal panel is always shown on a tab that can carry one; it belongs to the CONTEXT (the
+  // default tab), not to which horizontal link is showing — switching links won't re-run this (see
+  // setActiveLink). openPrPanel shows the live terminal, or the New Task empty state.
+  if (canSplitTerminal(cur)) openPrPanel(cur);
   else clearPrLayout();
-  document.getElementById('split-toggle-term')?.classList.toggle('on', !!(canSplitTerminal(cur) && cur.prSplit));
+  syncSessionButton(cur);
   renderTabs();
   saveTabs();
 }
@@ -719,6 +720,7 @@ export function updateTitles() {
   // terminal segment shows its folder chip instead of a label — nothing textual to fill here.
   updateFolderChip();
   refreshWorkflowBtn();
+  syncSessionButton(activeTab());
 }
 
 // Folder chip (right of the webview segment): shows the active tab's local folder — the
@@ -844,28 +846,80 @@ export async function removeTabWorktree() {
 
 // New task: open the active tab's terminal in its branch worktree, creating the worktree first
 // if the branch isn't checked out anywhere yet. This is the SINGLE worktree-create entry point —
-// the old folder-chip "Create worktree" CTA folded into it. Branch naming mirrors the workflow
-// runner: a GitHub PR uses its head ref; a Jira ticket derives feature/<KEY>-<summary>. After this
-// the tab has a live terminal, so the buttons hide (updateTitles) and ⌘J / the Diff chip take over.
-// `cli` (''|'claude'|'codex') optionally launches that CLI right after the shell is up — the empty
-// state's "New Claude/Codex Task" buttons; '' (plain "New Task") just drops you at the shell.
-export async function newTask(cli = '') {
+// "New session" / "Reopen session" (toolbar, left segment). Keyed on a LIVE terminal, not on the
+// task record: any state where the page has no terminal beside it gets the button, so a session
+// whose shell exited (or whose worktree vanished) is never stranded with no control at all. With a
+// record it reopens that session (resuming its agent); with none it starts one. A solo terminal
+// view hides it in CSS (body.viewing-term). Called from updateTitles, so every layout change syncs it.
+function syncSessionButton(tab) {
+  const b = document.getElementById('split-new-session');
+  if (!b) return;
+  const live = !!(tab && tab.termId && state.terms.has(tab.termId));
+  b.hidden = !tab || live;
+  if (b.hidden) return;
+  const again = !!taskForTab(tab);
+  b.querySelector('span').textContent = again ? 'Reopen session' : 'New session';
+  b.title = again ? 'Reopen this page’s session' : 'Create a session for this page';
+}
+
+// Start (or reopen) a session for the active tab — the one path from a page to a worktree + agent.
+// A tab whose session record survives but whose terminal is gone reopens it, resuming the agent.
+// Otherwise, no dialog:
+// the branch is derived, the worktree created and the default agent launched in one click (what the
+// old New Task button did). A PR or Jira tab already names its branch (the PR's head ref;
+// feature/<KEY>-<slug> for a ticket). A plain web page names nothing, so it takes the next free
+// worktree name off its project's default branch — and only asks WHICH project, and only when there
+// is more than one. Either way the task record links back to the tab by url, so the tab leaves the
+// sidebar's Tabs group and shows as that project's session row.
+export async function newSession(ev, project = null) {
   const tab = activeTab();
-  if (!tab || !canSplitTerminal(tab)) return;
-  const btns = document.querySelectorAll('.new-task-cta');
-  btns.forEach(b => { b.disabled = true; });
+  if (!tab || (tab.termId && state.terms.has(tab.termId))) return; // already has its terminal
+  const btn = document.getElementById('split-new-session');
+  const busy = on => { if (btn) btn.disabled = on; };
+  // A session already exists for this page — its shell just isn't running. Reopen it (openPrPanel
+  // recreates the terminal on the recorded worktree and resumes the agent); failures toast there.
+  if (taskForTab(tab)) {
+    busy(true);
+    try { await openPrPanel(tab, true); } finally { busy(false); updateTitles(); }
+    return;
+  }
+  // ── A page that names no branch of its own: pick the project, then take the next free name.
+  if (tab.kind === 'web') {
+    if (!project) {
+      const projects = state.projects.filter(p => p.workspace);
+      if (!projects.length) { toastErr('Add a project with a local workspace first'); return; }
+      if (projects.length > 1) {
+        const r = ev?.currentTarget?.getBoundingClientRect();
+        const at = r ? { preventDefault() {}, clientX: r.left, clientY: r.bottom + 6 } : ev;
+        openMenu(at, projects.map(p => ({ label: p.name, onClick: () => newSession(null, p) })));
+        return;
+      }
+      project = projects[0];
+    }
+    busy(true);
+    try {
+      const pick = await suggestSession(project);
+      if (!pick) { toastErr(`Couldn't read ${project.name}'s branches`); return; }
+      const worktree = await ensureWorktree(project, pick.branch, { base: pick.base });
+      if (!worktree) return;
+      toast(`Worktree created for ${pick.branch}`);
+      await ensurePrTerminal(tab, worktree, { branch: pick.branch, project }); // creates the task, linked by url
+      await afterSession(tab, worktree, state.defaultCli);
+    } catch (e) { toastErr('Failed to start session: ' + e.message); }
+    finally { busy(false); }
+    return;
+  }
+  // ── A PR or Jira tab: the branch is already decided, so no dialog.
+  busy(true);
   try {
     const f = await resolveTabFolder(tab);
     let cwd = f.path; // where the terminal opens — the just-created worktree if we create one below
-    // A Jira task names its branch (and worktree folder) after the ticket key + a short title slug
-    // — e.g. RECORD-648-ios-vod-player-display — and creates it off the default branch. A GitHub PR
-    // uses its existing head ref.
     const key = tab.jiraKey || jiraKeyFromUrl(tab.url) || '';
     const branch = tab.kind === 'jira'
       ? jiraTaskBranch(key, jiraByKey(key)?.summary || '')
       : (tab.branch || prByUrl(tab.url)?.headRefName || '');
     // A branch already checked out in the MAIN checkout can't get a worktree (git refuses a second
-    // checkout) and a task never runs on the main repo — say so instead of half-creating one.
+    // checkout) and a session never runs on the main repo — say so instead of half-creating one.
     if (f.matched && !f.isWorktree) { toastErr(`${branch || 'This branch'} is checked out in the main repo — switch it away there first.`); return; }
     if (!f.matched && f.workspace && branch) {
       // One conflict path for every worktree create (tasks.js → ensureWorktree): a non-worktree
@@ -876,23 +930,23 @@ export async function newTask(cli = '') {
       cwd = created;
       updateFolderChip(true);
     }
-    tab.prSplit = true;
-    saveTabs();
-    await ensurePrTerminal(tab, cwd, { branch }); // creates the task record if this tab has none
-    if (state.activeTabId === tab.id) applyPrLayout(tab, true);
-    document.getElementById('split-toggle-term')?.classList.add('on');
-    updateTitles(); // hide the New Task buttons now the tab has a terminal; set the worktree title
-    // Drop straight into the chosen CLI (no-op for plain New Task, or if one's already running).
-    const launched = cli ? await launchCli(tab.termId, cwd, cli) : null;
-    // Stamp the chosen CLI (+ minted conversation id) on the task — only when launching one, so a
-    // plain New Task never wipes stored values.
-    const task = taskForTab(tab);
-    if (task && cli) persistTask({ id: task.id, cli, ...(launched?.sessionId && { sessionId: launched.sessionId }) });
-  } catch (e) {
-    toastErr('Failed to start task: ' + e.message);
-  } finally {
-    btns.forEach(b => { b.disabled = false; });
-  }
+    await ensurePrTerminal(tab, cwd, { branch }); // creates the task record, linked by url
+    await afterSession(tab, cwd, state.defaultCli);
+  } catch (e) { toastErr('Failed to start session: ' + e.message); }
+  finally { busy(false); }
+}
+
+// Shared tail: show the terminal, drop the button, re-render the sidebar (the tab is a session row
+// now), and drop into the agent — stamping it (+ its minted conversation id) on the task so a
+// stopped session resumes the same conversation.
+async function afterSession(tab, cwd, cli) {
+  if (state.activeTabId === tab.id) applyPrLayout(tab, true);
+  syncSessionButton(tab);
+  updateTitles();
+  renderTabs();
+  const launched = cli ? await launchCli(tab.termId, cwd, cli) : null;
+  const task = taskForTab(tab);
+  if (task && cli) persistTask({ id: task.id, cli, ...(launched?.sessionId && { sessionId: launched.sessionId }) });
 }
 
 // Open an http(s) URL in the user's default browser (main guards the scheme).

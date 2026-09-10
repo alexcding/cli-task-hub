@@ -253,7 +253,7 @@ function getTabs() {
   // links is a JSON array of the tab's extra horizontal tabs (web pages + local files).
   const parseLinks = s => { try { const v = JSON.parse(s || '[]'); return Array.isArray(v) ? v : []; } catch { return []; } };
   return {
-    tabs: rows.map(r => ({ kind: r.kind, title: r.title, url: r.url, cur: r.cur || '', repo: r.repo || '', branch: r.branch || '', prSplit: !!r.pr_split, paneView: r.pane_view || 'term', category: r.category || '', login: r.login || '', avatar: r.avatar || '', links: parseLinks(r.links) })),
+    tabs: rows.map(r => ({ kind: r.kind, title: r.title, url: r.url, cur: r.cur || '', repo: r.repo || '', branch: r.branch || '', paneView: r.pane_view || 'term', category: r.category || '', login: r.login || '', avatar: r.avatar || '', links: parseLinks(r.links) })),
     active: active ? active.url : null,
   };
 }
@@ -268,7 +268,7 @@ function setTabs(tabs = [], active = null) {
       if (!t || !t.url) return;
       const links = JSON.stringify(Array.isArray(t.links) ? t.links : []);
       _insertTab.run(t.url, t.kind === 'jira' ? 'jira' : t.kind === 'web' ? 'web' : 'github', t.title || t.url, typeof t.cur === 'string' ? t.cur : '',
-        t.repo || '', t.branch || '', t.prSplit ? 1 : 0, t.paneView === 'diff' ? 'diff' : 'term',
+        t.repo || '', t.branch || '', 1, t.paneView === 'diff' ? 'diff' : 'term', // pr_split: legacy column — the terminal panel is always shown now
         t.category || '', t.login || '', t.avatar || '', links, i, active && t.url === active ? 1 : 0);
     });
     db.exec('COMMIT');
