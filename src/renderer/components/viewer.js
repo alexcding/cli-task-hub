@@ -470,9 +470,17 @@ export function closeOtherLinks() {
   saveTabs();
 }
 
-// Right-click an extra tab → close / close others (an in-page menu).
-export function ctabMenu(e, id) {
+// Right-click an extra tab → close / close others. Native menu in the app (bridge.js ctabMenu),
+// the in-page menu as the browser fallback — same shape as sessionMenu/folderMenu.
+export async function ctabMenu(e, id) {
   e.preventDefault();
+  if (window.taskhub?.ctabMenu) {
+    closeMenu();
+    const action = await window.taskhub.ctabMenu();
+    if (action === 'close') closeLink(id);
+    else if (action === 'closeOthers') closeOtherLinks();
+    return false;
+  }
   return openMenu(e, [
     { label: 'Close tab', onClick: () => closeLink(id) },
     { label: 'Close other tabs', onClick: closeOtherLinks },

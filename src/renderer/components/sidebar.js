@@ -13,7 +13,7 @@ import { closeTab, saveTabs, updateTitles } from './viewer.js';
 import { renderContentTabs } from './content-tabs.js';
 import { workflowRunState } from './workflow.js';
 import { taskSessions, taskUrls, taskById, persistTask } from '../services/tasks.js';
-import { openMenu } from './menu.js';
+import { openMenu, closeMenu } from './menu.js';
 import { deleteTaskSession } from './tasks.js';
 
 // Per-project collapse state: a project whose id is in this set hides
@@ -248,16 +248,33 @@ export function toggleSessionPin(id) {
   persistTask({ id, pinned: !t.pinned });
 }
 
-// Right-click a session row: Reveal in Finder (its worktree folder), Copy link (when the session has
-// a PR/Jira page), Pin/Unpin, and Remove session — which removes the worktree with it (one unit;
+// Right-click a session row: Pin/Unpin, Reveal in Finder (its worktree folder), Copy link (when the
+// session has a PR/Jira page), and Remove session — which removes the worktree with it (one unit;
 // tasks.js → deleteTaskSession is the single removal path).
-export function sessionMenu(e, id) {
+// The real macOS menu when the shell offers one (bridge.js sessionMenu → muda popup, same contract
+// as tabMenu/folderMenu: it resolves the chosen id and the actions run HERE, since they need the
+// task record and the in-app confirm). The in-page menu stays as the fallback for a plain browser
+// (web-only dev, where window.taskhub is undefined). preventDefault up front — an async handler
+// returns a promise, so `return sessionMenu(...)` can't suppress the browser's own menu.
+export async function sessionMenu(e, id) {
+  e.preventDefault();
   const t = taskById(id);
   const url = t?.url && /^https?:/.test(t.url) ? t.url : null;
+  const reveal = () => window.taskhub?.openPath?.(t.worktree);
+  const copy = () => navigator.clipboard?.writeText(url);
+  if (window.taskhub?.sessionMenu) {
+    closeMenu(); // dismiss any open in-page menu (the native menu won't fire the click that would)
+    const action = await window.taskhub.sessionMenu({ pinned: !!t?.pinned, hasWorktree: !!t?.worktree, hasUrl: !!url });
+    if (action === 'pin') toggleSessionPin(id);
+    else if (action === 'finder') reveal();
+    else if (action === 'copy') copy();
+    else if (action === 'remove') deleteTaskSession(id);
+    return false;
+  }
   return openMenu(e, [
     { label: t?.pinned ? 'Unpin session' : 'Pin session', onClick: () => toggleSessionPin(id) },
-    t?.worktree && { label: 'Reveal in Finder', onClick: () => window.taskhub?.openPath?.(t.worktree) },
-    url && { label: 'Copy link', onClick: () => navigator.clipboard?.writeText(url) },
+    t?.worktree && { label: 'Reveal in Finder', onClick: reveal },
+    url && { label: 'Copy link', onClick: copy },
     { label: 'Remove session…', danger: true, onClick: () => deleteTaskSession(id) },
   ]);
 }

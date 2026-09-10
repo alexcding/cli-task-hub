@@ -260,6 +260,28 @@
       });
     },
     // Folder-chip right-click: the renderer acts on 'client' | 'finder' | 'delete' | null.
+    // Content-tab right-click (the left pane's horizontal tab bar). Both actions are renderer
+    // state, so this returns the id only.
+    ctabMenu: function () {
+      return popupMenu([
+        { id: 'close', label: 'Close Tab' },
+        { id: 'closeOthers', label: 'Close Other Tabs' },
+      ]);
+    },
+
+    // Session row right-click (sidebar). Actions all need renderer state (the task record, the
+    // in-app confirm dialog), so this only returns the chosen id — like folderMenu, unlike tabMenu.
+    sessionMenu: function (ctx) {
+      ctx = ctx || {};
+      var items = [{ id: 'pin', label: ctx.pinned ? 'Unpin Session' : 'Pin Session' }];
+      if (ctx.hasWorktree || ctx.hasUrl) items.push({ separator: true });
+      if (ctx.hasWorktree) items.push({ id: 'finder', label: 'Reveal in Finder' });
+      if (ctx.hasUrl) items.push({ id: 'copy', label: 'Copy Link' });
+      items.push({ separator: true });
+      items.push({ id: 'remove', label: 'Remove Session…' });
+      return popupMenu(items);
+    },
+
     folderMenu: function (ctx) {
       ctx = ctx || {};
       var items = [];

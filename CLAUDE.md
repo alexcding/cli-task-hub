@@ -79,7 +79,11 @@ separation everything follows:
   the hovered pin is filled to read as the toggle that undoes it. Pinning is purely additive — the original row stays
   where it was, and nothing reorders. Both copies carry the same `data-task`/`data-term`, which is
   why every post-render pass (`refreshTermBusy`, `syncSpinner`) walks rows with `querySelectorAll`.
-  Right-click is the only removal:
+  Right-click menus are the real macOS menu when the shell offers one — `window.taskhub.sessionMenu`
+  / `ctabMenu` / `tabMenu` / `folderMenu` (`src-tauri/bridge.js` → muda `popupMenu`, which resolves
+  the chosen item id; the actions run in the renderer, which owns the state and the confirm dialog).
+  `components/menu.js` (`openMenu`) stays as the fallback for a plain browser (web-only dev) and for
+  click-anchored pickers, which are not context menus. Right-click is the only removal:
   "Remove session" (`deleteTaskSession`, the single path) stops the terminal, forgets the task and
   force-removes the worktree folder, behind `confirmDialog()` (`components/confirm.js`) — never
   native `confirm()`. A session's tab is not closable by any browser-tab path (middle-click, ⌘W, the
