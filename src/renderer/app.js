@@ -4,6 +4,7 @@ import { ROUTES } from '/shared/routes.mjs';
 import { state, activeTab, projectById } from './stores/store.js';
 import { resolveGitClientCmd } from './lib/git-clients.js';
 import { api, forceSync } from './services/api.js';
+import { ICON } from './lib/icons.js';
 import { initTheme, setAppTheme, syncThemeFromSettings } from './services/theme.js';
 import { setFontFamily, bumpFontSize, resetFontSize, zoomTarget, syncFontsFromSettings, populateFontMenus } from './services/fonts.js';
 import { renderTabs, renderProjectNav, tabMenu, sessionMenu, initSidebarResize, projectClick } from './components/sidebar.js';
@@ -51,6 +52,7 @@ function showPage(name, projectId) {
   document.getElementById('page-'+(name==='project'?'project':name)).classList.add('active');
   document.querySelectorAll('.nav-btn[data-page]').forEach(b => { if(b.dataset.page===name) b.classList.add('active'); });
   document.getElementById('topbar-actions').innerHTML = '';
+  document.getElementById('topbar-picker').innerHTML = '';   // a page owns its picker slot (project.js paints the section tabs)
 
   if (name === 'dashboard') {
     document.getElementById('page-title').textContent = 'Dashboard';
@@ -59,7 +61,9 @@ function showPage(name, projectId) {
     state.activeProjectId = projectId;
     const proj = projectById(projectId);
     document.getElementById('page-title').textContent = proj?.name || 'Project';
-    // Edit lives on the page now — the gear button beside the project title (project.js).
+    // Edit lives in the topbar's action slot (right) — the project page shows no title of its own.
+    document.getElementById('topbar-actions').innerHTML =
+      `<button class="topbar-btn" onclick="openEditProjectModal('${projectId}')" title="Edit project" aria-label="Edit project">${ICON.gear}</button>`;
     document.querySelectorAll('.nav-btn[data-project]').forEach(b => { if(b.dataset.project===projectId) b.classList.add('active'); });
     loadProjectPage(projectId);
   } else if (name === 'settings') {

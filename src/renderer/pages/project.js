@@ -1,10 +1,12 @@
-// Project page: a paged "digest" — a header (project name + gear-to-edit, plus clickable
-// repo/Jira/forwarding tags) over the shared segmented control (.seg-tabs), which pages between
+// Project page: a paged "digest". Its chrome all lives in the topbar (paintTopbar): the project
+// name on the left, the shared segmented control (.seg-tabs) centred, and the edit gear on
+// the right. Each section heading doubles as the link to its service (repo → GitHub, Jira
+// project → Jira). The picker pages between
 // sections shown one at a time: Pull Requests, Jira, Git (the full git-tab.js surface), Automation
 // (webhook forwarding + on-merge Jira) and Workflows. The Jira section has its own view switcher
 // (projJiraView): Board (sprint columns, scrumboard.js) and Tickets (the project's saved JQL with
-// an inline ad-hoc JQL search, jira.js). The header + picker stay
-// fixed; only the section body (.pd-body) scrolls. PRs load on open; everything else lazy-loads
+// an inline ad-hoc JQL search, jira.js). The page itself is only the section body (.pd-body),
+// which scrolls under the fixed toolbar. PRs load on open; everything else lazy-loads
 // the first time it's shown (projShowSection / projJiraView → lazyOnce).
 import { ROUTES } from '/shared/routes.mjs';
 import { state, projectById as proj } from '../stores/store.js';
@@ -19,59 +21,11 @@ import { loadProjectJira, renderProjJira } from './jira.js';
 import { loadGitTab } from './git-tab.js';
 import { loadScrumboard } from './scrumboard.js';
 
-// Forwarding tag (header): refresh icon + a state dot, "Live" when webhooks are actually being
-// forwarded, "Polled" otherwise. Inner content is factored so paintForwardTag can swap it in place.
-const FWD_TITLE = {
-  live: 'Live — webhook updates are forwarded in real time',
-  off:  'Polled — updates arrive on the next poll',
-  idle: 'Forwarding is enabled but not running yet — updates arrive on the next poll',
-};
-const fwdTagInner = live => `${ICON.refresh}<span class="pd-dot${live ? ' on' : ''}"></span>${live ? 'Live' : 'Polled'}`;
-
-// Reconcile the header's forwarding tag with reality: when forwarding is enabled, probe the live
-// forwarder list (same source as the Automation section's status line) and downgrade to "Polled"
-// if it isn't actually running. Forwarding off → the initial "Polled" is already correct.
-async function paintForwardTag(id) {
-  const el = document.getElementById(`pd-fwd-${id}`);
-  const p = proj(id);
-  if (!el || !p?.repo || p.forwardWebhooks === false) return;
-  try {
-    const fwds = await api(ROUTES.FORWARDERS);
-    const running = Array.isArray(fwds) && fwds.includes(p.repo);
-    el.innerHTML = fwdTagInner(running);
-    el.title = running ? FWD_TITLE.live : FWD_TITLE.idle;
-  } catch { /* transient — leave the optimistic "Live" rather than flapping the header */ }
-}
-
 export async function loadProjectPage(id) {
   const el = document.getElementById('project-page-content');
   const p = proj(id);
   if (!p) { el.innerHTML = '<div class="empty">Project not found.</div>'; return; }
 
-  // Overview tags (all from cached project data — no fetch): repo, Jira key, forwarding intent.
-  // The repo tag is the whole "record": clicking it (icon or text) opens the repo on GitHub.
-  // (escJs for the onclick arg, not esc — see util.js: HTML entities decode before the JS runs.)
-  const repoTag = p.repo
-    ? `<button class="pd-tag pd-tag-mono pd-tag-btn" onclick="openRepo('${escJs(p.repo)}')" title="Open ${esc(p.repo)} on GitHub">${TAB_ICON.github}${esc(p.repo)}</button>`
-    : `<span class="pd-tag pd-tag-mono">${TAB_ICON.github}No repository</span>`;
-  // Jira tag opens the project in the default browser — but only when a Jira base URL was
-  // detected; otherwise it's plain text (jiraUrl would be a dead '#').
-  const jiraTag = !p.jiraProjectKey ? ''
-    : state.jiraBase
-      ? `<button class="pd-tag pd-tag-btn" onclick="openExternal('${escJs(jiraUrl(p.jiraProjectKey))}')" title="Open ${esc(p.jiraProjectKey)} in Jira">${TAB_ICON.jira}${esc(p.jiraProjectKey)}</button>`
-      : `<span class="pd-tag">${TAB_ICON.jira}${esc(p.jiraProjectKey)}</span>`;
-  // Live = webhooks forwarded in real time; Polled = updates arrive on the next poll. The initial
-  // paint shows the saved intent; paintForwardTag (below) then probes the live forwarder list and
-  // downgrades to "Polled" if forwarding is enabled but not actually running — so the header can't
-  // claim real-time delivery that isn't happening (the Automation section shows the same truth).
-  const fwdOn = p.forwardWebhooks !== false;
-  const fwdTag = p.repo
-    ? `<span class="pd-tag" id="pd-fwd-${id}" title="${fwdOn ? FWD_TITLE.live : FWD_TITLE.off}">${fwdTagInner(fwdOn)}</span>`
-    : '';
-
-  // The shared segmented control (.seg-tabs, same as Settings/Activity) pages between sections.
-  const seg = (sec, label) =>
-    `<button class="seg-tab${sec === 'prs' ? ' active' : ''}" data-sec="${sec}" onclick="projShowSection('${id}','${sec}',this)">${label}</button>`;
   // The Jira section's view switcher (a compact .seg-tabs). Remembers the last view per project.
   const view = _jiraView.get(id) || 'board';
   const jv = (v, label) =>
@@ -79,28 +33,18 @@ export async function loadProjectPage(id) {
 
   el.innerHTML = `
     <div class="proj-digest">
-      <!-- Header block: title (left) ↔ tags (right) on top, then the section picker
-           directly beneath. -->
-      <div class="pd-hero">
-        <div class="pd-hero-row">
-          <div class="pd-titlewrap">
-            <h1 class="pd-title">${esc(p.name || 'Project')}</h1>
-            <button class="pd-edit" onclick="openEditProjectModal('${id}')" title="Edit project" aria-label="Edit project">${ICON.gear}</button>
-          </div>
-          <div class="pd-tags">${repoTag}${jiraTag}${fwdTag}</div>
-        </div>
-        <!-- Section picker: each tab shows one section at a time (paged, not scrolled). -->
-        <div class="seg-tabs pd-segs" role="tablist">
-          ${seg('prs', 'Pull Requests')}${seg('jira', 'Jira')}${seg('git', 'Git')}${seg('settings', 'Automation')}${seg('workflows', 'Workflows')}
-        </div>
-      </div>
-
-      <!-- Scroll body: only the active section scrolls — the header above stays put. -->
+      <!-- No header block: the project name, the section picker and the edit gear all live in
+           the topbar (paintTopbar below / app.js showPage); each section heading carries the
+           link to its own service. -->
       <div class="pd-body">
-      <!-- Pull Requests (the default page) -->
+      <!-- Pull Requests (the default page). The whole heading is the repo link: GitHub mark,
+           "Pull Requests", and the repo slug — one hit target that opens the repo on GitHub
+           (that's why the mark isn't in the topbar). No repo → a plain, inert heading. -->
       <section class="pd-sec" id="pd-prs-${id}" data-sec="prs">
         <div class="pd-sec-head">
-          <h2 class="pd-sec-title"><span class="pd-sec-ic tint-accent">${ICON.branch}</span>Pull Requests</h2>
+          ${p.repo
+            ? `<h2 class="pd-sec-title"><button class="pd-sec-link" onclick="openRepo('${escJs(p.repo)}')" title="Open ${esc(p.repo)} on GitHub"><span class="pd-sec-ic tint-neutral">${TAB_ICON.github}</span>Pull Requests<span class="pd-sec-sub">${esc(p.repo)}</span></button></h2>`
+            : `<h2 class="pd-sec-title"><span class="pd-sec-ic tint-accent">${ICON.branch}</span>Pull Requests</h2>`}
           ${p.repo ? `
           <div class="pd-sec-ctl">
             <select class="filter-select" id="pr-state-${id}" onchange="reloadProjectPRs('${id}',this.value)">
@@ -120,13 +64,18 @@ export async function loadProjectPage(id) {
            snapshot (scrumboard.js — the scrumboard-* ids are its contract); Tickets is the
            project's saved JQL with an inline keyword/JQL search box (jira.js). -->
       <section class="pd-sec" id="pd-jira-${id}" data-sec="jira" hidden>
-        <!-- Header row: title, then the shared filters (apply to BOTH views: the assignee is
+        <!-- Header row: the Jira project itself is the title — the mark plus the project key,
+             no generic "Jira" label (only used as the fallback when no key is configured); the
+             whole heading opens the project in Jira, as in Pull Requests.
+             Then the shared filters (apply to BOTH views: the assignee is
              client-side, the JQL clause is server-side — ANDed into the sprint and Tickets
              queries; scrumboard.js fills them once the sprint snapshot lands, which the section
              always loads), then the view switcher on the right. Live data refreshes over SSE, so no
              Refresh button. -->
         <div class="pd-sec-head jv-head">
-          <h2 class="pd-sec-title"><span class="pd-sec-ic tint-neutral">${TAB_ICON.jira}</span>Jira</h2>
+          ${p.jiraProjectKey && state.jiraBase
+            ? `<h2 class="pd-sec-title"><button class="pd-sec-link" onclick="openExternal('${escJs(jiraUrl(p.jiraProjectKey))}')" title="Open ${esc(p.jiraProjectKey)} in Jira"><span class="pd-sec-ic tint-neutral">${TAB_ICON.jira}</span>${esc(p.jiraProjectKey)}</button></h2>`
+            : `<h2 class="pd-sec-title"><span class="pd-sec-ic tint-neutral">${TAB_ICON.jira}</span>${esc(p.jiraProjectKey || 'Jira')}</h2>`}
           <div class="jv-filters">
             <span id="scrumboard-filter" class="ticket-filter"></span>
             <span id="scrumboard-query" class="ticket-filter"></span>
@@ -196,9 +145,27 @@ export async function loadProjectPage(id) {
       </div><!-- /.pd-body -->
     </div>`;
 
+  paintTopbar(id);   // the section picker: the page's chrome all lives in the topbar
+
   // Load the default PR page now. Every other section (Jira views, Git, Automation, Workflows)
   // lazy-loads the first time it's shown (projShowSection / projJiraView).
-  if (p.repo) { reloadProjectPRs(id, 'open'); paintForwardTag(id); }
+  if (p.repo) reloadProjectPRs(id, 'open');
+}
+
+// The page's chrome is the topbar (native-mac unified toolbar): the project name left, the
+// section picker centred, the edit gear right (app.js showPage). No links here — each section's
+// own heading is the link to its service. showPage clears the picker slot on every nav, so this
+// repaints on each visit; a section switch only re-marks the active tab (projShowSection →
+// setActiveSegTab).
+function paintTopbar(id) {
+  const picker = document.getElementById('topbar-picker');
+  if (!picker) return;
+
+  // Short labels: the centre slot shares the bar with the title and the actions, so .topbar-segs
+  // sizes to content instead of the usual equal columns.
+  const seg = ([sec, label]) =>
+    `<button class="seg-tab${sec === 'prs' ? ' active' : ''}" data-sec="${sec}" onclick="projShowSection('${id}','${sec}',this)">${label}</button>`;
+  picker.innerHTML = `<div class="seg-tabs topbar-segs" role="tablist">${SECTION_TABS.map(seg).join('')}</div>`;
 }
 
 // ── Jira section views ────────────────────────────────────────────────────────────────
@@ -224,7 +191,9 @@ export function projJiraView(id, view, btn) {
 // time their page is shown; PRs are already loaded by loadProjectPage. The scroller resets to the
 // top so each page starts at its heading. `btn` is always the clicked seg-tab (every caller is
 // an inline onclick passing `this`).
-const SECTIONS = ['prs', 'jira', 'git', 'settings', 'workflows'];
+// [section id, topbar label] — the picker's tabs and the set of pageable sections, in order.
+const SECTION_TABS = [['prs', 'PRs'], ['jira', 'Jira'], ['git', 'Git'], ['settings', 'Automation'], ['workflows', 'Workflows']];
+const SECTIONS = SECTION_TABS.map(([s]) => s);
 export function projShowSection(id, sec, btn) {
   if (btn) setActiveSegTab(btn);
   SECTIONS.forEach(s => { const el = document.getElementById(`pd-${s}-${id}`); if (el) el.hidden = s !== sec; });
@@ -265,7 +234,7 @@ export function loadProjectWebhooks(id) {
 
   // No repo → forwarding can't run; reuse the standard empty-state instead of dead controls.
   if (!p.repo) {
-    el.innerHTML = `<div class="empty"><div class="empty-icon">${ICON.branch}</div><p>Webhook forwarding needs a GitHub repo. Add one to this project (the gear beside the project name) and it'll show up here.</p></div>`;
+    el.innerHTML = `<div class="empty"><div class="empty-icon">${ICON.branch}</div><p>Webhook forwarding needs a GitHub repo. Add one to this project (the gear in the toolbar) and it'll show up here.</p></div>`;
     return;
   }
 

@@ -577,7 +577,10 @@ export function activateTab(id) {
   // The terminal panel is always shown on a tab that can carry one; it belongs to the CONTEXT (the
   // default tab), not to which horizontal link is showing — switching links won't re-run this (see
   // setActiveLink). openPrPanel shows the live terminal, or the New Task empty state.
-  if (canSplitTerminal(cur)) openPrPanel(cur);
+  // Not awaited: the tab must paint now, the terminal recovery lands when it lands. openPrPanel
+  // guards itself against overlapping calls, so a click on "Reopen session" in the meantime joins
+  // this run rather than starting a second one — and the button repaints once it settles.
+  if (canSplitTerminal(cur)) openPrPanel(cur).then(() => { if (state.activeTabId === id) syncSessionButton(cur); });
   else clearPrLayout();
   syncSessionButton(cur);
   renderTabs();
@@ -857,6 +860,10 @@ function syncSessionButton(tab) {
   const live = !!(tab && tab.termId && state.terms.has(tab.termId));
   b.hidden = !tab || live;
   if (b.hidden) return;
+  // A recovery started by activateTab is still running (it isn't awaited there): the button has to
+  // stay visible — the terminal isn't live yet — but pressing it would only join that same run, so
+  // show it busy instead. openPrPanel clears the flag when it settles; the next paint re-enables.
+  b.disabled = !!tab._panelPromise;
   const again = !!taskForTab(tab);
   b.querySelector('span').textContent = again ? 'Reopen session' : 'New session';
   b.title = again ? 'Reopen this page’s session' : 'Create a session for this page';

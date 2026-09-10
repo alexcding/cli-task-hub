@@ -77,35 +77,6 @@
 .proj-digest { display:flex; flex-direction:column; height:100%; min-height:0; }
 .pd-body { flex:1; min-height:0; overflow-y:auto; overscroll-behavior:contain; }
 
-/* Header block: project name (left) ↔ tags (right) on top, the section picker directly
-   beneath — one fixed unit. */
-.pd-hero { display:flex; flex-direction:column; gap:12px; margin:2px 0 22px; }
-.pd-hero-row { display:flex; align-items:center; justify-content:space-between; gap:12px 28px; flex-wrap:wrap; }
-.pd-titlewrap { display:flex; align-items:center; gap:6px; min-width:0; margin-left:4px; }
-.pd-title { font-size:23px; font-weight:700; letter-spacing:-.5px; line-height:1.1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-/* Gear = edit project (replaces the old toolbar Edit button). */
-.pd-edit { display:inline-flex; align-items:center; justify-content:center; flex-shrink:0; width:28px; height:28px;
-  border:none; background:none; color:var(--text-3); cursor:pointer; border-radius:7px; transition:color .12s, background .12s; }
-.pd-edit svg { width:16px; height:16px; }
-.pd-edit:hover { color:var(--text); background:var(--surface-hover); }
-.pd-tags { display:flex; align-items:center; gap:8px; flex-wrap:wrap; justify-content:flex-end; margin-left:auto; }
-.pd-tag { display:inline-flex; align-items:center; gap:6px; font-size:12px; font-weight:500; color:var(--text-2);
-  background:var(--surface); border:1px solid var(--border); border-radius:99px; padding:4px 11px; }
-.pd-tag svg { width:12px; height:12px; flex-shrink:0; }
-.pd-tag-mono { font-family:var(--diff-font,ui-monospace,SFMono-Regular,monospace); }
-/* Clickable tags — the repo (button → GitHub) and Jira (anchor → viewer): match the tag
-   look, add affordance. */
-.pd-tag-btn { font-family:inherit; cursor:pointer; text-decoration:none; transition:color .12s,border-color .12s; }
-.pd-tag-btn.pd-tag-mono { font-family:var(--diff-font,ui-monospace,SFMono-Regular,monospace); }
-.pd-tag-btn:hover { color:var(--accent); border-color:var(--accent); }
-.pd-dot { width:7px; height:7px; border-radius:50%; background:var(--text-3); display:inline-block; }
-.pd-dot.on { background:var(--success); }
-
-/* Section picker — the shared segmented control (.seg-tabs), as in Settings/Activity.
-   align-self stops the header's flex column from stretching it full-width: it stays sized
-   to its tabs, like everywhere else .seg-tabs is used. */
-.pd-segs { align-self:flex-start; }
-
 .pd-sec { margin-bottom:38px; }
 .pd-sec:last-child { margin-bottom:0; }
 /* Git page fills the scroll body (instead of a viewport calc) so it doesn't double-scroll. */
@@ -115,6 +86,14 @@
 .pd-sec-head { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:15px; min-height:32px; }
 .pd-sec-title { font-size:15.5px; font-weight:650; letter-spacing:-.2px; display:flex; align-items:center; gap:10px; }
 /* Tinted section icon badge — the same tint palette the dashboard uses, at a smaller size. */
+/* A section heading that is itself a link (Pull Requests → the repo on GitHub): the whole
+   row — mark, label and slug — is one button, styled to read exactly like a plain heading. */
+.pd-sec-link { display:flex; align-items:center; gap:10px; padding:0; border:none; background:none;
+  font:inherit; color:inherit; letter-spacing:inherit; cursor:pointer; }
+.pd-sec-sub { font-size:12.5px; font-weight:500; color:var(--text-3);
+  font-family:var(--diff-font,ui-monospace,SFMono-Regular,monospace); transition:color .12s; }
+.pd-sec-link:hover .pd-sec-sub { color:var(--text-2); }
+.pd-sec-link:hover .pd-sec-ic { background:var(--accent-bg); color:var(--accent); }
 .pd-sec-ic { width:25px; height:25px; border-radius:7px; display:inline-flex; align-items:center; justify-content:center; flex-shrink:0; }
 .pd-sec-ic svg { width:15px; height:15px; }
 .pd-sec-ic.tint-accent  { background:var(--accent-bg);color:var(--accent); }

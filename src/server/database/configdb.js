@@ -77,7 +77,6 @@ db.exec(`
     title     TEXT,
     repo      TEXT,
     branch    TEXT,
-    pr_split  INTEGER NOT NULL DEFAULT 0,
     pane_view TEXT NOT NULL DEFAULT 'term',
     category  TEXT NOT NULL DEFAULT '',
     login     TEXT NOT NULL DEFAULT '',
@@ -143,6 +142,10 @@ for (const stmt of [
   // Project color was dropped — projects show an icon, not a swatch. Drop the column
   // from installs that still have it (throws "no such column" on fresh DBs, ignored).
   `ALTER TABLE projects DROP COLUMN color`,
+  // pr_split was "is the terminal panel open" — the panel is always shown now (a tab that can
+  // carry a terminal always has one), so the flag has no meaning. Drop it rather than keep
+  // writing a value nothing reads.
+  `ALTER TABLE tabs DROP COLUMN pr_split`,
 ]) { try { db.exec(stmt); } catch { /* column already exists / already gone */ } }
 
 const uuid = () => crypto.randomUUID();
@@ -258,7 +261,7 @@ function getTabs() {
   };
 }
 const _insertTab = db.prepare(
-  `INSERT INTO tabs (url, kind, title, cur, repo, branch, pr_split, pane_view, category, login, avatar, links, position, active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  `INSERT INTO tabs (url, kind, title, cur, repo, branch, pane_view, category, login, avatar, links, position, active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 );
 function setTabs(tabs = [], active = null) {
   db.exec('BEGIN');
@@ -268,7 +271,7 @@ function setTabs(tabs = [], active = null) {
       if (!t || !t.url) return;
       const links = JSON.stringify(Array.isArray(t.links) ? t.links : []);
       _insertTab.run(t.url, t.kind === 'jira' ? 'jira' : t.kind === 'web' ? 'web' : 'github', t.title || t.url, typeof t.cur === 'string' ? t.cur : '',
-        t.repo || '', t.branch || '', 1, t.paneView === 'diff' ? 'diff' : 'term', // pr_split: legacy column — the terminal panel is always shown now
+        t.repo || '', t.branch || '', t.paneView === 'diff' ? 'diff' : 'term',
         t.category || '', t.login || '', t.avatar || '', links, i, active && t.url === active ? 1 : 0);
     });
     db.exec('COMMIT');

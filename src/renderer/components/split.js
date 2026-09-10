@@ -276,7 +276,17 @@ export function clearPrLayout(tab = null, animate = false) {
 // using its recorded worktree — that's how opening the link from anywhere (dashboard, tray) "finds
 // the session" and resumes it. A worktree merely existing on disk is NOT a session, so a session
 // appears only when the user explicitly starts one — never auto-conjured from a stray worktree.
-export async function openPrPanel(tab, animate = false) {
+export function openPrPanel(tab, animate = false) {
+  // One recovery per tab at a time. Two callers can overlap — activateTab fires this without
+  // awaiting it, and the toolbar's "Reopen session" is offered until the terminal is actually
+  // live — and while ensurePrTerminal dedupes the terminal itself, each call would still run its
+  // own launchCli below, sending the agent's resume command twice. Later callers join the
+  // in-flight run instead (they lose only `animate`, which the first caller already decided).
+  if (tab._panelPromise) return tab._panelPromise;
+  tab._panelPromise = _openPrPanel(tab, animate).finally(() => { tab._panelPromise = null; });
+  return tab._panelPromise;
+}
+async function _openPrPanel(tab, animate) {
   if (adoptPairedTerminal(tab)) { applyPrLayout(tab, animate); return; } // a live terminal survived
   const task = taskForTab(tab);
   if (task && task.worktree) {
