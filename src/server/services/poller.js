@@ -237,7 +237,13 @@ async function syncProjectImpl(project) {
       } else if (pr.state === 'MERGED' && prev !== 'MERGED') {
         console.log(`[sync] PR #${pr.number} in ${project.repo} merged`);
         db.addEvent('pr_merged', meta);
-        await applyMergeAutomation(project, pr);
+        // The closed window carries no `body` (see PR_GQL_LIFECYCLE), and the automation needs
+        // one to read description Jira links — so fetch it for just this PR, only now that it
+        // has actually merged. A webhook-supplied pr already has its body; don't refetch.
+        const full = pr.body === undefined
+          ? { ...pr, body: await github.getPRBody(project.repo, pr.number) }
+          : pr;
+        await applyMergeAutomation(project, full);
       } else if (pr.state === 'CLOSED' && prev !== 'CLOSED') {
         db.addEvent('pr_closed', meta);
       }

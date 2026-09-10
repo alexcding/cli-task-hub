@@ -791,10 +791,15 @@ const PR_GQL_CI = `commits(last:1){ nodes{ commit{ statusCheckRollup{ contexts(f
       ... on StatusContext{ state }
     } } } } } }`;
 
-// Lifecycle-only projection: exactly what the pr_merged / pr_closed events and the Jira merge
-// automation read (prJiraKeys needs title + body). No labels, reviews, CI or branch refs — a
-// merged PR never renders a card, so fetching those for it is pure waste.
-const PR_GQL_LIFECYCLE = `number title state url mergedAt body author{ login }`;
+// Lifecycle-only projection: exactly what the pr_merged / pr_closed events read. No labels,
+// reviews, CI or branch refs — a merged PR never renders a card, so fetching those is waste.
+//
+// `body` is deliberately NOT here even though the Jira merge automation needs it (prJiraKeys
+// reads title + body): it's the single largest field on a PR, and only the 0-1 PRs that merged
+// SINCE THE LAST POLL ever have it read. Carrying it for the whole window made bodies ~71% of
+// the sync payload to serve a once-in-a-while lookup, so the merge path fetches it on demand
+// via getPRBody instead.
+const PR_GQL_LIFECYCLE = `number title state url mergedAt author{ login }`;
 
 const prQuery = (states, fields) => `query($owner:String!,$name:String!,$first:Int!,$after:String){
   repository(owner:$owner,name:$name){
@@ -906,6 +911,25 @@ const getOpenPRs = (repo, { jiraProjectKey = '', fresh = true } = {}) =>
 // Ordered by UPDATED_AT desc, and merging/closing a PR updates it, so a PR that changed since
 // the last poll is at the TOP of this window — which makes a small window correct here, unlike
 // the old created-order window that let a merge slip past unseen. Lean projection, no CI.
+// One PR's description, fetched on demand. Pairs with PR_GQL_LIFECYCLE dropping `body`: the
+// merge automation needs it for exactly the PR it's acting on. Returns '' on failure so
+// prJiraKeys just falls back to the title rather than the automation breaking.
+async function getPRBody(repo, number) {
+  const [owner, name] = String(repo || '').split('/');
+  if (!owner || !name) return '';
+  const query = `query($owner:String!,$name:String!,$number:Int!){
+    repository(owner:$owner,name:$name){ pullRequest(number:$number){ body } }
+  }`;
+  try {
+    const out = await gh(['api', 'graphql', '-f', `query=${query}`,
+      '-F', `owner=${owner}`, '-F', `name=${name}`, '-F', `number=${number}`]);
+    return JSON.parse(out)?.data?.repository?.pullRequest?.body || '';
+  } catch (err) {
+    console.error(`[gh] body for ${repo}#${number}:`, err.message);
+    return '';
+  }
+}
+
 const getRecentClosedPRs = (repo, { limit = 30 } = {}) => fetchPRPages(repo, {
   states: [...PR_STATES.merged, ...PR_STATES.closed],
   fields: PR_GQL_LIFECYCLE,
@@ -914,4 +938,4 @@ const getRecentClosedPRs = (repo, { limit = 30 } = {}) => fetchPRPages(repo, {
 
 // ghStats reads the metrics; noteInflight/noteCoalesced let the poller's sync-dedup layer
 // bump the gauges without reaching into _gh's field names.
-module.exports = { gh, ghStats, noteInflight, noteCoalesced, getPRs, getOpenPRs, getRecentClosedPRs, getCurrentUser, getUserName, reviewRequestedAt, categoryOf, awaitingReview, parseRepo, gitRemoteRepo, worktreeForBranch, worktreeForJiraKey, createWorktree, removeWorktree, worktreeHolders, gitDiff, gitCommit, gitPush, gitDiscard, gitLog, gitShow, gitBranches, gitDefaultBranch, commitAvatars, listWorktrees, summarizeCI };
+module.exports = { gh, ghStats, noteInflight, noteCoalesced, getPRs, getOpenPRs, getRecentClosedPRs, getPRBody, getCurrentUser, getUserName, reviewRequestedAt, categoryOf, awaitingReview, parseRepo, gitRemoteRepo, worktreeForBranch, worktreeForJiraKey, createWorktree, removeWorktree, worktreeHolders, gitDiff, gitCommit, gitPush, gitDiscard, gitLog, gitShow, gitBranches, gitDefaultBranch, commitAvatars, listWorktrees, summarizeCI };
