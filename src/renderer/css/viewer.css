@@ -584,10 +584,12 @@ body.find-open .split-body webview, body.find-open .split-body .wcv-shim { botto
 #opentabs-nav .proj-tabs { margin-top:4px; }
 /* Folder name grows so the hover "+" sits at the row's right. */
 .proj-name { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-/* Hover "+" on a project folder: a new worktree + task. Hidden until the row is hovered. */
-.proj-add { flex-shrink:0; display:flex; align-items:center; justify-content:center; width:16px; height:16px; color:var(--text-3); opacity:0; border-radius:4px; }
-.nav-btn:hover .proj-add { opacity:.7; }
-.proj-add:hover { opacity:1 !important; color:var(--text); background:var(--surface-hover); }
+/* Hover "+" on a project folder: a new worktree + task. Hidden until the row is hovered. Like the
+   row pin, pointing at it only darkens the glyph — a fill here would be a second plate inside the
+   row's own hover highlight. */
+.proj-add { flex-shrink:0; display:flex; align-items:center; justify-content:center; width:16px; height:16px; color:var(--text-3); opacity:0; }
+.nav-btn:hover .proj-add { opacity:.6; }
+.proj-add:hover { opacity:1 !important; color:var(--text); }
 .proj-add svg { width:13px; height:13px; }
 #project-nav .proj-tabs .task-row { padding-left:20px; } /* one level under the project folder */
 #opentabs-nav .proj-tabs .task-row { padding-left:8px; }
