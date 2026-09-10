@@ -554,15 +554,15 @@ body.find-open .split-body webview, body.find-open .split-body .wcv-shim { botto
 /* Pinned group (#pinned-nav, above the projects): mirror rows for the pinned sessions, at the nav's
    top level — no indent, since they hang off the label rather than a folder. */
 .pinned-group { display:flex; flex-direction:column; }
-/* Hover pin at the row's right (the title flexes, so it sits at the edge): pins the session above
-   the rest of its project. Follows the project folder's hover "+" — invisible until the row is
-   hovered — except that a PINNED row keeps it visible, since it's the only mark that says so. */
+/* Hover pin at the row's right (the title flexes, so it sits at the edge): mirrors the session into
+   the Pinned group above the projects. Exactly like the project folder's hover "+" — invisible
+   until the row is hovered, in both copies of the row. A pinned row needs no persistent mark: its
+   presence in the Pinned group is what says so; on hover the pin is filled, so it reads as the
+   toggle that undoes it. */
 .task-pin { flex-shrink:0; display:flex; align-items:center; justify-content:center; width:16px; height:16px; margin-right:-2px; color:var(--text-3); opacity:0; border-radius:4px; }
 .task-pin svg { width:13px; height:13px; }
 .opentab:hover .task-pin { opacity:.7; }
 .task-pin:hover { opacity:1 !important; color:var(--text); background:var(--surface-hover); }
-/* Pinned: the pin stays, filled, in the muted row colour — a state, not an accent. */
-.task-row.pinned .task-pin { opacity:1; color:var(--text-2); }
 .task-row.pinned .task-pin svg { fill:currentColor; }
 /* Project grouping mode: a project's open-tab rows nest directly under its folder (no separate
    section). Indent them past the folder's icon + gap so they read as children. The orphan group

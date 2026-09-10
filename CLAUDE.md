@@ -74,7 +74,9 @@ separation everything follows:
   first (`byCreated`) — never by run state, which reshuffled the list under the pointer on every
   turn. Hover a row for its **pin** (`toggleSessionPin`, also in the right-click menu): `pinned` is a
   column on the task record, and a pinned session gains a MIRROR row in the "Pinned" group above the
-  projects (`pinnedNavMarkup` → `#pinned-nav`). Pinning is purely additive — the original row stays
+  projects (`pinnedNavMarkup` → `#pinned-nav`). The pin shows on row hover only (like a project's
+  "+"); a pinned row carries no persistent mark — its presence in the Pinned group is the state, and
+  the hovered pin is filled to read as the toggle that undoes it. Pinning is purely additive — the original row stays
   where it was, and nothing reorders. Both copies carry the same `data-task`/`data-term`, which is
   why every post-render pass (`refreshTermBusy`, `syncSpinner`) walks rows with `querySelectorAll`.
   Right-click is the only removal:
