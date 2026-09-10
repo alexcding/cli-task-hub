@@ -128,7 +128,8 @@ export function ensurePrTerminal(tab, cwd0, meta = {}) {
         if (norm(cwd) === norm(proj.workspace)) throw new Error('this branch is checked out in the main repo — a task needs its own worktree');
         task = await persistTask({ id: newTaskId(), projectId: proj.id, workspace: proj.workspace, worktree: cwd,
           branch: meta.branch || tab.branch || '', title: tab.title || basename(cwd), kind: tab.kind, url: tab.url,
-          jiraKey: tab.kind === 'jira' ? (tab.jiraKey || jiraKeyFromUrl(tab.url)) : '', cli: '', sessionId: '' });
+          jiraKey: tab.kind === 'jira' ? (tab.jiraKey || jiraKeyFromUrl(tab.url)) : '', cli: '', sessionId: '',
+          createdAt: new Date().toISOString() });   // the sidebar orders sessions by this (byCreated)
       }
       tab.termId = await createTermView(cwd, task.title, { paired: true, pairKey: task.id });
     }

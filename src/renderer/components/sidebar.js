@@ -70,23 +70,26 @@ function reconcileRows() {
   refreshTermBusy();
 }
 
-// Working first, then live over stopped, then by title — a stable order for a worktree's task rows.
-// Sessions sort working → live → stopped, then by the label the row SHOWS (worktree folder name).
 const rowLabel = s => basename(s.worktree || '') || s.title || '';
-const byTaskState = (a, b) => (Number(!!b.busy) - Number(!!a.busy)) || (Number(!!b.live) - Number(!!a.live)) || rowLabel(a).localeCompare(rowLabel(b));
+// Sessions sort by when they were created, oldest first: a new session appends at the bottom of its
+// project and no row ever moves again. Ordering by run state (working → live → stopped) reshuffled
+// the list under the pointer every time an agent started or finished a turn. `createdAt` is an ISO
+// string (stamped at creation, immutable server-side), so a plain compare is chronological; a
+// record from before it was stamped sorts first.
+const byCreated = (a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')) || rowLabel(a).localeCompare(rowLabel(b));
 
 // One SESSION row per task record under a project (services/tasks.js → taskSessions). The worktree is
 // the unit of work and the session is the agent running there — one per worktree — so the row is
 // titled by the worktree folder. The sidebar reads ONLY session records: git worktrees without a
 // session are not shown (no separate worktree UI).
 function projectRows(p) {
-  return taskSessions().filter(s => s.projectId === p.id).sort(byTaskState).map(sessionRowHtml);
+  return taskSessions().filter(s => s.projectId === p.id).sort(byCreated).map(sessionRowHtml);
 }
 
 // Tasks whose project is gone, as one unlabeled group (no header). Empty string when every task
 // has a home, the common case.
 function orphanTabsMarkup() {
-  const tasks = taskSessions().filter(s => !projectById(s.projectId)).sort(byTaskState);
+  const tasks = taskSessions().filter(s => !projectById(s.projectId)).sort(byCreated);
   return tasks.length ? `<div class="proj-tabs" data-project=""><div class="proj-tabs-inner">${tasks.map(sessionRowHtml).join('')}</div></div>` : '';
 }
 
@@ -169,7 +172,7 @@ function tabRowHtml(t) {
 // with a 20% halo; blocked = the same in red; stopped = the row dims. `.busy` is toggled by
 // refreshTermBusy, not baked in; the analyzed resting state rides on data-state. The last summary is
 // the tooltip. Click opens/resumes (openTaskSession); right-click opens sessionMenu. Session rows
-// are not drag-reorderable (they sort by state).
+// are not drag-reorderable (they sort by creation time — see byCreated).
 function sessionRowHtml(s) {
   const st = !s.live ? 'stopped' : (s.state || 'idle');
   const where = (!s.url || isSessionUrl(s.url)) ? s.worktree : s.url; // a bare session's url is synthetic — show the folder

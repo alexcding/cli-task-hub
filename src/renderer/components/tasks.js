@@ -57,7 +57,7 @@ async function createTask(project, worktree, { branch = '', cli = '' } = {}) {
   const id = newTaskId();
   const title = basename(worktree);
   const task = await persistTask({ id, projectId: project.id, workspace: project.workspace, worktree,
-    branch, title, kind: 'web', url: sessionUrl(id), jiraKey: '', cli, sessionId: '' });
+    branch, title, kind: 'web', url: sessionUrl(id), jiraKey: '', cli, sessionId: '', createdAt: new Date().toISOString() });
   openInSplit(task.url, title, 'web', {});
 }
 
