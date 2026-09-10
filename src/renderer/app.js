@@ -7,7 +7,7 @@ import { api, forceSync } from './services/api.js';
 import { ICON } from './lib/icons.js';
 import { initTheme, setAppTheme, syncThemeFromSettings } from './services/theme.js';
 import { setFontFamily, bumpFontSize, resetFontSize, zoomTarget, syncFontsFromSettings, populateFontMenus } from './services/fonts.js';
-import { renderTabs, renderProjectNav, tabMenu, sessionMenu, initSidebarResize, projectClick } from './components/sidebar.js';
+import { renderTabs, renderProjectNav, tabMenu, sessionMenu, toggleSessionPin, initSidebarResize, projectClick } from './components/sidebar.js';
 import { closeMenu, isMenuOpen } from './components/menu.js';
 import { toggleEventsPopover, refreshEventsPopover, isEventsPopoverOpen, closeEventsPopover } from './components/events-popover.js';
 import * as viewer from './components/viewer.js';
@@ -268,7 +268,7 @@ Object.assign(window, {
   wfNew, wfDelete, wfSetName, wfSetCli, wfAddStep, wfRemoveStep, wfEditStepCommand, wfEditStepTitle, saveWorkflows,
   loadGitTab, gitTabPick, gitTabShowCommit, gitTabBack, gitTabRemoveWorktree,
   loadLogs, setLogCategory, clearLogs, showEvents, toggleEventsPopover, // the sidebar bell
-  openTaskSession, newWorktreeTask, sessionMenu, // the sidebar's session rows (click, right-click menu)
+  openTaskSession, newWorktreeTask, sessionMenu, toggleSessionPin, // the sidebar's session rows (click, hover pin, right-click menu)
   loadSettings, saveConfig, switchSettingsTab, setReviewSound, previewReviewSound, setActivityNotify, setAutostart, toggleSecret, setGitClient, setGitClientCmd, toggleHook, setWebviewPool, setDefaultCli, projectClick,
   __activityToast: showActivityToast, // main pushes activity toasts here when the app is frontmost
   // project modal

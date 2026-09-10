@@ -102,7 +102,8 @@ db.exec(`
     jira_key   TEXT,
     cli        TEXT,               -- 'claude' | 'codex' | ''
     session_id TEXT,               -- the CLI's conversation id: exact resume on click
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,       -- the sidebar orders sessions by this, oldest first
+    pinned     INTEGER NOT NULL DEFAULT 0  -- pinned sessions sort above the rest in their project
   );
   -- Per-PR review-request tracking, keyed "repo#number". requested_at is the latest
   -- time GitHub requested MY review (from the PR timeline); viewed_at is when I opened
@@ -146,6 +147,8 @@ for (const stmt of [
   // carry a terminal always has one), so the flag has no meaning. Drop it rather than keep
   // writing a value nothing reads.
   `ALTER TABLE tabs DROP COLUMN pr_split`,
+  // Pinned sessions sort to the top of their project in the sidebar (hover pin on the row).
+  `ALTER TABLE tasks ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0`,
 ]) { try { db.exec(stmt); } catch { /* column already exists / already gone */ } }
 
 const uuid = () => crypto.randomUUID();
@@ -283,20 +286,20 @@ function getTasks() {
   return db.prepare('SELECT * FROM tasks ORDER BY created_at ASC').all().map(r => ({
     id: r.id, projectId: r.project_id, workspace: r.workspace, worktree: r.worktree, branch: r.branch || '',
     title: r.title || '', kind: r.kind || '', url: r.url || '', jiraKey: r.jira_key || '', cli: r.cli || '',
-    sessionId: r.session_id || '', createdAt: r.created_at,
+    sessionId: r.session_id || '', createdAt: r.created_at, pinned: !!r.pinned,
   }));
 }
 const _upsertTask = db.prepare(
-  `INSERT INTO tasks (id, project_id, workspace, worktree, branch, title, kind, url, jira_key, cli, session_id, created_at)
-   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `INSERT INTO tasks (id, project_id, workspace, worktree, branch, title, kind, url, jira_key, cli, session_id, created_at, pinned)
+   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
    ON CONFLICT(id) DO UPDATE SET project_id=excluded.project_id, workspace=excluded.workspace, worktree=excluded.worktree,
      branch=excluded.branch, title=excluded.title, kind=excluded.kind, url=excluded.url, jira_key=excluded.jira_key,
-     cli=excluded.cli, session_id=excluded.session_id`
+     cli=excluded.cli, session_id=excluded.session_id, pinned=excluded.pinned`
 );
 function upsertTask(t = {}) {
   if (!t.id || !t.projectId || !t.workspace || !t.worktree) return false;
   _upsertTask.run(t.id, t.projectId, t.workspace, t.worktree, t.branch || '', t.title || '', t.kind || '', t.url || '',
-    t.jiraKey || '', t.cli || '', t.sessionId || '', t.createdAt || now());
+    t.jiraKey || '', t.cli || '', t.sessionId || '', t.createdAt || now(), t.pinned ? 1 : 0);
   return true;
 }
 const removeTask = id => db.prepare('DELETE FROM tasks WHERE id = ?').run(id);

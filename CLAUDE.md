@@ -70,7 +70,11 @@ separation everything follows:
   created for it (the terminal pane's New Task CTAs on a PR/Jira tab). Sessions are otherwise created
   only from the sidebar's project "+" (New session dialog) — there is no per-tab task button.
   Hover "+" on a project creates a worktree + session; clicking a folder focuses its project, clicking
-  the focused folder again collapses/expands its rows (no disclosure caret). Right-click is the only removal:
+  the focused folder again collapses/expands its rows (no disclosure caret). Rows sort pinned-first,
+  then oldest-created first (`byCreated`) — never by run state, which reshuffled the list under the
+  pointer on every turn. Hover a row for its **pin** (`toggleSessionPin`, also in the right-click
+  menu): pinned is a column on the task record and sorts the row to the top of its project; the pin
+  stays visible, filled, while pinned. Right-click is the only removal:
   "Remove session" (`deleteTaskSession`, the single path) stops the terminal, forgets the task and
   force-removes the worktree folder, behind `confirmDialog()` (`components/confirm.js`) — never
   native `confirm()`. A session's tab is not closable by any browser-tab path (middle-click, ⌘W, the

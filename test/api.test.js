@@ -159,6 +159,8 @@ test('tasks: upsert, list, and delete through /api/tasks (keyed by id)', async (
   assert.equal(t.worktree, rec.worktree);
   assert.equal(t.cli, 'claude');
   assert.equal(t.sessionId, '', 'no session id until one is captured');
+  assert.equal(t.pinned, false, 'a new session is not pinned');
+  assert.ok(t.createdAt, 'createdAt is stamped (the sidebar orders sessions by it)');
   // Upsert is idempotent (keyed by id) — a change updates in place, no duplicate row; the
   // conversation id round-trips.
   assert.equal((await send('POST', '/api/tasks', { ...rec, title: 'Renamed', sessionId: '0b1e6e2a-1111-4222-8333-444455556666' })).status, 200);
@@ -167,6 +169,15 @@ test('tasks: upsert, list, and delete through /api/tasks (keyed by id)', async (
   t = body.find(x => x.id === id);
   assert.equal(t.title, 'Renamed');
   assert.equal(t.sessionId, '0b1e6e2a-1111-4222-8333-444455556666');
+  // Pinned round-trips as a boolean (the sidebar sorts pinned sessions above the rest), and
+  // created_at is immutable — an upsert must never restamp it.
+  const firstCreatedAt = t.createdAt;
+  assert.equal((await send('POST', '/api/tasks', { ...rec, pinned: true })).status, 200);
+  t = (await get('/api/tasks')).body.find(x => x.id === id);
+  assert.equal(t.pinned, true);
+  assert.equal(t.createdAt, firstCreatedAt, 'created_at survives an upsert');
+  assert.equal((await send('POST', '/api/tasks', { ...rec, pinned: false })).status, 200);
+  assert.equal((await get('/api/tasks')).body.find(x => x.id === id).pinned, false);
   // Two tasks may share one worktree.
   assert.equal((await send('POST', '/api/tasks', { ...rec, id: 'task-test-0002', url: '' })).status, 200);
   assert.equal((await get('/api/tasks')).body.filter(x => x.worktree === rec.worktree).length, 2);

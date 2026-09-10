@@ -12,7 +12,7 @@ import { ciInfo } from './cards.js';
 import { closeTab, saveTabs, updateTitles } from './viewer.js';
 import { renderContentTabs } from './content-tabs.js';
 import { workflowRunState } from './workflow.js';
-import { taskSessions, taskUrls, taskById } from '../services/tasks.js';
+import { taskSessions, taskUrls, taskById, persistTask } from '../services/tasks.js';
 import { openMenu } from './menu.js';
 import { deleteTaskSession } from './tasks.js';
 
@@ -71,12 +71,14 @@ function reconcileRows() {
 }
 
 const rowLabel = s => basename(s.worktree || '') || s.title || '';
-// Sessions sort by when they were created, oldest first: a new session appends at the bottom of its
-// project and no row ever moves again. Ordering by run state (working → live → stopped) reshuffled
-// the list under the pointer every time an agent started or finished a turn. `createdAt` is an ISO
-// string (stamped at creation, immutable server-side), so a plain compare is chronological; a
-// record from before it was stamped sorts first.
-const byCreated = (a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')) || rowLabel(a).localeCompare(rowLabel(b));
+// Sessions sort pinned-first, then by when they were created, oldest first: a new session appends
+// at the bottom of its project and no row ever moves again unless it's pinned. Ordering by run
+// state (working → live → stopped) reshuffled the list under the pointer every time an agent
+// started or finished a turn. `createdAt` is an ISO string (stamped at creation, immutable
+// server-side), so a plain compare is chronological; a record from before it was stamped sorts first.
+const byCreated = (a, b) => (Number(!!b.pinned) - Number(!!a.pinned))
+  || String(a.createdAt || '').localeCompare(String(b.createdAt || ''))
+  || rowLabel(a).localeCompare(rowLabel(b));
 
 // One SESSION row per task record under a project (services/tasks.js → taskSessions). The worktree is
 // the unit of work and the session is the agent running there — one per worktree — so the row is
@@ -183,10 +185,15 @@ function sessionRowHtml(s) {
     s.tab && `data-id="${s.tab.id}"`, // no middle-click close: a session's tab goes only with Remove session
     s.cli && `data-cli="${esc(s.cli)}"`,
   ].filter(Boolean).join(' ');
-  return `<div class="opentab task-row${s.live ? '' : ' stopped'}" ${attrs}
+  // The pin appears on row hover and stays visible while pinned (CSS .task-pin/.on) — the one
+  // affordance that tells you a row is pinned, and the one that undoes it.
+  const pin = `<span class="task-pin${s.pinned ? ' on' : ''}" title="${s.pinned ? 'Unpin session' : 'Pin session to the top'}"
+        onclick="event.stopPropagation();toggleSessionPin('${escJs(s.id)}')">${ICON.pin}</span>`;
+  return `<div class="opentab task-row${s.live ? '' : ' stopped'}${s.pinned ? ' pinned' : ''}" ${attrs}
         onclick="openTaskSession('${escJs(s.id)}')" oncontextmenu="return sessionMenu(event,'${escJs(s.id)}')" title="${esc(tip)}">
      <span class="task-lead"><span class="task-spin">${spinFrames(s.cli)[0]}</span><span class="task-mark">${staticGlyph(s.cli)}</span></span>
      <span class="tab-title">${esc(rowLabel(s))}</span>
+     ${pin}
    </div>`;
 }
 
@@ -217,13 +224,22 @@ function syncSpinner(anyBusy) {
   }
 }
 
+// Pin / unpin a session: pinned rows sort above the rest of their project (byCreated). Persisted on
+// the task record, so it survives restarts; persistTask re-renders the sidebar for us.
+export function toggleSessionPin(id) {
+  const t = taskById(id);
+  if (!t) return;
+  persistTask({ id, pinned: !t.pinned });
+}
+
 // Right-click a session row: Reveal in Finder (its worktree folder), Copy link (when the session has
-// a PR/Jira page), and Remove session — which removes the worktree with it (one unit; tasks.js →
-// deleteTaskSession is the single removal path).
+// a PR/Jira page), Pin/Unpin, and Remove session — which removes the worktree with it (one unit;
+// tasks.js → deleteTaskSession is the single removal path).
 export function sessionMenu(e, id) {
   const t = taskById(id);
   const url = t?.url && /^https?:/.test(t.url) ? t.url : null;
   return openMenu(e, [
+    { label: t?.pinned ? 'Unpin session' : 'Pin session', onClick: () => toggleSessionPin(id) },
     t?.worktree && { label: 'Reveal in Finder', onClick: () => window.taskhub?.openPath?.(t.worktree) },
     url && { label: 'Copy link', onClick: () => navigator.clipboard?.writeText(url) },
     { label: 'Remove session…', danger: true, onClick: () => deleteTaskSession(id) },

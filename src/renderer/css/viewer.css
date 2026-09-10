@@ -551,6 +551,16 @@ body.find-open .split-body webview, body.find-open .split-body .wcv-shim { botto
 .task-row:not(.busy)[data-state="blocked"] .task-lead::before { background:var(--danger); box-shadow:0 0 0 4px color-mix(in srgb, var(--danger) 20%, transparent); }
 .task-row.stopped { opacity:.82; }
 .task-row.stopped .tab-title { color:var(--text-3); }
+/* Hover pin at the row's right (the title flexes, so it sits at the edge): pins the session above
+   the rest of its project. Follows the project folder's hover "+" — invisible until the row is
+   hovered — except that a PINNED row keeps it visible, since it's the only mark that says so. */
+.task-pin { flex-shrink:0; display:flex; align-items:center; justify-content:center; width:16px; height:16px; margin-right:-2px; color:var(--text-3); opacity:0; border-radius:4px; }
+.task-pin svg { width:13px; height:13px; }
+.opentab:hover .task-pin { opacity:.7; }
+.task-pin:hover { opacity:1 !important; color:var(--text); background:var(--surface-hover); }
+/* Pinned: the pin stays, filled, in the muted row colour — a state, not an accent. */
+.task-row.pinned .task-pin { opacity:1; color:var(--text-2); }
+.task-row.pinned .task-pin svg { fill:currentColor; }
 /* Project grouping mode: a project's open-tab rows nest directly under its folder (no separate
    section). Indent them past the folder's icon + gap so they read as children. The orphan group
    (tabs matching no project) shows un-nested in #opentabs-nav. */
