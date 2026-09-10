@@ -19,7 +19,9 @@ for the web; Tauri provides the native shell.
 **Stale-while-revalidate over a DB snapshot.**
 
 - `src/server/services/poller.js` is the **only** thing that calls `gh`. Every `poll_interval`
-  (default 60s) it fetches each project's PRs once and writes a **lean snapshot** to
+  (default 60s) it fetches each project's PRs **by status** — every open PR (paginated in
+  full, with CI) plus a recent merged/closed window for merge detection — and writes a
+  **lean snapshot** of the open ones to
   `data.db` (via `src/server/database/db.js`). Concurrent syncs of one project are coalesced
   (see `syncProject`) so a stale read racing the poll loop can't double-spawn `gh`.
 - Every API endpoint **reads the snapshot** (instant). On read, a stale snapshot (>30s)
@@ -60,7 +62,8 @@ bunx tauri build       # package the macOS .app/.dmg (builds the Node sidecar fi
 - `services/poller.js` - sync engine + merge automation + lifecycle events;
   `services/sync.js` - SWR snapshot orchestration (`snapshotFor`, `jiraStale`);
   `services/webhook-forwarder.js` - `gh webhook forward` child processes.
-- `repositories/github.js` - `gh` wrapper (`getPRs`, `parseRepo`, `summarizeCI`, `getCurrentUser`)
+- `repositories/github.js` - `gh` wrapper (`getOpenPRs`/`getRecentClosedPRs`/`getPRs` — one
+  cursor-paginated GraphQL PR query, status-scoped; `parseRepo`, `summarizeCI`, `getCurrentUser`)
   + gh-latency metrics (`ghStats`); `repositories/jira.js` - `acli`; `repositories/usage.js` -
   `ccusage` (SWR-cached).
 - `database/db.js` - facade over the SQLite stores: `configdb.js` (`taskhub.db`, durable),

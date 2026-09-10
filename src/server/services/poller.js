@@ -190,8 +190,18 @@ function syncProject(project) {
   return promise;
 }
 
-// Sync ONE project: a single `gh` call serves both the UI snapshot (open PRs)
-// and merge detection (newly-merged PRs). This is the only place we hit `gh`.
+// How many recently merged/closed PRs to pull per sync, purely to detect lifecycle changes
+// (pr_merged / pr_closed → activity log + Jira automation). Ordered by UPDATED_AT desc, so
+// anything that merged or closed since the last poll sits at the top of this window; it does
+// NOT bound which open PRs are visible (those are fetched in full — see getOpenPRs).
+const CLOSED_WINDOW = 30;
+
+// Sync ONE project. Two status-scoped `gh` calls run in parallel, because the two consumers
+// want opposite things: the UI snapshot needs EVERY open PR with CI, while merge detection
+// needs only a recent window of merged/closed PRs and no CI at all. Fetching them together as
+// one `--state all` window made open-PR visibility a hostage of merge volume (an old open PR
+// fell off the end) and paid for CI on merged PRs that never render. This is the only place we
+// hit `gh` for PRs.
 async function syncProjectImpl(project) {
   if (!project.repo) {
     db.setSnapshot(project.id, { prs: [], lastSynced: now(), error: null });
@@ -199,9 +209,12 @@ async function syncProjectImpl(project) {
     return;
   }
 
-  let prs;
+  let openPRs, closedPRs;
   try {
-    prs = await github.getPRs(project.repo, 'all', 60, { ci: true, fresh: true, jiraProjectKey: project.jiraProjectKey });
+    [openPRs, closedPRs] = await Promise.all([
+      github.getOpenPRs(project.repo, { jiraProjectKey: project.jiraProjectKey }),
+      github.getRecentClosedPRs(project.repo, { limit: CLOSED_WINDOW }),
+    ]);
   } catch (err) {
     const prev = db.getSnapshot(project.id);
     // Only log a sync failure when the error is new (don't spam every cycle).
@@ -214,7 +227,7 @@ async function syncProjectImpl(project) {
   // Detect PR lifecycle changes → activity log + merge automation.
   // First sync of a repo seeds state silently (no flood of "opened" events).
   const firstTime = !seededRepos.has(project.repo);
-  for (const pr of prs) {
+  for (const pr of [...openPRs, ...closedPRs]) {
     const key = `${project.repo}#${pr.number}`;
     const prev = prState.get(key);
     const meta = { repo: project.repo, pr: { number: pr.number, title: pr.title, url: pr.url } };
@@ -233,9 +246,8 @@ async function syncProjectImpl(project) {
   }
   seededRepos.add(project.repo);
 
-  // Snapshot = open PRs only (what the dashboard/project page show).
-  const open = prs.filter(p => p.state === 'OPEN');
-  const leanPRs = open.map(p => lean(p, project.repo));
+  // Snapshot = the open PRs (what the dashboard/project page show), fetched complete.
+  const leanPRs = openPRs.map(p => lean(p, project.repo));
 
   // For PRs awaiting MY review, fetch the latest review-request timestamp (one GraphQL
   // call, only when there's at least one such PR) and persist it. The tray uses
@@ -257,7 +269,7 @@ async function syncProjectImpl(project) {
       }
     }
   }
-  db.pruneReviewStateForRepo(project.repo, open.map(p => p.number));
+  db.pruneReviewStateForRepo(project.repo, openPRs.map(p => p.number));
 
   db.setSnapshot(project.id, { prs: leanPRs, lastSynced: now(), error: null });
   if (onSync) onSync(project.id);

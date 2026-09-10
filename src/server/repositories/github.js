@@ -6,13 +6,6 @@ const execFileAsync = promisify(execFile);
 const { PR_CATEGORY } = require('../../shared/constants.mjs');
 const { prJiraKeys } = require('../../shared/jira-keys.mjs'); // Jira-key scraping policy (pure, shared)
 
-// PR fields. statusCheckRollup gives CI status inline — one call returns PRs + CI,
-// so we never need a separate `gh run list` per PR. author/isDraft/reviewRequests
-// drive per-user categorization (mine / review / other); latestReviews adds "I've
-// commented but not finished" so a PR I'm reviewing doesn't vanish (see awaitingReview).
-const PR_FIELDS = 'number,title,state,url,headRefName,baseRefName,mergedAt,author,labels,body,createdAt,updatedAt,isDraft,reviewRequests,latestReviews,reviewDecision';
-const PR_FIELDS_CI = `${PR_FIELDS},statusCheckRollup`;
-
 const MAX_BUFFER = 10 * 1024 * 1024;
 // gh is a network CLI — bound every invocation so a stalled call (network stall, stuck
 // credential helper, wedged subprocess) rejects instead of hanging forever. Essential now
@@ -754,10 +747,137 @@ function summarizeCI(rollup) {
   return null;
 }
 
-// ── PR cache (shared by dashboard, tray, project page) ───────────────────────────
+// ── PR fetch (GraphQL: cursor-paginated, status-scoped) ──────────────────────────
 const PR_TTL_MS = 20_000;
 const prCache = new Map(); // key -> { at, value }
 
+// 100 is GitHub's max page size for a connection. Every repo we track holds its entire OPEN
+// set in one page, so "fetch ALL open PRs" normally still costs exactly one call.
+const PR_PAGE_SIZE = 100;
+// Hard stop on the cursor walk, so a huge history (or a hasNextPage that never settles) can
+// never spin forever inside one sync.
+const PR_MAX_PAGES = 20;
+
+// Why GraphQL and not `gh pr list`: the CLI takes ONE --state and exposes no cursor, so it can
+// only ever answer "the newest N across the states you asked for". That is how an old-but-OPEN
+// PR silently disappeared from a `--state all --limit 60` window once 60 newer PRs had merged —
+// the snapshot is built from that list, so the PR vanished from the dashboard AND its project.
+// Here the state set is a real server-side filter and the pages are real cursors, so open PRs
+// are fetched COMPLETELY and independently of merge volume.
+//
+// The states are our own fixed literals (never user input), so they're interpolated into the
+// query as GraphQL enums rather than bound as a variable: `gh` rejects the repeated `-f k=v`
+// form needed to pass a list ("unexpected override existing field").
+const PR_STATES = Object.freeze({
+  open:   ['OPEN'],
+  closed: ['CLOSED'],
+  merged: ['MERGED'],
+  all:    ['OPEN', 'MERGED', 'CLOSED'],
+});
+
+// What every consumer needs: categorization (author/reviewRequests/latestReviews/isDraft),
+// Jira-key scraping (title/body) and the card (the rest).
+const PR_GQL_CORE = `number title state url headRefName baseRefName mergedAt isDraft createdAt updatedAt reviewDecision body
+    author{ login ... on User{ name } }
+    labels(first:20){ nodes{ name } }
+    reviewRequests(first:20){ nodes{ requestedReviewer{ ... on User{ login } } } }
+    latestReviews(first:20){ nodes{ state author{ login } } }`;
+
+// The CI rollup walks the head commit's check runs — by far the most expensive part of the
+// query. Requested ONLY for the status that actually displays it (open PRs); merge detection
+// never reads CI, so the closed window doesn't pay for it.
+const PR_GQL_CI = `commits(last:1){ nodes{ commit{ statusCheckRollup{ contexts(first:100){ nodes{
+      ... on CheckRun{ status conclusion }
+      ... on StatusContext{ state }
+    } } } } } }`;
+
+// Lifecycle-only projection: exactly what the pr_merged / pr_closed events and the Jira merge
+// automation read (prJiraKeys needs title + body). No labels, reviews, CI or branch refs — a
+// merged PR never renders a card, so fetching those for it is pure waste.
+const PR_GQL_LIFECYCLE = `number title state url mergedAt body author{ login }`;
+
+const prQuery = (states, fields) => `query($owner:String!,$name:String!,$first:Int!,$after:String){
+  repository(owner:$owner,name:$name){
+    pullRequests(states:[${states.join(',')}],first:$first,after:$after,orderBy:{field:UPDATED_AT,direction:DESC}){
+      pageInfo{ hasNextPage endCursor }
+      nodes{ ${fields} }
+    }
+  }
+}`;
+
+// GraphQL connections nest ({nodes:[…]}) where `gh pr list` handed back flat arrays. Flatten to
+// the CLI's shape so categoryOf / awaitingReview / prJiraKeys / summarizeCI / lean() — and every
+// renderer field they feed — keep working untouched. Absent selections stay absent (the
+// lifecycle projection asks for none of these), so callers can still tell "empty" from
+// "not requested".
+function flattenPR(node) {
+  const pr = { ...node };
+  if (node.labels)         pr.labels         = (node.labels.nodes || []).filter(Boolean);
+  if (node.reviewRequests) pr.reviewRequests = (node.reviewRequests.nodes || []).map(r => r.requestedReviewer).filter(Boolean);
+  if (node.latestReviews)  pr.latestReviews  = (node.latestReviews.nodes || []).filter(Boolean);
+  if (node.commits) {
+    // summarizeCI reads `.status` / `.conclusion || .state` per entry — which is exactly the
+    // CheckRun ({status, conclusion}) and StatusContext ({state}) shape, so it needs no change.
+    pr.statusCheckRollup = node.commits.nodes?.[0]?.commit?.statusCheckRollup?.contexts?.nodes || [];
+    delete pr.commits;
+  }
+  return pr;
+}
+
+// Walk the connection's cursors until the states are exhausted, `limit` is reached, or
+// PR_MAX_PAGES trips. `limit: Infinity` means "every PR in these states" — the point of
+// paginating: open-PR coverage no longer depends on a guessed limit.
+async function fetchPRPages(repo, { states, fields, limit = Infinity }) {
+  // The GraphQL query needs owner and name separately (the CLI took `--repo owner/name` whole),
+  // so a malformed repo must fail loudly here rather than as an opaque gh error.
+  const [owner, name] = String(repo || '').split('/');
+  if (!owner || !name) throw new Error(`invalid repo "${repo}" (expected owner/name)`);
+  const query = prQuery(states, fields);
+  const out = [];
+  let after = null;
+  let more = false; // did we stop with pages still left? (cap hit, not a natural end)
+  for (let page = 0; page < PR_MAX_PAGES; page++) {
+    const first = Math.max(1, Math.min(PR_PAGE_SIZE, limit - out.length));
+    const args = ['api', 'graphql', '-f', `query=${query}`,
+      '-F', `owner=${owner}`, '-F', `name=${name}`, '-F', `first=${first}`];
+    // Cursors are opaque base64 (with '='), so pass as a raw string (-f), never typed (-F).
+    if (after) args.push('-f', `after=${after}`);
+    const conn = JSON.parse(await gh(args))?.data?.repository?.pullRequests;
+    // A missing connection is a BAD RESPONSE, not the end of the walk — `repository: null` on a
+    // transient permission/visibility hiccup would otherwise look like "no more pages" and hand
+    // back a truncated list, which the poller would then write as a complete snapshot. Throwing
+    // keeps that on the sync-failure path, where the previous snapshot is preserved.
+    if (!conn) throw new Error(`unexpected gh graphql response for ${repo} (no pullRequests connection)`);
+    out.push(...(conn.nodes || []).filter(Boolean).map(flattenPR));
+    if (out.length >= limit) break;
+    if (!conn.pageInfo?.hasNextPage) { more = false; break; }
+    more = true;
+    after = conn.pageInfo.endCursor;
+  }
+  // Only reachable with an absurd open-PR count; log it rather than truncate in silence, so a
+  // repo that outgrows the cap is diagnosable instead of just quietly missing PRs.
+  if (more) console.warn(`[gh] ${repo}: stopped at PR_MAX_PAGES (${PR_MAX_PAGES}) with pages remaining — ${out.length} fetched`);
+  return out;
+}
+
+// Per-user classification + Jira keys + CI, on a flattened PR. The reviewRequests/latestReviews
+// selections exist only to compute category/awaitingMyReview, so they're dropped afterwards.
+function enrichPR(pr, me, jiraProjectKey, ci) {
+  const enriched = {
+    ...pr,
+    jiraKeys: prJiraKeys(pr, jiraProjectKey),
+    category: categoryOf(pr, me),
+    awaitingMyReview: awaitingReview(pr, me),
+  };
+  if (ci) { enriched.ci = summarizeCI(pr.statusCheckRollup); delete enriched.statusCheckRollup; }
+  delete enriched.reviewRequests; // only needed for categorization
+  delete enriched.latestReviews;  // only needed for awaitingReview
+  return enriched;
+}
+
+// PRs in `state` ('open' | 'closed' | 'merged' | 'all'), newest-updated first. `limit`
+// Infinity fetches every match. Unknown state falls back to open rather than querying
+// every state (an unbounded 'all' walk is the expensive mistake to guard against).
 async function getPRs(repo, state = 'open', limit = 30, { ci = false, fresh = false, jiraProjectKey = '' } = {}) {
   // jiraProjectKey scopes Jira-key extraction (see prJiraKeys), so it's part of the cache identity —
   // two projects sharing a repo but different keys must not read each other's cached jiraKeys.
@@ -766,26 +886,32 @@ async function getPRs(repo, state = 'open', limit = 30, { ci = false, fresh = fa
     const hit = prCache.get(key);
     if (hit && Date.now() - hit.at < PR_TTL_MS) return hit.value;
   }
-  const [out, me] = await Promise.all([
-    gh(['pr', 'list', '--repo', repo, '--state', state, '--limit', String(limit), '--json', ci ? PR_FIELDS_CI : PR_FIELDS]),
+  const states = PR_STATES[state] || PR_STATES.open;
+  const [nodes, me] = await Promise.all([
+    fetchPRPages(repo, { states, fields: ci ? `${PR_GQL_CORE}\n    ${PR_GQL_CI}` : PR_GQL_CORE, limit }),
     getCurrentUser(),
   ]);
-  const value = JSON.parse(out).map(pr => {
-    const enriched = {
-      ...pr,
-      jiraKeys: prJiraKeys(pr, jiraProjectKey),
-      category: categoryOf(pr, me),
-      awaitingMyReview: awaitingReview(pr, me),
-    };
-    if (ci) { enriched.ci = summarizeCI(pr.statusCheckRollup); delete enriched.statusCheckRollup; }
-    delete enriched.reviewRequests; // only needed for categorization
-    delete enriched.latestReviews;  // only needed for awaitingReview
-    return enriched;
-  });
+  const value = nodes.map(pr => enrichPR(pr, me, jiraProjectKey, ci));
   prCache.set(key, { at: Date.now(), value });
   return value;
 }
 
+// EVERY open PR in the repo, with CI — the snapshot's sole input. Unlimited on purpose: the
+// open set is small and bounded by how much work is actually in flight, so it's safe to fetch
+// whole, and doing so is what keeps a long-lived PR visible no matter how much has merged past it.
+const getOpenPRs = (repo, { jiraProjectKey = '', fresh = true } = {}) =>
+  getPRs(repo, 'open', Infinity, { ci: true, fresh, jiraProjectKey });
+
+// A recent window of merged/closed PRs, for lifecycle events + merge automation ONLY.
+// Ordered by UPDATED_AT desc, and merging/closing a PR updates it, so a PR that changed since
+// the last poll is at the TOP of this window — which makes a small window correct here, unlike
+// the old created-order window that let a merge slip past unseen. Lean projection, no CI.
+const getRecentClosedPRs = (repo, { limit = 30 } = {}) => fetchPRPages(repo, {
+  states: [...PR_STATES.merged, ...PR_STATES.closed],
+  fields: PR_GQL_LIFECYCLE,
+  limit,
+});
+
 // ghStats reads the metrics; noteInflight/noteCoalesced let the poller's sync-dedup layer
 // bump the gauges without reaching into _gh's field names.
-module.exports = { gh, ghStats, noteInflight, noteCoalesced, getPRs, getCurrentUser, getUserName, reviewRequestedAt, categoryOf, awaitingReview, parseRepo, gitRemoteRepo, worktreeForBranch, worktreeForJiraKey, createWorktree, removeWorktree, worktreeHolders, gitDiff, gitCommit, gitPush, gitDiscard, gitLog, gitShow, gitBranches, gitDefaultBranch, commitAvatars, listWorktrees, summarizeCI };
+module.exports = { gh, ghStats, noteInflight, noteCoalesced, getPRs, getOpenPRs, getRecentClosedPRs, getCurrentUser, getUserName, reviewRequestedAt, categoryOf, awaitingReview, parseRepo, gitRemoteRepo, worktreeForBranch, worktreeForJiraKey, createWorktree, removeWorktree, worktreeHolders, gitDiff, gitCommit, gitPush, gitDiscard, gitLog, gitShow, gitBranches, gitDefaultBranch, commitAvatars, listWorktrees, summarizeCI };
