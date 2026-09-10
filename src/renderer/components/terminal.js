@@ -188,7 +188,7 @@ export async function attachTermView(id, dir, title, { paired = false, pairKey =
   // Tasks-page status fields: `cli` (claude/codex, from the hook SSE events) labels the session;
   // `summary`/`state` hold the last headless-analysis result for the card; `summaryFor` is the
   // message text we last analyzed (dedupe key). The live preview is read off the xterm buffer.
-  const entry = { id, el, term, fit, off: null, offExit: null, cwd: dir, title, paired, pairKey, hasContext: !!hasContext, busy: false, cli: '', summary: '', state: '', summaryFor: '', gen: 0 };
+  const entry = { id, el, term, fit, off: null, offExit: null, ro: null, cwd: dir, title, paired, pairKey, hasContext: !!hasContext, busy: false, cli: '', summary: '', state: '', summaryFor: '', gen: 0 };
   // Register in state.terms and wire BOTH listeners before any await. On replay there's an
   // attach round-trip below; if the PTY exits during it, onExit must already be subscribed
   // (and the entry findable) so onTermExit → disposeTerm cleans up instead of leaving a
@@ -217,6 +217,20 @@ export async function attachTermView(id, dir, title, { paired = false, pairKey =
     return true;
   });
   wireTermDnd(el, entry, term); // drag/paste a Finder file → its path typed at the prompt
+  // Refit on ANY pane resize, not just window resizes: the pane also changes height when the
+  // content-tab bar or the find bar appears, and a stale grid clips the bottom row. Skipped while
+  // the split boundary is animating (body.pr-tweening) — the animation deliberately clips the
+  // terminal and refits once at the end; reflowing the grid on every frame is janky and expensive.
+  const busyLayout = () => el.style.display === 'none' || document.body.classList.contains('pr-tweening');
+  try {
+    let raf = 0;
+    const ro = new ResizeObserver(() => {
+      if (raf || busyLayout()) return;
+      raf = requestAnimationFrame(() => { raf = 0; if (!busyLayout()) fitTerm(state.terms.get(id)); });
+    });
+    ro.observe(el);
+    entry.ro = ro;
+  } catch {}
   entry.offExit = taskhub.term.onExit(id, () => onTermExit(id, state.terms.get(id)?.paired));
   // Subscribe to live output FIRST. On replay we queue chunks until the buffered backlog is
   // written, then flush only the chunks newer than the backlog (by seq) — so output produced
@@ -362,7 +376,7 @@ export function disposeTerm(id) {
   const t = state.terms.get(id);
   if (!t) return;
   flushTurnWaiters(id, false); // unblock any workflow step awaiting this terminal's turn
-  try { t.off?.(); t.offExit?.(); } catch {}
+  try { t.off?.(); t.offExit?.(); t.ro?.disconnect(); } catch {}
   try { taskhub.term.kill(id); } catch {}
   try { t.term.dispose(); } catch {}
   t.el.remove();
@@ -414,7 +428,29 @@ export function closeTerminal(id) {
 // be visible first). Debounced refit on window resize wired in initTerminals().
 export function fitTerm(t) {
   if (!t) return;
-  try { t.fit.fit(); const { cols, rows } = t.term; taskhub.term.resize([...state.terms].find(([, v]) => v === t)[0], cols, rows); } catch {}
+  try {
+    t.fit.fit();
+    clampRows(t);
+    const { cols, rows } = t.term;
+    taskhub.term.resize([...state.terms].find(([, v]) => v === t)[0], cols, rows);
+  } catch {}
+}
+
+// FitAddon floors rows on the *CSS* cell height, but the renderer paints each row at a
+// device-pixel-rounded height — so rows * paintedRowHeight can end up taller than the pane
+// and the bottom row (a full-screen CLI's prompt/status footer) gets clipped. Measure what
+// was actually painted (.xterm-screen) against the pane's content box and drop the rows
+// that don't fit.
+function clampRows(t) {
+  const el = t.term.element;                       // .xterm — height:100% of .term-pane's content box
+  const screen = el?.querySelector('.xterm-screen');
+  if (!screen) return;
+  const h = screen.getBoundingClientRect().height;
+  const avail = el.getBoundingClientRect().height;
+  if (!h || h <= avail + 0.5) return;
+  const rowH = h / t.term.rows;                    // painted row height, incl. the rounding
+  const drop = Math.max(1, Math.ceil((h - avail) / rowH));
+  t.term.resize(t.term.cols, Math.max(1, t.term.rows - drop));
 }
 
 // The terminal currently on screen: a direct full-width one, or a PR/Jira paired one.
