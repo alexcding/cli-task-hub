@@ -560,9 +560,9 @@ body.find-open .split-body webview, body.find-open .split-body .wcv-shim { botto
    presence in the Pinned group is what says so; on hover the pin is filled, so it reads as the
    toggle that undoes it. */
 .task-pin { flex-shrink:0; display:flex; align-items:center; justify-content:center; width:16px; height:16px; margin-right:-2px; color:var(--text-3); opacity:0; border-radius:4px; }
-/* 15px in the 16px slot — bigger than the project "+" (13px) on purpose: the pin sits at the row's
-   edge as its own affordance, and the tilted silhouette needs the size to read at all. */
-.task-pin svg { width:15px; height:15px; }
+/* 14px in the 16px slot — bigger than the project "+" (13px) on purpose: the pin sits at the row's
+   edge as its own affordance, and the tilted silhouette needs the size to read. */
+.task-pin svg { width:14px; height:14px; }
 .opentab:hover .task-pin { opacity:.7; }
 .task-pin:hover { opacity:1 !important; color:var(--text); background:var(--surface-hover); }
 .task-row.pinned .task-pin svg { fill:currentColor; }
