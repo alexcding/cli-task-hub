@@ -15,7 +15,7 @@ export const state = {
   activeProjectId: null,
 
   // Webview tabs (the embedded GitHub/Jira viewer)
-  tabs: [],            // { id, kind:'github'|'jira', title, url, wv, loaded, started, repo, branch, jiraKey, prSplit, category, termId }
+  tabs: [],            // { id, kind:'github'|'jira'|'web', title, url, wv, loaded, started, repo, branch, jiraKey, prSplit, category, termId }
   activeTabId: null,
   tabsReady: false,    // false until restoreTabs() has merged the saved set
 

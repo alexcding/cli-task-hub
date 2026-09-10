@@ -4,7 +4,7 @@
 // (⌘J). Expanding recreates the task's terminal when its worktree exists on disk, else shows New
 // Task; we never auto-spawn a terminal on a fresh link.
 import { ROUTES } from '/shared/routes.mjs';
-import { state, activeTab, projectByRepo, projectByPrUrl, projectByJiraKey } from '../stores/store.js';
+import { state, activeTab, projectByRepo, projectByPrUrl, projectByJiraKey, projectById } from '../stores/store.js';
 import { api, apiJson } from '../services/api.js';
 import { jiraKeyFromUrl, canSplitTerminal, errMsg, basename } from '../lib/util.js';
 import { toastErr } from './toast.js';
@@ -29,6 +29,13 @@ import { persistTask, taskForTab, taskTerm, newTaskId } from '../services/tasks.
 // terminal cwd resolver (prCwd) and the viewer titlebar chip (updateFolderChip).
 export async function resolveTabFolder(tab) {
   const none = ws => ({ path: ws, workspace: ws, matched: false, isWorktree: false });
+  if (tab.kind === 'web') {
+    // A web tab has no project of its own: its folder is the worktree of a task linked to it, or
+    // nothing.
+    const task = taskForTab(tab);
+    return task ? { path: task.worktree, workspace: task.workspace, matched: true, isWorktree: true }
+                : { path: null, workspace: null, matched: false, isWorktree: false };
+  }
   if (tab.kind === 'jira') {
     const key = tab.jiraKey || jiraKeyFromUrl(tab.url);
     const proj = projectByJiraKey(key);
@@ -87,6 +94,7 @@ export function adoptPairedTerminal(tab) {
 // The project a tab belongs to (by repo / Jira key / PR url).
 const tabProject = tab => tab.kind === 'jira'
   ? projectByJiraKey(tab.jiraKey || jiraKeyFromUrl(tab.url))
+  : tab.kind === 'web' ? projectById(taskForTab(tab)?.projectId)
   : (projectByRepo(tab.repo) || projectByPrUrl(tab.url));
 
 // Lazily create or resume the tab's paired terminal. A live PTY from a previous window instance

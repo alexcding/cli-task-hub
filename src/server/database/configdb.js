@@ -267,7 +267,7 @@ function setTabs(tabs = [], active = null) {
     tabs.forEach((t, i) => {
       if (!t || !t.url) return;
       const links = JSON.stringify(Array.isArray(t.links) ? t.links : []);
-      _insertTab.run(t.url, t.kind === 'jira' ? 'jira' : 'github', t.title || t.url, typeof t.cur === 'string' ? t.cur : '',
+      _insertTab.run(t.url, t.kind === 'jira' ? 'jira' : t.kind === 'web' ? 'web' : 'github', t.title || t.url, typeof t.cur === 'string' ? t.cur : '',
         t.repo || '', t.branch || '', t.prSplit ? 1 : 0, t.paneView === 'diff' ? 'diff' : 'term',
         t.category || '', t.login || '', t.avatar || '', links, i, active && t.url === active ? 1 : 0);
     });

@@ -62,8 +62,13 @@ separation everything follows:
 - **The sidebar is laid out by project → session, and reads ONLY session records.** A session
   (`services/tasks.js → taskSessions()`, one task record per worktree) is the agent running on a
   worktree — live or stopped — keyed by id (its terminal's `pairKey`), titled by its worktree folder,
-  optionally linked to a PR/Jira tab by `url`. The renderer keeps no worktree list and shows no
+  optionally linked to a PR/Jira/web tab by `url`. The renderer keeps no worktree list and shows no
   worktree UI: git worktrees without a session are invisible here (the project Git tab lists them).
+  **Open tabs that are not tasks never sit under a project folder**: every task-less tab — PR, Jira
+  issue or plain web page (`kind:'web'`, any URL that isn't a PR) — renders in one "Tabs" group below
+  the projects (`openTabsMarkup`); it becomes a session row under its project the moment a task is
+  created for it (the terminal pane's New Task CTAs on a PR/Jira tab). Sessions are otherwise created
+  only from the sidebar's project "+" (New session dialog) — there is no per-tab task button.
   Hover "+" on a project creates a worktree + session; clicking a folder focuses its project, clicking
   the focused folder again collapses/expands its rows (no disclosure caret). Right-click is the only removal:
   "Remove session" (`deleteTaskSession`, the single path) stops the terminal, forgets the task and

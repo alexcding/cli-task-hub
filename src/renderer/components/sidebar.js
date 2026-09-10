@@ -1,9 +1,9 @@
-// Left sidebar: the project nav. Under each project folder: its session rows (one agent session per
-// worktree, live or stopped), then the project's plain open-tab rows. Hover
-// "+" on a project creates a new worktree + session.
-// Layout is always by project; a tab that is a task shows ONLY as a task row. Tasks/tabs matching
-// no configured project fall into the unlabeled orphan group.
-import { state, prByUrl, setProjects, projectByRepo, projectByJiraKey, projectById } from '../stores/store.js';
+// Left sidebar: the project nav. Under each project folder: ONLY its session rows (one agent session
+// per worktree, live or stopped). Every open tab that is not a task — PR, Jira issue or plain web
+// page — sits in one "Tabs" group below the projects; a tab joins its project as a session row the
+// moment a task is created for it. Hover "+" on a project creates a new worktree + session. Tasks
+// whose project is gone fall into the unlabeled orphan group.
+import { state, prByUrl, setProjects, projectById } from '../stores/store.js';
 import { dragDivider } from '../lib/drag.js';
 import { esc, escJs, ghAvatarSrc, setHtmlIfChanged, basename } from '../lib/util.js';
 import { ensureAvatar } from '../lib/avatars.js';
@@ -54,7 +54,7 @@ export function projectClick(id) {
 export function renderTabs() {
   renderProjectNav(state.projects);
   const navEl = document.getElementById('opentabs-nav');
-  if (navEl) setHtmlIfChanged(navEl, orphanTabsMarkup());
+  if (navEl) setHtmlIfChanged(navEl, orphanTabsMarkup() + openTabsMarkup());
   renderContentTabs();   // the active context's horizontal tab bar (left content pane)
   updateTitles();
   reconcileRows();       // single owner: (re)attach drag-sort + toggle active/busy on every row
@@ -70,9 +70,6 @@ function reconcileRows() {
   refreshTermBusy();
 }
 
-// The project that owns a tab: by repo for GitHub, by the key's project prefix for Jira.
-const tabProject = t => (t.kind === 'jira' ? projectByJiraKey(t.jiraKey) : projectByRepo(t.repo));
-
 // Working first, then live over stopped, then by title — a stable order for a worktree's task rows.
 // Sessions sort working → live → stopped, then by the label the row SHOWS (worktree folder name).
 const rowLabel = s => basename(s.worktree || '') || s.title || '';
@@ -83,20 +80,24 @@ const byTaskState = (a, b) => (Number(!!b.busy) - Number(!!a.busy)) || (Number(!
 // titled by the worktree folder. The sidebar reads ONLY session records: git worktrees without a
 // session are not shown (no separate worktree UI).
 function projectRows(p) {
-  const tasks = taskSessions().filter(s => s.projectId === p.id).sort(byTaskState);
-  const urls = taskUrls();
-  const tabs = state.tabs.filter(t => !urls.has(t.url) && tabProject(t)?.id === p.id);
-  return tasks.map(sessionRowHtml).concat(tabs.map(tabRowHtml));
+  return taskSessions().filter(s => s.projectId === p.id).sort(byTaskState).map(sessionRowHtml);
 }
 
-// Tasks whose project is gone and tabs owned by no configured project, as one unlabeled group (no
-// header — "no new section"). Empty string when everything has a home, the common case.
+// Tasks whose project is gone, as one unlabeled group (no header). Empty string when every task
+// has a home, the common case.
 function orphanTabsMarkup() {
   const tasks = taskSessions().filter(s => !projectById(s.projectId)).sort(byTaskState);
+  return tasks.length ? `<div class="proj-tabs" data-project=""><div class="proj-tabs-inner">${tasks.map(sessionRowHtml).join('')}</div></div>` : '';
+}
+
+// Every open tab that is NOT a task — a PR, a Jira issue or a plain web page — under one "Tabs"
+// label below the projects. A project folder holds only its sessions; a tab joins a project (as a
+// session row) the moment a task is created for it, and leaves this group.
+function openTabsMarkup() {
   const urls = taskUrls();
-  const tabs = state.tabs.filter(t => !urls.has(t.url) && !tabProject(t));
-  const rows = tasks.map(sessionRowHtml).concat(tabs.map(tabRowHtml));
-  return rows.length ? `<div class="proj-tabs" data-project=""><div class="proj-tabs-inner">${rows.join('')}</div></div>` : '';
+  const tabs = state.tabs.filter(t => !urls.has(t.url));
+  if (!tabs.length) return '';
+  return `<div class="nav-label">Tabs</div><div class="proj-tabs" data-project=""><div class="proj-tabs-inner">${tabs.map(tabRowHtml).join('')}</div></div>`;
 }
 
 // Toggle the per-row .active (active tab) and .busy ("working" spinner, from the paired terminal)
@@ -121,10 +122,9 @@ export function refreshTermBusy() {
   syncSpinner(anyBusy);
 }
 
-// One open-tab row. GitHub tabs show the PR author's avatar (github.com/<login>.png, no API
-// call) with the CI status as a colored badge; fall back to the GitHub octicon. Shared by both
-// grouping modes — the category groups (#opentabs-nav) and the per-project nesting.
-// Left-click activates, middle-click closes, right-click opens a menu.
+// One open-tab row in the Tabs group. GitHub tabs show the PR author's avatar (github.com/<login>.png,
+// no API call) with the CI status as a colored badge; fall back to the GitHub octicon. Jira tabs
+// show the Jira mark, web tabs a globe. Left-click activates, middle-click closes, right-click opens a menu.
 function tabRowHtml(t) {
   // "Working" spinner on the right of the row, shown only while the paired terminal is
   // busy (the .busy class is toggled on the row by refreshTermBusy — NOT baked into this
@@ -149,7 +149,7 @@ function tabRowHtml(t) {
     const inner = src ? `<img src="${src}"${login ? ` data-av="${esc(login)}"` : ''} alt="" loading="lazy">` : TAB_ICON.github;
     icon = `<span class="tab-ic" title="${login ? esc(login) : ''}">${inner}${badge}</span>`;
   } else {
-    icon = `<span class="tab-ic">${TAB_ICON[t.kind] || ''}</span>`;
+    icon = `<span class="tab-ic">${TAB_ICON[t.kind] || ICON.globe}</span>`; // web tabs: globe
   }
   return `<div class="opentab" data-id="${t.id}"
         onclick="activateTab('${t.id}')"
@@ -267,7 +267,8 @@ export async function tabMenu(e, id) {
 }
 
 // ── Projects sidebar nav ──────────────────────────────────────────────────────
-// Each folder is followed by its rows, nested inline: its session rows, then its plain open tabs. setProjects keeps the live PR data the tab rows read for avatars.
+// Each folder is followed by its session rows, nested inline (open tabs live in the Tabs group below
+// the projects). setProjects keeps the live PR data the tab rows read for avatars.
 // The project nav's markup — one string, so the render cache and the in-place collapse toggle agree.
 function projectNavHtml() {
   return state.projects.map(p => {

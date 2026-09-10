@@ -4,7 +4,7 @@
 import { ROUTES } from '/shared/routes.mjs';
 import { state, activeTab, prByUrl, prGroup, prTabTitle, jiraTabTitle, jiraByKey } from '../stores/store.js';
 import { api, apiJson } from '../services/api.js';
-import { esc, jiraKeyFromUrl, canSplitTerminal, ghAvatarSrc, basename } from '../lib/util.js';
+import { esc, jiraKeyFromUrl, canSplitTerminal, isPrUrl, ghAvatarSrc, basename } from '../lib/util.js';
 import { seedAvatar } from '../lib/avatars.js';
 import { ICON } from '../lib/icons.js';
 import { gitClientLabel, gitClientIcon } from '../lib/git-clients.js';
@@ -67,7 +67,10 @@ export function createTab(url, title, kind, meta = {}) {
   // the page the user has navigated to inside it, so an evicted-then-reselected tab (see the
   // webview pool below) reloads where they left off rather than at the PR root.
   // wv is built lazily on first show (buildTabWebview) — a tab that's never shown costs no process.
-  const tab = { id, kind: kind === 'jira' ? 'jira' : 'github', title: title || url, url, cur: meta.cur || '', wv: null,
+  // kind: 'jira' when asked; otherwise a GitHub PR page is 'github' and any other URL is a plain
+  // 'web' tab (no project, no terminal until a task is created for it — see newTask).
+  const k = kind === 'jira' ? 'jira' : isPrUrl(url) ? 'github' : 'web';
+  const tab = { id, kind: k, title: title || url, url, cur: meta.cur || '', wv: null,
     loaded: false, started: false, repo: meta.repo || '', branch: meta.branch || '',
     jiraKey: meta.jiraKey || jiraKeyFromUrl(url), prSplit: !!meta.prSplit,
     paneView: meta.paneView === 'diff' ? 'diff' : 'term', category: meta.category || '',
@@ -963,6 +966,6 @@ export function initTrayBridge() {
   // the current context. Falls back to a sidebar tab if there's no active context or it throws.
   window.__openContentTab = (url) => {
     try { if (openWebLink(url)) return; } catch (e) { console.warn('[openContentTab]', e); }
-    window.__openTab(url, '', 'github', '');
+    window.__openTab(url, '', 'web', '');
   };
 }

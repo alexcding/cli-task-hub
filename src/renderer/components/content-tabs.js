@@ -18,7 +18,7 @@ import { ICON, TAB_ICON } from '../lib/icons.js';
 import { ciInfo } from './cards.js';
 import { taskForTab } from '../services/tasks.js';
 
-// Icon for the default (context) chip — the PR author's avatar + CI badge, or the Jira mark.
+// Icon for the default (context) chip — the PR author's avatar + CI badge, the Jira mark, or a globe (web tab).
 function defaultIcon(t) {
   if (t.kind === 'github') {
     const pr = prByUrl(t.url);
@@ -29,7 +29,7 @@ function defaultIcon(t) {
     const inner = src ? `<img src="${src}" alt="" loading="lazy">` : TAB_ICON.github;
     return `<span class="ctab-ic" title="${login ? esc(login) : ''}">${inner}${badge}</span>`;
   }
-  return `<span class="ctab-ic">${TAB_ICON.jira || ICON.globe}</span>`;
+  return `<span class="ctab-ic">${TAB_ICON[t.kind] || ICON.globe}</span>`; // jira mark, or a globe for a web tab
 }
 
 // Icon for an extra tab — the page favicon (once loaded) or a globe for web; a doc for file.

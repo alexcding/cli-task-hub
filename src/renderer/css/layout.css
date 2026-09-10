@@ -1,5 +1,9 @@
 /* App shell: sidebar + nav, topbar, workarea, and macOS native-chrome adjustments. */
 /* Layout */
+/* The app never scrolls as a document: only panes scroll. overscroll-behavior:none stops WebKit's
+   rubber-band from bouncing the whole window when a wheel gesture lands on a pane with nothing to
+   scroll (an empty diff pane, a full-screen CLI in the terminal) and chains up to the document. */
+html, body { overscroll-behavior:none; }
 .layout { display:flex; height:100vh; overflow:hidden; }
 aside { width:var(--sidebar-w); background:var(--surface); border-right:1px solid var(--border); display:flex; flex-direction:column; position:fixed; top:0;left:0;bottom:0; z-index:10; }
 .sidebar-resizer { position:absolute; top:0; right:-3px; bottom:0; width:7px; cursor:col-resize; z-index:11; }

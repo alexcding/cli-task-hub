@@ -40,8 +40,14 @@ export const jiraUrl = key => state.jiraBase ? `${state.jiraBase}/browse/${key}`
 // tray-opened Jira tab can still map to a worktree without separate metadata.
 export const jiraKeyFromUrl = url => (String(url || '').match(/\/browse\/([A-Z][A-Z0-9]+-\d+)/i) || [])[1] || '';
 
-// A webview tab (GitHub PR or Jira ticket) can pair a terminal beside it.
-export const canSplitTerminal = t => !!t && (t.kind === 'github' || t.kind === 'jira');
+// A GitHub pull-request page — the one github.com URL that is a PR tab; every other web URL
+// opens as a plain web tab (kind 'web').
+export const isPrUrl = url => /^https?:\/\/github\.com\/[^/]+\/[^/]+\/pull\/\d+/i.test(String(url || ''));
+// Tabs that can carry a terminal beside the page: PR and Jira tabs always (they map to a project
+// worktree); a web tab only if a task record links to it by url, since a bare URL belongs to no
+// project.
+export const canSplitTerminal = t => !!t && (t.kind === 'github' || t.kind === 'jira'
+  || (t.kind === 'web' && state.tasks.some(x => x.url === t.url)));
 
 // Last path segment (folder/file name), ignoring trailing slashes. '' for empty input.
 export const basename = p => String(p || '').split('/').filter(Boolean).pop() || '';

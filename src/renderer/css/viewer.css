@@ -258,7 +258,7 @@ html[data-theme="dark"] {
   --diff-add-bg:rgba(63,185,80,.13); --diff-add-gut:rgba(63,185,80,.28); --diff-add-fg:#56d364;
   --diff-del-bg:rgba(248,81,73,.13); --diff-del-gut:rgba(248,81,73,.28); --diff-del-fg:#f85149;
 }
-.diff-pane { position:absolute; inset:0; bottom:var(--foot-h); overflow:auto; background:var(--bg); font:var(--diff-font-size)/1.5 var(--diff-font); }
+.diff-pane { position:absolute; inset:0; bottom:var(--foot-h); overflow:auto; overscroll-behavior:contain; background:var(--bg); font:var(--diff-font-size)/1.5 var(--diff-font); }
 body.pr-split .split-body .diff-pane { left:var(--term-w); }
 /* Discard confirm: dims + covers only the diff pane's region (same left offset as the
    pane in split mode), so it never blocks the webview or the rest of the window. */
