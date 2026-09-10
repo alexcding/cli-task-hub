@@ -566,8 +566,10 @@ body.find-open .split-body webview, body.find-open .split-body .wcv-shim { botto
 .task-pin svg { width:18px; height:18px; }
 .opentab:hover .task-pin { opacity:.6; }
 /* No fill behind the pin: the row already carries the hover highlight, and a second plate inside it
-   read as a stray chip. Pointing at the pin just darkens the glyph. */
-.task-pin:hover { opacity:1; color:var(--text); }
+   read as a stray chip. Pointing at the pin just darkens the glyph. !important because the row's
+   own `.opentab:hover .task-pin` rule above is more specific and would hold the pin at .6 — the
+   same reason .proj-add:hover needs it. */
+.task-pin:hover { opacity:1 !important; color:var(--text); }
 .task-row.pinned .task-pin svg { fill:currentColor; }
 /* Project grouping mode: a project's open-tab rows nest directly under its folder (no separate
    section). Indent them past the folder's icon + gap so they read as children. The orphan group

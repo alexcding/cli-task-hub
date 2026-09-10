@@ -103,7 +103,7 @@ db.exec(`
     cli        TEXT,               -- 'claude' | 'codex' | ''
     session_id TEXT,               -- the CLI's conversation id: exact resume on click
     created_at TEXT NOT NULL,       -- the sidebar orders sessions by this, oldest first
-    pinned     INTEGER NOT NULL DEFAULT 0  -- pinned sessions sort above the rest in their project
+    pinned     INTEGER NOT NULL DEFAULT 0  -- pinned sessions also show in the sidebar's Pinned group
   );
   -- Per-PR review-request tracking, keyed "repo#number". requested_at is the latest
   -- time GitHub requested MY review (from the PR timeline); viewed_at is when I opened
@@ -147,7 +147,8 @@ for (const stmt of [
   // carry a terminal always has one), so the flag has no meaning. Drop it rather than keep
   // writing a value nothing reads.
   `ALTER TABLE tabs DROP COLUMN pr_split`,
-  // Pinned sessions sort to the top of their project in the sidebar (hover pin on the row).
+  // Pinned sessions get a mirror row in the sidebar's Pinned group (hover pin on the row); the
+  // order inside their project is unaffected.
   `ALTER TABLE tasks ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0`,
 ]) { try { db.exec(stmt); } catch { /* column already exists / already gone */ } }
 

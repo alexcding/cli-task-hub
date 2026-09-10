@@ -14,6 +14,7 @@ import { renderContentTabs } from './content-tabs.js';
 import { workflowRunState } from './workflow.js';
 import { taskSessions, taskUrls, taskById, persistTask } from '../services/tasks.js';
 import { openMenu, closeMenu } from './menu.js';
+import { toast, toastErr } from './toast.js';
 import { deleteTaskSession } from './tasks.js';
 
 // Per-project collapse state: a project whose id is in this set hides
@@ -54,7 +55,7 @@ export function projectClick(id) {
 export function renderTabs() {
   renderProjectNav(state.projects);
   const navEl = document.getElementById('opentabs-nav');
-  if (navEl) setHtmlIfChanged(navEl, orphanTabsMarkup() + openTabsMarkup());
+  if (navEl) setHtmlIfChanged(navEl, orphanTabsMarkup(taskSessions()) + openTabsMarkup());
   renderContentTabs();   // the active context's horizontal tab bar (left content pane)
   updateTitles();
   reconcileRows();       // single owner: (re)attach drag-sort + toggle active/busy on every row
@@ -86,8 +87,8 @@ const byCreated = (a, b) => String(a.createdAt || '').localeCompare(String(b.cre
 // data-term, and every post-render pass walks `.opentab` with querySelectorAll (refreshTermBusy,
 // syncSpinner), so the two stay in lockstep for active/busy/spinner state. Empty string when
 // nothing is pinned — the label goes with the group.
-function pinnedNavMarkup() {
-  const rows = taskSessions().filter(s => s.pinned).sort(byCreated).map(sessionRowHtml);
+function pinnedNavMarkup(sessions) {
+  const rows = sessions.filter(s => s.pinned).sort(byCreated).map(sessionRowHtml);
   if (!rows.length) return '';
   // A plain wrapper on purpose: NOT .proj-tabs/.proj-tabs-inner, whose class names carry the
   // collapse grid (nothing to collapse here) and, more importantly, pick up drag-to-reorder in
@@ -100,14 +101,14 @@ function pinnedNavMarkup() {
 // the unit of work and the session is the agent running there — one per worktree — so the row is
 // titled by the worktree folder. The sidebar reads ONLY session records: git worktrees without a
 // session are not shown (no separate worktree UI).
-function projectRows(p) {
-  return taskSessions().filter(s => s.projectId === p.id).sort(byCreated).map(sessionRowHtml);
+function projectRows(p, sessions) {
+  return sessions.filter(s => s.projectId === p.id).sort(byCreated).map(sessionRowHtml);
 }
 
 // Tasks whose project is gone, as one unlabeled group (no header). Empty string when every task
 // has a home, the common case.
-function orphanTabsMarkup() {
-  const tasks = taskSessions().filter(s => !projectById(s.projectId)).sort(byCreated);
+function orphanTabsMarkup(sessions) {
+  const tasks = sessions.filter(s => !projectById(s.projectId)).sort(byCreated);
   return tasks.length ? `<div class="proj-tabs" data-project=""><div class="proj-tabs-inner">${tasks.map(sessionRowHtml).join('')}</div></div>` : '';
 }
 
@@ -201,9 +202,10 @@ function sessionRowHtml(s) {
     s.tab && `data-id="${s.tab.id}"`, // no middle-click close: a session's tab goes only with Remove session
     s.cli && `data-cli="${esc(s.cli)}"`,
   ].filter(Boolean).join(' ');
-  // The pin appears on row hover and stays visible while pinned (CSS .task-pin/.on) — the one
-  // affordance that tells you a row is pinned, and the one that undoes it.
-  const pin = `<span class="task-pin${s.pinned ? ' on' : ''}" title="${s.pinned ? 'Unpin session' : 'Pin session to the top'}"
+  // Hover-only, in both copies of the row (the Pinned group above the projects is what says a
+  // session is pinned). On a pinned row the glyph is filled (.task-row.pinned .task-pin svg), so
+  // hovering it reads as the toggle that undoes the pin.
+  const pin = `<span class="task-pin" title="${s.pinned ? 'Unpin session' : 'Pin session to the top'}"
         onclick="event.stopPropagation();toggleSessionPin('${escJs(s.id)}')">${ICON.pin}</span>`;
   return `<div class="opentab task-row${s.live ? '' : ' stopped'}${s.pinned ? ' pinned' : ''}" ${attrs}
         onclick="openTaskSession('${escJs(s.id)}')" oncontextmenu="return sessionMenu(event,'${escJs(s.id)}')" title="${esc(tip)}">
@@ -240,8 +242,9 @@ function syncSpinner(anyBusy) {
   }
 }
 
-// Pin / unpin a session: pinned rows sort above the rest of their project (byCreated). Persisted on
-// the task record, so it survives restarts; persistTask re-renders the sidebar for us.
+// Pin / unpin a session: a pinned session gains a mirror row in the Pinned group above the projects
+// (pinnedNavMarkup) — ordering inside its project is untouched. Persisted on the task record, so it
+// survives restarts; persistTask re-renders the sidebar for us.
 export function toggleSessionPin(id) {
   const t = taskById(id);
   if (!t) return;
@@ -261,7 +264,12 @@ export async function sessionMenu(e, id) {
   const t = taskById(id);
   const url = t?.url && /^https?:/.test(t.url) ? t.url : null;
   const reveal = () => window.taskhub?.openPath?.(t.worktree);
-  const copy = () => navigator.clipboard?.writeText(url);
+  // Guarded: after the modal native popup the webview may have no transient activation left, so a
+  // clipboard write can be refused — silently, and as an unhandled rejection, without this.
+  const copy = async () => {
+    try { await navigator.clipboard.writeText(url); toast('Link copied'); }
+    catch { toastErr('Could not copy the link'); }
+  };
   if (window.taskhub?.sessionMenu) {
     closeMenu(); // dismiss any open in-page menu (the native menu won't fire the click that would)
     const action = await window.taskhub.sessionMenu({ pinned: !!t?.pinned, hasWorktree: !!t?.worktree, hasUrl: !!url });
@@ -322,9 +330,9 @@ export async function tabMenu(e, id) {
 // Each folder is followed by its session rows, nested inline (open tabs live in the Tabs group below
 // the projects). setProjects keeps the live PR data the tab rows read for avatars.
 // The project nav's markup — one string, so the render cache and the in-place collapse toggle agree.
-function projectNavHtml() {
+function projectNavHtml(sessions) {
   return state.projects.map(p => {
-    const rows = projectRows(p);
+    const rows = projectRows(p, sessions);
     const collapsed = _collapsed.has(p.id);
     // The folder icon mirrors the collapse state: open flap while expanded, closed while collapsed
     // (or with nothing to show). Collapsing is a click on the already-focused folder (projectClick).
@@ -346,11 +354,15 @@ function projectNavHtml() {
 
 export function renderProjectNav(projects) {
   setProjects(projects);
+  // ONE taskSessions() pass for this whole render — it overlays terminal state per task
+  // (O(tasks × terms)), so the per-project + pinned markup helpers take the array rather than
+  // each rebuilding it.
+  const sessions = taskSessions();
   const pinnedEl = document.getElementById('pinned-nav');
-  if (pinnedEl) setHtmlIfChanged(pinnedEl, pinnedNavMarkup());   // the Pinned group sits above the projects
+  if (pinnedEl) setHtmlIfChanged(pinnedEl, pinnedNavMarkup(sessions));   // the Pinned group sits above the projects
   const el = document.getElementById('project-nav');
   if (!el) return;
-  const list = projectNavHtml();
+  const list = projectNavHtml(sessions);
   setHtmlIfChanged(el, list);
   // Re-apply the active-project highlight showPage set — a rebuild (this runs on tab changes
   // too) drops it, and there's no showPage to restore it on a background SSE refresh.
