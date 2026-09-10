@@ -71,14 +71,30 @@ function reconcileRows() {
 }
 
 const rowLabel = s => basename(s.worktree || '') || s.title || '';
-// Sessions sort pinned-first, then by when they were created, oldest first: a new session appends
-// at the bottom of its project and no row ever moves again unless it's pinned. Ordering by run
-// state (working → live → stopped) reshuffled the list under the pointer every time an agent
-// started or finished a turn. `createdAt` is an ISO string (stamped at creation, immutable
-// server-side), so a plain compare is chronological; a record from before it was stamped sorts first.
-const byCreated = (a, b) => (Number(!!b.pinned) - Number(!!a.pinned))
-  || String(a.createdAt || '').localeCompare(String(b.createdAt || ''))
+// Sessions sort by when they were created, oldest first: a new session appends at the bottom of its
+// project and no row ever moves again — pinning included, which only ADDS a mirror row to the Pinned
+// group above the projects (pinnedNavMarkup). Ordering by run state (working → live → stopped)
+// reshuffled the list under the pointer every time an agent started or finished a turn. `createdAt`
+// is an ISO string (stamped at creation, immutable server-side), so a plain compare is
+// chronological; a record from before it was stamped sorts first.
+const byCreated = (a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || ''))
   || rowLabel(a).localeCompare(rowLabel(b));
+
+// Pinned sessions, as a labelled group ABOVE the projects (#pinned-nav). These rows are MIRRORS:
+// the session also stays exactly where it was under its project, in creation order — pinning adds a
+// shortcut at the top, it never moves or hides the original. Both copies carry the same data-task /
+// data-term, and every post-render pass walks `.opentab` with querySelectorAll (refreshTermBusy,
+// syncSpinner), so the two stay in lockstep for active/busy/spinner state. Empty string when
+// nothing is pinned — the label goes with the group.
+function pinnedNavMarkup() {
+  const rows = taskSessions().filter(s => s.pinned).sort(byCreated).map(sessionRowHtml);
+  if (!rows.length) return '';
+  // A plain wrapper on purpose: NOT .proj-tabs/.proj-tabs-inner, whose class names carry the
+  // collapse grid (nothing to collapse here) and, more importantly, pick up drag-to-reorder in
+  // initTabSort — a drop in this group would rewrite tab order from mirror rows.
+  return `<div class="nav-label" style="margin-top:4px">Pinned</div>
+    <div class="pinned-group">${rows.join('')}</div>`;
+}
 
 // One SESSION row per task record under a project (services/tasks.js → taskSessions). The worktree is
 // the unit of work and the session is the agent running there — one per worktree — so the row is
@@ -313,6 +329,8 @@ function projectNavHtml() {
 
 export function renderProjectNav(projects) {
   setProjects(projects);
+  const pinnedEl = document.getElementById('pinned-nav');
+  if (pinnedEl) setHtmlIfChanged(pinnedEl, pinnedNavMarkup());   // the Pinned group sits above the projects
   const el = document.getElementById('project-nav');
   if (!el) return;
   const list = projectNavHtml();

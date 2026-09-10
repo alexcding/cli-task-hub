@@ -56,6 +56,11 @@
     <nav>
       <button class="nav-btn active" data-page="dashboard" onclick="showPage('dashboard')"><span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="17" rx="2.5"/><path d="M2 8.5h20"/><path d="M9.5 8.5V20"/></svg></span> Dashboard</button>
 
+      <!-- Pinned sessions (sidebar.js pinnedNavMarkup): mirror rows for the sessions the user
+           pinned, with their own label. The originals stay under their projects — pinning only adds
+           this shortcut. Empty (label included) when nothing is pinned. -->
+      <div id="pinned-nav"></div>
+
       <div class="nav-label" style="margin-top:4px">Projects</div>
       <div id="project-nav"></div>
 
