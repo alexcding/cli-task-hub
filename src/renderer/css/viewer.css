@@ -560,7 +560,9 @@ body.find-open .split-body webview, body.find-open .split-body .wcv-shim { botto
    presence in the Pinned group is what says so; on hover the pin is filled, so it reads as the
    toggle that undoes it. */
 .task-pin { flex-shrink:0; display:flex; align-items:center; justify-content:center; width:16px; height:16px; margin-right:-2px; color:var(--text-3); opacity:0; border-radius:4px; }
-.task-pin svg { width:13px; height:13px; }
+/* 12px, not the 13px the project "+" uses: the pin's artwork fills its viewBox where a plus is a
+   thin cross, so at matching box sizes the pin reads bigger. 12/24 halves the viewBox exactly. */
+.task-pin svg { width:12px; height:12px; }
 .opentab:hover .task-pin { opacity:.7; }
 .task-pin:hover { opacity:1 !important; color:var(--text); background:var(--surface-hover); }
 .task-row.pinned .task-pin svg { fill:currentColor; }
