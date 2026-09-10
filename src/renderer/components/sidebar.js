@@ -4,6 +4,7 @@
 // Layout is always by project; a tab that is a task shows ONLY as a task row. Tasks/tabs matching
 // no configured project fall into the unlabeled orphan group.
 import { state, prByUrl, setProjects, projectByRepo, projectByJiraKey, projectById } from '../stores/store.js';
+import { dragDivider } from '../lib/drag.js';
 import { esc, escJs, ghAvatarSrc, setHtmlIfChanged, basename } from '../lib/util.js';
 import { ensureAvatar } from '../lib/avatars.js';
 import { ICON, TAB_ICON } from '../lib/icons.js';
@@ -313,14 +314,15 @@ export function initSidebarResize() {
   const setW = w => document.documentElement.style.setProperty('--sidebar-w', Math.min(420, Math.max(170, w)) + 'px');
   const saved = parseInt(localStorage.getItem('taskhub.sidebarWidth') || '', 10);
   if (saved) setW(saved);
-  let dragging = false, x = 0, raf = 0;
+  let x = 0, raf = 0;
   const apply = () => { raf = 0; setW(x); };
-  handle.addEventListener('mousedown', e => { dragging = true; e.preventDefault(); document.body.classList.add('resizing'); });
-  window.addEventListener('mousemove', e => { if (!dragging) return; x = e.clientX; if (!raf) raf = requestAnimationFrame(apply); });
-  window.addEventListener('mouseup', () => {
-    if (!dragging) return;
-    dragging = false; document.body.classList.remove('resizing');
-    const w = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--sidebar-w'), 10);
-    if (w) localStorage.setItem('taskhub.sidebarWidth', String(w));
+  dragDivider(handle, {
+    move(e) { x = e.clientX; if (!raf) raf = requestAnimationFrame(apply); },
+    end() {
+      const w = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--sidebar-w'), 10);
+      if (w) localStorage.setItem('taskhub.sidebarWidth', String(w));
+      // The workarea just changed width without a window resize — let the terminal refit.
+      window.dispatchEvent(new Event('resize'));
+    },
   });
 }

@@ -203,14 +203,13 @@ body.pr-split .split-body .editor-pane { left:var(--term-w); }
 /* One xterm terminal pane per worktree; only the active one is shown. */
 .term-pane { position:absolute; inset:0; overflow:hidden; background:#1e1e1e; padding:6px 4px 6px 8px; }
 .term-pane .xterm, .term-pane .xterm-viewport { height:100%; }
-/* Scrollbar: xterm's viewport gets a thin, always-visible thumb (a custom -webkit-scrollbar opts out
-   of the macOS overlay bar, which only shows while scrolling and read as "no scrollbar"). Neutral
-   grey so it sits on both terminal palettes; the track is transparent. */
-.term-pane .xterm-viewport { overflow-y:scroll !important; background-color:transparent !important; }
-.term-pane .xterm-viewport::-webkit-scrollbar { width:8px; }
-.term-pane .xterm-viewport::-webkit-scrollbar-track { background:transparent; }
-.term-pane .xterm-viewport::-webkit-scrollbar-thumb { background:rgba(128,128,128,.35); border-radius:4px; }
-.term-pane .xterm-viewport::-webkit-scrollbar-thumb:hover { background:rgba(128,128,128,.6); }
+/* No visible scrollbar: full-screen CLIs (Claude Code, Codex) leave xterm nothing to scroll, so a
+   bar just reads as dead chrome. Scrollback still scrolls by wheel/trackpad in a plain shell.
+   xterm draws its own slider (.xterm-scrollable-element > .scrollbar, a VS Code-style DOM
+   scrollbar) — that is the draggable strip on the right; the viewport's native bar is hidden too. */
+.term-pane .xterm-scrollable-element > .scrollbar { display:none !important; }
+.term-pane .xterm-viewport { background-color:transparent !important; scrollbar-width:none; }
+.term-pane .xterm-viewport::-webkit-scrollbar { width:0; height:0; }
 /* Terminal ↔ PR split: the paired terminal takes the left `--term-w` fraction, the PR
    webview the right `--pr-split` fraction; a draggable divider sits between them.
    The webview left edge starts 1px PAST the boundary: it's a native child view that
@@ -477,6 +476,8 @@ body.pr-split .split-body .history-pane { left:var(--term-w); }
 .diff-untracked { padding:2px 12px 2px 30px; color:var(--diff-add-fg); border-top:1px solid var(--border); }
 /* While dragging the sidebar, disable webview pointer events so a full-width page
    doesn't swallow the mouse and the resize tracks reliably. */
+/* Electron only — a native Tauri child view ignores this, which is why lib/drag.js also ends a
+   drag on pointerup/blur. */
 body.resizing .split-body webview { pointer-events:none; }
 
 /* Find-in-page bar (see find.js). It can't live inside #split-body — the native embedded WKWebView

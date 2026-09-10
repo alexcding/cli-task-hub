@@ -9,6 +9,7 @@ import { api, apiJson } from '../services/api.js';
 import { jiraKeyFromUrl, canSplitTerminal, errMsg, basename } from '../lib/util.js';
 import { toastErr } from './toast.js';
 import { createTermView, disposeTerm, fitTerm, visibleTerm } from './terminal.js';
+import { dragDivider } from '../lib/drag.js';
 import { hideDiffPane } from './diff.js';
 import { hideHistory, applyReview } from './history.js';
 import { saveTabs, updateTitles, activeLeftWebview, paintLeft } from './viewer.js';
@@ -308,30 +309,32 @@ export function togglePrSplit() {
   else clearPrLayout(cur, true);
 }
 
-// Drag the PR/terminal divider: update the split fraction (CSS var) live; refit on drop.
+// Drag the PR/terminal divider: update the split fraction (CSS var) live and refit the terminal
+// as it moves (rAF-throttled), so the grid follows the boundary rather than snapping on drop.
+// Drag lifecycle (incl. the native-webview mouseup trap) lives in lib/drag.js.
 export function initPrDivider() {
   const d = document.getElementById('pr-divider');
   if (!d) return;
-  let dragging = false;
-  d.addEventListener('mousedown', e => { dragging = true; e.preventDefault(); stopPrTween(); document.body.classList.add('resizing'); });
-  window.addEventListener('mousemove', e => {
-    if (!dragging) return;
-    const r = document.getElementById('split-body').getBoundingClientRect();
-    // Clamp by PIXEL width, not just ratio: the terminal pane (left) needs room for the foot
-    // buttons (Run/picker/Commit) and the PR pane (right) needs to stay readable. A pure ratio cap
-    // let the terminal shrink to a sliver on a small window, overlapping the foot controls.
-    // `ratio` is the WEBVIEW's share (--pr-split), i.e. the fraction right of the cursor.
-    const MIN_PR = 360, MIN_TERM = 300;
-    let ratio = 1 - (e.clientX - r.left) / r.width;
-    const lo = MIN_PR / r.width, hi = 1 - MIN_TERM / r.width;
-    ratio = lo < hi ? Math.min(hi, Math.max(lo, ratio)) : 0.5;  // window too small for both mins → split evenly
-    state.prRatio = ratio;
-    setPrSplit(Math.round(state.prRatio * 100));
-  });
-  window.addEventListener('mouseup', () => {
-    if (!dragging) return;
-    dragging = false; document.body.classList.remove('resizing');
-    localStorage.setItem('taskhub.prRatio', String(state.prRatio));
-    fitTerm(visibleTerm());
+  let raf = 0;
+  dragDivider(d, {
+    move(e) {
+      stopPrTween();
+      const r = document.getElementById('split-body').getBoundingClientRect();
+      // Clamp by PIXEL width, not just ratio: the terminal pane (left) needs room for the foot
+      // buttons (Run/picker/Commit) and the PR pane (right) needs to stay readable. A pure ratio cap
+      // let the terminal shrink to a sliver on a small window, overlapping the foot controls.
+      // `ratio` is the WEBVIEW's share (--pr-split), i.e. the fraction right of the cursor.
+      const MIN_PR = 360, MIN_TERM = 300;
+      let ratio = 1 - (e.clientX - r.left) / r.width;
+      const lo = MIN_PR / r.width, hi = 1 - MIN_TERM / r.width;
+      ratio = lo < hi ? Math.min(hi, Math.max(lo, ratio)) : 0.5;  // window too small for both mins → split evenly
+      state.prRatio = ratio;
+      setPrSplit(Math.round(state.prRatio * 100));
+      if (!raf) raf = requestAnimationFrame(() => { raf = 0; fitTerm(visibleTerm()); });
+    },
+    end() {
+      localStorage.setItem('taskhub.prRatio', String(state.prRatio));
+      fitTerm(visibleTerm());
+    },
   });
 }

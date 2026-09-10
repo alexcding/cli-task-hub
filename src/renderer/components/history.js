@@ -11,6 +11,7 @@
 // The choice (Changes vs History) is remembered per tab and in-memory (tab.reviewView), so
 // toggling Terminal⇄Review keeps the spot; a freshly opened tab starts on Changes.
 import { ROUTES } from '/shared/routes.mjs';
+import { dragDivider } from '../lib/drag.js';
 import { activeTab, prByUrl } from '../stores/store.js';
 import { api } from '../services/api.js';
 import { esc } from '../lib/util.js';
@@ -193,20 +194,13 @@ function initOnce(p) {
   if (_wired) return;
   _wired = true;
   wireDiffCollapse(p); // file collapse/expand — shared with the Changes pane + Git tab
-  let dragging = false;
-  p.addEventListener('mousedown', e => {
-    if (!e.target.closest('#hist-divider')) return;
-    dragging = true; e.preventDefault(); document.body.classList.add('resizing');
-  });
-  window.addEventListener('mousemove', e => {
-    if (!dragging) return;
-    const r = p.getBoundingClientRect();
-    _ratio = Math.min(0.85, Math.max(0.15, (e.clientY - r.top) / r.height));
-    p.style.setProperty('--hist-split', (_ratio * 100).toFixed(2) + '%');
-  });
-  window.addEventListener('mouseup', () => {
-    if (!dragging) return;
-    dragging = false; document.body.classList.remove('resizing');
-    localStorage.setItem('taskhub.histSplit', String(_ratio));
+  dragDivider(p, {
+    hit: e => !!e.target.closest('#hist-divider'),
+    move(e) {
+      const r = p.getBoundingClientRect();
+      _ratio = Math.min(0.85, Math.max(0.15, (e.clientY - r.top) / r.height));
+      p.style.setProperty('--hist-split', (_ratio * 100).toFixed(2) + '%');
+    },
+    end() { localStorage.setItem('taskhub.histSplit', String(_ratio)); },
   });
 }
