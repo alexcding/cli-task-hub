@@ -69,6 +69,43 @@ test('an open PR older than the whole merged window still lands in the snapshot'
   assert.strictEqual(prs[0].repo, 'octo/window-repo', 'lean() stamps the repo onto the snapshot row');
 });
 
+// Guards the merge automation against a body it could not actually read. prJiraKeys falls back
+// to the PR TITLE when a description carries no /browse/ link, so a failed body fetch that
+// returned '' would transition whatever ticket the title names — the wrong one whenever the
+// description linked a different ticket — and prState would mark the merge handled forever.
+// A null body must therefore defer the whole merge (event included) to the next poll.
+test('a merged PR whose body cannot be read is deferred, not resolved from its title', async (t) => {
+  const db = require('../src/server/database/db');
+  const repo = 'octo/body-fail-repo';
+  const merged = { number: 42, title: 'RECORD-99 fix login crash', url: 'u/42', state: 'MERGED' };
+  const project = { id: 'body-fail-test', repo, name: 'BodyFail' };
+
+  let closed = [], body = null;
+  mock.method(github, 'getOpenPRs', async () => []);
+  mock.method(github, 'getRecentClosedPRs', async () => closed);
+  mock.method(github, 'getPRBody', async () => body);
+  t.after(() => mock.restoreAll());
+
+  const mergedEvents = () => db.getEvents(200)
+    .filter(e => e.type === 'pr_merged' && JSON.parse(e.payload || '{}').repo === repo).length;
+
+  await poller.syncProject(project);          // first sync seeds prState silently
+  assert.strictEqual(mergedEvents(), 0, 'the seeding sync logs nothing');
+
+  closed = [merged];                          // now it shows up as merged, but the body read fails
+  await poller.syncProject(project);
+  assert.strictEqual(mergedEvents(), 0,
+    'no pr_merged while the description is unreadable — the merge is deferred, not guessed');
+
+  body = 'see https://jira.example.com/browse/RECORD-250 for details';
+  await poller.syncProject(project);
+  assert.strictEqual(mergedEvents(), 1,
+    'prState was left untouched, so the next poll re-detects the merge and handles it once');
+
+  await poller.syncProject(project);
+  assert.strictEqual(mergedEvents(), 1, 'and it is not re-reported after being handled');
+});
+
 test('projectJql ANDs the saved filter clause into the Tickets query, keeping ORDER BY last', () => {
   const db = require('../src/server/database/db');
   const p = { id: 'clause-test', jiraProjectKey: 'REC' };

@@ -779,7 +779,7 @@ const PR_STATES = Object.freeze({
 // Jira-key scraping (title/body) and the card (the rest).
 const PR_GQL_CORE = `number title state url headRefName baseRefName mergedAt isDraft createdAt updatedAt reviewDecision body
     author{ login ... on User{ name } }
-    labels(first:20){ nodes{ name } }
+    labels(first:20){ nodes{ name color description } }
     reviewRequests(first:20){ nodes{ requestedReviewer{ ... on User{ login } } } }
     latestReviews(first:20){ nodes{ state author{ login } } }`;
 
@@ -799,7 +799,7 @@ const PR_GQL_CI = `commits(last:1){ nodes{ commit{ statusCheckRollup{ contexts(f
 // SINCE THE LAST POLL ever have it read. Carrying it for the whole window made bodies ~71% of
 // the sync payload to serve a once-in-a-while lookup, so the merge path fetches it on demand
 // via getPRBody instead.
-const PR_GQL_LIFECYCLE = `number title state url mergedAt author{ login }`;
+const PR_GQL_LIFECYCLE = `number title state url mergedAt updatedAt author{ login }`;
 
 const prQuery = (states, fields) => `query($owner:String!,$name:String!,$first:Int!,$after:String){
   repository(owner:$owner,name:$name){
@@ -832,7 +832,7 @@ function flattenPR(node) {
 // Walk the connection's cursors until the states are exhausted, `limit` is reached, or
 // PR_MAX_PAGES trips. `limit: Infinity` means "every PR in these states" — the point of
 // paginating: open-PR coverage no longer depends on a guessed limit.
-async function fetchPRPages(repo, { states, fields, limit = Infinity }) {
+async function fetchPRPages(repo, { states, fields, limit = Infinity, until = null }) {
   // The GraphQL query needs owner and name separately (the CLI took `--repo owner/name` whole),
   // so a malformed repo must fail loudly here rather than as an opaque gh error.
   const [owner, name] = String(repo || '').split('/');
@@ -853,8 +853,18 @@ async function fetchPRPages(repo, { states, fields, limit = Infinity }) {
     // back a truncated list, which the poller would then write as a complete snapshot. Throwing
     // keeps that on the sync-failure path, where the previous snapshot is preserved.
     if (!conn) throw new Error(`unexpected gh graphql response for ${repo} (no pullRequests connection)`);
-    out.push(...(conn.nodes || []).filter(Boolean).map(flattenPR));
-    if (out.length >= limit) break;
+    const nodes = (conn.nodes || []).filter(Boolean).map(flattenPR);
+    // `until` walks back only as far as a timestamp instead of trusting a fixed count. The
+    // connection is ordered UPDATED_AT desc, so the first node older than the boundary means
+    // every node after it is older too — take the prefix and stop.
+    if (until) {
+      const past = nodes.findIndex(n => n.updatedAt && n.updatedAt < until);
+      if (past !== -1) { out.push(...nodes.slice(0, past)); more = false; break; }
+    }
+    out.push(...nodes);
+    // Reaching `limit` is a COMPLETE walk as far as the caller asked, not a truncated one —
+    // clear `more` so it can't trip the cap warning below.
+    if (out.length >= limit) { more = false; break; }
     if (!conn.pageInfo?.hasNextPage) { more = false; break; }
     more = true;
     after = conn.pageInfo.endCursor;
@@ -912,28 +922,42 @@ const getOpenPRs = (repo, { jiraProjectKey = '', fresh = true } = {}) =>
 // the last poll is at the TOP of this window — which makes a small window correct here, unlike
 // the old created-order window that let a merge slip past unseen. Lean projection, no CI.
 // One PR's description, fetched on demand. Pairs with PR_GQL_LIFECYCLE dropping `body`: the
-// merge automation needs it for exactly the PR it's acting on. Returns '' on failure so
-// prJiraKeys just falls back to the title rather than the automation breaking.
+// merge automation needs it for exactly the PR it's acting on.
+//
+// Returns the body ('' when the PR genuinely has no description) or NULL when it could not be
+// read. That distinction is load-bearing: prJiraKeys falls back to the TITLE when a body
+// carries no /browse/ link, so treating a failed fetch as '' would transition whatever ticket
+// the title happens to name — the wrong one on a PR whose description links a different ticket.
+// The caller must defer the merge on null rather than guess (see the poller's lifecycle loop).
 async function getPRBody(repo, number) {
   const [owner, name] = String(repo || '').split('/');
-  if (!owner || !name) return '';
+  if (!owner || !name) return null;
   const query = `query($owner:String!,$name:String!,$number:Int!){
     repository(owner:$owner,name:$name){ pullRequest(number:$number){ body } }
   }`;
   try {
     const out = await gh(['api', 'graphql', '-f', `query=${query}`,
       '-F', `owner=${owner}`, '-F', `name=${name}`, '-F', `number=${number}`]);
-    return JSON.parse(out)?.data?.repository?.pullRequest?.body || '';
+    const pr = JSON.parse(out)?.data?.repository?.pullRequest;
+    if (!pr) return null; // bad response — NOT an empty description
+    return pr.body || ''; // GitHub reports no description as null
   } catch (err) {
     console.error(`[gh] body for ${repo}#${number}:`, err.message);
-    return '';
+    return null;
   }
 }
 
-const getRecentClosedPRs = (repo, { limit = 30 } = {}) => fetchPRPages(repo, {
+// A window of recently merged/closed PRs, for lifecycle events + merge automation ONLY.
+// Ordered UPDATED_AT desc, and merging/closing a PR updates it, so what changed since the last
+// poll is at the top. `since` (the last successful sync) makes the window TIME-bounded: a count
+// alone silently drops the overflow forever, because next poll the same top-N are still the top
+// N and the missed PRs sit below the cut with nothing left to re-detect them. `limit` stays as
+// the fallback for the first sync (which seeds silently anyway) and as a backstop.
+const getRecentClosedPRs = (repo, { limit = 30, since = null } = {}) => fetchPRPages(repo, {
   states: [...PR_STATES.merged, ...PR_STATES.closed],
   fields: PR_GQL_LIFECYCLE,
-  limit,
+  limit: since ? Infinity : limit,
+  until: since,
 });
 
 // ghStats reads the metrics; noteInflight/noteCoalesced let the poller's sync-dedup layer

@@ -190,11 +190,15 @@ function syncProject(project) {
   return promise;
 }
 
-// How many recently merged/closed PRs to pull per sync, purely to detect lifecycle changes
-// (pr_merged / pr_closed → activity log + Jira automation). Ordered by UPDATED_AT desc, so
-// anything that merged or closed since the last poll sits at the top of this window; it does
-// NOT bound which open PRs are visible (those are fetched in full — see getOpenPRs).
+// Fallback size for the merged/closed lifecycle window, used only on a repo's FIRST sync (which
+// seeds prState silently anyway) and as a backstop. Every later sync bounds the window by TIME
+// instead — back to the last successful sync — because a fixed count silently drops the overflow
+// forever when more PRs land in one interval than the count allows. Neither bounds which open
+// PRs are visible (those are fetched in full — see getOpenPRs).
 const CLOSED_WINDOW = 30;
+// Slack on that boundary, so a PR updated right around the last sync can't fall through the gap
+// between "when the snapshot was written" and "when the fetch actually ran".
+const CLOSED_SLACK_MS = 60_000;
 
 // Sync ONE project. Two status-scoped `gh` calls run in parallel, because the two consumers
 // want opposite things: the UI snapshot needs EVERY open PR with CI, while merge detection
@@ -209,11 +213,17 @@ async function syncProjectImpl(project) {
     return;
   }
 
+  // Walk the closed window back to the last successful sync (minus slack), not a fixed count.
+  const lastSynced = db.getSnapshot(project.id)?.lastSynced;
+  const since = lastSynced && !Number.isNaN(Date.parse(lastSynced))
+    ? new Date(Date.parse(lastSynced) - CLOSED_SLACK_MS).toISOString()
+    : null;
+
   let openPRs, closedPRs;
   try {
     [openPRs, closedPRs] = await Promise.all([
       github.getOpenPRs(project.repo, { jiraProjectKey: project.jiraProjectKey }),
-      github.getRecentClosedPRs(project.repo, { limit: CLOSED_WINDOW }),
+      github.getRecentClosedPRs(project.repo, { limit: CLOSED_WINDOW, since }),
     ]);
   } catch (err) {
     const prev = db.getSnapshot(project.id);
@@ -235,15 +245,21 @@ async function syncProjectImpl(project) {
       if (pr.state === 'OPEN' && prev === undefined) {
         db.addEvent('pr_opened', meta);
       } else if (pr.state === 'MERGED' && prev !== 'MERGED') {
+        // The closed window carries no `body` (see PR_GQL_LIFECYCLE) and the automation needs
+        // one to read description Jira links, so fetch it for just this PR, only now that it
+        // has actually merged. A webhook-supplied pr already has its body; don't refetch.
+        const body = pr.body === undefined ? await github.getPRBody(project.repo, pr.number) : pr.body;
+        // null = couldn't read it. Do NOT continue: prJiraKeys would fall back to the title and
+        // transition whatever ticket the title names, which on a PR whose description links a
+        // DIFFERENT ticket is the wrong one — and leaving prState set would make that permanent.
+        // Defer the whole merge, event included, so the next poll retries it cleanly.
+        if (body === null) {
+          console.error(`[sync] PR #${pr.number} in ${project.repo} merged, but its description could not be read — deferring to the next poll`);
+          continue; // leaves prState untouched, so the merge is re-detected next time
+        }
         console.log(`[sync] PR #${pr.number} in ${project.repo} merged`);
         db.addEvent('pr_merged', meta);
-        // The closed window carries no `body` (see PR_GQL_LIFECYCLE), and the automation needs
-        // one to read description Jira links — so fetch it for just this PR, only now that it
-        // has actually merged. A webhook-supplied pr already has its body; don't refetch.
-        const full = pr.body === undefined
-          ? { ...pr, body: await github.getPRBody(project.repo, pr.number) }
-          : pr;
-        await applyMergeAutomation(project, full);
+        await applyMergeAutomation(project, { ...pr, body });
       } else if (pr.state === 'CLOSED' && prev !== 'CLOSED') {
         db.addEvent('pr_closed', meta);
       }
