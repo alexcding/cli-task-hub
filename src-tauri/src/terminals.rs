@@ -282,12 +282,19 @@ pub fn term_attach(app: AppHandle, state: State<Terminals>, id: String) -> Attac
   }
 }
 
-#[tauri::command]
-pub fn term_foreground(_state: State<Terminals>, _id: String) -> Foreground {
-  // portable-pty doesn't expose the PTY's foreground process; assume at-prompt. Accurate
-  // detection (used to decide whether a workflow should launch the CLI) is deferred — see
-  // docs/TAURI-PORT.md M4.
-  Foreground { process: String::new(), at_shell: true }
+// Asked of the daemon, which owns the PTY: tcgetpgrp on the master vs the shell's pid. A daemon
+// that can't answer (timeout, old protocol) reads as at-prompt, the pre-detection default — but
+// NOT silently forever: build.js/cli-launch.js both act on `atShell`, and a stub that always said
+// "true" once let a still-running build be re-launched on every click.
+#[tauri::command(async)]
+pub fn term_foreground(app: AppHandle, state: State<Terminals>, id: String) -> Foreground {
+  match state.request(&app, json!({ "op": "foreground", "term": id })) {
+    Ok(v) => Foreground {
+      process: v["process"].as_str().unwrap_or("").to_string(),
+      at_shell: v["atShell"].as_bool().unwrap_or(true),
+    },
+    Err(_) => Foreground { process: String::new(), at_shell: true },
+  }
 }
 
 // Connect eagerly at startup so the daemon is up (and its events flowing) before the renderer's

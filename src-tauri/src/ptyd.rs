@@ -5,7 +5,7 @@
 // cannot connect, then talks to it over the Unix socket sock_path().
 //
 // Wire protocol: newline-delimited JSON, both directions, on one connection.
-//   request  {"id":<n>, "op":"hello"|"create"|"write"|"resize"|"kill"|"killAll"|"list"|"attach"|"flow", ...}
+//   request  {"id":<n>, "op":"hello"|"create"|"write"|"resize"|"kill"|"killAll"|"list"|"attach"|"flow"|"foreground", ...}
 //   response {"id":<n>, "ok":<value>}  or  {"id":<n>, "err":"..."}
 //   event    {"ev":"data", "id":"pty..", "chunk":"..", "seq":<n>}   (fanned out to EVERY client)
 //            {"ev":"exit", "id":"pty..", "exitCode":<n>, "signal":<n>}
@@ -180,6 +180,17 @@ fn now_ms() -> u64 {
 
 fn log(msg: &str) {
   eprintln!("[ptyd {}] {msg}", chrono::Local::now().format("%H:%M:%S"));
+}
+
+// The executable name of a pid (macOS proc_pidpath), "" when it can't be read.
+fn proc_name(pid: libc::pid_t) -> String {
+  let mut buf = vec![0u8; libc::PROC_PIDPATHINFO_MAXSIZE as usize];
+  let n = unsafe { libc::proc_pidpath(pid, buf.as_mut_ptr() as *mut libc::c_void, buf.len() as u32) };
+  if n <= 0 {
+    return String::new();
+  }
+  let path = String::from_utf8_lossy(&buf[..n as usize]).into_owned();
+  path.rsplit('/').next().unwrap_or("").to_string()
 }
 
 fn set_nonblocking(fd: RawFd) {
@@ -555,6 +566,23 @@ impl Daemon {
     self.terms.lock().unwrap().values().map(|t| t.info.clone()).collect()
   }
 
+  // What the PTY is running: its foreground process group, read from the master with tcgetpgrp.
+  // `atShell` is whether that group is the shell's own — the renderer uses it to know whether a
+  // build is still running (build.js watchBuild) and whether it may type a command (cli-launch.js).
+  // An unknown terminal, or a failed query, reads as at-shell so callers never wait on it forever.
+  fn foreground(&self, id: &str) -> Value {
+    let terms = self.terms.lock().unwrap();
+    let Some(t) = terms.get(id) else { return json!({ "process": "", "atShell": true }) };
+    let Some(fd) = t.master.as_raw_fd() else { return json!({ "process": "", "atShell": true }) };
+    let pgid = unsafe { libc::tcgetpgrp(fd) };
+    if pgid <= 0 {
+      return json!({ "process": "", "atShell": true });
+    }
+    let at_shell = pgid as u32 == t.info.pid;
+    let process = if at_shell { String::new() } else { proc_name(pgid) };
+    json!({ "process": process, "atShell": at_shell })
+  }
+
   // Attach: the ring for replay. A renderer flow pause belongs to the client that asked for it;
   // an attaching client starts with an empty xterm buffer, so any leftover pause is lifted here.
   fn attach(&self, id: &str) -> Value {
@@ -610,6 +638,7 @@ impl Daemon {
       "killAll" => Ok(json!(self.kill_all())),
       "list" => Ok(serde_json::to_value(self.list()).unwrap()),
       "attach" => Ok(self.attach(&sid())),
+      "foreground" => Ok(self.foreground(&sid())),
       other => Err(format!("unknown op {other:?}")),
     }
   }
