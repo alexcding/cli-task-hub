@@ -91,6 +91,9 @@ separation everything follows:
   muda popup), which is what any menu the renderer builds its own items for should use: the
   toolbar's ＋ and the project picker both open over the pane and so are native too. A native handler is async, so it must
   `preventDefault()` up front — a returned promise can't cancel WKWebView's own menu.
+  **Restart session** (same menu, `restartTaskSession`) kills the session's terminal and reopens it
+  through the ordinary open path (a fresh shell, the agent resumed by its saved `sessionId`);
+  confirmed only when the terminal is live.
   Right-click is the only removal:
   "Remove session" (`deleteTaskSession`, the single path) stops the terminal, forgets the task and
   force-removes the worktree folder, behind `confirmDialog()` (`components/confirm.js`) — never

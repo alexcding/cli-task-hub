@@ -11,7 +11,7 @@ import { toast, toastErr } from './toast.js';
 import { workflowRunState } from './workflow.js';
 import { openInSplit, activateTab, removeTaskTab } from './viewer.js';
 import { closeTerminal, disposeTerm } from './terminal.js';
-import { removeWorktree, worktreeHolders } from './split.js';
+import { removeWorktree, worktreeHolders, openPrPanel } from './split.js';
 import { renderTabs } from './sidebar.js';
 import { confirmDialog } from './confirm.js';
 import { analyzeTerminal } from '../services/analyzer.js';
@@ -129,6 +129,28 @@ export async function openTaskSession(id) {
   const tab = state.tabs.find(t => t.url === task.url);
   if (tab) { activateTab(tab.id); return; }
   openInSplit(task.url, task.title || task.url, task.kind || 'github', { jiraKey: task.jiraKey });
+}
+
+// Restart a session: kill its terminal — the agent with it — and open the session again on the
+// same worktree, which is the ordinary open path (openPrPanel → a fresh shell, the agent resumed
+// by the saved sessionId). It's the way back for a session whose agent has died under it (a
+// SIGHUPed shell, a crashed CLI) without Remove + New. A live terminal is confirmed first: the
+// agent may be mid-turn; a dead one restarts straight away.
+export async function restartTaskSession(id) {
+  const task = taskById(id);
+  if (!task || !task.worktree) return;
+  const live = taskTerm(task);
+  if (live && !(await confirmDialog({ title: 'Restart session?', message: `“${task.title || basename(task.worktree)}” is running. Restarting stops its terminal and resumes the agent in a new one.`, label: 'Restart' }))) return;
+  const tab = state.tabs.find(x => x.url === task.url);
+  if (live) {
+    const termId = live[0];
+    if (tab && tab.termId === termId) tab.termId = null;   // so no close path touches the dead PTY
+    if (state.activeTermId === termId) closeTerminal(termId); else disposeTerm(termId);
+  }
+  // An open, active context relaunches in place (adoptPairedTerminal finds nothing → new shell);
+  // otherwise opening the session runs the same path through activateTab.
+  if (tab && state.activeTabId === tab.id) { await openPrPanel(tab, true); return; }
+  openTaskSession(id);
 }
 
 // Stop a task's terminal (if any), drop its linked tab, and forget the record. This is the ONLY

@@ -291,6 +291,7 @@
       ctx = ctx || {};
       var items = [{ id: 'pin', label: ctx.pinned ? 'Unpin Session' : 'Pin Session' }];
       if (ctx.hasWorktree || ctx.hasUrl) items.push({ separator: true });
+      if (ctx.hasWorktree) items.push({ id: 'restart', label: ctx.live ? 'Restart Session…' : 'Restart Session' });
       if (ctx.hasWorktree) items.push({ id: 'finder', label: 'Reveal in Finder' });
       if (ctx.hasUrl) items.push({ id: 'copy', label: 'Copy Link' });
       items.push({ separator: true });
