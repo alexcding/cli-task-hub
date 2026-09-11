@@ -121,7 +121,7 @@ drag-drop event (bridge resolves the terminal under the cursor by `data-term-id`
 paths — the DOM drop gets no files under Tauri). `term_foreground` asks the daemon (`ptyd.rs`
 `foreground` op: `tcgetpgrp` on the master fd vs the shell's pid, `proc_pidpath` for the name); a
 daemon started before that op existed answers "unknown op", which reads as at-prompt until it is
-restarted via "Quit & Stop Terminals". *Deferred:*
+restarted (tray Quit stops it). *Deferred:*
 pasting a Finder-copied *file* still can't resolve a path (WKWebView has no `File.path`).
 
 **M5 — Tray + plugins** (`lib.rs`): a menu-bar tray (Open TaskHub / Quit) with the **quit-only-from-

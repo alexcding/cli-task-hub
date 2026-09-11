@@ -79,7 +79,7 @@ the Node sidecar in release, wires tray/plugins) + `src/main.rs`; `src/commands.
 `window.taskhub.*` commands — theme/dialog/open/usage/avatar); `src/terminals.rs` (client of
 the detached PTY daemon) + `src/ptyd.rs` (the daemon: `taskhub __ptyd__ <dir>`, own session,
 `portable-pty`, socket `/tmp/taskhub-ptyd-<uid>.sock`, manifests under `<app data>/ptyd/terms/` —
-shells survive app quit/crash/rebuild; tray "Quit & Stop Terminals" is the only teardown); `src/tray.rs` + `src/menu.rs` + `src/webview_menu.rs` (tray, app menu,
+shells survive a window reload, a renderer crash and a dev rebuild; the tray Quit tears them and the daemon down); `src/tray.rs` + `src/menu.rs` + `src/webview_menu.rs` (tray, app menu,
 embedded-webview context menu); `src/viewer.rs` (WKWebView title/URL/nav poll for the
 embedded tabs); `src/notify.rs` (review + activity notifications); `src/usage_image.rs` +
 `src/avatars.rs`. `bridge.js` is the preload-equivalent init script that defines

@@ -39,6 +39,7 @@ pub struct Terminals {
   conn: Mutex<Option<Conn>>,
   connecting: Mutex<()>, // serialises connect(): one spawn + one connection, never two
   skew: std::sync::atomic::AtomicBool, // the daemon speaks another protocol version
+  daemon_pid: std::sync::atomic::AtomicI32, // from the handshake — the daemon we are actually talking to
   req_seq: AtomicU64,
   gen_seq: AtomicU64,
 }
@@ -169,15 +170,20 @@ impl Terminals {
     });
 
     *self.conn.lock().unwrap() = Some(Conn { writer, pending, generation });
+    // A new connection may be a new daemon: forget the last one's pid (and skew) until this
+    // handshake says otherwise, so a failed hello never leaves kill_all signalling a stale pid.
+    self.daemon_pid.store(0, Ordering::SeqCst);
+    self.skew.store(false, Ordering::SeqCst);
     // Handshake: a daemon from an older build keeps serving its shells (that is the point), but if
     // it speaks another protocol version we stop creating terminals through it and tell the user.
     if let Ok(h) = self.request(app, json!({ "op": "hello" })) {
       log::info!("ptyd hello: {h}");
       let proto = h["protocol"].as_u64().unwrap_or(0) as u32;
+      self.daemon_pid.store(h["pid"].as_i64().unwrap_or(0) as i32, Ordering::SeqCst);
       let skew = proto != crate::ptyd::PROTOCOL;
       self.skew.store(skew, Ordering::SeqCst);
       if skew {
-        log::error!("ptyd protocol {proto} != app protocol {} — use “Quit & Stop Terminals”, then relaunch", crate::ptyd::PROTOCOL);
+        log::error!("ptyd protocol {proto} != app protocol {} — quit TaskHub from the tray, then relaunch", crate::ptyd::PROTOCOL);
       }
     }
     Ok(())
@@ -230,7 +236,7 @@ impl Terminals {
 pub fn term_create(app: AppHandle, state: State<Terminals>, opts: Option<Value>) -> Result<TermInfo, String> {
   state.connect(&app)?;
   if state.skew.load(Ordering::SeqCst) {
-    return Err("The terminal daemon is from an older TaskHub build. Use “Quit & Stop Terminals” from the tray, then relaunch.".into());
+    return Err("The terminal daemon is from an older TaskHub build. Quit TaskHub from the tray, then relaunch.".into());
   }
   let v = state.request(&app, json!({ "op": "create", "opts": opts.unwrap_or(json!({})) }))?;
   serde_json::from_value(v).map_err(|e| e.to_string())
@@ -307,10 +313,42 @@ pub fn warm_up(app: &AppHandle) {
   }
 }
 
-// Kill every terminal — ONLY for the explicit "Quit & stop terminals" tray action. Plain quit
-// leaves the daemon and its shells running for the next launch.
+// Kill every terminal and the daemon — the tray Quit's teardown (lib.rs quit_app).
 pub fn kill_all(app: &AppHandle) {
-  if let Some(state) = app.try_state::<Terminals>() {
-    let _ = state.request(app, json!({ "op": "killAll" }));
+  let Some(state) = app.try_state::<Terminals>() else { return };
+  let sock = crate::ptyd::sock_path();
+  // Nothing to stop: no connection and nobody listening. (request() would otherwise SPAWN a
+  // daemon just to kill it, delaying the quit.)
+  if state.conn.lock().unwrap().is_none() && UnixStream::connect(&sock).is_err() {
+    return;
   }
+  if let Err(e) = state.request(app, json!({ "op": "killAll" })) {
+    // Leave the daemon (and its shells, manifests) inspectable rather than SIGHUP them blind.
+    log::warn!("ptyd killAll failed ({e}); daemon left running");
+    return;
+  }
+  // …and the daemon itself. Left to its own idle exit (30s with no terminals AND no client) it
+  // survived any relaunch quicker than that — so after a rebuild, quit then
+  // relaunch kept serving through the OLD binary, and a new op (foreground) never went live.
+  // The pid is the one the daemon gave us in the handshake, never the pid file: that file outlives
+  // a crash or a reboot and could then name an unrelated process.
+  let pid = state.daemon_pid.load(Ordering::SeqCst);
+  if pid <= 1 {
+    log::warn!("ptyd pid unknown; daemon left running");
+    return;
+  }
+  if unsafe { libc::kill(pid, libc::SIGTERM) } != 0 {
+    log::warn!("ptyd {pid}: SIGTERM failed ({})", std::io::Error::last_os_error());
+    return;
+  }
+  // Wait (briefly) until the socket refuses: a relaunch racing a daemon that is only about to die
+  // would otherwise connect to its still-bound listener.
+  for _ in 0..20 {
+    if UnixStream::connect(&sock).is_err() {
+      break;
+    }
+    std::thread::sleep(Duration::from_millis(50));
+  }
+  let _ = std::fs::remove_file(ptyd_dir(app).join("ptyd.pid"));
+  log::info!("ptyd {pid} stopped");
 }

@@ -176,18 +176,27 @@ pub(crate) fn hide_main(app: &tauri::AppHandle) {
 // menu bar, and tray together. Every OTHER close/quit trigger (red button, ⌘Q, app-menu "Quit
 // TaskHub") just hides the window via hide_main and leaves the app fully resident. NOT the predefined
 // .quit() menu role: that terminates immediately, skipping QUITTING and the PTY cleanup.
+// Quitting ENDS the terminals: every shell in ptyd and the daemon itself. They used to survive a
+// quit (the daemon's reason to exist), with a second tray item to stop them — but agents cut off
+// from their window sat hung at their own shutdown, and the next launch reattached a wall of dead
+// terminals nobody could use. The daemon still buys what it was built for: terminals outlive a
+// window reload, a renderer crash and a dev rebuild, none of which come through here.
 pub(crate) fn quit_app(app: &tauri::AppHandle) {
   QUITTING.store(true, Ordering::SeqCst);
-  // Terminals live in the detached ptyd daemon and deliberately survive this quit; the next
-  // launch reattaches them. Only quit_app_stop_terminals tears them down.
-  app.exit(0);
-}
-
-// Tray "Quit & Stop Terminals": the explicit teardown — kill every shell in ptyd, then quit.
-pub(crate) fn quit_app_stop_terminals(app: &tauri::AppHandle) {
-  QUITTING.store(true, Ordering::SeqCst);
-  terminals::kill_all(app);
-  app.exit(0);
+  // Off the main thread: the teardown waits on the daemon (a reply, then the socket refusing),
+  // which a wedged daemon could stretch to seconds — the tray shouldn't beachball for it. Exit
+  // regardless once it returns or the deadline passes.
+  let h = app.clone();
+  std::thread::spawn(move || {
+    let (tx, rx) = std::sync::mpsc::channel();
+    let h2 = h.clone();
+    std::thread::spawn(move || {
+      terminals::kill_all(&h2);
+      let _ = tx.send(());
+    });
+    let _ = rx.recv_timeout(std::time::Duration::from_secs(3));
+    h.exit(0);
+  });
 }
 
 // Create the dashboard window. Built in Rust (rather than declared in tauri.conf.json) so we can
