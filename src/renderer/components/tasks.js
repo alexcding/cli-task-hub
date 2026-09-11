@@ -60,10 +60,16 @@ export async function newWorktreeTask(projectId) {
 // title — because that is what you are looking for in the sidebar; the worktree folder is a detail
 // of where it runs. A session with no page keeps the folder name, which is all it has.
 // Capped: a Jira summary or a PR title runs to whatever length its author felt like, and the row is
-// one line in a narrow sidebar (CSS ellipsis handles the rest, but the STORED name shouldn't be a
-// paragraph — it is also the tooltip, the tray entry and the terminal's title).
+// one line in a narrow sidebar — it is also the tooltip, the tray entry and the terminal's title.
+// Cut at the last word boundary, with NO ellipsis: the row's own CSS ellipsis is what says "there
+// was more", and a second one baked into the string reads as part of the name.
 const TITLE_MAX = 60;
-const capTitle = t => (t && t.length > TITLE_MAX ? t.slice(0, TITLE_MAX - 1).trimEnd() + '…' : t);
+function capTitle(t) {
+  if (!t || t.length <= TITLE_MAX) return t;
+  const cut = t.slice(0, TITLE_MAX);
+  const sp = cut.lastIndexOf(' ');
+  return (sp > TITLE_MAX / 2 ? cut.slice(0, sp) : cut).trimEnd();
+}
 
 async function createTask(project, worktree, { branch = '', cli = '', page = null } = {}) {
   const id = newTaskId();
