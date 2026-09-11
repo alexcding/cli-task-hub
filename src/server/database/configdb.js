@@ -135,6 +135,9 @@ for (const stmt of [
   // context had a live terminal; it is now a tab the user adds (nothing is open in a pane by
   // default), so its existence is per-context state. Existing rows start without it.
   `ALTER TABLE tabs ADD COLUMN diff_open INTEGER NOT NULL DEFAULT 0`,
+  // …and WHERE on the bar it sits: a new tab opens beside the active one, so the Diff no longer has
+  // a fixed slot. The index is into this context's links array (see content-tabs.js chipEntries).
+  `ALTER TABLE tabs ADD COLUMN diff_pos INTEGER NOT NULL DEFAULT 0`,
   `ALTER TABLE projects ADD COLUMN forward_webhooks INTEGER NOT NULL DEFAULT 1`,
   // On-merge "set Fix Version" automation (gated by fix_version_enabled): a platform prefix
   // (e.g. "ios-") + a JS script that returns the number part ("0.0.0"); the final version is
@@ -281,12 +284,12 @@ function getTabs() {
   // links is a JSON array of the tab's extra horizontal tabs (web pages + local files).
   const parseLinks = s => { try { const v = JSON.parse(s || '[]'); return Array.isArray(v) ? v : []; } catch { return []; } };
   return {
-    tabs: rows.map(r => ({ kind: r.kind, title: r.title, url: r.url, cur: r.cur || '', repo: r.repo || '', branch: r.branch || '', paneView: r.pane_view || 'term', diffOpen: !!r.diff_open, category: r.category || '', login: r.login || '', avatar: r.avatar || '', links: parseLinks(r.links) })),
+    tabs: rows.map(r => ({ kind: r.kind, title: r.title, url: r.url, cur: r.cur || '', repo: r.repo || '', branch: r.branch || '', paneView: r.pane_view || 'term', diffOpen: !!r.diff_open, diffIdx: r.diff_pos || 0, category: r.category || '', login: r.login || '', avatar: r.avatar || '', links: parseLinks(r.links) })),
     active: active ? active.url : null,
   };
 }
 const _insertTab = db.prepare(
-  `INSERT INTO tabs (url, kind, title, cur, repo, branch, pane_view, diff_open, category, login, avatar, links, position, active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  `INSERT INTO tabs (url, kind, title, cur, repo, branch, pane_view, diff_open, diff_pos, category, login, avatar, links, position, active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 );
 function setTabs(tabs = [], active = null) {
   db.exec('BEGIN');
@@ -297,6 +300,7 @@ function setTabs(tabs = [], active = null) {
       const links = JSON.stringify(Array.isArray(t.links) ? t.links : []);
       _insertTab.run(t.url, t.kind === 'jira' ? 'jira' : t.kind === 'web' ? 'web' : 'github', t.title || t.url, typeof t.cur === 'string' ? t.cur : '',
         t.repo || '', t.branch || '', ['off', 'diff'].includes(t.paneView) ? t.paneView : 'term', t.diffOpen ? 1 : 0,
+        Math.max(0, Number(t.diffIdx) || 0),
         t.category || '', t.login || '', t.avatar || '', links, i, active && t.url === active ? 1 : 0);
     });
     db.exec('COMMIT');

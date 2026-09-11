@@ -3,9 +3,10 @@
 // tabs — it does NOT mirror the sidebar's vertical PR/Jira tabs.
 //
 // The bar belongs to the ACTIVE viewer tab (the "context"): its first chip is the default
-// tab (the PR/Jira page — read-only url; its × closes the context), then — if the user has added
-// it — a Diff chip (the worktree's `git diff`, drawn over the page; tab.paneView === 'diff'),
-// followed by that context's extra web/file tabs. NOTHING but the context's own page is on the bar
+// tab (the PR/Jira page — read-only url; its × closes the context), then everything the user has
+// opened — web/file tabs, a Diff chip (the worktree's `git diff`, drawn over the page;
+// tab.paneView === 'diff'), a Build chip — each WHERE IT WAS OPENED, immediately after whatever was
+// active at the time (chipEntries below), not in a fixed slot. NOTHING but the context's own page is on the bar
 // by default: a fresh pane has nothing open in it, and the Diff is a tab you add like any other.
 // The `+` that adds one is a static button in the segment's LEFT group, ahead of the strip; it
 // opens a menu (viewer.js → ctabAdd) of what this pane can hold — Diff, a web page, a file.
@@ -54,6 +55,41 @@ export const inDiff = t => hasDiffTab(t) && t.paneView === 'diff';
 // one); it's the way back to the output after looking at the page or the diff.
 const hasBuildTab = t => !!buildTerm(t);
 export const inBuild = t => hasBuildTab(t) && t.paneView === 'build';
+
+// ── The strip's order ─────────────────────────────────────────────────────────
+// The page chip is always first — it IS the context, not something the user opened. Everything
+// after it is one ordered sequence, the "extras": the web/file tabs plus the Diff and Build chips,
+// each sitting where it was opened rather than in a fixed slot. A new tab goes immediately after
+// the ACTIVE one (browser behaviour), which is what makes the order worth keeping at all.
+// The position is stored as an index INTO THE SEQUENCE BELOW IT: tab.diffIdx indexes the links
+// array (diff is spliced in first), tab.buildIdx indexes links+diff. Composing in that fixed order
+// means two indices describe the whole strip, and only diffIdx has to be persisted — a build
+// terminal never outlives the app.
+export function chipEntries(t) {
+  const out = (t.links || []).map(l => ({ type: 'link', l }));
+  if (hasDiffTab(t)) out.splice(Math.min(t.diffIdx ?? 0, out.length), 0, { type: 'diff' });
+  if (hasBuildTab(t)) out.splice(Math.min(t.buildIdx ?? out.length, out.length), 0, { type: 'build' });
+  return out;
+}
+
+// Where a newly opened tab belongs: just after the active chip. The page chip is active → the front
+// of the extras, so the new tab lands beside it rather than at the far end of the bar.
+export function nextChipIdx(t) {
+  const entries = chipEntries(t);
+  if (inDiff(t)) return entries.findIndex(e => e.type === 'diff') + 1;
+  if (inBuild(t)) return entries.findIndex(e => e.type === 'build') + 1;
+  if (t.activeLink) {
+    const i = entries.findIndex(e => e.type === 'link' && e.l.id === t.activeLink);
+    if (i >= 0) return i + 1;
+  }
+  return 0;
+}
+
+// Translate a position in the composed sequence back into the index each chip is stored as:
+// a link counts only the links before it, the Diff everything that isn't the Build chip.
+export const linkIdxAt = (t, k) => chipEntries(t).slice(0, k).filter(e => e.type === 'link').length;
+export const diffIdxAt = (t, k) => linkIdxAt(t, k);
+export const buildIdxAt = (t, k) => chipEntries(t).slice(0, k).filter(e => e.type !== 'build').length;
 
 function buildChipHtml(t) {
   return `<div class="ctab source buildtab ${inBuild(t) ? 'active' : ''}"
@@ -134,9 +170,11 @@ export function renderContentTabs(force = false) {
   el.classList.toggle('ctabs-single', single);
   el.closest('.bar-wv')?.classList.toggle('single', single);
   // The "+" is a static button in the segment's left group (.bar-nav), not rendered here.
-  const html = (page ? defaultChipHtml(t) : '') + (diffTab ? diffChipHtml(t) : '')
-    + (hasBuildTab(t) ? buildChipHtml(t) : '')
-    + (t.links || []).map(l => linkChipHtml(t, l)).join('');
+  // The page chip, then the extras in the order they were opened in (chipEntries).
+  const html = (page ? defaultChipHtml(t) : '')
+    + chipEntries(t).map(e => e.type === 'diff' ? diffChipHtml(t)
+      : e.type === 'build' ? buildChipHtml(t)
+      : linkChipHtml(t, e.l)).join('');
   setHtmlIfChanged(el, html);
 }
 

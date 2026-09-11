@@ -115,6 +115,12 @@ separation everything follows:
   (`link.want` → `resolveInput`) instead of guessed. The Diff tab's existence is `tab.diffOpen`,
   persisted per context (`tabs.diff_open`); its × (`closeDiffTab`) takes it off the bar, ⇧⌘D /
   `openDiffTab` puts it back. Never re-pin a view onto the bar: everything there was added.
+  **A new tab opens immediately after the ACTIVE chip**, browser-style — the strip has no fixed
+  slots. The page chip is always first (it IS the context); everything after it is one sequence
+  composed by `content-tabs.js` → `chipEntries(t)`: the `links` array with the Diff spliced in at
+  `tab.diffIdx` (an index into `links`, persisted as `tabs.diff_pos`) and the Build chip at
+  `tab.buildIdx` (runtime only — a build terminal never outlives the app). `nextChipIdx(t)` says
+  where the next tab goes; adding or closing a link shifts those indices so the chips don't drift.
 - **The right pane is one toggled state: `tab.paneView`.** `'off'` (hidden — the terminal fills the
   panel, `body.split-closed`), `'term'` (the context's page; blank for a bare session,
   `body.pane-blank`), `'diff'` (the worktree diff, `body.pane-diff`) or `'build'` (this context's
