@@ -43,21 +43,25 @@ export async function newWorktreeTask(projectId) {
   if (!project?.workspace) { toastErr('Project has no local workspace'); return; }
   const pick = await newSessionDialog(project);
   if (!pick) return;
-  // pick.worktree is this link's existing checkout, when it has one. Reuse runs the session there
-  // instead of forking a second worktree for the same piece of work; Overwrite replaces it, which
-  // deletes whatever is in it — so that one is confirmed, in the app's own dialog.
+  // pick.worktree is this link's existing checkout, when it has one.
   if (pick.worktree && pick.overwrite) {
-    const folder = basename(pick.worktree.path);
-    const ok = await confirmDialog({
-      title: 'Replace worktree?',
-      message: `${folder} is checked out on ${pick.worktree.branch}. It will be deleted and recreated — anything uncommitted there is lost.`,
-      label: 'Delete & recreate',
-    });
-    if (!ok) return;
-    const r = await removeWorktree(project.workspace, pick.worktree.path, { force: true });
-    if (r?.error) { toastErr(r.error); return; }
+    // Overwrite goes through deleteWorktreeAt — the ONE removal path (tasks.js), which confirms in
+    // app, names the sessions sharing that folder and the apps holding files open in it, stops their
+    // terminals and forgets their records BEFORE the folder goes. Calling removeWorktree directly
+    // left a live agent running on a deleted cwd and a session row pointing at nothing.
+    if (!(await deleteWorktreeAt(project.workspace, pick.worktree.path))) return;
   } else if (pick.worktree) {
-    await createTask(project, pick.worktree.path, { branch: pick.worktree.branch, cli: pick.cli, page: pick.page });
+    // Reuse. If a session for this very page already exists, that IS the session — a second record
+    // on the same url could never get a tab of its own (openInSplit dedupes by url), so it would sit
+    // in the sidebar inert. Open the real one instead.
+    const already = pick.page?.url ? state.tasks.find(t => t.url === pick.page.url) : null;
+    if (already) { await openTaskSession(already.id); return; }
+    // Adopt through ensureWorktree even though the folder is "there": it is what prunes a stale
+    // registration, repairs a worktree whose admin link was lost, and recreates one whose folder was
+    // deleted by hand — all of which listWorktrees still reports as present.
+    const adopted = await ensureWorktree(project, pick.worktree.branch, { create: false });
+    if (!adopted) return;
+    await createTask(project, adopted, { branch: pick.worktree.branch, cli: pick.cli, page: pick.page });
     return;
   }
   const fromPr = pick.page?.kind === 'github';

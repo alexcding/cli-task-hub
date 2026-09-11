@@ -7,7 +7,7 @@
 import { ROUTES } from '/shared/routes.mjs';
 import { state, prByUrl, jiraByKey } from '../stores/store.js';
 import { api, apiJson } from '../services/api.js';
-import { esc, isPrUrl, jiraKeyFromUrl } from '../lib/util.js';
+import { esc, isPrUrl, jiraKeyFromUrl, basename } from '../lib/util.js';
 import { jiraTaskBranch } from '../lib/workflow.mjs';
 
 // One field takes either: a branch name to create, or the address of the page the session is FOR.
@@ -73,18 +73,18 @@ async function completePage(page) {
   return page;
 }
 
-// This project's existing worktree for a pasted PR/ticket, or null. The match is the server's
-// (ROUTES.WORKTREE: exact branch for a PR, the key embedded in a branch name for a ticket, and
-// nothing when two worktrees both match — ambiguous is not reuse). The main checkout is never it:
-// a session runs on a worktree. The second call is only to learn that worktree's own branch, which
-// may differ from the one derived here (a ticket's branch carries its summary).
+// This project's existing worktree for a pasted PR/ticket, or null. The match is the server's, asked
+// STRICTLY (strict=1): an exact branch for a PR, the key as a whole token for a ticket, and nothing
+// when two worktrees both qualify. The loose match is right for labelling a folder; this answer
+// decides where a session runs — and which worktree Overwrite deletes. The main checkout never
+// counts: a session runs on a worktree. The response carries that worktree's own branch, which may
+// differ from the one derived here (a ticket's branch carries its summary).
 async function existingWorktree(project, page, branch) {
   const q = page.kind === 'jira' ? `key=${encodeURIComponent(page.jiraKey)}` : `branch=${encodeURIComponent(branch || '')}`;
   if (q.endsWith('=')) return null;
-  const found = await api(`${ROUTES.WORKTREE}?path=${encodeURIComponent(project.workspace)}&${q}`).catch(() => null);
+  const found = await api(`${ROUTES.WORKTREE}?path=${encodeURIComponent(project.workspace)}&${q}&strict=1`).catch(() => null);
   if (!found?.matched || !found.isWorktree) return null;
-  const all = await api(`${ROUTES.WORKTREES}?path=${encodeURIComponent(project.workspace)}`).catch(() => []);
-  return { path: found.path, branch: (all || []).find(w => w.path === found.path)?.branch || branch };
+  return { path: found.path, branch: found.branch || branch };
 }
 
 // The defaults the dialog would show for a project — a free branch name and the base it forks from
@@ -191,7 +191,8 @@ export async function newSessionDialog(project) {
       // The placeholder is a NEW branch name, so it can only stand in where a new branch is what we
       // are making. A pull request needs its own head branch — falling back here would check out a
       // branch that doesn't exist (the worktree adopts, it doesn't create, for a PR).
-      if (found) { done({ branch: found.branch, base: baseSel.value, cli, page, worktree: found, overwrite: !reuse }); return; }
+      // `found` only means anything alongside the page that found it.
+      if (found && page) { done({ branch: found.branch, base: baseSel.value, cli, page, worktree: found, overwrite: !reuse }); return; }
       if (!raw && page?.kind === 'github') {
         hint.textContent = 'Name the pull request’s branch';
         hint.classList.add('form-hint-err');
@@ -220,20 +221,24 @@ export async function newSessionDialog(project) {
             ? `Opens ${page.title || name} — branch ${page.branch}`
             : `Opens ${name} — name its branch below`)
         : HINT;
-      // The extra input appears only for a PR whose head branch nothing could tell us — and never
-      // when we're reusing a worktree, which brings its own branch.
-      branchRow.hidden = !(page && !page.branch) || (!!found && reuse);
+      // The extra input appears only for a PR whose head branch nothing could tell us. (A found
+      // worktree always implies a branch, so it needs no clause of its own here.)
+      branchRow.hidden = !(page && !page.branch);
       if (!branchRow.hidden && !branch2.value && document.activeElement !== branch2) branch2.focus();
       wtRow.hidden = !found;
       if (found) wtHint.textContent = reuse
-        ? `Runs in ${found.path.split('/').pop()} on ${found.branch}`
-        : `Deletes ${found.path.split('/').pop()} and recreates it — anything uncommitted there is lost`;
+        ? `Runs in ${basename(found.path)} on ${found.branch}`
+        : `Replaces ${basename(found.path)} — its sessions are removed and uncommitted work there is lost`;
     };
     let seq = 0;
     input.oninput = () => {
       const typed = input.value.trim();
       const urlish = /^https?:\/\//i.test(typed);
       page = urlish ? parseSessionUrl(typed) : null;
+      // Every edit invalidates what the LAST text resolved to. Without this the Worktree row — and
+      // submit's `if (found)` short-circuit — outlived the url that produced it: type a branch name
+      // over a pasted PR and Create would still run (or Overwrite delete) that PR's worktree.
+      found = null; reuse = true;
       const mine = ++seq;
       paint(typed, urlish, !!page);
       if (!page) return;

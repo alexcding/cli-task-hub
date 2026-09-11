@@ -12,12 +12,17 @@ function register(app) {
   //   tree is a dedicated (linked) worktree, not the shared main checkout.
   // { path: '', matched: false } when nothing matches (or, for a key, the match is ambiguous).
   app.get(ROUTES.WORKTREE, async (req, res) => {
-    const { path: dir, branch, key } = req.query;
-    if (!dir || (!branch && !key)) return res.json({ path: '', matched: false, isWorktree: false });
+    const { path: dir, branch, key, strict } = req.query;
+    if (!dir || (!branch && !key)) return res.json({ path: '', matched: false, isWorktree: false, branch: '' });
+    // strict=1: exact branch / whole-token key only. Callers that ACT on the answer (the New session
+    // dialog, which runs a session in that worktree or replaces it) ask for it; callers that only
+    // label a folder keep the lenient match.
+    const opts = { strict: strict === '1' || strict === 'true' };
     const found = key
-      ? await github.worktreeForJiraKey(String(dir), String(key))
-      : await github.worktreeForBranch(String(dir), String(branch));
-    res.json({ path: found?.path || '', matched: !!found, isWorktree: !!(found && !found.isMain) });
+      ? await github.worktreeForJiraKey(String(dir), String(key), opts)
+      : await github.worktreeForBranch(String(dir), String(branch), opts);
+    // `branch` comes back too — the caller would otherwise list every worktree again just to learn it.
+    res.json({ path: found?.path || '', matched: !!found, isWorktree: !!(found && !found.isMain), branch: found?.branch || '' });
   });
 
   // Every linked worktree of a project workspace (the main checkout excluded) — the sidebar nests

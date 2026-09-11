@@ -216,11 +216,14 @@ async function isDisposableLeftover(dir) {
 // dropped (head `accedo/feature/RECORD-1458-x`, local branch `feature/RECORD-1458-x`) — both
 // map to `<workspace>.worktrees/RECORD-1458-x`, so without this fallback the app wouldn't
 // recognise the existing worktree and would offer a create that git/the folder check rejects.
-async function worktreeForBranch(dir, branch) {
+// `strict` drops the folder-name fallback. The lenient match is right for LABELLING a tab's folder
+// (split.js), and wrong for deciding which worktree to run a session in or delete: an unrelated
+// `bob/fix-login` checkout whose folder is `fix-login` would answer for `alex/fix-login`.
+async function worktreeForBranch(dir, branch, { strict = false } = {}) {
   if (!branch) return null;
   const trees = await listWorktrees(dir);
   const exact = trees.find(w => w.branch === branch);
-  if (exact) return exact;
+  if (exact || strict) return exact || null;
   const folder = worktreeFolder(branch);
   return trees.find(w => !w.isMain && (w.path.split(/[/\\]+/).filter(Boolean).pop() || '') === folder) || null;
 }
@@ -230,10 +233,14 @@ async function worktreeForBranch(dir, branch) {
 // maps a Jira ticket → its checkout. Returns an entry { path, isMain } ONLY when exactly
 // one worktree matches — 0 or >1 is ambiguous, so the caller falls back to the project
 // workspace. Match is case-insensitive and substring (the key is rarely the whole branch).
-async function worktreeForJiraKey(dir, key) {
+// `strict` requires the key to be a WHOLE token in the branch name, not any substring: PROJ-1 must
+// not match feature/PROJ-12-refactor. Substring is fine for labelling (split.js), but this answer
+// now also picks the worktree a session runs in — or the one Overwrite deletes.
+async function worktreeForJiraKey(dir, key, { strict = false } = {}) {
   if (!key) return null;
   const needle = String(key).toLowerCase();
-  const hits = (await listWorktrees(dir)).filter(w => w.branch.toLowerCase().includes(needle));
+  const bounded = new RegExp(`(^|[^a-z0-9])${needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^0-9]|$)`, 'i');
+  const hits = (await listWorktrees(dir)).filter(w => strict ? bounded.test(w.branch) : w.branch.toLowerCase().includes(needle));
   return hits.length === 1 ? hits[0] : null;
 }
 
