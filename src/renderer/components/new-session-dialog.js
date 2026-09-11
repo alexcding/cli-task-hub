@@ -19,7 +19,7 @@ let _open = null; // () => cancel the current dialog (claimed synchronously at e
 
 // Mirrors the server's validBranchName (repositories/github.js): git check-ref-format rules plus
 // no `.`/`..` segments, so the derived worktree folder can never escape `${ws}.worktrees`.
-export function branchNameError(b) {
+function branchNameError(b) {
   if (!b) return 'Enter a branch name';
   if (b.startsWith('-') || b.endsWith('/') || b.endsWith('.') || b.endsWith('.lock')) return 'Branch name can’t start with “-” or end with “/”, “.” or “.lock”';
   if (/[\x00-\x20\x7f~^:?*[\\]|\.\.|@\{|\/\/|^@$/.test(b)) return 'Branch name can’t contain spaces, “..” or ~ ^ : ? * [ \\';

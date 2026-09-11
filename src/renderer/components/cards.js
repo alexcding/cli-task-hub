@@ -16,7 +16,7 @@ export function ciInfo(ci) {
   return { cls, label };
 }
 
-export function ciDot(ci) {
+function ciDot(ci) {
   const { cls, label } = ciInfo(ci);
   return `<span class="ci-dot ${cls}" title="${label}"></span>`;
 }
@@ -35,7 +35,7 @@ function approvedMark(pr) {
 // GitHub PR labels as small chips. Each carries a color dot tinted with the label's own
 // GitHub color; the name stays in the theme palette so the chips read cleanly in either
 // theme. gh shape: [{ name, color (6-hex, no #), description }].
-export function labelChips(labels) {
+function labelChips(labels) {
   return (labels || []).map(l => {
     const dot = /^[0-9a-fA-F]{6}$/.test(l.color || '') ? `#${l.color}` : 'var(--text-3)';
     return `<span class="pr-label" title="${esc(l.description || l.name)}"><span class="pr-label-dot" style="background:${dot}"></span>${esc(l.name)}</span>`;

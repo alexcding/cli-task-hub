@@ -25,7 +25,7 @@ export const isPrompt = s => /^[❯➜›▸»>$%#]\s*$/.test(String(s).trim());
 // status bar always carries ⏵ / 💰 / 🤖, so the glyphs identify it without false positives on prose.
 export const isStatus = s => /[💰🤖]|⏵|esc to interrupt/i.test(s);
 // Drop the input-box side borders ("│ text │" → "text") and trim.
-export const stripBorders = s => String(s).replace(/^\s*[│┃|]\s?/, '').replace(/\s?[│┃|]\s*$/, '').trim();
+const stripBorders = s => String(s).replace(/^\s*[│┃|]\s?/, '').replace(/\s?[│┃|]\s*$/, '').trim();
 
 // "Hard" chrome that ends/sits-outside a message block: rules, prompt, status bar, the working
 // spinner ("✻ Brewed for…"), and the recap line. Blank lines are NOT hard chrome — a message has
@@ -60,7 +60,7 @@ export function lastDotMessage(rawLines, maxLines = 6) {
 }
 
 // Fallback for un-marked output: the last n content lines above the input chrome.
-export function agentTail(rawLines, n = 3) {
+function agentTail(rawLines, n = 3) {
   const rows = norm(rawLines);
   const out = [];
   for (let i = rows.length - 1; i >= 0 && out.length < n; i--) {

@@ -44,7 +44,7 @@ export async function unpersistTask(id) {
 export const taskById = id => state.tasks.find(t => t.id === id) || null;
 // The tasks linked to a PR/Jira tab (by url). A tab's terminal pane shows the first one with a
 // live terminal, else the first one.
-export const tasksForUrl = url => (url ? state.tasks.filter(t => t.url === url) : []);
+const tasksForUrl = url => (url ? state.tasks.filter(t => t.url === url) : []);
 export const taskTerm = task => [...state.terms.entries()].find(([, t]) => t.paired && t.pairKey === task.id) || null;
 export function taskForTab(tab) {
   const list = tasksForUrl(tab?.url);

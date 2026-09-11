@@ -13,12 +13,12 @@ import { delay } from '../lib/util.js';
 const shq = s => "'" + String(s).replace(/'/g, "'\\''") + "'"; // single-quote a path for the shell
 const LAUNCH_SETTLE_MS = 2000; // a CLI launch isn't a "turn" — give the TUI a moment before typing
 
-export const mintSessionId = () => (globalThis.crypto?.randomUUID ? crypto.randomUUID()
+const mintSessionId = () => (globalThis.crypto?.randomUUID ? crypto.randomUUID()
   : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => { const r = Math.random() * 16 | 0; return (c === 'x' ? r : (r & 3 | 8)).toString(16); }));
 
 // The shell line for a CLI. Fresh Claude launches mint their id; a resume targets the stored one.
 // Returns { line, sessionId } — sessionId is '' when the CLI will tell us later (fresh Codex).
-export function cliCommand(cli, { sessionId = '', resume = false } = {}) {
+function cliCommand(cli, { sessionId = '', resume = false } = {}) {
   if (cli === 'claude') {
     if (resume && sessionId) return { line: `claude --resume ${shq(sessionId)}`, sessionId };
     const id = mintSessionId();

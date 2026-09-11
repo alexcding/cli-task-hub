@@ -26,7 +26,7 @@ export function toggleCommitPop() {
   fill(cwd);
 }
 
-export function closeCommitPop() {
+function closeCommitPop() {
   _open = false;
   const p = pop();
   if (p) p.hidden = true;

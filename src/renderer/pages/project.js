@@ -556,7 +556,7 @@ function wfSampleCtx(p) {
   };
 }
 
-export function loadProjectWorkflows(id) {
+function loadProjectWorkflows(id) {
   const el = document.getElementById(`proj-workflows-${id}`);
   if (!el) return;
   const p = proj(id);
@@ -648,7 +648,7 @@ function wfRedrawSteps(id, wfId) {
 
 // Live, client-side preview: resolve placeholders against a sample item and list the steps the
 // run would take (worktree → launch CLI → each command + Enter). No server round-trip needed.
-export function wfPreview(id, wfId) {
+function wfPreview(id, wfId) {
   const el = document.getElementById(`wf-preview-${id}-${wfId}`);
   if (!el) return;
   const w = wfGet(id, wfId);

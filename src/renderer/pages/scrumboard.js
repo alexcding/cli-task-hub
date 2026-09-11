@@ -142,7 +142,7 @@ function setTitle(snap) {
 // BOTH the sprint query and the Tickets query, saved per project. Rebuilt on each snapshot (incl.
 // SSE refreshes) EXCEPT while the user is typing in it or when it already shows the saved value —
 // so a background refresh never clobbers a half-typed clause. Enter applies (no Go).
-export function renderScrumboardQuery() {
+function renderScrumboardQuery() {
   const el = document.getElementById('scrumboard-query');
   if (!el) return;
   if (!state.boardProjectId) { el.innerHTML = ''; return; }
@@ -161,7 +161,7 @@ export function applyBoardQuery() {
   if (inp) setBoardQuery(inp.value.trim());
 }
 
-export async function setBoardQuery(value) {
+async function setBoardQuery(value) {
   const id = state.boardProjectId;
   if (!id || value === (state.boardSnap?.query || '')) return;
   const body = document.getElementById('scrumboard-body');

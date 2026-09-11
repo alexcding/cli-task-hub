@@ -11,7 +11,7 @@ import { codeFontStack, esc } from '../lib/util.js';
 import { fitTerm, visibleTerm } from '../components/terminal.js';
 import { applyCodeFont } from '../components/editor.js';
 
-export const FONT_MIN = 9, FONT_MAX = 24;
+const FONT_MIN = 9, FONT_MAX = 24;
 const KINDS = ['term', 'diff'];
 const clampSize = px => Math.min(FONT_MAX, Math.max(FONT_MIN, px));
 
@@ -116,7 +116,7 @@ export function setFontFamily(kind, family) {
   persist(`${kind}_font_family`, state.fonts[kind].family);
 }
 
-export function setFontSize(kind, px) {
+function setFontSize(kind, px) {
   const v = clampSize(Math.round(px) || FONT_DEFAULTS[kind]);
   if (v === state.fonts[kind].size) return;
   state.fonts[kind].size = v;

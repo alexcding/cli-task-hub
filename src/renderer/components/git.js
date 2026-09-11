@@ -10,7 +10,7 @@ import { esc, fmtDate } from '../lib/util.js';
 export const ROW_H = 44; // must drive .pg-crow height — history sets --pg-row-h from this
 
 // Ref decorations (%D) as small inline chips before a commit subject.
-export function refChips(refs) {
+function refChips(refs) {
   return (refs || []).map(r => `<span class="pg-ref pg-ref-${r.type}" title="${esc(r.name)}">${esc(r.name)}</span>`).join('');
 }
 

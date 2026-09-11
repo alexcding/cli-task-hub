@@ -31,13 +31,13 @@ let _linkSeq = 0;
 // A file link's url is `file://<absolute path>`; recover the path for the editor + API.
 // decodeURI is the exact inverse of fileUrl's encodeURI (decodeURIComponent would over-decode
 // reserved chars like # and ? that encodeURI leaves intact, mangling such paths).
-export function pathFromUrl(url) {
+function pathFromUrl(url) {
   if (!url) return '';
   if (!url.startsWith('file://')) return url;
   try { return decodeURI(url.slice('file://'.length)); } catch { return url.slice('file://'.length); }
 }
 // Build the `file://` url that keys a file link (dedupe within a context + persistence).
-export const fileUrl = p => 'file://' + encodeURI(p);
+const fileUrl = p => 'file://' + encodeURI(p);
 
 // Open a PR/Jira page as a viewer tab (a "context"). New tabs append; re-opening an
 // already-open url just focuses it. This is the ONLY way a viewer tab is born — the
@@ -58,7 +58,7 @@ export function openInSplit(url, title, kind, meta = {}) {
 
 // Build a <webview>-backed viewer tab (not yet added to state.tabs). Shared by openInSplit
 // (new tab) and restoreTabs (rehydrate). `savedLinks` rebuilds the context's extra tabs.
-export function createTab(url, title, kind, meta = {}) {
+function createTab(url, title, kind, meta = {}) {
   const id = 'tab' + (++_tabSeq);
   // repo/branch (for GitHub PRs) let the terminal map to the right project workspace +
   // worktree without depending on state.projects still holding PR data.
@@ -341,7 +341,7 @@ export function addLink() {
 // the same kind of tab `+` creates, but pre-filled and shown. Used by the embedded webview's
 // "Open Link in New Tab" (webview_menu.rs → window.__openContentTab). Focuses an existing match
 // instead of duplicating. Returns false when there's no active viewer tab.
-export function openWebLink(url) {
+function openWebLink(url) {
   if (!url) return false;
   const tab = activeTab();
   if (!tab) return false;
@@ -562,7 +562,7 @@ export function saveTabs() {
 // Debounced saveTabs for high-frequency triggers (web-link in-page navigations / title churn),
 // so a busy SPA doesn't fire a full /api/tabs PUT per event. Trailing-edge, 800ms.
 let _saveTabsTimer = 0;
-export function saveTabsSoon() { clearTimeout(_saveTabsTimer); _saveTabsTimer = setTimeout(saveTabs, 800); }
+function saveTabsSoon() { clearTimeout(_saveTabsTimer); _saveTabsTimer = setTimeout(saveTabs, 800); }
 
 export async function restoreTabs() {
   // Read the saved set first. If the server is briefly unreachable, retry a few times

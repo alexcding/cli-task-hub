@@ -116,7 +116,7 @@ async function decideAfterStep(wf, steps, i, termId) {
   return r?.decision || 'proceed';
 }
 
-export async function runWorkflow(tab, wf) {
+async function runWorkflow(tab, wf) {
   const p = projectForTab(tab);
   if (!p || !p.workspace) { toastErr('Project has no local workspace'); return; }
   const steps = (wf.steps || []).filter(s => s.command && s.command.trim());

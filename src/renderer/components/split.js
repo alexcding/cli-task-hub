@@ -88,7 +88,7 @@ export async function worktreeHolders(worktree) {
 // a window reload / app relaunch): the terminal of the tab's task (tasks link to a tab by url; the
 // terminal is keyed by task id). Sets tab.termId and returns it, or null if none — never creates
 // one (that's ensurePrTerminal / New Task). Shared by ensurePrTerminal and applyPrLayout.
-export function adoptPairedTerminal(tab) {
+function adoptPairedTerminal(tab) {
   if (tab.termId && state.terms.has(tab.termId)) return tab.termId;
   const task = taskForTab(tab);
   const found = task ? taskTerm(task) : null;
@@ -153,7 +153,7 @@ export function ensurePrTerminal(tab, cwd0, meta = {}) {
 }
 
 let _prAnimRaf = 0;
-export function stopPrTween() {
+function stopPrTween() {
   if (_prAnimRaf) { cancelAnimationFrame(_prAnimRaf); _prAnimRaf = 0; }
   document.body.classList.remove('pr-tweening', 'pane-resizing');
 }

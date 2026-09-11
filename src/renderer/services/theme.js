@@ -33,7 +33,7 @@ function appThemeMode() {
   return window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
 }
 
-export function applyAppTheme() {
+function applyAppTheme() {
   document.documentElement.setAttribute('data-theme', appThemeMode());
   document.querySelectorAll('#theme-toggle .theme-opt').forEach(b =>
     b.classList.toggle('active', b.dataset.themeOpt === _appThemePref));

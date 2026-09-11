@@ -62,7 +62,7 @@ function renderCliStatus(id, info) {
   const link = document.getElementById(`cli-install-${id}`);
   if (link) link.hidden = present;
 }
-export async function loadCliTools() {
+async function loadCliTools() {
   try {
     const d = await api(ROUTES.CLI_TOOLS);
     CLI_IDS.forEach(id => renderCliStatus(id, d[id]));
@@ -87,7 +87,7 @@ function renderHookRow(cli, status) {
   btn.className = `btn btn-sm ${installed ? 'btn-secondary' : 'btn-primary'}`;
   btn.dataset.installed = installed ? '1' : '';
 }
-export async function loadHookStatus() {
+async function loadHookStatus() {
   try {
     const st = await api(ROUTES.AGENT_HOOKS);
     renderHookRow('claude', st.claude);

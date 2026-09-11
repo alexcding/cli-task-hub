@@ -12,7 +12,7 @@ import { renderScrumboard, renderScrumboardFilter, applyAssigneeFilter } from '.
 // Shared 5-column row renderer for the snapshot-backed Jira tables (JIRA Tickets +
 // per-project tab). `items` are lean tickets from the snapshot endpoints. The status
 // cell is a button: clicking it opens a menu of the ticket's possible next statuses.
-export function jiraRowsHtml(items) {
+function jiraRowsHtml(items) {
   return items.map(item => `<tr>
     <td><a class="link" href="${jiraUrl(item.key)}" target="_blank" onclick="jiraClick(event, this.href, '${esc(item.key)}')">${item.key}</a></td>
     <td>${esc(item.summary || '')}</td>
@@ -21,11 +21,11 @@ export function jiraRowsHtml(items) {
     <td>${esc(item.priority || '')}</td>
   </tr>`).join('');
 }
-export const jiraRow = (msg, color) => `<tr><td colspan="5"><div class="empty" style="padding:16px${color?`;color:${color}`:''}">${msg}</div></td></tr>`;
+const jiraRow = (msg, color) => `<tr><td colspan="5"><div class="empty" style="padding:16px${color?`;color:${color}`:''}">${msg}</div></td></tr>`;
 
 // Renders a snapshot ({items, lastSynced, error}) into a tbody. Shared by the
 // project tab and My Tickets — both read the background-synced snapshot (SWR).
-export function renderJiraSnapshot(tbody, snap, { emptyMsg } = {}) {
+function renderJiraSnapshot(tbody, snap, { emptyMsg } = {}) {
   if (!tbody) return;
   const items = snap?.items || [];
   if (snap?.error && !items.length) { tbody.innerHTML = jiraRow(esc(snap.error), 'var(--danger)'); return; }
@@ -38,7 +38,7 @@ export function renderJiraSnapshot(tbody, snap, { emptyMsg } = {}) {
 // is AND across dimensions and faceted (each dropdown lists only the values still
 // available given the other selections, with counts). Done client-side over the
 // snapshot (instant), and the selection is persisted to the config store as JSON.
-export const ticketProjectOf = key => (key || '').split('-')[0];
+const ticketProjectOf = key => (key || '').split('-')[0];
 
 const TICKET_FILTERS = [
   { key: 'project',  label: 'projects',   valueOf: i => ticketProjectOf(i.key) },
@@ -48,14 +48,14 @@ const TICKET_FILTERS = [
 ];
 
 // Parse a saved filter value: JSON object, or a legacy bare/comma project string.
-export function parseFilters(raw) {
+function parseFilters(raw) {
   if (!raw) return {};
   try { const o = JSON.parse(raw); if (o && typeof o === 'object' && !Array.isArray(o)) return o; } catch {}
   return { project: String(raw).split(',')[0].trim() };
 }
 
 // Items matching every active filter except `exceptKey` (used for faceted lists).
-export function itemsMatching(items, filters, exceptKey) {
+function itemsMatching(items, filters, exceptKey) {
   return items.filter(i => TICKET_FILTERS.every(f =>
     f.key === exceptKey || !filters[f.key] || f.valueOf(i) === filters[f.key]));
 }
@@ -65,7 +65,7 @@ export function itemsMatching(items, filters, exceptKey) {
 // already has a selection (so it can be cleared). `valuesByKey` lets a caller fix a
 // dimension's option list explicitly (e.g. the project dropdown lists the Jira keys
 // you've configured on your projects, not whatever keys happen to be in the tickets).
-export function ticketFilterBar(items, filters, onchangeFor, valuesByKey = {}) {
+function ticketFilterBar(items, filters, onchangeFor, valuesByKey = {}) {
   if (!items.length) return '';
   const opt = (v, label, sel) => `<option value="${esc(v)}" ${sel ? 'selected' : ''}>${esc(label)}</option>`;
   const selects = TICKET_FILTERS.map(f => {
@@ -119,7 +119,7 @@ export async function loadProjectJira(id, { refresh = false } = {}) {
   }
 }
 
-export function renderProjJiraFilter(id) {
+function renderProjJiraFilter(id) {
   const fEl = document.getElementById(`proj-jira-filter-${id}`);
   if (fEl) fEl.innerHTML = ticketFilterBar(ticketsSource(id).items || [], state.projJiraFilters[id] || {}, k => `setProjJiraFilter('${id}', '${k}', this.value)`);
 }

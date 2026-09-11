@@ -21,7 +21,7 @@ let _xtReady = null;
 // the marker immediately before EACH script evaluates (not once up front) so a Monaco load
 // running concurrently can't re-install it in the gap. Monaco doesn't need the marker.
 const loadUmd = src => { try { if (window.define) delete window.define.amd; } catch {} return loadScript(src); };
-export function loadXterm() {
+function loadXterm() {
   if (_xtReady) return _xtReady;
   _xtReady = (async () => {
     const css = document.createElement('link'); css.rel = 'stylesheet'; css.href = '/vendor/xterm.css'; document.head.appendChild(css);
@@ -162,7 +162,7 @@ export async function createTermView(cwd, title, { paired = false, pairKey = '' 
 // Build an xterm view bound to an EXISTING PTY id (used right after create and to
 // rehydrate live PTYs after the window was closed and reopened). `replay` re-draws the
 // PTY's buffered output captured while no window was attached. Does NOT activate the view.
-export async function attachTermView(id, dir, title, { paired = false, pairKey = '', hasContext = false, replay = false } = {}) {
+async function attachTermView(id, dir, title, { paired = false, pairKey = '', hasContext = false, replay = false } = {}) {
   await loadXterm();
   const th = termTheme();
   const el = document.createElement('div');
@@ -302,7 +302,7 @@ function terminalRows(id, lookback = 120) {
 }
 // The agent's last message, extracted and de-chromed (see lib/terminal-tail.mjs). `lines` for the
 // card preview (short), or the full block to hand a headless analysis. '' / [] when unavailable.
-export function terminalTailLines(id, maxLines) { try { return agentOutput(terminalRows(id), { maxLines }); } catch { return []; } }
+function terminalTailLines(id, maxLines) { try { return agentOutput(terminalRows(id), { maxLines }); } catch { return []; } }
 export function readAgentMessage(id, maxLines = 40) { return terminalTailLines(id, maxLines).join('\n'); }
 
 // Drive a terminal's busy state from a CLI hook (turn-start/turn-done over SSE), keyed by the
@@ -395,7 +395,7 @@ function onTermExit(id, paired) {
   }
 }
 
-export function activateTerminal(id) {
+function activateTerminal(id) {
   const t = state.terms.get(id);
   if (!t) return;
   state.activeTabId = null; state.activeTermId = id;

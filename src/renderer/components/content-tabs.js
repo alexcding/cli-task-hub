@@ -44,11 +44,11 @@ function linkIcon(l) {
 // worktree). While it's the shown view no page chip is active. Both are PURE STATE predicates
 // (no DOM class) so a paint that runs before split.js has synced body.pane-diff — activateTab's
 // first paintLeft — still agrees with what the split will show; viewer.js imports inDiff for that.
-export const hasDiffTab = t => !!(t && t.termId && state.terms.get(t.termId));
+const hasDiffTab = t => !!(t && t.termId && state.terms.get(t.termId));
 export const inDiff = t => hasDiffTab(t) && t.paneView === 'diff';
 // The Build chip appears once this context HAS a build terminal (the toolbar's play button made
 // one); it's the way back to the output after looking at the page or the diff.
-export const hasBuildTab = t => !!buildTerm(t);
+const hasBuildTab = t => !!buildTerm(t);
 export const inBuild = t => hasBuildTab(t) && t.paneView === 'build';
 
 function buildChipHtml(t) {

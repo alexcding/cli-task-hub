@@ -82,7 +82,7 @@ export const ghAvatarSrc = (login, frozen = '') =>
 // Shared code font (terminal + diff pane). The fallback chain prefers a system-installed
 // "SF Mono", then the copy served from /sf-mono ("SFMonoServed"), then Menlo. A chosen
 // family is prepended so missing fonts degrade to the same chain.
-export const CODE_FONT_FALLBACK = '"SF Mono", "SFMonoServed", Menlo, Monaco, monospace';
+const CODE_FONT_FALLBACK = '"SF Mono", "SFMonoServed", Menlo, Monaco, monospace';
 export const codeFontStack = family => family ? `"${family}", ${CODE_FONT_FALLBACK}` : CODE_FONT_FALLBACK;
 
 // Working days (Mon–Fri) remaining until `end` — weekends are skipped so a sprint's
