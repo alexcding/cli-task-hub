@@ -13,6 +13,7 @@ import { api, apiJson } from '../services/api.js';
 import { jiraKeyFromUrl, canSplitTerminal, errMsg, basename, hasPage } from '../lib/util.js';
 import { toastErr } from './toast.js';
 import { createTermView, disposeTerm, fitTerm, visibleTerm } from './terminal.js';
+import { buildTerm } from './build.js';
 import { dragDivider } from '../lib/drag.js';
 import { hideDiffPane } from './diff.js';
 import { hideHistory, applyReview } from './history.js';
@@ -224,9 +225,10 @@ function collapseRightPane(tab, t, animate) {
   // (body.pane-resizing) and they land with the pane.
   t.el.style.display = '';
   const finish = () => {
-    document.body.classList.remove('pane-diff', 'pane-blank');
+    document.body.classList.remove('pane-diff', 'pane-build', 'pane-blank');
     hideHistory();
     hideDiffPane();
+    hideBuildTerm(tab);
     showEmptyPane(false);
     setPrSplit(0);                               // the pane is gone: the boundary belongs at the right edge
     document.body.classList.remove('pr-split');
@@ -254,15 +256,33 @@ function collapseRightPane(tab, t, animate) {
 // terminal exists, and is the active chip while the diff shows) + the body.pane-diff class
 // that shows the Review foot.
 function showPaneContent(tab, t) {
+  // The build terminal takes the pane like the diff does. It can be gone (its shell exited, or the
+  // PTY didn't survive) while the tab still remembers the view — fall back to the page rather than
+  // showing an empty pane.
+  const bt = tab.paneView === 'build' ? buildTerm(tab) : null;
+  if (tab.paneView === 'build' && !bt) tab.paneView = 'term';
   const diff = tab.paneView === 'diff';
   document.body.classList.toggle('pane-diff', diff);
-  renderContentTabs();               // adds the Diff chip (cheap no-op when the bar is unchanged)
+  document.body.classList.toggle('pane-build', !!bt);
+  renderContentTabs();               // adds the Diff/Build chips (cheap no-op when unchanged)
   markActiveTab();
   t.el.style.display = '';
+  // Every OTHER context's build terminal must be hidden: they're all siblings in #split-body, and
+  // the last one shown would otherwise sit over this tab's pane.
+  for (const x of state.terms.values()) if (x.pairKey?.startsWith('build:')) x.el.style.display = x === bt ? '' : 'none';
+  if (bt) { bt.el.classList.add('term-side'); fitTerm(bt); }
   if (diff) applyReview(tab, t.cwd); // restore this tab's Review sub-view (Changes / History)
   else { hideHistory(); hideDiffPane(); } // back to the page: drop the opaque history overlay too
-  paintLeft(tab);                    // hides the page under Review, or re-shows it
+  paintLeft(tab);                    // hides the page under Review/Build, or re-shows it
   return diff;
+}
+
+// The pane is going away (collapsed, or the split is being torn down): hide this context's build
+// terminal with it. The PTY keeps running — only the view is dropped, exactly like the page's
+// webview, so reopening the pane on the Build chip shows the output that arrived meanwhile.
+function hideBuildTerm(tab) {
+  const bt = tab && buildTerm(tab);
+  if (bt) bt.el.style.display = 'none';
 }
 
 // Leaving the Diff view for the page (a content tab was picked / a file link opened). Flips the
@@ -311,7 +331,7 @@ export function applyPrLayout(tab, animate = false) {
 export function setPaneView(view) {
   const tab = activeTab();
   if (!canSplitTerminal(tab)) return;
-  const next = ['off', 'diff', 'term'].includes(view) ? view : 'term';
+  const next = ['off', 'diff', 'term', 'build'].includes(view) ? view : 'term';
   const cur = tab.paneView || 'term';
   if (cur === next) return;
   const t = tab.termId && state.terms.get(tab.termId);
@@ -350,7 +370,8 @@ export function clearPrLayout(tab = null, animate = false) {
   // slide animates the page growing (not a bare pane with the page popping in at the end). `tab`
   // is null for the argument-less callers (shell exit, tab switch) — the active tab is the one
   // whose pane needs repainting then.
-  document.body.classList.remove('pane-diff', 'pane-blank');
+  document.body.classList.remove('pane-diff', 'pane-build', 'pane-blank');
+  hideBuildTerm(tab || activeTab());
   showEmptyPane(false);
   const shown = tab || activeTab();
   if (shown) paintLeft(shown);

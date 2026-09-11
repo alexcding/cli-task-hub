@@ -44,7 +44,87 @@ function foreignOrigin(req) {
   catch { return true; }
 }
 
+// ── IDE launch targets ────────────────────────────────────────────────────────────────
+// What a project's IDE should actually open for a given folder. Two inputs, in order:
+//   `rel`  — the project's configured target, relative to the checkout ('ios/App.xcworkspace').
+//            Relative, not absolute, because it resolves against a different folder on every
+//            branch (each worktree). Used whenever it exists in that folder.
+//   `kind` — for an IDE that can't open a plain folder at all (Xcode), a probe fallback for when
+//            nothing is configured.
+// Anything unresolved → the folder itself.
+//
+// The probe (kind='xcode') looks for the thing a developer would double-click, in priority order:
+//   1. *.xcworkspace  (CocoaPods/multi-project checkouts — the workspace is the right entry)
+//   2. *.xcodeproj
+//   3. Package.swift  (a SwiftPM package — Xcode opens the manifest's folder as a package)
+// Shallowest match wins, so a repo with `ios/App.xcworkspace` resolves even when the root has
+// nothing. Nothing found → the folder itself (harmless: Xcode just opens what it can).
+const XCODE_SKIP = new Set(['.git', 'node_modules', 'Pods', 'Carthage', 'DerivedData', 'build', '.build', 'vendor', 'fastlane', '.gradle', 'dist']);
+const XCODE_MAX_DEPTH = 2;
+
+// Best target inside ONE directory, or '' — the priority order above.
+function xcodePick(dir, entries) {
+  const named = ext => entries.filter(e => e.name.endsWith(ext)).map(e => e.name).sort()[0];
+  const ws = named('.xcworkspace');   // a bundle dir; never the project.xcworkspace inside a
+  if (ws) return path.join(dir, ws);  // .xcodeproj, since we don't descend into those (below)
+  const proj = named('.xcodeproj');
+  if (proj) return path.join(dir, proj);
+  if (entries.some(e => e.isFile() && e.name === 'Package.swift')) return path.join(dir, 'Package.swift');
+  return '';
+}
+
+// Breadth-first so the shallowest target wins. Bundle dirs (.xcodeproj/.xcworkspace) and the
+// heavy/generated folders above are never descended into.
+async function xcodeTarget(root) {
+  let level = [root];
+  for (let depth = 0; depth <= XCODE_MAX_DEPTH && level.length; depth++) {
+    const next = [];
+    for (const dir of level) {
+      let entries;
+      try { entries = await fsp.readdir(dir, { withFileTypes: true }); } catch { continue; }
+      const hit = xcodePick(dir, entries);
+      if (hit) return hit;
+      for (const e of entries) {
+        if (!e.isDirectory() || e.name.startsWith('.') || XCODE_SKIP.has(e.name)) continue;
+        if (e.name.endsWith('.xcodeproj') || e.name.endsWith('.xcworkspace')) continue; // bundles, not folders
+        next.push(path.join(dir, e.name));
+      }
+    }
+    level = next;
+  }
+  return '';
+}
+
 function register(app) {
+  // What a project's IDE should open for a folder. Only 'xcode' needs a probe today; every other
+  // kind opens the folder, and the renderer doesn't call this for those.
+  app.get(ROUTES.LAUNCH_TARGET, async (req, res) => {
+    if (foreignOrigin(req)) return res.status(403).json({ error: 'forbidden' });
+    const dir = resolvePath(req.query.path);
+    if (!dir) return res.status(400).json({ error: 'path required' });
+    const rel = String(req.query.rel || '').trim().replace(/^\/+/, '');
+    const kind = String(req.query.kind || '');
+    try {
+      const st = await fsp.stat(dir);
+      if (!st.isDirectory()) return res.json({ path: dir, source: 'path' });
+      // A configured target wins — but only if it's actually there. A worktree that predates the
+      // file (or a typo) falls through to the probe/folder rather than handing the IDE a bad path.
+      if (rel && !rel.split('/').includes('..')) {
+        const target = path.join(dir, rel);
+        try { await fsp.stat(target); return res.json({ path: target, source: 'configured' }); }
+        catch { /* not in this checkout — fall through */ }
+      }
+      if (kind === 'xcode') {
+        const found = await xcodeTarget(dir);
+        if (found) return res.json({ path: found, source: 'probe' });
+      }
+      res.json({ path: dir, source: 'folder' });
+    } catch (e) {
+      const notFound = e.code === 'ENOENT';
+      res.status(notFound ? 404 : 500).json({ error: notFound ? 'not found' : e.message });
+    }
+  });
+
   // Read a local file for the editor. Returns { path, content, readOnly } or { error }.
   // readOnly drives a non-editable CodeMirror state (no write permission on disk).
   app.get(ROUTES.FILE, async (req, res) => {

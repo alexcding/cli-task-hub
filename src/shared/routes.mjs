@@ -23,6 +23,9 @@ export const ROUTES = Object.freeze({
   TABS: '/api/tabs',
   TASKS: '/api/tasks',                                // durable New Task sessions (GET list / POST upsert / DELETE ?url=)
   FILE: '/api/file',                                  // local file for the embedded editor (GET ?path= read / PUT write)
+  // Which document an IDE should actually open for a folder (GET ?path=&kind=xcode → { path }).
+  // Xcode can't open a plain checkout: it needs the .xcworkspace/.xcodeproj/Package.swift inside.
+  LAUNCH_TARGET: '/api/launch-target',
 
   // ── Projects ─────────────────────────────────────────────────────────────────
   PROJECTS: '/api/projects',

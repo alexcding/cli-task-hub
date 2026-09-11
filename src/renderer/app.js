@@ -4,7 +4,6 @@ import { ROUTES } from '/shared/routes.mjs';
 import { state, activeTab, projectById } from './stores/store.js';
 import { resolveGitClientCmd } from './lib/git-clients.js';
 import { api, forceSync } from './services/api.js';
-import { ICON } from './lib/icons.js';
 import { initTheme, setAppTheme, syncThemeFromSettings } from './services/theme.js';
 import { setFontFamily, bumpFontSize, resetFontSize, zoomTarget, syncFontsFromSettings, populateFontMenus } from './services/fonts.js';
 import { renderTabs, renderProjectNav, tabMenu, sessionMenu, toggleSessionPin, initSidebarResize, projectClick } from './components/sidebar.js';
@@ -19,14 +18,14 @@ import { toggleCommitPop, commitAction } from './components/commit.js';
 import { setReviewView, histShowCommit } from './components/history.js';
 import { loadDashboard, setUsageAgent } from './pages/dashboard.js';
 import { loadProjectPage, projShowSection, projJiraView, reloadProjectPRs, loadProjectWebhooks, saveProjectWebhooks, previewFixVersion,
-  wfNew, wfDelete, wfSetName, wfSetCli, wfAddStep, wfRemoveStep, wfEditStepCommand, wfEditStepTitle, saveWorkflows } from './pages/project.js';
-import { loadGitTab, gitTabPick, gitTabShowCommit, gitTabBack, gitTabRemoveWorktree } from './pages/git-tab.js';
+  wfNew, wfDelete, wfSetName, wfSetCli, wfAddStep, wfRemoveStep, wfEditStepCommand, wfEditStepTitle, saveWorkflows,
+  loadProjectSettings, saveProjectSettings, chooseProjectWorkspace, projIdeChange, chooseProjectIdeTarget } from './pages/project.js';
 import * as jiraView from './pages/jira.js';
 import { loadScrumboard, setBoardFilter, applyBoardQuery } from './pages/scrumboard.js';
 import { loadLogs, setLogCategory, clearLogs } from './pages/logs.js';
 import { openTaskSession, analyzeSession, newWorktreeTask } from './components/tasks.js';
 import { loadPersistedTasks, persistTask } from './services/tasks.js';
-import { loadSettings, saveConfig, switchSettingsTab, setReviewSound, previewReviewSound, setActivityNotify, setAutostart, toggleSecret, setGitClient, setGitClientCmd, toggleHook, setWebviewPool, setDefaultCli, showEvents } from './pages/settings.js';
+import { loadSettings, saveConfig, switchSettingsTab, setReviewSound, previewReviewSound, setActivityNotify, setAutostart, toggleSecret, setGitClient, setGitClientCmd, toggleHook, setWebviewPool, setDefaultCli, showEvents, deleteProject } from './pages/settings.js';
 import { showActivityToast } from './components/activity-toast.js';
 import * as modal from './components/modal.js';
 
@@ -44,7 +43,7 @@ function showPage(name, projectId) {
   document.getElementById('split').hidden = true;
   viewer.hideAllPanes(); // hide native child webviews now — hiding #split alone leaves them painted over the page until the next rAF (throttled in a debug build)
   window.taskhub?.wcv?.hideAll?.(); // a non-web page is showing now: force EVERY embedded webview out of view, incl. orphans this session doesn't track (Tauri)
-  document.body.classList.remove('viewing-tab', 'viewing-term', 'pr-split', 'pane-diff', 'pane-blank', 'split-closed');
+  document.body.classList.remove('viewing-tab', 'viewing-term', 'pr-split', 'pane-diff', 'pane-build', 'pane-blank', 'split-closed');
   state.activeTabId = null; state.activeTermId = null;  // terminals stay alive, just unfocused
   renderTabs();
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
@@ -61,9 +60,8 @@ function showPage(name, projectId) {
     state.activeProjectId = projectId;
     const proj = projectById(projectId);
     document.getElementById('page-title').textContent = proj?.name || 'Project';
-    // Edit lives in the topbar's action slot (right) — the project page shows no title of its own.
-    document.getElementById('topbar-actions').innerHTML =
-      `<button class="topbar-btn" onclick="openEditProjectModal('${projectId}')" title="Edit project" aria-label="Edit project">${ICON.gear}</button>`;
+    // No toolbar action: the project's own config is the page's last section tab (project.js
+    // → Settings), not a topbar gear + modal.
     document.querySelectorAll('.nav-btn[data-project]').forEach(b => { if(b.dataset.project===projectId) b.classList.add('active'); });
     loadProjectPage(projectId);
   } else if (name === 'settings') {
@@ -249,7 +247,8 @@ Object.assign(window, {
   saveLinkFile: viewer.saveLinkFile, openFileTab: viewer.openFileTab,
   saveTabs: viewer.saveTabs, __refreshTabs: renderTabs,
   openPrSplit: viewer.openPrSplit, openRepo: viewer.openRepo, openExternal: viewer.openExternal, jiraClick: viewer.jiraClick,
-  openTabFolder: viewer.openTabFolder, newSession: viewer.newSession,
+  openTabFolder: viewer.openTabFolder, openTabIde: viewer.openTabIde, newSession: viewer.newSession,
+  runBuild: viewer.runBuildClick, stopBuild: viewer.stopBuildClick,   // the IDE chip's play/stop half
   folderMenu: viewer.folderMenu, removeTabWorktree: viewer.removeTabWorktree,
   folderChipClick: viewer.folderChipClick,
   // viewer toolbar
@@ -265,16 +264,15 @@ Object.assign(window, {
   setProjJiraFilter: jiraView.setProjJiraFilter,
   openStatusMenu: jiraView.openStatusMenu, openAssignMenu: jiraView.openAssignMenu, jiraSearch: jiraView.jiraSearch,
   projShowSection, projJiraView, reloadProjectPRs, loadProjectWebhooks, saveProjectWebhooks, previewFixVersion, setUsageAgent,
+  loadProjectSettings, saveProjectSettings, chooseProjectWorkspace, projIdeChange, chooseProjectIdeTarget, deleteProject, // the project page's Settings tab
   wfNew, wfDelete, wfSetName, wfSetCli, wfAddStep, wfRemoveStep, wfEditStepCommand, wfEditStepTitle, saveWorkflows,
-  loadGitTab, gitTabPick, gitTabShowCommit, gitTabBack, gitTabRemoveWorktree,
   loadLogs, setLogCategory, clearLogs, showEvents, toggleEventsPopover, // the sidebar bell
   openTaskSession, newWorktreeTask, sessionMenu, toggleSessionPin, // the sidebar's session rows (click, hover pin, right-click menu)
   loadSettings, saveConfig, switchSettingsTab, setReviewSound, previewReviewSound, setActivityNotify, setAutostart, toggleSecret, setGitClient, setGitClientCmd, toggleHook, setWebviewPool, setDefaultCli, projectClick,
   __activityToast: showActivityToast, // main pushes activity toasts here when the app is frontmost
-  // project modal
-  openNewProjectModal: modal.openNewProjectModal, openEditProjectModal: modal.openEditProjectModal,
+  // New Project modal (editing a project lives in its Settings tab)
+  openNewProjectModal: modal.openNewProjectModal,
   closeModal: modal.closeModal, saveProject: modal.saveProject,
-  deleteProjectFromModal: modal.deleteProjectFromModal,
   chooseModalWorkspace: modal.chooseModalWorkspace,
 });
 

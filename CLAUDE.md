@@ -63,7 +63,7 @@ separation everything follows:
   (`services/tasks.js → taskSessions()`, one task record per worktree) is the agent running on a
   worktree — live or stopped — keyed by id (its terminal's `pairKey`), titled by its worktree folder,
   linked to its context tab by `url`. The renderer keeps no worktree list and shows no
-  worktree UI: git worktrees without a session are invisible here (the project Git tab lists them).
+  worktree UI: a git worktree without a session is invisible in the app.
   **Open tabs that are not tasks never sit under a project folder**: every task-less tab — PR, Jira
   issue or plain web page (`kind:'web'`, any URL that isn't a PR) — renders in one "Tabs" group below
   the projects (`openTabsMarkup`); it becomes a session row under its project the moment a task is
@@ -102,17 +102,34 @@ separation everything follows:
   the single place an agent is launched or resumed.
 - **The right pane is one toggled state: `tab.paneView`.** `'off'` (hidden — the terminal fills the
   panel, `body.split-closed`), `'term'` (the context's page; blank for a bare session,
-  `body.pane-blank`) or `'diff'` (the worktree diff, `body.pane-diff`). `applyPrLayout` is the only
+  `body.pane-blank`), `'diff'` (the worktree diff, `body.pane-diff`) or `'build'` (this context's
+  build terminal, `body.pane-build` — see the IDE/run chip below). `applyPrLayout` is the only
   place that turns that state into geometry; `setPaneView` the only mutator (it persists + calls it).
   The toolbar's split toggle (`#split-toggle`, terminal segment, right edge) and ⌥⌘Return flip
   `'off'` ↔ the last shown view. `--pr-split` is the RIGHT pane's width, so `applyPrLayout`'s
   `animate` names the edge that moves: `'pane'` (the toggle — the pane grows out of / collapses into
   the right edge) or `'term'` (a session was just created — the terminal slides in from the left).
-  Only a change in the pane's visibility animates; swapping page↔diff inside an open pane does not.
+  Only a change in the pane's visibility animates; swapping page↔diff↔build inside an open pane does not.
+  `'build'` is never persisted (the server stores only `off`/`diff`/`term`) and falls back to the
+  page when the build terminal is gone.
   During a `'pane'` animation `body.pane-resizing` pins the terminal at full width under the pane
   (it never moves or reflows mid-animation); `body.pr-tweening` is on for any boundary tween and
   tells the terminals' ResizeObserver to hold its refit until the boundary lands. A context with no live terminal always shows its page, whatever
   the persisted state says (`rightPaneHidden`).
+- **The terminal toolbar's launchers are two chips, both fed by project settings.** `#split-folder`
+  opens the current folder in the app-level git client (Settings → Appearance), or reveals it in
+  Finder when none is set; Reveal/Delete worktree are its right-click menu, and it shows no folder
+  name (the sidebar already titles the session by its worktree). `#split-ide` is the project's own
+  pair: **open** (the IDE, wearing that editor's mark from `lib/ides.js`) and **run** (the project's
+  `runCmd` script). Either half can be absent; with both absent the chip hides. What the IDE opens
+  and what `{target}` means is resolved server-side by `GET /api/launch-target` — the project's
+  `ideTarget` (relative to the checkout, so it lands in THIS branch's worktree), else a per-IDE
+  probe (Xcode can't open a folder: `.xcworkspace` → `.xcodeproj` → `Package.swift`), else the
+  folder — and `{targetFlag}` in a run script expands to the flag that target belongs to
+  (`--workspace-path` vs `--project-path`), which differs per worktree. A run never uses the
+  session's own terminal (the agent lives there and is rarely at a
+  prompt): `components/build.js` gives each context its own `build:<url>`-keyed PTY, shown in the
+  right pane with a pinned Build chip, and polls `term.foreground` to flip the button play↔stop.
 - **Embedded webviews are pooled.** `tab.wv` / `link.wv` are built lazily on first show and torn
   down when they fall out of the LRU pool (`state.webviewPool`, Settings → System), then rebuilt
   from `tab.cur` / `link.url`. Never cache a `wv` reference; re-read `owner.wv` (may be null) and

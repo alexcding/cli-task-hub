@@ -99,8 +99,8 @@ async function removeTaskRecord(task, termId) {
   await unpersistTask(task.id);
 }
 
-// THE single worktree-removal path — session menu (deleteTaskSession), the project Git tab's
-// "remove", and the folder chip's Delete worktree all come here. Removes EVERY session record on the
+// THE single worktree-removal path — the session row's Remove session (deleteTaskSession) and the
+// folder chip's Delete worktree both come here. Removes EVERY session record on the
 // worktree (a url-linked task from a PR tab can share the folder with a standalone one), after ONE
 // confirm dialog that spells it out — terminals stopped, the folder removed (uncommitted changes
 // lost, the branch kept), apps lsof sees holding files there (Xcode is told to close its documents).

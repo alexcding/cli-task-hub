@@ -114,7 +114,7 @@ export function renderReadOnly(files) {
 
 // Attach file collapse/expand (header click) to a container holding a renderReadOnly() diff.
 // The working-changes pane wires this itself (in initOnce, alongside discard + the hover frame);
-// read-only consumers (commit history, the project Git tab) call this so they share one behavior.
+// read-only consumers (the commit history pane) call this so they share one behavior.
 export function wireDiffCollapse(el) {
   if (!el || el._collapseWired) return;
   el._collapseWired = true;

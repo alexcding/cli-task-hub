@@ -147,6 +147,19 @@ for (const stmt of [
   // carry a terminal always has one), so the flag has no meaning. Drop it rather than keep
   // writing a value nothing reads.
   `ALTER TABLE tabs DROP COLUMN pr_split`,
+  // Per-project IDE launch (the terminal toolbar's folder chip): a preset id ('' = none,
+  // 'custom' = user template) and the template used when it's 'custom'. Per-project, not a
+  // global setting, because the right editor is a property of the repo (Xcode vs VS Code).
+  `ALTER TABLE projects ADD COLUMN ide TEXT NOT NULL DEFAULT ''`,
+  `ALTER TABLE projects ADD COLUMN ide_cmd TEXT NOT NULL DEFAULT ''`,
+  // What the IDE opens inside a checkout, RELATIVE to it (e.g. 'ios/App.xcworkspace') — so the
+  // same setting resolves in every branch's worktree. Blank = the folder itself (or, for an IDE
+  // that can't open folders, whatever the probe finds — see routes/file.js).
+  `ALTER TABLE projects ADD COLUMN ide_target TEXT NOT NULL DEFAULT ''`,
+  // The project's build/run command — a shell script run in the checkout, with {path} (the folder
+  // being worked on) and {target} (the resolved IDE target) substituted. Multi-line is allowed:
+  // it's a script, not a single argv like ide_cmd.
+  `ALTER TABLE projects ADD COLUMN run_cmd TEXT NOT NULL DEFAULT ''`,
   // Pinned sessions get a mirror row in the sidebar's Pinned group (hover pin on the row); the
   // order inside their project is unaffected.
   `ALTER TABLE tasks ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0`,
@@ -162,8 +175,8 @@ const configAll = () => Object.fromEntries(db.prepare('SELECT key, value FROM co
 
 // ── Projects ──────────────────────────────────────────────────────────────────
 // Object shape (camelCase) matches the old JSON store; columns are snake_case.
-const PROJECT_FIELDS = ['name', 'repo', 'workspace', 'jiraProjectKey', 'jql', 'mergeTransition', 'forwardWebhooks', 'fixVersionEnabled', 'fixVersionPrefix', 'fixVersionScript', 'workflows'];
-const COL = { name: 'name', repo: 'repo', workspace: 'workspace', jiraProjectKey: 'jira_project_key', jql: 'jql', mergeTransition: 'merge_transition', forwardWebhooks: 'forward_webhooks', fixVersionEnabled: 'fix_version_enabled', fixVersionPrefix: 'fix_version_prefix', fixVersionScript: 'fix_version_script', workflows: 'workflows' };
+const PROJECT_FIELDS = ['name', 'repo', 'workspace', 'jiraProjectKey', 'jql', 'mergeTransition', 'forwardWebhooks', 'fixVersionEnabled', 'fixVersionPrefix', 'fixVersionScript', 'workflows', 'ide', 'ideCmd', 'ideTarget', 'runCmd'];
+const COL = { name: 'name', repo: 'repo', workspace: 'workspace', jiraProjectKey: 'jira_project_key', jql: 'jql', mergeTransition: 'merge_transition', forwardWebhooks: 'forward_webhooks', fixVersionEnabled: 'fix_version_enabled', fixVersionPrefix: 'fix_version_prefix', fixVersionScript: 'fix_version_script', workflows: 'workflows', ide: 'ide', ideCmd: 'ide_cmd', ideTarget: 'ide_target', runCmd: 'run_cmd' };
 // Fields stored as 0/1 INTEGER (SQLite has no bool type). One place to coerce on write.
 const BOOL_FIELDS = new Set(['forwardWebhooks', 'fixVersionEnabled']);
 // Fields stored as a JSON-encoded TEXT column (objects/arrays). Encoded on write, parsed on read.
@@ -179,6 +192,7 @@ const _project = r => r && {
   forwardWebhooks: !!r.forward_webhooks, created_at: r.created_at,
   fixVersionEnabled: !!r.fix_version_enabled, fixVersionPrefix: r.fix_version_prefix || '', fixVersionScript: r.fix_version_script || '',
   workflows: _safeJson(r.workflows, []),
+  ide: r.ide || '', ideCmd: r.ide_cmd || '', ideTarget: r.ide_target || '', runCmd: r.run_cmd || '',
 };
 
 const getProjects = () => db.prepare('SELECT * FROM projects ORDER BY created_at ASC').all().map(_project);
@@ -193,14 +207,16 @@ const addProject = (fields = {}) => {
     forwardWebhooks: fields.forwardWebhooks === undefined ? true : !!fields.forwardWebhooks,
     fixVersionEnabled: !!fields.fixVersionEnabled,
     fixVersionPrefix: fields.fixVersionPrefix || '', fixVersionScript: fields.fixVersionScript || '',
+    ide: fields.ide || '', ideCmd: fields.ideCmd || '', ideTarget: fields.ideTarget || '', runCmd: fields.runCmd || '',
     created_at: fields.created_at || now(),
   };
   db.prepare(`INSERT INTO projects (id, name, repo, workspace, jira_project_key, jql, merge_transition, forward_webhooks,
-                                    fix_version_enabled, fix_version_prefix, fix_version_script, created_at)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+                                    fix_version_enabled, fix_version_prefix, fix_version_script, ide, ide_cmd, ide_target, run_cmd, created_at)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
     .run(p.id, p.name, p.repo, p.workspace, p.jiraProjectKey, p.jql, p.mergeTransition,
          toColValue('forwardWebhooks', p.forwardWebhooks),
          toColValue('fixVersionEnabled', p.fixVersionEnabled), p.fixVersionPrefix, p.fixVersionScript,
+         p.ide, p.ideCmd, p.ideTarget, p.runCmd,
          p.created_at);
   return p;
 };

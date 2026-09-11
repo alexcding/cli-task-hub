@@ -75,6 +75,19 @@ function projectPatch(body) {
   if (body.fixVersionPrefix !== undefined) patch.fixVersionPrefix = String(body.fixVersionPrefix).trim();
   if (body.fixVersionScript !== undefined) patch.fixVersionScript = String(body.fixVersionScript);
   if (body.workflows !== undefined) patch.workflows = sanitizeWorkflows(body.workflows);
+  // IDE launch for this project's folders (the terminal toolbar's chip): a preset id, or
+  // 'custom' plus the `{path}` command template to run.
+  if (body.ide !== undefined) patch.ide = String(body.ide).trim();
+  if (body.ideCmd !== undefined) patch.ideCmd = String(body.ideCmd).trim();
+  // What to open inside the checkout, relative to it — it's resolved against a DIFFERENT folder
+  // per branch (each worktree), so an absolute path or a `..` escape is a mistake, not a choice.
+  if (body.ideTarget !== undefined) {
+    const rel = String(body.ideTarget).trim().replace(/^\/+/, '');
+    if (rel.split('/').includes('..')) return { error: 'IDE target must stay inside the checkout' };
+    patch.ideTarget = rel;
+  }
+  // The build/run script. Only the ends are trimmed — the body may legitimately be several lines.
+  if (body.runCmd !== undefined) patch.runCmd = String(body.runCmd).trim();
   if (body.repo  !== undefined) {
     const raw = String(body.repo).trim();
     if (raw === '') { patch.repo = ''; }

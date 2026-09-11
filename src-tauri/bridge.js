@@ -223,6 +223,8 @@
 
     setTheme: function (value) { return invoke('set_theme', { value: value }); },
     chooseFolder: function () { return invoke('choose_folder'); },
+    // File picker (packages like .xcworkspace count as files), opened inside `start`.
+    chooseFile: function (opts) { opts = opts || {}; return invoke('choose_file', { start: opts.start || null, title: opts.title || null }); },
     previewSound: function (p) { return invoke('preview_sound', { path: p == null ? null : p }); },
     openPath: function (p) { return invoke('open_path', { path: p }); },
     openExternal: function (url) { return invoke('open_external', { url: url }); },
@@ -286,6 +288,7 @@
       ctx = ctx || {};
       var items = [];
       if (ctx.hasClient) items.push({ id: 'client', label: 'Open in ' + (ctx.clientLabel || 'git client') });
+      if (ctx.hasIde) items.push({ id: 'ide', label: 'Open in ' + (ctx.ideLabel || 'IDE') });
       items.push({ id: 'finder', label: 'Reveal in Finder' });
       if (ctx.isWorktree) { items.push({ separator: true }); items.push({ id: 'delete', label: 'Delete Worktree…' }); }
       return popupMenu(items);

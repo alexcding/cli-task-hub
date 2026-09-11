@@ -2,9 +2,8 @@
 // diff (current uncommitted changes, rendered by diff.js) and this commit history. History is a
 // half-height split — the commit list on top, the selected commit's diff below.
 //
-// The LIST reuses the project Git tab's renderer (git.js renderCommitRows: graph lanes + author
-// avatars + ref chips), so it looks identical to the project-detail history; it's scoped to the
-// branch's own commits (GIT_LOG aheadOnly, base..HEAD). The selected commit's diff (GIT_SHOW)
+// The LIST is rendered by git.js renderCommitRows (author avatars + ref chips) and is scoped to
+// the branch's own commits (GIT_LOG aheadOnly, base..HEAD). The selected commit's diff (GIT_SHOW)
 // uses our read-only .diff-table renderer (diff.js renderReadOnly), so the code follows the
 // --diff-font / --diff-font-size tokens (font picker + ⌘+/⌘− zoom) like the working diff.
 //
@@ -119,11 +118,10 @@ function renderList() {
   if (!t) return;
   if (!_commits.length) { t.innerHTML = `<div class="hist-empty">${_base ? `No commits ahead of ${esc(_base)}.` : 'No commits on this branch yet.'}</div>`; return; }
   const head = `<div class="hist-head">${_base ? `<span class="hist-base">vs ${esc(_base)}</span>` : ''}<span class="hist-count">${_commits.length}</span></div>`;
-  const rows = renderCommitRows(_commits, null, {
+  const rows = renderCommitRows(_commits, {
     onclick: sha => `histShowCommit('${sha}')`,
     selected: _sel,
     avatarUrl: c => (_avatars && (_avatars[c.sha] || _byName?.[c.author])) || '',
-    lanes: false, // single branch (base..HEAD) — no graph column needed
   });
   t.innerHTML = head + `<div class="hist-clog" style="--pg-row-h:${ROW_H}px">${rows}</div>`;
   // Default to the newest commit so the diff pane shows something instead of the placeholder.
@@ -193,7 +191,7 @@ let _wired = false;
 function initOnce(p) {
   if (_wired) return;
   _wired = true;
-  wireDiffCollapse(p); // file collapse/expand — shared with the Changes pane + Git tab
+  wireDiffCollapse(p); // file collapse/expand — shared with the Changes pane
   dragDivider(p, {
     hit: e => !!e.target.closest('#hist-divider'),
     move(e) {

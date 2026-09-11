@@ -2,12 +2,13 @@
 // (the main process strips X-Frame-Options/CSP so framing is allowed). Opened links
 // live as tabs in the left nav; activating one shows it full-width here.
 import { ROUTES } from '/shared/routes.mjs';
-import { state, activeTab, prByUrl, prGroup, prTabTitle, jiraTabTitle, jiraByKey } from '../stores/store.js';
+import { state, activeTab, prByUrl, prGroup, prTabTitle, jiraTabTitle, jiraByKey, projectByWorkspace } from '../stores/store.js';
 import { api, apiJson } from '../services/api.js';
 import { esc, jiraKeyFromUrl, canSplitTerminal, isPrUrl, ghAvatarSrc, basename, hasPage, isSessionUrl } from '../lib/util.js';
 import { seedAvatar } from '../lib/avatars.js';
 import { ICON } from '../lib/icons.js';
 import { gitClientLabel, gitClientIcon } from '../lib/git-clients.js';
+import { ideLabel, ideIcon, resolveIdeCmd, ideProbe } from '../lib/ides.js';
 import { toast, toastErr } from './toast.js';
 import { renderTabs } from './sidebar.js';
 import { openMenu, closeMenu } from './menu.js';
@@ -18,6 +19,7 @@ import { deleteWorktreeAt, ensureWorktree } from './tasks.js';
 import { suggestSession } from './new-session-dialog.js';
 import { refreshWorkflowBtn, launchCli } from './workflow.js';
 import { hideDiffPane } from './diff.js';
+import { buildTerm, runBuild, stopBuild, isBuilding, disposeBuildTerm } from './build.js';
 import { attachFind, closeFind } from './find.js';
 import { renderContentTabs, playTabIn, playTabOut, markActiveTab, defaultChipRect, flipDefaultChip, focusCtabInput, inDiff } from './content-tabs.js';
 import { ensureEditor, disposeEditor, saveEditor, focusEditor, gotoLine } from './editor.js';
@@ -253,11 +255,13 @@ export function paintLeft(tab) {
   // of leaving a void, and the browser foot (back/forward/home for a page that isn't there) goes.
   // Decided HERE because paintLeft is the one path every view change goes through: closing the last
   // web tab of a bare session lands in exactly this state without going near the split code.
-  const blank = !inDiff(tab) && !hasPage(tab) && !link;
+  const inBuild = tab.paneView === 'build' && !!buildTerm(tab);
+  const blank = !inDiff(tab) && !inBuild && !hasPage(tab) && !link;
   document.body.classList.toggle('pane-blank', blank);
   showEmptyPane(blank);
-  if (inDiff(tab)) {
-    /* the Diff view covers the pane — leave the page hidden */
+  if (inDiff(tab) || inBuild) {
+    /* the Diff view / the build terminal takes the pane — leave the page hidden. A native
+       embedded webview paints over all DOM, so covering it isn't enough; it must not be shown. */
   } else if (!hasPage(tab)) {                     // bare session: the context has no page at all
     /* nothing to show — the pane holds the diff view or the web tabs the user adds */
   } else if (!link) {                                   // default tab — the PR/Jira page
@@ -636,7 +640,7 @@ export function hideAllPanes() {
   showEmptyPane(false);   // the blank-pane surface belongs to whichever context is showing
   for (const t of state.terms.values()) t.el.style.display = 'none';
   hideDiffPane();
-  document.body.classList.remove('pane-diff');
+  document.body.classList.remove('pane-diff', 'pane-build');
 }
 
 // Closing a web tab NEVER kills its task. A paired terminal is a deliberately-started task (worktree
@@ -669,6 +673,7 @@ function removeTab(id) {
   if (i < 0) return;
   const tab = state.tabs[i];
   closePairedTerm(tab);
+  disposeBuildTerm(tab);   // the build PTY is paired, so nothing else would ever end it
   disposeWebview(tab);
   (tab.links || []).forEach(disposeLink);
   state.tabs.splice(i, 1);
@@ -684,10 +689,10 @@ function removeTab(id) {
 
 export function closeSplit() {
   closeFind();
-  state.tabs.forEach(t => { closePairedTerm(t); disposeWebview(t); (t.links || []).forEach(disposeLink); });
+  state.tabs.forEach(t => { closePairedTerm(t); disposeBuildTerm(t); disposeWebview(t); (t.links || []).forEach(disposeLink); });
   state.tabs = []; state.activeTabId = null; state.activeTermId = null;
   document.getElementById('split').hidden = true;
-  document.body.classList.remove('viewing-tab', 'viewing-term', 'pr-split', 'pane-diff', 'pane-blank', 'split-closed'); // restore <main>
+  document.body.classList.remove('viewing-tab', 'viewing-term', 'pr-split', 'pane-diff', 'pane-build', 'pane-blank', 'split-closed'); // restore <main>
   renderTabs(); // clear tab rows; paired terminals were stopped above
   saveTabs();
 }
@@ -793,10 +798,14 @@ const FOLDER_TTL = 5000;
 let _folderReq = 0;
 let _folderKey = null;
 let _folderAt = 0;
-async function updateFolderChip(force = false) {
+export async function updateFolderChip(force = false) {
   const el = document.getElementById('split-folder');
   if (!el) return;
-  const hideChip = () => { el.hidden = true; el.dataset.path = ''; el.dataset.worktree = ''; el.dataset.workspace = ''; };
+  const ide = document.getElementById('split-ide');
+  const hideChip = () => {
+    el.hidden = true; el.dataset.path = ''; el.dataset.worktree = ''; el.dataset.workspace = '';
+    if (ide) { ide.hidden = true; ide.dataset.ide = ''; }
+  };
   const t = state.activeTermId ? null : activeTab();
   const branch = t && t.kind === 'github' ? (t.branch || prByUrl(t.url)?.headRefName || '') : '';
   // The tab + its branch/key decide the folder; skip the resolve when that's unchanged AND
@@ -818,39 +827,90 @@ async function updateFolderChip(force = false) {
   if (reqId !== _folderReq || state.activeTabId !== tabId) return; // tab switched mid-resolve
   if (!info || !info.path) { hideChip(); return; }
 
-  // Show the folder chip — always the current folder (the branch's worktree if one exists, else the
-  // project workspace). Creating a worktree is no longer a chip CTA; it happens via New Task. When a
-  // git client is configured (Settings), the chip wears that client's brand mark and a click opens the
-  // folder there; Finder moves to the right-click menu. With no client it shows the worktree/folder
-  // glyph and a click reveals in Finder.
+  // The folder chip — always the current folder (the branch's worktree if one exists, else the
+  // project workspace). Creating a worktree is no longer a chip CTA; it happens via New Task. The
+  // folder NAME is not a segment: the worktree is already the session's title in the sidebar, so
+  // repeating it here was dead weight. Finder lives in the right-click menu (and in the fallback
+  // glyph, when no git client is configured).
   const isWorktree = !!info.isWorktree;
-  const name = basename(info.path) || info.path;
   el.dataset.path = info.path;
   // A worktree carries its workspace so the right-click menu can offer deletion (the main
   // checkout can't be deleted, so it leaves these blank).
   el.dataset.worktree = isWorktree ? '1' : '';
   el.dataset.workspace = isWorktree ? (info.workspace || '') : '';
+  // Worktree state stays on the chip (see .is-worktree CSS: it accent-tints the stroke glyphs —
+  // a brand <img> can't take the tint, so a git-client mark reads neutral either way).
+  el.classList.toggle('is-worktree', isWorktree);
   const gc = state.gitClient || {};
   const gcOn = !!(gc.id && gc.cmd);
   const gcIcon = gcOn ? gitClientIcon(gc.id) : '';
-  // Two segments: the icon opens the configured git client (a deeplink), the name reveals in Finder.
-  const icTitle = gcOn ? `Open in ${gitClientLabel(gc.id)}` : 'Reveal in Finder';
-  const nameTitle = (isWorktree ? 'Worktree — reveal in Finder — ' : 'Reveal in Finder — ') + info.path;
-  // Keep the worktree state on the chip even when a brand <img> replaces the glyph: the accent
-  // tint targets the stroke glyph, and an accent ring marks the img (see .is-worktree CSS), so a
-  // worktree stays distinguishable from a main checkout regardless of which icon is shown.
-  el.classList.toggle('is-worktree', isWorktree);
-  // Icon half only when a git client is configured — its sole job is the deeplink. With no client
-  // it would be a folder glyph that just reveals in Finder, duplicating the name half, so drop it.
   // A configured client without a brand mark (Custom deeplink, unknown id) falls back to the
-  // folder/worktree glyph rather than an empty <img>.
+  // folder/worktree glyph rather than an empty <img>; with no client at all the chip is still the
+  // folder affordance (and the anchor for its right-click menu), so it reveals in Finder.
   const mark = gcIcon ? `<img src="${gcIcon}" alt="">` : (isWorktree ? ICON.worktree : ICON.folder);
-  const glyph = gcOn
-    ? `<button type="button" class="fc-ic" onclick="folderChipClick()" title="${esc(icTitle)}">${mark}</button>`
-    : '';
-  el.innerHTML = glyph
-    + `<button type="button" class="fc-text" onclick="openTabFolder()" title="${esc(nameTitle)}"><span>${esc(name)}</span></button>`;
+  el.innerHTML = gcOn
+    ? `<button type="button" class="fc-ic" onclick="folderChipClick()" title="${esc(`Open in ${gitClientLabel(gc.id)}`)}">${mark}</button>`
+    : `<button type="button" class="fc-ic" onclick="openTabFolder()" title="${esc(`Reveal in Finder — ${info.path}`)}">${mark}</button>`;
   el.hidden = false;
+
+  paintIdeChip(info);
+}
+
+// The IDE chip (#split-ide) — its own control beside the folder chip, so it can carry more than
+// one action later (a Run half, say) without reshaping the folder chip. The IDE is a PROJECT
+// setting (which editor a checkout belongs in is a property of the repo), resolved from the
+// project this folder hangs off: info.workspace is that project's main checkout. Everything the
+// click needs is cached on the element so it needs no second lookup.
+function paintIdeChip(info) {
+  const el = document.getElementById('split-ide');
+  if (!el) return;
+  const pj = projectByWorkspace(info.workspace);
+  const cmd = resolveIdeCmd(pj?.ide, pj?.ideCmd);
+  el.dataset.ide = cmd;
+  el.dataset.ideId = cmd ? (pj?.ide || '') : '';
+  // What to open inside the folder: the project's configured target (relative — it resolves per
+  // worktree), and the probe to fall back on for an IDE that can't open a folder (Xcode). Kept
+  // even with no IDE — {target} in the run script resolves through the same two settings.
+  el.dataset.ideRel = pj?.ideTarget || '';
+  el.dataset.ideProbe = ideProbe(pj?.ide);
+  const icon = ideIcon(pj?.ide);
+  const mark = icon ? `<img src="${icon}" alt="">` : ICON.code;   // 'custom' has no brand mark
+  // Two independent halves: open (an IDE is set) and run (a script is set). A project can have
+  // either, both, or neither — with neither there's nothing to show, so the chip stays hidden.
+  const openHalf = cmd
+    ? `<button type="button" class="fc-ic" onclick="openTabIde()" title="${esc(`Open in ${ideLabel(pj?.ide)}`)}">${mark}</button>`
+    : '';
+  el.innerHTML = openHalf + runHalfHtml(pj);
+  el.hidden = !el.innerHTML;
+}
+
+// The play half, right of the IDE mark: runs the project's build/run script (project Settings →
+// IDE card). No script configured → no button, so the chip stays a single launcher. While the
+// build is running it becomes a stop square (⌃C into the build terminal).
+function runHalfHtml(pj) {
+  if (!pj?.runCmd) return '';
+  const running = isBuilding(activeTab());
+  return `<button type="button" class="fc-ic fc-run${running ? ' running' : ''}"
+     onclick="${running ? 'stopBuild()' : 'runBuild()'}"
+     title="${running ? 'Stop the running build (⌃C)' : esc('Run: ' + pj.runCmd.split('\n')[0])}">${running ? ICON.stop : ICON.play}</button>`;
+}
+
+// Toolbar play / stop. The run itself lives in build.js; setPaneView is passed in so build.js
+// doesn't have to reach back into the split module (which already imports it).
+export function runBuildClick() { runBuild(activeTab(), { setView: setPaneView, onState: syncBuildBtn }); }
+export function stopBuildClick() { stopBuild(activeTab()); }
+
+// Repaint just the play half — the build's busy state changed (setTermBusy), so the button has to
+// flip between play and stop without re-resolving the folder.
+function syncBuildBtn() {
+  const el = document.getElementById('split-ide');
+  if (!el || el.hidden) return;
+  const t = activeTab();
+  const ws = document.getElementById('split-folder')?.dataset.workspace || document.getElementById('split-folder')?.dataset.path || '';
+  const pj = projectByWorkspace(ws);
+  const cur = el.querySelector('.fc-run');
+  const html = runHalfHtml(pj);
+  if (cur) cur.outerHTML = html; else if (html) el.insertAdjacentHTML('beforeend', html);
 }
 
 // Folder-chip click: open the branch in the configured git client, else reveal in Finder.
@@ -859,6 +919,32 @@ export function folderChipClick() {
   const p = document.getElementById('split-folder')?.dataset.path;
   if (p && id && cmd) { window.taskhub?.openInGitClient?.(cmd, p); return; }
   openTabFolder();
+}
+
+// Open the chip's folder in the project's IDE. Same native launcher as the git client — it's the
+// generic "{path} template" runner, not a git-specific one.
+//
+// What gets opened is not always the folder: Xcode opens DOCUMENTS, and a monorepo's IDE target
+// may sit at a subpath. So the server resolves it (routes/file.js) from the project's configured
+// target (relative to the checkout, so it lands in THIS branch's worktree) and, failing that, a
+// per-IDE probe. Best-effort: any failure opens the folder, which is what most IDEs want anyway.
+export async function openTabIde() {
+  const el = document.getElementById('split-ide');
+  const folder = document.getElementById('split-folder')?.dataset.path, cmd = el?.dataset.ide;
+  if (!folder || !cmd) return;
+  let target = folder;
+  const rel = el.dataset.ideRel || '', probe = el.dataset.ideProbe || '';
+  if (rel || probe) {
+    try {
+      const q = `path=${encodeURIComponent(folder)}&rel=${encodeURIComponent(rel)}&kind=${encodeURIComponent(probe)}`;
+      const r = await api(`${ROUTES.LAUNCH_TARGET}?${q}`);
+      if (r?.path) target = r.path;
+      // A configured target that isn't in this worktree is worth saying out loud — the IDE would
+      // just open the checkout and look like it ignored the setting.
+      if (rel && r?.source !== 'configured') toast(`${rel} isn't in this worktree — opening the folder`);
+    } catch { /* fall back to the folder */ }
+  }
+  window.taskhub?.openInGitClient?.(cmd, target);
 }
 
 // Reveal the active tab's resolved folder in the system file manager.
@@ -879,16 +965,23 @@ export async function folderMenu(e) {
   const { id, cmd } = state.gitClient || {};
   const hasClient = !!(id && cmd);
   const isWorktree = el.dataset.worktree === '1';
+  const ideEl = document.getElementById('split-ide');
+  const ideId = ideEl?.dataset.ideId || '', hasIde = !!ideEl?.dataset.ide;
   if (window.taskhub?.folderMenu) {
     closeMenu(); // dismiss any open in-page menu (the native menu won't fire the click that would)
-    const action = await window.taskhub.folderMenu({ hasClient, clientLabel: hasClient ? gitClientLabel(id) : '', isWorktree });
+    const action = await window.taskhub.folderMenu({
+      hasClient, clientLabel: hasClient ? gitClientLabel(id) : '',
+      hasIde, ideLabel: hasIde ? ideLabel(ideId) : '', isWorktree,
+    });
     if (action === 'client') folderChipClick();
+    else if (action === 'ide') openTabIde();
     else if (action === 'finder') openTabFolder();
     else if (action === 'delete') removeTabWorktree();
     return false;
   }
   return openMenu(e, [
     hasClient && { label: `Open in ${gitClientLabel(id)}`, onClick: folderChipClick },
+    hasIde && { label: `Open in ${ideLabel(ideId)}`, onClick: openTabIde },
     { label: 'Reveal in Finder', onClick: openTabFolder },
     isWorktree && { label: 'Delete worktree…', onClick: removeTabWorktree, danger: true },
   ]);

@@ -70,31 +70,31 @@ body.split-closed .bar-term { flex:1; border-right:none; }
 /* Icon-only run button (no label): square-ish. The play glyph uses the app's neutral toolbar tone
    (inherits .pf-btn's --text-2, → --text on hover) — not the accent. */
 .wf-btn { padding:7px 9px; }
-/* Workspace/worktree folder chip — leads the terminal toolbar segment (.bar-term); opens the
-   folder in the configured git client, else reveals in Finder. */
-/* Outlined segmented control (like .wf-group): the chip owns the border/corners; the icon half
-   (opens the git client) and the name half (reveals in Finder) sit inside it, split by a hairline. */
-/* min-width:0 + flex-shrink let the chip yield in a narrow pane (its .fc-text ellipsis-truncates)
-   instead of overflowing its side and overlapping the workflow group on the right. */
-.folder-chip { flex-shrink:1; min-width:0; max-width:240px; display:inline-flex; align-items:center; border:1px solid var(--border); border-radius:16px; overflow:hidden;
+/* Toolbar chips at the head of the terminal segment (.bar-term): #split-folder (the current
+   folder — git client + Finder) and #split-ide (the project's IDE). Each is its own outlined
+   group (like .wf-group), so they read as separate controls and either can grow a second half
+   without disturbing the other — .fc-ic + .fc-ic draws the hairline between halves.
+   Icons only: the folder NAME is not a segment (the sidebar already titles the session by its
+   worktree), and Finder lives in the right-click menu. */
+.tb-chip { flex-shrink:0; display:inline-flex; align-items:center; border:1px solid var(--border); border-radius:16px; overflow:hidden;
   color:var(--text-2); font:inherit; font-size:12px; font-weight:500; }
-.folder-chip:hover { border-color:var(--border-focus); }
-.folder-chip .fc-ic, .folder-chip .fc-text { display:inline-flex; align-items:center; border:none; background:none; cursor:pointer; color:inherit; font:inherit; padding:7px 10px; }
-.folder-chip .fc-ic { flex-shrink:0; }
-.folder-chip .fc-ic svg { flex-shrink:0; width:16px; height:16px; display:block; }
+.tb-chip:hover { border-color:var(--border-focus); }
+.tb-chip .fc-ic { display:inline-flex; align-items:center; border:none; background:none; cursor:pointer; color:inherit; font:inherit; padding:7px 10px; flex-shrink:0; }
+.tb-chip .fc-ic + .fc-ic { border-left:1px solid var(--border); }
+.tb-chip .fc-ic svg { flex-shrink:0; width:16px; height:16px; display:block; }
 /* When a git client is configured the glyph is that client's brand mark (an <img>). Sized 18px —
    a touch larger than the 16px workflow play glyph to optically match it, since brand logos bake
    in their own padding and read smaller than an edge-to-edge stroke icon at the same box size. */
-.folder-chip .fc-ic img { flex-shrink:0; width:18px; height:18px; display:block; border-radius:3px; object-fit:contain; }
-.folder-chip .fc-text { border-left:1px solid var(--border); min-width:0; flex:1; }
-.folder-chip .fc-text:first-child { border-left:none; }  /* no git client → name is the sole segment */
-.folder-chip .fc-text span { min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.folder-chip .fc-ic:hover, .folder-chip .fc-text:hover { background:var(--surface-hover); color:var(--text); }
-/* Worktree tabs: tint the glyph with the accent so it's distinguishable at a glance. (A brand
-   <img> can't take the tint; the worktree state still shows in the chip's title.) */
-.folder-chip.is-worktree .fc-ic { color:var(--accent); }
+.tb-chip .fc-ic img { flex-shrink:0; width:18px; height:18px; display:block; border-radius:3px; object-fit:contain; }
+.tb-chip .fc-ic:hover { background:var(--surface-hover); color:var(--text); }
+/* The IDE chip's play half (build.js): the accent while a build is running, so the stop square
+   reads as live state rather than another launcher. */
+.tb-chip .fc-run.running { color:var(--accent); }
+/* Worktree tabs: tint the stroke glyphs with the accent so it's distinguishable at a glance
+   (a brand <img> can't take the tint, so a git-client mark stays neutral). */
+.tb-chip.is-worktree .fc-ic { color:var(--accent); }
 /* display:inline-flex above overrides the UA [hidden] rule, so hiding needs to be explicit. */
-.folder-chip[hidden] { display:none; }
+.tb-chip[hidden] { display:none; }
 body.viewing-tab main { display:none; }
 .tab-ic { display:inline-flex; flex-shrink:0; position:relative; }
 .tab-ic svg { display:block; width:20px; height:20px; }
@@ -235,6 +235,9 @@ body.pr-split .split-body .editor-pane { left:var(--term-w); }
    The 1px inset keeps the seam pixel in DOM territory so the divider always renders. */
 body.pr-split .split-body webview, body.pr-split .split-body .wcv-shim { left: calc(var(--term-w) + 1px); width:auto; }
 body.pr-split .split-body .term-pane { right: var(--pr-split, 60%); }
+/* A BUILD terminal (build.js) takes the RIGHT pane instead — same region as the diff pane, so the
+   session's own terminal stays visible on the left while its build runs. */
+body.pr-split .split-body .term-pane.term-side { left:var(--term-w); right:0; }
 /* Split toggle animation (applyPrLayout 'pane' / collapseRightPane): the RIGHT pane resizes at the
    right edge — --pr-split runs 0 ↔ its resting width — while the terminal is PINNED at full width
    underneath, so only the pane changes size and the terminal neither moves nor reflows. Same
@@ -244,13 +247,14 @@ body.pr-split .split-body .term-pane { right: var(--pr-split, 60%); }
    z-index — neither #split nor .split-body is a stacking context, so a negative child drops behind
    their backgrounds and the terminal vanishes for the length of the animation. 3 stays under
    .history-pane (4), .pane-foot (5) and #pr-divider (6). */
-body.pane-resizing .split-body .term-pane { right: 0; }
+body.pane-resizing .split-body .term-pane:not(.term-side) { right: 0; }
 body.pane-resizing .split-body webview,
 body.pane-resizing .split-body .wcv-shim,
 body.pane-resizing .split-body .editor-pane,
 body.pane-resizing .split-body .diff-pane,
 body.pane-resizing .split-body .pane-empty,
-body.pane-resizing .split-body .history-pane { z-index:3; }
+body.pane-resizing .split-body .history-pane,
+body.pane-resizing .split-body .term-pane.term-side { z-index:3; }
 #pr-divider { position:absolute; top:0; bottom:0; left:var(--term-w); width:7px; transform:translateX(-50%); cursor:col-resize; z-index:6; display:none; }
 #pr-divider::before { content:''; position:absolute; left:50%; top:0; bottom:0; width:1px; transform:translateX(-50%); background:var(--border); }
 #pr-divider:hover::before { background:var(--border-focus); }
@@ -324,19 +328,22 @@ html[data-theme="dark"]         { --seg-thumb:#3d3d3d; --seg-shadow:0 1px 2px rg
    a terminal is the sole view. Its actions now live in the bottom bar, not the toolbar. */
 
 /* Bottom action bars under the RIGHT pane: #browser-foot (Back/Forward/Home) while the page shows,
-   #review-foot (History / Changes + Commit) while body.pane-diff. The terminal has no foot — its
-   actions sit in the toolbar segment above it. Sits below the divider (z<6) so the full-height
-   divider stays draggable; the panes above reserve --foot-h so it never overlaps them. */
+   #review-foot (History / Changes + Commit) while body.pane-diff. NO terminal has a foot — neither
+   the session's (its actions sit in the toolbar segment above it) nor a build console in the pane
+   (body.pane-build): Back/Forward/Home belong to a page, and there's no page under them there.
+   Sits below the divider (z<6) so the full-height divider stays draggable; the panes above reserve
+   --foot-h so it never overlaps them (a terminal doesn't — with no foot it fills the pane). */
 .pane-foot { position:absolute; left:0; right:0; bottom:0; height:var(--foot-h); z-index:5;
   display:none; align-items:center; justify-content:space-between; gap:8px; padding:0 10px;
   background:var(--surface); border-top:1px solid var(--border); }
 .review-foot { left:var(--term-w); }
 body.pr-split.pane-diff .review-foot { display:flex; }
 /* Browser foot (Back / Forward / Home): under the page whenever the page is in view — full width
-   without a terminal, the right pane beside one. Gone under Source and in a solo terminal. */
+   without a terminal, the right pane beside one. Gone under Source, under a build console, and in
+   a solo terminal. */
 .browser-foot { justify-content:flex-start; }
 body.pr-split .browser-foot { left:var(--term-w); }
-body:not(.pane-diff):not(.viewing-term):not(.split-closed):not(.pane-blank) .browser-foot { display:flex; }
+body:not(.pane-diff):not(.pane-build):not(.viewing-term):not(.split-closed):not(.pane-blank) .browser-foot { display:flex; }
 /* The find bar docks in the same bottom strip (same height, higher z) — yield to it while open. */
 body.find-open .browser-foot { display:none; }
 .pf-side { display:flex; align-items:center; gap:6px; min-width:0; }
@@ -397,8 +404,7 @@ body.pr-split .split-body .history-pane { left:var(--term-w); }
 .history-pane[hidden] { display:none; }
 /* Two stacked halves, each scrolling independently, split at --hist-split (list height, 3/7
    default) with a draggable divider between them (history.js drives the var + persists it). */
-/* List on --surface to match the project Git tab (.gt-layout); diff below on --bg like the
-   working diff. */
+/* List on --surface; diff below on --bg like the working diff. */
 /* Floor the list at the sticky header + ~4 commit rows (ROW_H 44px) so it always shows a few
    commits, even when the window is short or the divider is dragged near the top. */
 .hist-top { height:var(--hist-split, 30%); min-height:214px; flex-shrink:0; overflow:auto; background:var(--surface); }
@@ -411,8 +417,8 @@ body.pr-split .split-body .history-pane { left:var(--term-w); }
   font-weight:600; position:sticky; top:0; background:var(--surface); z-index:1; }
 .hist-base { flex-shrink:0; color:var(--text-3); font-weight:500; font-size:12px; }
 .hist-count { color:var(--text-3); font-weight:500; }
-/* Lane-less rows (single-branch history): indent where the graph column would have been. */
-.hist-clog .pg-crow.no-lanes { padding-left:12px; }
+/* No graph column (the list is one branch) — indent the row where it would have been. */
+.hist-clog .pg-crow { padding-left:12px; }
 /* Selected commit row (shared .pg-crow markup): accent-tint the row + its subject. */
 .hist-clog .pg-crow.sel { background:var(--accent-bg); }
 .hist-clog .pg-crow.sel .pg-crow-subj { color:var(--accent); }

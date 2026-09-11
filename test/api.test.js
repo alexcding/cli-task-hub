@@ -78,6 +78,32 @@ test('projects: create, read, update, delete', async () => {
   assert.equal((await get(`/api/projects/${id}`)).status, 404);
 });
 
+test('projects: the per-project IDE round-trips (id, template, launch target, run script)', async () => {
+  const p = (await send('POST', '/api/projects', { name: 'IDE' })).body;
+  assert.equal(p.ide, '');      // no IDE until one is picked
+  assert.equal(p.ideCmd, '');
+
+  const preset = await send('PUT', `/api/projects/${p.id}`, { ide: 'vscode' });
+  assert.equal(preset.body.ide, 'vscode');
+
+  const custom = await send('PUT', `/api/projects/${p.id}`, { ide: 'custom', ideCmd: '  open -a Nova {path}  ' });
+  assert.equal(custom.body.ide, 'custom');
+  assert.equal(custom.body.ideCmd, 'open -a Nova {path}');
+
+  // The launch target is stored relative to the checkout (it resolves per worktree), so a
+  // leading slash is trimmed and a `..` escape is refused outright.
+  const target = await send('PUT', `/api/projects/${p.id}`, { ideTarget: '/ios/App.xcworkspace' });
+  assert.equal(target.body.ideTarget, 'ios/App.xcworkspace');
+  assert.equal((await send('PUT', `/api/projects/${p.id}`, { ideTarget: '../elsewhere' })).status, 400);
+
+  // The build/run script keeps its interior newlines (it's a script), losing only the ends.
+  const run = await send('PUT', `/api/projects/${p.id}`, { runCmd: '  set -e\nxcodebuild -workspace {target} build\n' });
+  assert.equal(run.body.runCmd, 'set -e\nxcodebuild -workspace {target} build');
+
+  assert.equal((await send('PUT', `/api/projects/${p.id}`, { ide: '' })).body.ide, ''); // back to none
+  await send('DELETE', `/api/projects/${p.id}`);
+});
+
 test('projects: validation errors', async () => {
   assert.equal((await send('POST', '/api/projects', {})).status, 400);
   assert.equal((await send('POST', '/api/projects', { name: '   ' })).status, 400);
@@ -312,6 +338,36 @@ test('GET /api/db reports counts and snapshots', async () => {
   assert.ok(body.counts);
   assert.ok('projects' in body.counts);
   assert.ok(body.snapshots);
+});
+
+test('GET /api/launch-target: configured target wins, Xcode probe backs it up', async () => {
+  const fs = require('fs'), path = require('path'), os = require('os');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'taskhub-ide-'));
+  const q = (params) => get(`/api/launch-target?${new URLSearchParams(params)}`);
+
+  assert.equal((await get('/api/launch-target')).status, 400); // path required
+
+  // Nothing configured, nothing to probe → the folder itself.
+  assert.deepEqual(await q({ path: dir }).then(r => [r.body.path, r.body.source]), [dir, 'folder']);
+
+  // Xcode probe: the shallowest document wins, and .xcworkspace beats .xcodeproj.
+  fs.mkdirSync(path.join(dir, 'ios/App.xcodeproj'), { recursive: true });
+  assert.equal((await q({ path: dir, kind: 'xcode' })).body.path, path.join(dir, 'ios/App.xcodeproj'));
+  fs.mkdirSync(path.join(dir, 'ios/App.xcworkspace'));
+  assert.equal((await q({ path: dir, kind: 'xcode' })).body.path, path.join(dir, 'ios/App.xcworkspace'));
+  fs.mkdirSync(path.join(dir, 'Root.xcodeproj'));   // depth 0 outranks the deeper workspace
+  assert.equal((await q({ path: dir, kind: 'xcode' })).body.path, path.join(dir, 'Root.xcodeproj'));
+
+  // A configured (relative) target wins over the probe...
+  const conf = await q({ path: dir, rel: 'ios/App.xcworkspace', kind: 'xcode' });
+  assert.deepEqual([conf.body.path, conf.body.source], [path.join(dir, 'ios/App.xcworkspace'), 'configured']);
+  // ...but only when it exists in THIS checkout — otherwise the probe/folder takes over.
+  const missing = await q({ path: dir, rel: 'nope/Gone.xcworkspace', kind: 'xcode' });
+  assert.deepEqual([missing.body.path, missing.body.source], [path.join(dir, 'Root.xcodeproj'), 'probe']);
+  // A traversal escape is ignored, never resolved.
+  assert.equal((await q({ path: dir, rel: '../../etc/hosts' })).body.source, 'folder');
+
+  fs.rmSync(dir, { recursive: true, force: true });
 });
 
 test('GET /api/diff: validation, real repo, non-repo', async () => {

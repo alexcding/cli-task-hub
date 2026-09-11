@@ -427,20 +427,25 @@
            full-width when a terminal is the sole view). The terminal panel is always shown on a tab
            that has a session, so there is no on/off control here. -->
       <div class="bar-seg bar-term">
-        <!-- Terminal actions live here (no bottom bar under the terminal): the task's local folder
-             chip — the worktree (or the project workspace before one exists); click opens it in the
-             chosen git client (Settings → Appearance), else reveals in Finder; right-click for both;
-             filled by updateFolderChip — and the Run + workflow picker as one outlined segmented
-             control (Run executes the picker's workflow; refreshWorkflowBtn shows/hides the group and
-             populates it). Both hide when there's no terminal beside the page. The split toggle at
-             the segment's right edge shows/hides the whole right pane. -->
+        <!-- Terminal actions live here (no bottom bar under the terminal), all filled by
+             updateFolderChip / refreshWorkflowBtn and all hidden when there's no terminal beside
+             the page:
+               #split-folder — the current folder (the worktree, or the project workspace before one
+                 exists): opens it in the app-level git client (Settings → Appearance); Reveal in
+                 Finder and Delete worktree are its right-click menu. Icons only, no folder name.
+               #split-ide — the project's IDE (its Settings tab), wearing that editor's own mark. A
+                 chip of its own, not a half of the folder chip, so it can hold more than one action.
+               #wf-group — the Run + workflow picker as one outlined segmented control (Run executes
+                 the picker's workflow).
+             The split toggle at the segment's right edge shows/hides the whole right pane. -->
         <!-- No session for this page yet: start one here (viewer.js newSession — a PR/Jira tab knows
              its branch; a web page takes the next free worktree name, asking only which project when
              there's more than one). viewer.js syncSessionButton shows/hides it. -->
         <button class="bar-session" id="split-new-session" hidden title="Create a session for this page" onclick="newSession(event)">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg><span>New session</span>
         </button>
-        <div class="folder-chip pf-term" id="split-folder" hidden oncontextmenu="return folderMenu(event)"></div>
+        <div class="tb-chip pf-term" id="split-folder" hidden oncontextmenu="return folderMenu(event)"></div>
+        <div class="tb-chip pf-term" id="split-ide" hidden></div>
         <div class="wf-group pf-term" id="wf-group" hidden>
           <button class="pf-btn wf-btn" id="term-workflow" title="Run the selected workflow" onclick="toggleWorkflowRun()">
             <svg class="wf-play" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 4 13.5h7L11 22l9-11.5h-7z"/></svg>
@@ -561,11 +566,11 @@
   </div><!-- /workarea -->
 </div>
 
-<!-- New / Edit Project Modal -->
+<!-- New Project modal (creation only — an existing project is edited in its own
+     Settings tab, the project page's last section). -->
 <div id="modal" class="modal-backdrop" style="display:none" onclick="if(event.target===this)closeModal()">
   <div class="modal">
-    <h2 id="modal-title">New Project</h2>
-    <input type="hidden" id="modal-project-id">
+    <h2>New Project</h2>
     <div class="form-group">
       <label class="form-label">Project Name</label>
       <input type="text" id="modal-name" placeholder="e.g. Record iOS">
@@ -588,7 +593,6 @@
       </div>
     </div>
     <div class="modal-actions">
-      <button class="btn btn-danger" id="modal-delete" style="display:none;margin-right:auto" onclick="deleteProjectFromModal()">Delete</button>
       <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
       <button class="btn btn-primary" onclick="saveProject()">Save</button>
     </div>

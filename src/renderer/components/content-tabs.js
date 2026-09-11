@@ -17,6 +17,7 @@ import { esc, ghAvatarSrc, setHtmlIfChanged, hasPage } from '../lib/util.js';
 import { ICON, TAB_ICON } from '../lib/icons.js';
 import { ciInfo } from './cards.js';
 import { taskForTab } from '../services/tasks.js';
+import { buildTerm } from './build.js';
 
 // Icon for the default (context) chip — the PR author's avatar + CI badge, the Jira mark, or a globe (web tab).
 function defaultIcon(t) {
@@ -45,6 +46,18 @@ function linkIcon(l) {
 // first paintLeft — still agrees with what the split will show; viewer.js imports inDiff for that.
 export const hasDiffTab = t => !!(t && t.termId && state.terms.get(t.termId));
 export const inDiff = t => hasDiffTab(t) && t.paneView === 'diff';
+// The Build chip appears once this context HAS a build terminal (the toolbar's play button made
+// one); it's the way back to the output after looking at the page or the diff.
+export const hasBuildTab = t => !!buildTerm(t);
+export const inBuild = t => hasBuildTab(t) && t.paneView === 'build';
+
+function buildChipHtml(t) {
+  return `<div class="ctab source buildtab ${inBuild(t) ? 'active' : ''}"
+        onclick="setPaneView('build')" title="Output of this worktree's build">
+     <span class="ctab-ic">${ICON.play}</span>
+     <span class="ctab-title">Build</span>
+   </div>`;
+}
 
 function diffChipHtml(t) {
   return `<div class="ctab source ${inDiff(t) ? 'active' : ''}"
@@ -112,11 +125,12 @@ export function renderContentTabs(force = false) {
   // A bare session's context has no page, so it has no default chip — the bar is just the Diff
   // chip and whatever web tabs the user added (plus the toolbar's "+"). Same bar, one chip fewer.
   const page = hasPage(t);
-  const single = page && !(t.links && t.links.length) && !diffTab;
+  const single = page && !(t.links && t.links.length) && !diffTab && !hasBuildTab(t);
   el.classList.toggle('ctabs-single', single);
   el.closest('.bar-wv')?.classList.toggle('single', single);
   // The New-tab "+" is a static button in the toolbar (pinned far right), not rendered here.
   const html = (page ? defaultChipHtml(t) : '') + (diffTab ? diffChipHtml(t) : '')
+    + (hasBuildTab(t) ? buildChipHtml(t) : '')
     + (t.links || []).map(l => linkChipHtml(t, l)).join('');
   setHtmlIfChanged(el, html);
 }
@@ -136,10 +150,13 @@ export function markActiveTab() {
   const t = activeTab();
   const el = document.getElementById('ctabs');
   if (!t || !el) return;
-  const diff = inDiff(t);
+  const diff = inDiff(t), build = inBuild(t);
   el.querySelectorAll('.ctab').forEach(node => {
-    const active = node.classList.contains('source') ? diff
-      : diff ? false
+    // The two pinned chips (Diff, Build) own the pane outright; while either is showing, no page
+    // chip is active.
+    const active = node.classList.contains('buildtab') ? build
+      : node.classList.contains('source') ? diff
+      : diff || build ? false
       : node.classList.contains('default') ? !t.activeLink
       : node.dataset.id === t.activeLink;   // a page-less context has no default chip: nothing is active until a view is picked
     node.classList.toggle('active', active);

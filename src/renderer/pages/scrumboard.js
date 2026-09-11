@@ -116,7 +116,7 @@ export async function loadScrumboard(id = state.boardProjectId) {
       renderScrumboardQuery();
       renderScrumboardFilter();
       setTitle(null);
-      body.innerHTML = `<div class="empty" style="padding:16px;color:var(--text-3)">This project has no Jira key. Set one (⚙ Edit project) to see its sprint board.</div>`;
+      body.innerHTML = `<div class="empty" style="padding:16px;color:var(--text-3)">This project has no Jira key. Set one in the project's Settings tab to see its sprint board.</div>`;
       return;
     }
     const snap = await api(ROUTES.projectBoard(id));

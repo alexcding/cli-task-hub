@@ -173,13 +173,20 @@ export function applyPendingMoves(items) {
   });
 }
 
-// Project by id — the page-level lookup shared by the project page and the Git tab.
+// Project by id — the page-level lookup.
 export const projectById = id => state.projects.find(p => p.id === id) || null;
 
 // The project that owns a PR (by url), so we can root its terminal in that project's
 // local workspace; null cwd → main falls back to the app's own repo.
 export const projectByPrUrl = url => state.projects.find(g => (g.prs || []).some(p => p.url === url)) || null;
 export const projectByRepo  = repo => repo ? state.projects.find(p => p.repo === repo) || null : null;
+// The project a resolved folder belongs to — its workspace is the main checkout every one of
+// its worktrees hangs off (resolveTabFolder returns it), so this recovers the project for
+// folder-scoped project settings (e.g. the IDE the chip launches). Trailing slashes are ignored:
+// a workspace typed (or picked) as `/repo/` must still match the `/repo` a task record carries.
+const noSlash = p => String(p || '').replace(/\/+$/, '');
+export const projectByWorkspace = ws =>
+  ws ? state.projects.find(p => noSlash(p.workspace) === noSlash(ws)) || null : null;
 
 // The project that owns a Jira ticket, matched on the key's project prefix
 // (RECORD-1234 → RECORD) against each project's configured jiraProjectKey.

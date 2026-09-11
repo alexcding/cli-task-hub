@@ -71,14 +71,42 @@ pub fn zoom_apply(app: tauri::AppHandle, t: f64) {
 
 // Native folder picker for choosing a project's workspace folder. Resolves to the chosen
 // absolute path, or null if cancelled.
+//
+// The dialog is opened with the CALLBACK api and awaited over a channel — never the blocking_*
+// variants. A blocking pick runs its own nested event loop on the main thread, which leaves the
+// webview frozen behind the panel (spinning cursor, no repaint) until it closes.
 #[tauri::command]
-pub fn choose_folder(app: tauri::AppHandle) -> Option<String> {
+pub async fn choose_folder(app: tauri::AppHandle) -> Option<String> {
+  let (tx, mut rx) = tauri::async_runtime::channel(1);
   app
     .dialog()
     .file()
     .set_title("Choose workspace folder")
-    .blocking_pick_folder()
-    .map(|p| p.to_string())
+    .pick_folder(move |p| {
+      let _ = tx.try_send(p.map(|f| f.to_string()));
+    });
+  rx.recv().await.flatten()
+}
+
+// Native file picker, opened inside `start` (a folder). Backs the project's "IDE → Open this
+// file" field: on macOS an NSOpenPanel in file mode treats packages as files, so an Xcode
+// `.xcworkspace` / `.xcodeproj` bundle is pickable as a single item — which is exactly what the
+// IDE has to be handed. Resolves to the chosen absolute path, or null if cancelled.
+// Callback + channel, not blocking_pick_file — see choose_folder above.
+#[tauri::command]
+pub async fn choose_file(app: tauri::AppHandle, start: Option<String>, title: Option<String>) -> Option<String> {
+  let mut dlg = app
+    .dialog()
+    .file()
+    .set_title(title.unwrap_or_else(|| "Choose file".to_string()));
+  if let Some(dir) = start.filter(|d| !d.is_empty()) {
+    dlg = dlg.set_directory(dir);
+  }
+  let (tx, mut rx) = tauri::async_runtime::channel(1);
+  dlg.pick_file(move |p| {
+    let _ = tx.try_send(p.map(|f| f.to_string()));
+  });
+  rx.recv().await.flatten()
 }
 
 // Reveal/open a folder in the system file manager (Finder). Backs the viewer titlebar's
@@ -106,16 +134,50 @@ pub fn open_external(app: tauri::AppHandle, url: String) -> Result<(), String> {
     .map_err(|e| e.to_string())
 }
 
-// Open a tab's worktree/checkout folder in the user's chosen git GUI by running their
-// configured command template (`open -a Fork {path}`, a deeplink, …) with {path} substituted.
-// Tokenize-and-spawn with NO shell so the path can't inject — mirrors native/git-client.js.
+// Split a command template into argv, honouring single/double quotes so an app name with a
+// space survives as ONE token (`open -a "Visual Studio Code" {path}`). Quotes only group; they
+// are not kept in the token, and there is no escape processing — this is a launcher template,
+// not a shell.
+fn split_template(cmd: &str) -> Vec<String> {
+  let mut out = Vec::new();
+  let mut cur = String::new();
+  let mut quote: Option<char> = None;
+  let mut started = false; // distinguishes "" (an empty token) from whitespace
+  for c in cmd.chars() {
+    match quote {
+      Some(q) if c == q => quote = None,
+      Some(_) => cur.push(c),
+      None if c == '"' || c == '\'' => {
+        quote = Some(c);
+        started = true;
+      }
+      None if c.is_whitespace() => {
+        if started || !cur.is_empty() {
+          out.push(std::mem::take(&mut cur));
+        }
+        started = false;
+      }
+      None => cur.push(c),
+    }
+  }
+  if started || !cur.is_empty() {
+    out.push(cur);
+  }
+  out
+}
+
+// Open a tab's worktree/checkout folder in an external app by running a configured command
+// template (`open -a Fork {path}`, `open -a "Visual Studio Code" {path}`, a deeplink, …) with
+// {path} substituted. Serves both launchers on the terminal toolbar's folder chip: the app-level
+// git client and the per-project IDE — it's the generic "{path} template" runner.
+// Tokenize-and-spawn with NO shell so the path can't inject.
 #[tauri::command]
 pub fn open_in_git_client(cmd: String, path: String) -> Result<(), String> {
-  let parts: Vec<String> = cmd
-    .split_whitespace()
+  let parts: Vec<String> = split_template(&cmd)
+    .into_iter()
     .map(|tok| tok.replace("{path}", &path))
     .collect();
-  let (program, args) = parts.split_first().ok_or("empty git-client command")?;
+  let (program, args) = parts.split_first().ok_or("empty launch command")?;
   std::process::Command::new(program)
     .args(args)
     .spawn()
@@ -355,3 +417,27 @@ pub fn autostart_set(app: tauri::AppHandle, enabled: bool) -> Result<bool, Strin
   Ok(mgr.is_enabled().unwrap_or(enabled))
 }
 
+
+#[cfg(test)]
+mod tests {
+  use super::split_template;
+
+  #[test]
+  fn quoted_app_names_stay_one_token() {
+    assert_eq!(
+      split_template(r#"open -a "Visual Studio Code" {path}"#),
+      vec!["open", "-a", "Visual Studio Code", "{path}"]
+    );
+    assert_eq!(
+      split_template("open -a 'GitHub Desktop' {path}"),
+      vec!["open", "-a", "GitHub Desktop", "{path}"]
+    );
+  }
+
+  #[test]
+  fn plain_and_ragged_templates_split_on_whitespace() {
+    assert_eq!(split_template("open -a Fork {path}"), vec!["open", "-a", "Fork", "{path}"]);
+    assert_eq!(split_template("  open   -a\tZed  {path} "), vec!["open", "-a", "Zed", "{path}"]);
+    assert!(split_template("   ").is_empty());
+  }
+}

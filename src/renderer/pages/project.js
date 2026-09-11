@@ -1,9 +1,10 @@
 // Project page: a paged "digest". Its chrome all lives in the topbar (paintTopbar): the project
-// name on the left, the shared segmented control (.seg-tabs) centred, and the edit gear on
-// the right. Each section heading doubles as the link to its service (repo → GitHub, Jira
+// name on the left and the shared segmented control (.seg-tabs) centred — no toolbar actions.
+// Each section heading doubles as the link to its service (repo → GitHub, Jira
 // project → Jira). The picker pages between
-// sections shown one at a time: Pull Requests, Jira, Git (the full git-tab.js surface), Automation
-// (webhook forwarding + on-merge Jira) and Workflows. The Jira section has its own view switcher
+// sections shown one at a time: Pull Requests, Jira, Automation
+// (webhook forwarding + on-merge Jira), Workflows and Settings (this project's own config — name,
+// local repo, Jira key, delete — which used to be the topbar's edit gear + modal). The Jira section has its own view switcher
 // (projJiraView): Board (sprint columns, scrumboard.js) and Tickets (the project's saved JQL with
 // an inline ad-hoc JQL search, jira.js). The page itself is only the section body (.pd-body),
 // which scrolls under the fixed toolbar. PRs load on open; everything else lazy-loads
@@ -18,7 +19,8 @@ import { toast, toastErr } from '../components/toast.js';
 import { renderProjectNav } from '../components/sidebar.js';
 import { prListHtml } from '../components/cards.js';
 import { loadProjectJira, renderProjJira } from './jira.js';
-import { loadGitTab } from './git-tab.js';
+import { IDES, ideIcon } from '../lib/ides.js';
+import { updateFolderChip } from '../components/viewer.js';
 import { loadScrumboard } from './scrumboard.js';
 
 export async function loadProjectPage(id) {
@@ -33,8 +35,8 @@ export async function loadProjectPage(id) {
 
   el.innerHTML = `
     <div class="proj-digest">
-      <!-- No header block: the project name, the section picker and the edit gear all live in
-           the topbar (paintTopbar below / app.js showPage); each section heading carries the
+      <!-- No header block: the project name and the section picker live in the topbar
+           (paintTopbar below / app.js showPage); each section heading carries the
            link to its own service. -->
       <div class="pd-body">
       <!-- Pull Requests (the default page). The whole heading is the repo link: GitHub mark,
@@ -116,16 +118,8 @@ export async function loadProjectPage(id) {
 
       </section>
 
-      <!-- Git: the full branches/worktrees + commit-graph surface (git-tab.js) -->
-      <section class="pd-sec" id="pd-git-${id}" data-sec="git" hidden>
-        <div class="pd-sec-head">
-          <h2 class="pd-sec-title"><span class="pd-sec-ic tint-success">${ICON.worktree}</span>Git</h2>
-        </div>
-        <div class="pd-git-host" id="proj-gittab-${id}"></div>
-      </section>
-
-      <!-- Settings: webhook forwarding, lazy-loaded the first time its page is shown -->
-      <section class="pd-sec" id="pd-settings-${id}" data-sec="settings" hidden>
+      <!-- Automation: webhook forwarding + on-merge Jira, lazy-loaded the first time it's shown -->
+      <section class="pd-sec" id="pd-automation-${id}" data-sec="automation" hidden>
         <div class="pd-sec-head">
           <h2 class="pd-sec-title"><span class="pd-sec-ic tint-neutral">${ICON.cpu}</span>Automation</h2>
         </div>
@@ -142,18 +136,27 @@ export async function loadProjectPage(id) {
         </div>
         <div id="proj-workflows-${id}"></div>
       </section>
+
+      <!-- Settings: this project's own config (name, local repo, Jira key) — the last tab,
+           where the topbar gear used to be. Lazy-loaded the first time it's shown. -->
+      <section class="pd-sec" id="pd-settings-${id}" data-sec="settings" hidden>
+        <div class="pd-sec-head">
+          <h2 class="pd-sec-title"><span class="pd-sec-ic tint-neutral">${ICON.gear}</span>Settings</h2>
+        </div>
+        <div id="proj-settings-${id}"></div>
+      </section>
       </div><!-- /.pd-body -->
     </div>`;
 
   paintTopbar(id);   // the section picker: the page's chrome all lives in the topbar
 
-  // Load the default PR page now. Every other section (Jira views, Git, Automation, Workflows)
+  // Load the default PR page now. Every other section (Jira views, Automation, Workflows, Settings)
   // lazy-loads the first time it's shown (projShowSection / projJiraView).
   if (p.repo) reloadProjectPRs(id, 'open');
 }
 
-// The page's chrome is the topbar (native-mac unified toolbar): the project name left, the
-// section picker centred, the edit gear right (app.js showPage). No links here — each section's
+// The page's chrome is the topbar (native-mac unified toolbar): the project name left and the
+// section picker centred (app.js showPage). No links here — each section's
 // own heading is the link to its service. showPage clears the picker slot on every nav, so this
 // repaints on each visit; a section switch only re-marks the active tab (projShowSection →
 // setActiveSegTab).
@@ -187,25 +190,26 @@ export function projJiraView(id, view, btn) {
 
 
 // ── Paging: the segmented tabs swap which section is shown ────────────────────────────
-// One section is visible at a time. Jira (its active view), Git and Settings lazy-load the first
+// One section is visible at a time. Jira (its active view), Automation, Workflows and
+// Settings lazy-load the first
 // time their page is shown; PRs are already loaded by loadProjectPage. The scroller resets to the
 // top so each page starts at its heading. `btn` is always the clicked seg-tab (every caller is
 // an inline onclick passing `this`).
 // [section id, topbar label] — the picker's tabs and the set of pageable sections, in order.
-const SECTION_TABS = [['prs', 'PRs'], ['jira', 'Jira'], ['git', 'Git'], ['settings', 'Automation'], ['workflows', 'Workflows']];
+const SECTION_TABS = [['prs', 'PRs'], ['jira', 'Jira'], ['automation', 'Automation'], ['workflows', 'Workflows'], ['settings', 'Settings']];
 const SECTIONS = SECTION_TABS.map(([s]) => s);
 export function projShowSection(id, sec, btn) {
   if (btn) setActiveSegTab(btn);
   SECTIONS.forEach(s => { const el = document.getElementById(`pd-${s}-${id}`); if (el) el.hidden = s !== sec; });
   if (sec === 'jira') projJiraView(id, _jiraView.get(id) || 'board');
-  if (sec === 'git') lazyOnce(`proj-gittab-${id}`, () => loadGitTab(id));
   if (sec === 'workflows') lazyOnce(`proj-workflows-${id}`, () => loadProjectWorkflows(id));
-  if (sec === 'settings') {
+  if (sec === 'automation') {
     // Build the form once; on every (re)show, re-read the live 'gh webhook forward' status so
     // it reconciles after a Save (which only reflects the saved intent — see saveProjectWebhooks).
     const built = lazyOnce(`proj-webhooks-${id}`, () => loadProjectWebhooks(id));
     if (!built) showForwardStatus(id);
   }
+  if (sec === 'settings') lazyOnce(`proj-settings-${id}`, () => loadProjectSettings(id));
   document.querySelector(`#pd-prs-${id}`)?.closest('.pd-body')?.scrollTo({ top: 0 });
 }
 
@@ -234,7 +238,7 @@ export function loadProjectWebhooks(id) {
 
   // No repo → forwarding can't run; reuse the standard empty-state instead of dead controls.
   if (!p.repo) {
-    el.innerHTML = `<div class="empty"><div class="empty-icon">${ICON.branch}</div><p>Webhook forwarding needs a GitHub repo. Add one to this project (the gear in the toolbar) and it'll show up here.</p></div>`;
+    el.innerHTML = `<div class="empty"><div class="empty-icon">${ICON.branch}</div><p>Webhook forwarding needs a GitHub repo. Add one in this project's Settings tab and it'll show up here.</p></div>`;
     return;
   }
 
@@ -328,6 +332,188 @@ export function previewFixVersion(id) {
       el.textContent = `Script error: ${e.message}`;
     }
   }, 250);
+}
+
+// ── Settings tab ──────────────────────────────────────────────────────────────────────
+// The project's own config, as the last tab (it used to be the topbar gear + the shared
+// New/Edit Project modal — the modal now only serves New Project, from the sidebar). Fields are
+// id-scoped per project so they can't collide with the modal's. The GitHub repo is not editable:
+// it's auto-detected from the local checkout's git origin (same rule as the modal).
+export function loadProjectSettings(id) {
+  const el = document.getElementById(`proj-settings-${id}`);
+  if (!el) return;
+  const p = proj(id);
+  if (!p) { el.innerHTML = '<div class="empty">Project not found.</div>'; return; }
+
+  el.innerHTML = `
+    <div class="webhooks-form">
+      <div class="card">
+        <div class="card-header"><h3>Project</h3></div>
+        <div class="card-pad">
+          <div class="form-group">
+            <label class="form-label" for="ps-name-${id}">Project name</label>
+            <input type="text" id="ps-name-${id}" placeholder="e.g. Record iOS" value="${esc(p.name || '')}">
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="ps-workspace-${id}">Local Git Repo</label>
+            <div style="display:flex;gap:8px">
+              <input type="text" id="ps-workspace-${id}" placeholder="/path/to/local/checkout" style="flex:1" value="${esc(p.workspace || '')}">
+              <button type="button" class="btn btn-secondary btn-sm" onclick="chooseProjectWorkspace('${id}')">Choose…</button>
+            </div>
+            <input type="hidden" id="ps-repo-${id}" value="${esc(p.repo || '')}">
+            <p class="form-hint" id="ps-repo-hint-${id}"></p>
+          </div>
+        </div>
+      </div>
+
+      <!-- IDE: the second launcher on the terminal toolbar's folder chip. Per project, because
+           which editor a checkout belongs in is a property of the repo — the git client next to
+           it stays app-level (Settings → Appearance). -->
+      <div class="card">
+        <div class="card-header"><h3>IDE</h3></div>
+        <div class="card-pad">
+          <div class="form-group">
+            <label class="form-label" for="ps-ide-${id}">Open folders in</label>
+            <div style="display:flex;align-items:center;gap:8px">
+              <select id="ps-ide-${id}" class="filter-select" onchange="projIdeChange('${id}')">
+                <option value=""${p.ide ? '' : ' selected'}>None</option>
+                ${IDES.map(i => `<option value="${i.id}"${p.ide === i.id ? ' selected' : ''}>${esc(i.label)}</option>`).join('')}
+                <option value="custom"${p.ide === 'custom' ? ' selected' : ''}>Custom…</option>
+              </select>
+              <!-- The app's own mark, so what you picked here is visibly the same button that
+                   turns up on the terminal toolbar. Hidden for None and Custom (no brand mark). -->
+              <img class="ide-mark" id="ps-ide-mark-${id}" alt="" src="${ideIcon(p.ide)}" ${ideIcon(p.ide) ? '' : 'hidden'}>
+            </div>
+            <p class="form-hint">Adds an <strong>open in IDE</strong> button to the terminal toolbar's folder chip — it launches this project's worktree (or its main checkout).</p>
+          </div>
+          <div class="form-group" id="ps-ide-custom-${id}" ${p.ide === 'custom' ? '' : 'hidden'}>
+            <label class="form-label" for="ps-ide-cmd-${id}">Command template</label>
+            <input type="text" id="ps-ide-cmd-${id}" spellcheck="false" placeholder='open -a "Visual Studio Code" {path}' value="${esc(p.ideCmd || '')}">
+            <p class="form-hint"><code class="code-chip">{path}</code> is replaced by whatever is opened. Run without a shell, so quotes group an app name — no pipes or redirects.</p>
+          </div>
+          <div class="form-group" id="ps-ide-target-row-${id}" style="margin:0" ${p.ide ? '' : 'hidden'}>
+            <label class="form-label" for="ps-ide-target-${id}">Open this file</label>
+            <div style="display:flex;gap:8px">
+              <input type="text" id="ps-ide-target-${id}" spellcheck="false" placeholder="ios/MyApp.xcworkspace" style="flex:1" value="${esc(p.ideTarget || '')}">
+              <button type="button" class="btn btn-secondary btn-sm" onclick="chooseProjectIdeTarget('${id}')">Choose…</button>
+            </div>
+            <p class="form-hint">Pick it with <strong>Choose…</strong> or type it. Stored relative to the checkout, so it resolves inside <em>every</em> branch's worktree — an absolute path would always point at one branch. Leave blank to open the folder itself; Xcode can't do that, so with nothing set it opens the first <code class="code-chip">.xcworkspace</code>, <code class="code-chip">.xcodeproj</code> or <code class="code-chip">Package.swift</code> it finds.</p>
+          </div>
+          <!-- Build/run script — same card as the IDE, since it's the other half of "work on this
+               checkout": open it, or build it. Runs in the worktree, so it's per project, not per
+               branch. Multi-line is fine (it's a script, not one argv). -->
+          <div class="form-group" id="ps-run-row-${id}" style="margin:0" ${p.ide || p.runCmd ? '' : 'hidden'}>
+            <label class="form-label" for="ps-run-${id}">Build / run command</label>
+            <textarea id="ps-run-${id}" rows="3" spellcheck="false" placeholder="xcodebuildmcp simulator build-and-run {targetFlag} {target} --scheme MyApp --simulator-name 'iPhone 16'">${esc(p.runCmd || '')}</textarea>
+            <p class="form-hint">Run in the worktree by the toolbar's <strong>Run</strong> button. <code class="code-chip">{path}</code> is the folder and <code class="code-chip">{target}</code> the resolved file above; <code class="code-chip">{targetFlag}</code> becomes <code class="code-chip">--workspace-path</code> or <code class="code-chip">--project-path</code> to match it. Blank = no Run button.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><h3>Jira</h3></div>
+        <div class="card-pad">
+          <div class="form-group" style="margin:0">
+            <label class="form-label" for="ps-jira-key-${id}">Project key</label>
+            <input type="text" id="ps-jira-key-${id}" placeholder="e.g. RECORD" style="text-transform:uppercase" value="${esc(p.jiraProjectKey || '')}">
+            <p class="form-hint">Drives this project's <strong>Jira</strong> tab (Board, Tickets). Narrow both with the tab's filter clause (e.g. <code class="code-chip">component = iOS</code>).</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="webhooks-actions">
+        <button class="btn btn-danger" style="margin-right:auto" onclick="deleteProject('${id}')">Delete project</button>
+        <button class="btn btn-primary" onclick="saveProjectSettings('${id}')">Save changes</button>
+      </div>
+    </div>`;
+  paintProjRepoHint(id);
+}
+
+// The repo slug is derived, not typed: show whatever is stored (or the rule, when nothing is).
+function paintProjRepoHint(id) {
+  const hint = document.getElementById(`ps-repo-hint-${id}`);
+  if (!hint) return;
+  const repo = document.getElementById(`ps-repo-${id}`)?.value || '';
+  hint.innerHTML = repo
+    ? `GitHub repo: <code class="code-chip">${esc(repo)}</code>`
+    : `Sets the terminal's working directory; the GitHub repo is auto-detected from its <code class="code-chip">git</code> origin.`;
+}
+
+// Native folder picker for the Local Git Repo field, then re-detect the GitHub repo from the
+// chosen folder's git origin (only overwrites the stored slug when a remote is actually found).
+export async function chooseProjectWorkspace(id) {
+  if (!window.taskhub?.chooseFolder) { toastErr('Folder picker is only available in the app'); return; }
+  const dir = await window.taskhub.chooseFolder();
+  if (!dir) return;
+  const ws = document.getElementById(`ps-workspace-${id}`);
+  if (ws) ws.value = dir;
+  try {
+    const { repo } = await api(`${ROUTES.DETECT_REPO}?path=${encodeURIComponent(dir)}`);
+    if (repo) {
+      const f = document.getElementById(`ps-repo-${id}`);
+      if (f) f.value = repo;
+      paintProjRepoHint(id);
+      toast(`Detected ${repo}`);
+    } else toast('No GitHub remote found in that folder');
+  } catch {}
+}
+
+// Pick the IDE target with the native file picker instead of typing a path. It opens inside the
+// project's checkout and stores the choice RELATIVE to it, which is the whole point — the same
+// setting has to resolve in every branch's worktree. macOS treats bundles as files in a file
+// panel, so an `.xcworkspace` / `.xcodeproj` is pickable as one item.
+export async function chooseProjectIdeTarget(id) {
+  if (!window.taskhub?.chooseFile) { toastErr('File picker is only available in the app'); return; }
+  // Read the workspace from the form, not the record — it may have just been changed here.
+  const ws = (document.getElementById(`ps-workspace-${id}`)?.value.trim() || proj(id)?.workspace || '').replace(/\/+$/, '');
+  if (!ws) { toastErr('Set the Local Git Repo first — the target is stored relative to it'); return; }
+  const picked = await window.taskhub.chooseFile({ start: ws, title: 'Choose what the IDE opens' });
+  if (!picked) return;
+  if (!picked.startsWith(ws + '/')) { toastErr('Pick something inside the checkout — the target is stored relative to it'); return; }
+  const field = document.getElementById(`ps-ide-target-${id}`);
+  if (field) field.value = picked.slice(ws.length + 1);
+}
+
+// "Custom…" reveals the command-template field, and picking any IDE reveals the target field
+// (there's nothing to open when the answer is "None"). Everything is persisted by Save changes.
+export function projIdeChange(id) {
+  const sel = document.getElementById(`ps-ide-${id}`)?.value || '';
+  const box = document.getElementById(`ps-ide-custom-${id}`);
+  if (box) box.hidden = sel !== 'custom';
+  const row = document.getElementById(`ps-ide-target-row-${id}`);
+  if (row) row.hidden = !sel;
+  const mark = document.getElementById(`ps-ide-mark-${id}`);
+  if (mark) { const icon = ideIcon(sel); mark.src = icon; mark.hidden = !icon; }
+  // The run script is independent of the IDE, but it's the same card — reveal it with the picker
+  // rather than leaving it stranded above a "None". A script already written keeps it open.
+  const run = document.getElementById(`ps-run-row-${id}`);
+  if (run) run.hidden = !sel && !document.getElementById(`ps-run-${id}`)?.value.trim();
+}
+
+export async function saveProjectSettings(id) {
+  const name = document.getElementById(`ps-name-${id}`)?.value.trim();
+  if (!name) { toastErr('Name required'); return; }
+  try {
+    const ide = document.getElementById(`ps-ide-${id}`)?.value || '';
+    await apiJson(ROUTES.project(id), 'PUT', {
+      name,
+      workspace:      document.getElementById(`ps-workspace-${id}`)?.value.trim() || '',
+      repo:           document.getElementById(`ps-repo-${id}`)?.value.trim() || '',
+      jiraProjectKey: document.getElementById(`ps-jira-key-${id}`)?.value.trim() || '',
+      ide,
+      ideCmd:         document.getElementById(`ps-ide-cmd-${id}`)?.value.trim() || '',
+      ideTarget:      document.getElementById(`ps-ide-target-${id}`)?.value.trim() || '',
+      runCmd:         document.getElementById(`ps-run-${id}`)?.value.trim() || '',
+    });
+    toast('Project updated');
+    // The sidebar and the topbar title carry the name; the rest of the page (PRs, Jira) is
+    // keyed off repo/jiraProjectKey, so reload the whole page from the refreshed store.
+    renderProjectNav(await api(ROUTES.PROJECTS));
+    document.getElementById('page-title').textContent = name;
+    updateFolderChip(true); // the IDE half of the folder chip reads this project record
+    loadProjectPage(id);
+    projShowSection(id, 'settings', document.querySelector(`#topbar-picker .seg-tab[data-sec="settings"]`));
+  } catch (e) { toastErr(e.message); }
 }
 
 // ── Workflows tab ─────────────────────────────────────────────────────────────────────

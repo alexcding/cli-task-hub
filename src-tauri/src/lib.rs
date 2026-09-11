@@ -317,6 +317,7 @@ pub fn run() {
       commands::zoom_begin,
       commands::zoom_apply,
       commands::choose_folder,
+      commands::choose_file,
       commands::open_path,
       commands::open_external,
       commands::open_in_git_client,

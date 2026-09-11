@@ -539,10 +539,9 @@ function gitRemotes(dir) {
   });
 }
 
-// Commit history for the project's History view. One `git log` with a field-delimited pretty
-// format (US unit separator \x1f between fields, record separator \x1e between commits) — parses
-// with two splits, no regex. Full SHAs (%H/%P) so the graph can match parent→child; %h is for
-// display. Newest-first, which computeGraph() in git-graph.mjs expects. Never throws.
+// Commit history for the session's Review → History view. One `git log` with a field-delimited
+// pretty format (US unit separator \x1f between fields, record separator \x1e between commits) —
+// parses with two splits, no regex. Full SHAs (%H/%P), %h for display. Newest-first. Never throws.
 const REF_RE = /^[^-][\w./-]*$/; // ref-ish token, never a flag — safe to hand to `git log`
 const LOG_FMT = '%H%x1f%h%x1f%P%x1f%an%x1f%ae%x1f%aI%x1f%D%x1f%s%x1e';
 async function gitLog(dir, { limit = 100, skip = 0, ref = '', aheadOnly = false, base = '' } = {}) {
