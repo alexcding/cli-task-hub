@@ -176,7 +176,14 @@ async function trimLiveByMemory() {
   _memBusy = true;
   try {
     const rows = await window.taskhub.webviewMemory();
-    if (!Array.isArray(rows) || !rows.length) return;   // can't measure: leave the count pool in charge
+    if (!Array.isArray(rows) || !rows.length) {
+      // Nothing measured. Before the first success that means the host can't measure at all and the
+      // count pool stays in charge. AFTER one (_memMode), it's a blip — webview_procs hops to the
+      // main thread and gives up after 2s — and the count pool has stood down, so this tick would
+      // evict nothing at all. Come back shortly rather than waiting for the 15s heartbeat.
+      if (_memMode) scheduleMemTrim(3000);
+      return;
+    }
     _memMode = true;
     const kb = new Map(rows.map(r => [r.label, r.kb | 0]));
     let total = rows.reduce((n, r) => n + (r.kb | 0), 0);
@@ -185,7 +192,12 @@ async function trimLiveByMemory() {
     for (const owner of [..._live]) {          // least-recent first
       if (total <= budget) break;
       if (owner === shown || !owner.wv) continue;   // never evict the page on screen
-      total -= kb.get(wcvLabel(owner)) || 0;
+      // A page the host didn't report (just shown, its process not sampled yet) contributes
+      // nothing to `total`, so evicting it frees nothing measurable — it would just be a page
+      // thrown away while the page actually over the budget stays. Skip it; the next tick has it.
+      const size = kb.get(wcvLabel(owner));
+      if (size == null) continue;
+      total -= size;
       disposeWebview(owner);
     }
   } catch { /* a failed measurement just means no eviction this round */ }

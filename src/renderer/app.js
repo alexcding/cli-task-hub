@@ -333,6 +333,7 @@ state.tabTermInit = (async () => {
     syncThemeFromSettings(settings.theme);
     syncFontsFromSettings(settings); // any terminal rehydrated before this lands is updated in place by applyFonts
     if (settings.webviewBudgetMb != null) viewer.setWebviewBudgetMb(settings.webviewBudgetMb); // memory the embedded pages may hold (Settings → System); clamped, bad values → default
+    if (settings.webviewPool != null) viewer.setWebviewPoolSize(settings.webviewPool);          // …and the page count that still governs a host which can't measure (no UI; the saved value stands)
     if (settings.defaultCli != null) state.defaultCli = settings.defaultCli; // agent preselected by the New session dialog (Settings → CLIs)
   } catch {}
   populateFontMenus(); // fill the font pickers from this machine's installed fonts (replaces the static fallback)

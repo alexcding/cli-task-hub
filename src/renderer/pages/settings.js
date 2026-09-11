@@ -254,7 +254,9 @@ export async function setDefaultCli(value) {
 // chosen in; applied to the running viewer immediately (evicts on shrink).
 function setWebviewBudgetUI(value) {
   const el = document.getElementById('webview-budget');
-  if (el) el.value = (clampWebviewBudget(value ?? WEBVIEW_BUDGET_DEFAULT) / 1024).toFixed(1).replace(/\.0$/, '');
+  // Not a fixed number of decimals: rounding the GB display and multiplying it back by 1024 walks
+  // a stored value that isn't a whole GB (300MB → "0.3" → 307MB → …). Trim only trailing zeroes.
+  if (el) el.value = String(+(clampWebviewBudget(value ?? WEBVIEW_BUDGET_DEFAULT) / 1024).toFixed(4));
 }
 export async function setWebviewBudget(value) {
   const mb = clampWebviewBudget(Number(value) * 1024);
