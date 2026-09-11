@@ -22,7 +22,7 @@ import { hideDiffPane } from './diff.js';
 import { buildTerm, runBuild, stopBuild, isBuilding, disposeBuildTerm } from './build.js';
 import { attachFind, closeFind } from './find.js';
 import { renderContentTabs, playTabIn, playTabOut, markActiveTab, defaultChipRect, flipDefaultChip, focusCtabInput, inDiff,
-  nextChipIdx, linkIdxAt, diffIdxAt, buildIdxAt } from './content-tabs.js';
+  nextChipIdx, initChipOrder, diffPos } from './content-tabs.js';
 import { ensureEditor, disposeEditor, saveEditor, focusEditor, gotoLine } from './editor.js';
 import { createWcvShim } from './wcv-shim.js';
 
@@ -356,8 +356,13 @@ export async function ctabAdd(e) {
   // after the pane has been emptied, and whatever else is open in it.
   // tab.jiraKey has no column of its own (createTab re-derives it from the url, which yields
   // nothing for a PR), so after a restart the task record is where the ticket still lives.
+  // Offered only while the ticket ISN'T already a tab here — the menu is for things the pane can
+  // still be given, and a ticket that's on the bar is one click away on the bar. (`home` as well as
+  // `url`: the tab keeps its opening address when the embedded page navigates away from it.)
   const key = tab.jiraKey || taskForTab(tab)?.jiraKey || '';
-  const jira = key && tab.kind !== 'jira' && state.jiraBase ? key : '';
+  const ticket = key && state.jiraBase ? jiraUrl(key) : '';
+  const ticketOpen = !!ticket && (tab.links || []).some(l => l.kind === 'web' && (l.url === ticket || l.home === ticket));
+  const jira = ticket && tab.kind !== 'jira' && !ticketOpen ? key : '';
   return nativeMenu(e, [
     canDiff && { label: 'Diff', onClick: openDiffTab },
     { label: 'Web page…', onClick: () => addLink('web') },
@@ -401,7 +406,7 @@ export function openDiffTab() {
   if (!tab || !(tab.termId && state.terms.get(tab.termId))) return;
   if (tab.diffOpen) { setPaneView('diff'); return; }
   tab.diffOpen = true;
-  tab.diffIdx = diffIdxAt(tab, nextChipIdx(tab));   // opens beside the active chip, not in a slot
+  addChip(tab, 'diff');            // beside the active chip, not in a slot
   // setPaneView → applyPrLayout → showPaneContent rebuilds #ctabs (the chip gains .active), which
   // would throw away an element tagged before it. So lay out first, then tag what survived.
   setPaneView('diff');
@@ -419,6 +424,7 @@ export function closeDiffTab() {
   const toSingle = hasPage(tab) && !(tab.links || []).length && !buildTerm(tab);
   const remove = () => {
     tab.diffOpen = false;
+    dropChip(tab, 'diff');
     // The callback lands up to 290ms later — the user may have switched contexts meanwhile, and
     // setPaneView/renderContentTabs all act on whatever is active NOW. Fix only THIS tab's state.
     if (tab !== activeTab()) {
@@ -435,14 +441,24 @@ export function closeDiffTab() {
   else playTabOut('diff', remove);
 }
 
-// Put a new tab immediately after the active chip (browser behaviour; content-tabs.js owns the
-// order). The Diff sits at an index into this same array, so a link landing before it pushes it
-// along — otherwise the Diff chip would slide one place left every time a tab opened to its left.
+// Put a chip immediately after the active one (browser behaviour; content-tabs.js owns the order).
+// The links array keeps its own order for persistence, so a new link is appended there and placed
+// by chipOrder — the two only have to agree on membership, not on sequence.
+function addChip(tab, id, at = nextChipIdx(tab)) {
+  const order = Array.isArray(tab.chipOrder) ? tab.chipOrder : initChipOrder(tab);
+  const had = order.indexOf(id);
+  if (had >= 0) order.splice(had, 1);          // re-opened: move it, never list it twice
+  order.splice(Math.min(at, order.length), 0, id);
+}
+function dropChip(tab, id) {
+  const order = Array.isArray(tab.chipOrder) ? tab.chipOrder : initChipOrder(tab);
+  const i = order.indexOf(id);
+  if (i >= 0) order.splice(i, 1);
+}
 function insertLink(tab, link) {
-  const at = linkIdxAt(tab, nextChipIdx(tab));
-  tab.links.splice(at, 0, link);
-  if (tab.diffOpen && at <= (tab.diffIdx ?? 0)) tab.diffIdx = (tab.diffIdx ?? 0) + 1;
-  if (at <= (tab.buildIdx ?? Infinity)) tab.buildIdx = (tab.buildIdx ?? 0) + 1;
+  const at = nextChipIdx(tab);
+  tab.links.push(link);
+  addChip(tab, link.id, at);
 }
 
 // "+" → Web page… (and the File… fallback outside the app): open a blank tab whose chip is an
@@ -585,9 +601,7 @@ export function closeLink(id) {
     const prevRect = toSingle ? defaultChipRect() : null;
     disposeLink(tab.links[j]);
     tab.links.splice(j, 1);
-    // …and pull the indexed chips back with it, so they don't drift right as links close.
-    if (tab.diffOpen && j < (tab.diffIdx ?? 0)) tab.diffIdx = (tab.diffIdx ?? 0) - 1;
-    if (j < (tab.buildIdx ?? 0)) tab.buildIdx = (tab.buildIdx ?? 0) - 1;
+    dropChip(tab, id);
     if (tab.activeLink === id) { tab.activeLink = null; paintLeft(tab); updateNavButtons(); }
     renderContentTabs(true);
     if (prevRect) flipDefaultChip(prevRect);
@@ -688,7 +702,7 @@ export function saveTabs() {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      tabs: state.tabs.map(t => ({ kind: t.kind, title: t.title, url: t.url, cur: t.cur || '', repo: t.repo, branch: t.branch, jiraKey: t.jiraKey, paneView: t.paneView, diffOpen: t.diffOpen, diffIdx: t.diffIdx || 0, category: t.category, login: t.login, avatar: t.avatar,
+      tabs: state.tabs.map(t => ({ kind: t.kind, title: t.title, url: t.url, cur: t.cur || '', repo: t.repo, branch: t.branch, jiraKey: t.jiraKey, paneView: t.paneView, diffOpen: t.diffOpen, diffIdx: diffPos(t), category: t.category, login: t.login, avatar: t.avatar,
         // The context's extra horizontal tabs (web pages + local files). Only committed ones
         // (with a url) — a blank, never-entered tab isn't persisted.
         // `active` marks the one in front, so a restored context comes back on the tab the user
@@ -726,7 +740,7 @@ export async function restoreTabs() {
     // closed, the context is dead — don't rehydrate a tab with no session behind it.
     if (isSessionUrl(t?.url) && !state.tasks.some(x => x.url === t.url)) continue;
     if (t && t.url && !state.tabs.some(x => x.url === t.url)) {
-      state.tabs.push(createTab(t.url, t.title, t.kind, { cur: t.cur, repo: t.repo, branch: t.branch, jiraKey: t.jiraKey, paneView: t.paneView, diffOpen: t.diffOpen, diffIdx: t.diffIdx || 0, category: t.category, login: t.login, avatar: t.avatar, links: Array.isArray(t.links) ? t.links : [] }));
+      state.tabs.push(createTab(t.url, t.title, t.kind, { cur: t.cur, repo: t.repo, branch: t.branch, jiraKey: t.jiraKey, paneView: t.paneView, diffOpen: t.diffOpen, diffIdx: diffPos(t), category: t.category, login: t.login, avatar: t.avatar, links: Array.isArray(t.links) ? t.links : [] }));
       seedAvatar(t.login, t.avatar);   // share the restored data URI so the dashboard reuses it
     }
   }
@@ -1044,7 +1058,7 @@ function runHalfHtml(pj) {
 // doesn't have to reach back into the split module (which already imports it).
 export function runBuildClick() {
   const tab = activeTab();
-  if (tab && !buildTerm(tab)) tab.buildIdx = buildIdxAt(tab, nextChipIdx(tab));
+  if (tab && !buildTerm(tab)) addChip(tab, 'build');
   runBuild(tab, { setView: setPaneView, onState: syncBuildBtn });
 }
 export function stopBuildClick() { stopBuild(activeTab()); }

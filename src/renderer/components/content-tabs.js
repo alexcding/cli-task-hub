@@ -58,38 +58,56 @@ export const inBuild = t => hasBuildTab(t) && t.paneView === 'build';
 
 // ── The strip's order ─────────────────────────────────────────────────────────
 // The page chip is always first — it IS the context, not something the user opened. Everything
-// after it is one ordered sequence, the "extras": the web/file tabs plus the Diff and Build chips,
-// each sitting where it was opened rather than in a fixed slot. A new tab goes immediately after
-// the ACTIVE one (browser behaviour), which is what makes the order worth keeping at all.
-// The position is stored as an index INTO THE SEQUENCE BELOW IT: tab.diffIdx indexes the links
-// array (diff is spliced in first), tab.buildIdx indexes links+diff. Composing in that fixed order
-// means two indices describe the whole strip, and only diffIdx has to be persisted — a build
-// terminal never outlives the app.
+// after it is one ordered list, tab.chipOrder: the ids of the extras ('diff', 'build', or a link's
+// id) in the order they sit on the bar. A new tab is spliced in right after the ACTIVE one
+// (browser behaviour), which is the whole reason the order is state and not a set of fixed slots.
+//
+// ONE list, not an index per chip: two indices can name the same slot, and whichever chip the
+// composition happened to splice first won the tie — a Diff opened beside the page chip landed
+// behind a Build that also claimed position 0.
+//
+// Only the links (and where the Diff sits among them) survive a restart: tab.links is persisted in
+// order and `tabs.diff_pos` is the Diff's index among them, so chipOrder is rebuilt by
+// initChipOrder below. A build terminal never outlives the app, so 'build' is runtime-only.
+export function initChipOrder(t) {
+  const ids = (t.links || []).map(l => l.id);
+  if (t.diffOpen) ids.splice(Math.min(Math.max(t.diffIdx | 0, 0), ids.length), 0, 'diff');
+  t.chipOrder = ids;
+  return t.chipOrder;
+}
+
+// The bar, in order. Ids that name nothing live (a closed link, the Diff with no terminal beside
+// the pane, a finished build) are skipped rather than removed, so a chip whose condition comes back
+// — the terminal reconnecting under a Diff tab — returns to its own place. Anything live but
+// unlisted (a restored context whose order was never built) is appended, so nothing can vanish.
 export function chipEntries(t) {
-  const out = (t.links || []).map(l => ({ type: 'link', l }));
-  if (hasDiffTab(t)) out.splice(Math.min(t.diffIdx ?? 0, out.length), 0, { type: 'diff' });
-  if (hasBuildTab(t)) out.splice(Math.min(t.buildIdx ?? out.length, out.length), 0, { type: 'build' });
+  const live = new Map((t.links || []).map(l => [l.id, { type: 'link', l }]));
+  if (hasDiffTab(t)) live.set('diff', { type: 'diff' });
+  if (hasBuildTab(t)) live.set('build', { type: 'build' });
+  const order = Array.isArray(t.chipOrder) ? t.chipOrder : initChipOrder(t);
+  const out = [];
+  for (const id of order) { const e = live.get(id); if (e) { out.push(e); live.delete(id); } }
+  for (const e of live.values()) out.push(e);
   return out;
 }
 
-// Where a newly opened tab belongs: just after the active chip. The page chip is active → the front
-// of the extras, so the new tab lands beside it rather than at the far end of the bar.
+// Where a newly opened tab belongs: just after the active chip, as a position in tab.chipOrder.
+// The page chip is active → the front of the list, so the new tab lands beside it rather than at
+// the far end of the bar.
 export function nextChipIdx(t) {
-  const entries = chipEntries(t);
-  if (inDiff(t)) return entries.findIndex(e => e.type === 'diff') + 1;
-  if (inBuild(t)) return entries.findIndex(e => e.type === 'build') + 1;
-  if (t.activeLink) {
-    const i = entries.findIndex(e => e.type === 'link' && e.l.id === t.activeLink);
-    if (i >= 0) return i + 1;
-  }
-  return 0;
+  const order = Array.isArray(t.chipOrder) ? t.chipOrder : initChipOrder(t);
+  const active = inDiff(t) ? 'diff' : inBuild(t) ? 'build' : t.activeLink;
+  const i = active ? order.indexOf(active) : -1;
+  return i < 0 ? 0 : i + 1;
 }
 
-// Translate a position in the composed sequence back into the index each chip is stored as:
-// a link counts only the links before it, the Diff everything that isn't the Build chip.
-export const linkIdxAt = (t, k) => chipEntries(t).slice(0, k).filter(e => e.type === 'link').length;
-export const diffIdxAt = (t, k) => linkIdxAt(t, k);
-export const buildIdxAt = (t, k) => chipEntries(t).slice(0, k).filter(e => e.type !== 'build').length;
+// The Diff's index among the links only — what `tabs.diff_pos` stores, since 'build' is not
+// persisted and a link's runtime id means nothing after a restart.
+export function diffPos(t) {
+  const order = Array.isArray(t.chipOrder) ? t.chipOrder : initChipOrder(t);
+  const i = order.indexOf('diff');
+  return i < 0 ? 0 : order.slice(0, i).filter(id => id !== 'diff' && id !== 'build').length;
+}
 
 function buildChipHtml(t) {
   return `<div class="ctab source buildtab ${inBuild(t) ? 'active' : ''}"

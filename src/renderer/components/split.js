@@ -340,7 +340,11 @@ export function setPaneView(view) {
   // cover (or hide) the page the moment the task's terminal lands.
   if (!t) return;
   if (cur !== 'off') tab.paneLast = cur;      // what the toggle reopens to (view-only, not persisted)
-  if (next === 'diff') tab.diffOpen = true;   // showing the diff implies its chip is on the bar
+  // Showing the diff implies its chip is on the bar. This is the restore path (a context saved
+  // mid-diff, whose flag was back-filled), so drop any order built while the flag was still false —
+  // content-tabs.js rebuilds it from links + the persisted diff index, putting the chip in its own
+  // place rather than appending it as an unlisted stray.
+  if (next === 'diff' && !tab.diffOpen) { tab.diffOpen = true; tab.chipOrder = null; }
   tab.paneView = next;
   saveTabs();
   // ONE geometry path. Only a change in the pane's VISIBILITY slides the boundary; swapping the
