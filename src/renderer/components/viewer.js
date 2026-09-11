@@ -271,8 +271,10 @@ export function paintLeft(tab) {
   if (inDiff(tab) || inBuild) {
     /* the Diff view / the build terminal takes the pane — leave the page hidden. A native
        embedded webview paints over all DOM, so covering it isn't enough; it must not be shown. */
-  } else if (!hasPage(tab)) {                     // bare session: the context has no page at all
-    /* nothing to show — the pane holds the diff view or the web tabs the user adds */
+  } else if (!link && !hasPage(tab)) {            // bare session, nothing picked: no page to fall back to
+    /* nothing to show — the pane holds the diff view or the tabs the user adds. This must stay
+       BELOW the link check: a page-less context still paints whatever tab IS active, and testing
+       hasPage first swallowed every web/file tab a bare session had. */
   } else if (!link) {                                   // default tab — the PR/Jira page
     if (!tab.wv) buildTabWebview(tab);
     if (!tab.started) { tab.started = true; tab.wv.setAttribute('src', tab.cur || tab.url); }
