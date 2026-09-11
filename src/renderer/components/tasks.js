@@ -9,9 +9,9 @@ import { apiJson } from '../services/api.js';
 import { basename, sessionUrl } from '../lib/util.js';
 import { toast, toastErr } from './toast.js';
 import { workflowRunState } from './workflow.js';
-import { openInSplit, activateTab, removeTaskTab } from './viewer.js';
+import { openInSplit, activateTab, removeTaskTab, updateTitles } from './viewer.js';
 import { closeTerminal, disposeTerm } from './terminal.js';
-import { removeWorktree, worktreeHolders, openPrPanel } from './split.js';
+import { removeWorktree, worktreeHolders, openPrPanel, clearPrLayout } from './split.js';
 import { renderTabs } from './sidebar.js';
 import { confirmDialog } from './confirm.js';
 import { analyzeTerminal } from '../services/analyzer.js';
@@ -142,14 +142,31 @@ export async function restartTaskSession(id) {
   const live = taskTerm(task);
   if (live && !(await confirmDialog({ title: 'Restart session?', message: `“${task.title || basename(task.worktree)}” is running. Restarting stops its terminal and resumes the agent in a new one.`, label: 'Restart' }))) return;
   const tab = state.tabs.find(x => x.url === task.url);
-  if (live) {
-    const termId = live[0];
+  // A recovery may be mid-flight (activateTab fires openPrPanel un-awaited, and launchCli settles
+  // for seconds): let it land first, or openPrPanel below would join THAT promise — which types
+  // into the PTY we're about to kill — instead of starting a new one.
+  if (tab?._panelPromise) await tab._panelPromise.catch(() => {});
+  const cur = taskTerm(task);
+  if (cur) {
+    const termId = cur[0];
     if (tab && tab.termId === termId) tab.termId = null;   // so no close path touches the dead PTY
     if (state.activeTermId === termId) closeTerminal(termId); else disposeTerm(termId);
+    renderTabs();                                                  // the row's data-term is dead
   }
   // An open, active context relaunches in place (adoptPairedTerminal finds nothing → new shell);
   // otherwise opening the session runs the same path through activateTab.
-  if (tab && state.activeTabId === tab.id) { await openPrPanel(tab, true); return; }
+  if (tab && state.activeTabId === tab.id) {
+    // Kick the recovery off BEFORE collapsing the dead terminal's layout: the collapse repaints
+    // the toolbar, whose "New session" CTA is disabled only while tab._panelPromise is set — the
+    // other order offered a second launch into the shell being started.
+    const p = openPrPanel(tab, 'term');
+    // …unless it adopted a live terminal synchronously (another record on this url): then the
+    // layout it just painted is the right one.
+    if (!(tab.termId && state.terms.has(tab.termId))) clearPrLayout(tab);   // no gap where the terminal was
+    await p;
+    updateTitles();      // the CTA was painted while _panelPromise was set; re-sync now it's cleared
+    return;
+  }
   openTaskSession(id);
 }
 
