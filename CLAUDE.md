@@ -107,6 +107,16 @@ separation everything follows:
   branch for it. Creating and reopening a session both go through
   `openInSplit → activateTab → openPrPanel` (`openTaskSession` has no second path), which is also
   the single place an agent is launched or resumed.
+- **A page with no session is ONE webview, not a browser.** A tab under the sidebar's "Tabs" group
+  (or any context whose terminal isn't live) shows no tab strip, no ＋ and nothing to close: the
+  toolbar carries its title, centred (`#bar-title`, `body.page-only`, painted by
+  `content-tabs.js → renderContentTabs`), and the only action on it is the **New session** CTA that
+  converts the page into a session. The Diff needs a live terminal and File… needs a worktree, so
+  two of the ＋ menu's three entries can't apply there anyway; a link opened from the page
+  (`__openContentTab`) becomes its own tab under "Tabs" instead of a content tab. Extra tabs a
+  context already has are not lost — they stay persisted and return to the strip once it has a
+  session. The CTA and the content-tab UI are mutually exclusive by design: don't reintroduce the
+  CTA into the session toolbar, or the strip into the page-only one.
 - **Nothing is open in the right pane by default, and the toolbar's ＋ is what fills it.** A new
   context's pane holds only the context's own page (a bare session has none, so it shows
   `#pane-empty`); the Diff is NOT pinned there. ＋ (`viewer.js → ctabAdd`, the in-page `openMenu`)

@@ -212,6 +212,16 @@ body.viewing-tab main { display:none; }
    geometry; content-tabs.js still sets it, and it is the hook if the page chip ever needs to differ
    from the tabs the user added. */
 .bar-wv.single .ctabs { justify-content:flex-start; }
+/* A page with no session: one webview, no tabs. The "+" and the strip go, and so does the spacer
+   that reserves the split toggle's width (the toggle needs a live terminal to exist at all), so the
+   title is centred against the whole segment rather than 36px off it. */
+.bar-title { display:none; align-items:center; justify-content:center; gap:7px; flex:1; min-width:0; padding:0 8px; color:var(--text-2); font-size:13px; font-weight:500; }
+body.page-only .bar-title { display:flex; }
+body.page-only .bar-nav, body.page-only .bar-add, body.page-only .ctabs { display:none; }
+.bar-title-t { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.bar-title .ctab-ic, .bar-title .ctab-ic svg, .bar-title .ctab-ic img { width:15px; height:15px; }
+/* Window-inactive desaturation, like the chips' titles. */
+body.win-inactive .bar-title { color:var(--text-3); }
 .ctab-ic { display:inline-flex; flex-shrink:0; position:relative; width:16px; height:16px; }
 .ctab-ic svg { width:16px; height:16px; display:block; }
 .ctab-ic img { width:16px; height:16px; border-radius:3px; object-fit:cover; display:block; }

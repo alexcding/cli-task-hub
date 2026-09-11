@@ -184,8 +184,27 @@ export function renderContentTabs(force = false) {
   // (an SSE refresh, a sibling tab's title/favicon landing) would clobber the input + caret.
   // `force` is passed by the explicit actions (commit/close/switch) that MUST re-render.
   if (!force && el.contains(document.activeElement) && document.activeElement?.classList.contains('ctab-input')) return;
+  const title = document.getElementById('bar-title');
   const t = activeTab();
-  if (!t) { el.innerHTML = ''; el._lastHtml = ''; el.classList.remove('ctabs-single'); return; }
+  if (!t) {
+    el.innerHTML = ''; el._lastHtml = ''; el.classList.remove('ctabs-single');
+    document.body.classList.remove('page-only');
+    if (title) { title.hidden = true; title.innerHTML = ''; }
+    return;
+  }
+  // No session on this page → it is a single webview, not a context that can hold tabs: the Diff
+  // needs a live terminal and a file needs its worktree, so the strip and the "+" have nothing to
+  // offer. Show the page's title instead, centred, and let the toolbar's one action be the CTA that
+  // turns this page INTO a session. (Extra tabs are not lost — they're still persisted, and come
+  // back on the strip the moment the page has a session.)
+  const soloPage = !(t.termId && state.terms.get(t.termId));
+  document.body.classList.toggle('page-only', soloPage);
+  if (title) {
+    title.hidden = !soloPage;
+    if (soloPage) setHtmlIfChanged(title, `${defaultIcon(t)}<span class="bar-title-t">${esc(t.title || t.url || '')}</span>`);
+    else if (title.innerHTML) { title.innerHTML = ''; title._lastHtml = ''; }
+  }
+  if (soloPage) { el.innerHTML = ''; el._lastHtml = ''; el.classList.remove('ctabs-single'); return; }
   // With just the default tab (no extra tabs), cap the lone pill's width (CSS .bar-wv.single) —
   // it starts at the strip's left edge either way. Multiple tabs share the bar equally.
   const diffTab = hasDiffTab(t);

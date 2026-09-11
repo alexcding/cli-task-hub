@@ -1367,7 +1367,11 @@ export function initTrayBridge() {
   // Host hook (Tauri): "Open Link in New Tab" in the embedded webview → a new content (top) tab in
   // the current context. Falls back to a sidebar tab if there's no active context or it throws.
   window.__openContentTab = (url) => {
-    try { if (openWebLink(url)) return; } catch (e) { console.warn('[openContentTab]', e); }
+    // A page with no session holds no content tabs (it's one webview — see content-tabs.js
+    // soloPage), so a link opened from it becomes a tab of its own under the sidebar's "Tabs".
+    const cur = activeTab();
+    const canHold = !!(cur && cur.termId && state.terms.has(cur.termId));
+    try { if (canHold && openWebLink(url)) return; } catch (e) { console.warn('[openContentTab]', e); }
     window.__openTab(url, '', 'web', '');
   };
 }

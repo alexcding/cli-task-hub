@@ -486,6 +486,10 @@
              whatever has been added to this context — the Diff tab, web tabs, file tabs. The "+"
              that adds one is the left group above, not part of this strip. -->
         <div class="ctabs" id="ctabs"></div>
+        <!-- A page with no session (a tab under the sidebar's "Tabs" group) is ONE webview, not a
+             browser: no tab strip, no "+", nothing to close here. It shows its title, centred, the
+             way a window does — content-tabs.js fills this and hides the strip (body.page-only). -->
+        <div class="bar-title" id="bar-title" hidden></div>
         <!-- Empty: it only reserves the width of the absolutely-pinned split toggle (below), so
              the tab strip can't run under it. -->
         <div class="bar-add"></div>
