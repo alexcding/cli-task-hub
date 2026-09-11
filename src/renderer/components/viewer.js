@@ -82,12 +82,18 @@ function createTab(url, title, kind, meta = {}) {
   // or a file, is something the user adds from the toolbar's "+" (or ⇧⌘D). A context restored
   // while showing the diff necessarily has the tab.
   const diffOpen = meta.diffOpen === true || pv === 'diff';
+  // Which content tab was in front. It rides on the link itself (`active` in the links JSON), not
+  // a column of its own — link ids are minted per run, so the position in the saved array is the
+  // only stable handle, and rebuildLink maps 1:1 so the indexes line up.
+  const saved = meta.links || [];
+  const links = saved.map(rebuildLink);
+  const activeSaved = saved.findIndex(l => l && l.active);
   const tab = { id, kind: k, title: title || url, url, cur: meta.cur || '', wv: null,
     loaded: false, started: false, repo: meta.repo || '', branch: meta.branch || '',
     jiraKey: meta.jiraKey || jiraKeyFromUrl(url),
     paneView: pv, diffOpen, category: meta.category || '',
     login: meta.login || '', avatar: meta.avatar || '',
-    links: (meta.links || []).map(rebuildLink), activeLink: null };
+    links, activeLink: activeSaved >= 0 ? links[activeSaved].id : null };
   return tab;
 }
 
@@ -667,7 +673,11 @@ export function saveTabs() {
       tabs: state.tabs.map(t => ({ kind: t.kind, title: t.title, url: t.url, cur: t.cur || '', repo: t.repo, branch: t.branch, jiraKey: t.jiraKey, paneView: t.paneView, diffOpen: t.diffOpen, category: t.category, login: t.login, avatar: t.avatar,
         // The context's extra horizontal tabs (web pages + local files). Only committed ones
         // (with a url) — a blank, never-entered tab isn't persisted.
-        links: (t.links || []).filter(l => l.url).map(l => ({ kind: l.kind, url: l.url, title: l.title, path: l.path || '', icon: l.icon || '' })) })),
+        // `active` marks the one in front, so a restored context comes back on the tab the user
+        // left showing rather than always on its page. Only set on that link (JSON.stringify drops
+        // the undefined), so every other entry is byte-identical to before.
+        links: (t.links || []).filter(l => l.url).map(l => ({ kind: l.kind, url: l.url, title: l.title, path: l.path || '', icon: l.icon || '',
+          active: l.id === t.activeLink || undefined })) })),
       active: active ? active.url : null,
     }),
   }).catch(() => {});
