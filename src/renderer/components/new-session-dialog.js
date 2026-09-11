@@ -73,6 +73,20 @@ async function completePage(page) {
   return page;
 }
 
+// This project's existing worktree for a pasted PR/ticket, or null. The match is the server's
+// (ROUTES.WORKTREE: exact branch for a PR, the key embedded in a branch name for a ticket, and
+// nothing when two worktrees both match — ambiguous is not reuse). The main checkout is never it:
+// a session runs on a worktree. The second call is only to learn that worktree's own branch, which
+// may differ from the one derived here (a ticket's branch carries its summary).
+async function existingWorktree(project, page, branch) {
+  const q = page.kind === 'jira' ? `key=${encodeURIComponent(page.jiraKey)}` : `branch=${encodeURIComponent(branch || '')}`;
+  if (q.endsWith('=')) return null;
+  const found = await api(`${ROUTES.WORKTREE}?path=${encodeURIComponent(project.workspace)}&${q}`).catch(() => null);
+  if (!found?.matched || !found.isWorktree) return null;
+  const all = await api(`${ROUTES.WORKTREES}?path=${encodeURIComponent(project.workspace)}`).catch(() => []);
+  return { path: found.path, branch: (all || []).find(w => w.path === found.path)?.branch || branch };
+}
+
 // The defaults the dialog would show for a project — a free branch name and the base it forks from
 // — for callers that create a session WITHOUT asking (the viewer's "New session" button on a page
 // that names no branch of its own). Returns null when the repo's refs can't be read.
@@ -125,6 +139,16 @@ export async function newSessionDialog(project) {
           <label class="form-label" for="ns-branch2">Branch for that pull request</label>
           <input type="text" id="ns-branch2" placeholder="${esc(placeholder)}" autocomplete="off" spellcheck="false">
         </div>
+        <!-- Only when this link already has a checkout here (see existingWorktree). Same segmented
+             control as the Agent row below — one control shape for every choice in this dialog. -->
+        <div class="form-group" id="ns-wt-row" hidden>
+          <span class="form-label">Worktree</span>
+          <div class="theme-toggle ns-wt" role="radiogroup" aria-label="Worktree">
+            <button type="button" class="theme-opt active" data-wt="reuse" role="radio" aria-checked="true">Reuse</button>
+            <button type="button" class="theme-opt" data-wt="overwrite" role="radio" aria-checked="false">Overwrite</button>
+          </div>
+          <div class="form-hint" id="ns-wt-hint"></div>
+        </div>
         <div class="form-group">
           <label class="form-label" for="ns-base">Branch from</label>
           <select id="ns-base">${names.map(n => `<option value="${esc(n)}"${n === base0 ? ' selected' : ''}>${esc(n)}</option>`).join('')}</select>
@@ -144,8 +168,12 @@ export async function newSessionDialog(project) {
     const branchRow = back.querySelector('#ns-branch-row');
     const branch2 = back.querySelector('#ns-branch2');
     const baseSel = back.querySelector('#ns-base');
+    const wtRow = back.querySelector('#ns-wt-row');
+    const wtHint = back.querySelector('#ns-wt-hint');
     let cli = cli0;
     let page = null;
+    let found = null;    // this link's existing worktree, when it has one
+    let reuse = true;    // …and whether to run the session there (the default)
     const done = result => {
       if (_open !== cancel) return; // already settled
       _open = null;
@@ -163,6 +191,7 @@ export async function newSessionDialog(project) {
       // The placeholder is a NEW branch name, so it can only stand in where a new branch is what we
       // are making. A pull request needs its own head branch — falling back here would check out a
       // branch that doesn't exist (the worktree adopts, it doesn't create, for a PR).
+      if (found) { done({ branch: found.branch, base: baseSel.value, cli, page, worktree: found, overwrite: !reuse }); return; }
       if (!raw && page?.kind === 'github') {
         hint.textContent = 'Name the pull request’s branch';
         hint.classList.add('form-hint-err');
@@ -176,7 +205,7 @@ export async function newSessionDialog(project) {
         hint.textContent = err; hint.classList.add('form-hint-err'); el.focus();
         return;
       }
-      done({ branch, base: baseSel.value, cli, page });
+      done({ branch, base: baseSel.value, cli, page, worktree: null, overwrite: false });
     };
     // What was typed decides what it is — a url (the page this session is for) or a branch name.
     // The hint says which reading won, so nothing is silently misread.
@@ -191,9 +220,14 @@ export async function newSessionDialog(project) {
             ? `Opens ${page.title || name} — branch ${page.branch}`
             : `Opens ${name} — name its branch below`)
         : HINT;
-      // The extra input appears only for a PR whose head branch nothing could tell us.
-      branchRow.hidden = !(page && !page.branch);
+      // The extra input appears only for a PR whose head branch nothing could tell us — and never
+      // when we're reusing a worktree, which brings its own branch.
+      branchRow.hidden = !(page && !page.branch) || (!!found && reuse);
       if (!branchRow.hidden && !branch2.value && document.activeElement !== branch2) branch2.focus();
+      wtRow.hidden = !found;
+      if (found) wtHint.textContent = reuse
+        ? `Runs in ${found.path.split('/').pop()} on ${found.branch}`
+        : `Deletes ${found.path.split('/').pop()} and recreates it — anything uncommitted there is lost`;
     };
     let seq = 0;
     input.oninput = () => {
@@ -205,9 +239,19 @@ export async function newSessionDialog(project) {
       if (!page) return;
       // The title and (for a PR) the branch may need a live lookup — the snapshots only hold what
       // this app lists. Ignore an answer that lands after the field moved on.
-      completePage(page).then(done => {
+      completePage(page).then(async done => {
         if (mine !== seq) return;
         page = done;
+        paint(typed, urlish);
+        // …and does this work already have a checkout here? The answer only arrives for a link, so
+        // the choice can't appear for a typed branch name.
+        const wt = await existingWorktree(project, page, page.branch);
+        if (mine !== seq) return;
+        found = wt; reuse = true;
+        back.querySelectorAll('.ns-wt .theme-opt').forEach(b => {
+          const on = b.dataset.wt === 'reuse';
+          b.classList.toggle('active', on); b.setAttribute('aria-checked', String(on));
+        });
         paint(typed, urlish);
       });
     };
@@ -218,6 +262,13 @@ export async function newSessionDialog(project) {
     back.onclick = e => { if (e.target === back) cancel(); };
     back.querySelector('[data-c="ok"]').onclick = submit;
     back.querySelector('[data-c="cancel"]').onclick = cancel;
+    back.querySelectorAll('.ns-wt .theme-opt').forEach(b => {
+      b.onclick = () => {
+        reuse = b.dataset.wt === 'reuse';
+        back.querySelectorAll('.ns-wt .theme-opt').forEach(x => { const on = x === b; x.classList.toggle('active', on); x.setAttribute('aria-checked', String(on)); });
+        paint(input.value.trim(), /^https?:\/\//i.test(input.value.trim()));
+      };
+    });
     back.querySelectorAll('.ns-cli .theme-opt').forEach(b => {
       b.onclick = () => {
         cli = b.dataset.cli;
