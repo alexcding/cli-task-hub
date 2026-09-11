@@ -22,7 +22,7 @@ import { hideDiffPane } from './diff.js';
 import { buildTerm, runBuild, stopBuild, isBuilding, disposeBuildTerm } from './build.js';
 import { attachFind, closeFind } from './find.js';
 import { renderContentTabs, playTabIn, playTabOut, markActiveTab, defaultChipRect, flipDefaultChip, focusCtabInput, inDiff,
-  nextChipIdx, initChipOrder, diffPos } from './content-tabs.js';
+  nextChipIdx, initChipOrder, linkIdxAt, diffPos } from './content-tabs.js';
 import { ensureEditor, disposeEditor, saveEditor, focusEditor, gotoLine } from './editor.js';
 import { createWcvShim } from './wcv-shim.js';
 
@@ -442,8 +442,6 @@ export function closeDiffTab() {
 }
 
 // Put a chip immediately after the active one (browser behaviour; content-tabs.js owns the order).
-// The links array keeps its own order for persistence, so a new link is appended there and placed
-// by chipOrder — the two only have to agree on membership, not on sequence.
 function addChip(tab, id, at = nextChipIdx(tab)) {
   const order = Array.isArray(tab.chipOrder) ? tab.chipOrder : initChipOrder(tab);
   const had = order.indexOf(id);
@@ -455,9 +453,13 @@ function dropChip(tab, id) {
   const i = order.indexOf(id);
   if (i >= 0) order.splice(i, 1);
 }
+// The links array must be spliced at the MATCHING position, not appended: chipOrder is runtime
+// state, and what persists is tab.links in array order (+ the Diff's index among them). Appending
+// would leave the two disagreeing, and the bar would come back in insertion order after a restart —
+// visibly reordering tabs the user had placed.
 function insertLink(tab, link) {
   const at = nextChipIdx(tab);
-  tab.links.push(link);
+  tab.links.splice(linkIdxAt(tab, at), 0, link);
   addChip(tab, link.id, at);
 }
 

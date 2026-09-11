@@ -101,6 +101,14 @@ export function nextChipIdx(t) {
   return i < 0 ? 0 : i + 1;
 }
 
+// A position in chipOrder, as an index into the LINKS array — the ids before it that are links.
+// Keeps tab.links in bar order, which is what persistence stores (a link's runtime id means nothing
+// after a restart, so the array's own sequence is the only record of where its tabs sat).
+export function linkIdxAt(t, at) {
+  const order = Array.isArray(t.chipOrder) ? t.chipOrder : initChipOrder(t);
+  return order.slice(0, at).filter(id => id !== 'diff' && id !== 'build').length;
+}
+
 // The Diff's index among the links only — what `tabs.diff_pos` stores, since 'build' is not
 // persisted and a link's runtime id means nothing after a restart.
 export function diffPos(t) {
