@@ -1,12 +1,14 @@
-// "New session" dialog behind the sidebar's "+" on a project: name the branch (→ worktree folder),
-// pick the base branch it forks from, and choose the agent to launch in its terminal. An in-app
+// "New session" dialog behind the sidebar's "+" on a project: optionally paste the PR or ticket the
+// session is FOR, name the branch (→ worktree folder), pick the base branch it forks from, and
+// choose the agent to launch in its terminal. An in-app
 // modal on the shared .modal-backdrop — the webview swallows native prompt()/confirm(), so those
 // are never used here. Resolves { branch, base, cli } on Create, or null on Cancel / Escape /
 // backdrop click. One dialog at a time: opening a second cancels the first.
 import { ROUTES } from '/shared/routes.mjs';
-import { state } from '../stores/store.js';
+import { state, prByUrl, jiraByKey } from '../stores/store.js';
 import { api } from '../services/api.js';
-import { esc } from '../lib/util.js';
+import { esc, isPrUrl, jiraKeyFromUrl } from '../lib/util.js';
+import { jiraTaskBranch } from '../lib/workflow.mjs';
 
 const PREFERRED_BASE = 'develop'; // preselected when the repo has it; else the repo's default branch
 const CLI_CHOICES = [
@@ -25,6 +27,27 @@ function branchNameError(b) {
   if (/[\x00-\x20\x7f~^:?*[\\]|\.\.|@\{|\/\/|^@$/.test(b)) return 'Branch name can’t contain spaces, “..” or ~ ^ : ? * [ \\';
   if (!b.split('/').every(seg => seg && seg !== '.' && !seg.startsWith('.'))) return 'No branch segment may start with “.”';
   return '';
+}
+
+// A pasted address → the page this session is for, plus the branch that page implies. Exactly what
+// the viewer's "New session" button derives from a PR/Jira TAB (viewer.js newSession), so a session
+// started from the sidebar with a url lands in the same place as one started from the page itself:
+// a PR brings its head branch (when the PR is known — it's whatever the sidebar already loaded),
+// a ticket its feature/<KEY>-<slug>. Anything else is not a page we can open as a context.
+export function parseSessionUrl(raw) {
+  const url = String(raw || '').trim();
+  if (!url) return null;
+  if (isPrUrl(url)) {
+    const pr = prByUrl(url);
+    return { url, kind: 'github', jiraKey: '', title: pr?.title || url, branch: pr?.headRefName || '' };
+  }
+  const key = jiraKeyFromUrl(url);
+  if (key) {
+    const it = jiraByKey(key);
+    return { url, kind: 'jira', jiraKey: key, title: it?.summary ? `${key} ${it.summary}` : key,
+      branch: jiraTaskBranch(key, it?.summary || '') };
+  }
+  return null;
 }
 
 // The defaults the dialog would show for a project — a free branch name and the base it forks from
@@ -69,6 +92,11 @@ export async function newSessionDialog(project) {
     back.innerHTML = `<div class="modal modal-session" role="dialog" aria-modal="true">
         <h2>New session on ${esc(project.name || 'project')}</h2>
         <div class="form-group">
+          <label class="form-label" for="ns-url">Pull request or ticket</label>
+          <input type="text" id="ns-url" placeholder="Optional — paste a GitHub PR or Jira URL" autocomplete="off" spellcheck="false">
+          <div class="form-hint" id="ns-url-hint">The session opens on that page instead of a blank one, and takes its branch.</div>
+        </div>
+        <div class="form-group">
           <label class="form-label" for="ns-branch">Branch name</label>
           <input type="text" id="ns-branch" placeholder="${esc(placeholder)}" autocomplete="off" spellcheck="false">
           <div class="form-hint" id="ns-hint">Also names the worktree folder. Leave blank to use the placeholder.</div>
@@ -89,8 +117,11 @@ export async function newSessionDialog(project) {
         </div>
       </div>`;
     const input = back.querySelector('#ns-branch');
+    const urlInput = back.querySelector('#ns-url');
+    const urlHint = back.querySelector('#ns-url-hint');
     const baseSel = back.querySelector('#ns-base');
     let cli = cli0;
+    let page = null;
     const done = result => {
       if (_open !== cancel) return; // already settled
       _open = null;
@@ -104,9 +135,22 @@ export async function newSessionDialog(project) {
       const branch = (input.value.trim() || placeholder).replace(/\s+/g, '-');
       const err = branchNameError(branch);
       if (err) { hint.textContent = err; hint.classList.add('form-hint-err'); input.focus(); return; }
-      done({ branch, base: baseSel.value, cli });
+      if (urlInput.value.trim() && !page) { urlHint.textContent = 'Not a GitHub pull request or Jira issue URL'; urlHint.classList.add('form-hint-err'); urlInput.focus(); return; }
+      done({ branch, base: baseSel.value, cli, page });
     };
     input.oninput = () => { hint.classList.remove('form-hint-err'); hint.textContent = 'Also names the worktree folder. Leave blank to use the placeholder.'; };
+    // Reading the url fills the branch in, but never overwrites one the user typed: the field is a
+    // shortcut, not a lock, and a PR we haven't loaded yields no branch at all.
+    urlInput.oninput = () => {
+      const raw = urlInput.value.trim();
+      page = parseSessionUrl(raw);
+      urlHint.classList.toggle('form-hint-err', !!raw && !page);
+      urlHint.textContent = !raw ? 'The session opens on that page instead of a blank one, and takes its branch.'
+        : !page ? 'Not a GitHub pull request or Jira issue URL'
+        : page.branch ? `${page.kind === 'jira' ? page.jiraKey : 'Pull request'} — branch ${page.branch}`
+        : `${page.kind === 'jira' ? page.jiraKey : 'Pull request'} — name the branch below`;
+      if (page?.branch && !input.value.trim()) input.value = page.branch;
+    };
     const onKey = e => {
       if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); cancel(); }
       else if (e.key === 'Enter' && e.target !== baseSel) { e.preventDefault(); e.stopPropagation(); submit(); }
@@ -123,6 +167,6 @@ export async function newSessionDialog(project) {
     document.addEventListener('keydown', onKey, true);
     document.body.appendChild(back);
     _open = cancel;
-    input.focus();
+    urlInput.focus();   // the shortcut first: paste, and the rest of the form fills itself in
   });
 }

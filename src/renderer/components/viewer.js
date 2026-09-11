@@ -438,10 +438,16 @@ export async function ctabAdd(e) {
   // It replaced two hard-coded entries — the context's own page and its Jira ticket — which were
   // just the first addresses it ever opened; createTab seeds those into the history instead.
   const rows = historyMenu(tab);
+  // A build terminal whose chip was closed is still running (or still holding its output), so the
+  // menu offers it back rather than making you run the build again to see what it said.
+  const canBuild = !!buildTerm(tab) && tab.buildOpen === false;
+  // Ordered by what you reach for: the two things you can always open, then the two the context
+  // may or may not have to give.
   return nativeMenu(e, [
-    canDiff && { label: 'Diff', onClick: openDiffTab },
     { label: 'Web page…', onClick: () => addLink('web') },
     { label: 'File…', onClick: addFileTab },
+    canDiff && { label: 'Diff', onClick: openDiffTab },
+    canBuild && { label: 'Build output', onClick: openBuildTab },
     rows.length && { separator: true },
     // One submenu, so a context with a long history doesn't bury the three things the menu is for.
     rows.length && { label: 'History', items: [
@@ -534,15 +540,16 @@ export function openDiffTab() {
   playTabIn('diff');
 }
 
-// Close the Build tab (its ×): the console goes with it — the PTY is this context's own
-// (build:<url>), nothing else would ever end it, and a chip left behind with no terminal under it
-// would fall back to the page on every click. Mirrors closeDiffTab's shrink-out and its 2→1 case.
+// Close the Build tab (its ×). The chip goes; the build terminal does NOT — it is a paired PTY
+// (build:<url>) like a session's, it outlives its tab by design, and its output is the point of
+// reopening. The "+" menu offers it back (Build output), and removing the context is what finally
+// ends it (removeTab → disposeBuildTerm). Mirrors closeDiffTab's shrink-out and its 2→1 case.
 export function closeBuildTab() {
   const tab = activeTab();
   if (!tab || !buildTerm(tab)) return;
   const toSingle = hasPage(tab) && !(tab.links || []).length && !tab.diffOpen;
   const remove = () => {
-    disposeBuildTerm(tab);
+    tab.buildOpen = false;
     dropChip(tab, 'build');
     if (tab !== activeTab()) {
       if (tab.paneView === 'build') tab.paneView = 'term';   // never left pointing at a chip it hasn't got
@@ -556,6 +563,18 @@ export function closeBuildTab() {
   };
   if (toSingle) remove();
   else playTabOut('build', remove);
+}
+
+// Put the Build chip back on the bar and show it — the same terminal, with everything it has
+// printed still in its scrollback. Offered by the "+" while a build terminal exists off-bar.
+export function openBuildTab() {
+  const tab = activeTab();
+  if (!tab || !buildTerm(tab)) return;
+  tab.buildOpen = true;
+  addChip(tab, 'build');
+  setPaneView('build');
+  renderContentTabs(true);
+  playTabIn('build');
 }
 
 // Close the Diff tab (its ×). If the diff was the shown view, the pane falls back to the page —
@@ -1243,7 +1262,8 @@ function runHalfHtml(pj) {
 // doesn't have to reach back into the split module (which already imports it).
 export function runBuildClick() {
   const tab = activeTab();
-  if (tab && !buildTerm(tab)) addChip(tab, 'build');
+  if (tab && !(buildTerm(tab) && tab.buildOpen !== false)) addChip(tab, 'build');   // closed, or never opened: it comes back
+  if (tab) tab.buildOpen = true;
   runBuild(tab, { setView: setPaneView, onState: syncBuildBtn });
 }
 export function stopBuildClick() { stopBuild(activeTab()); }

@@ -245,7 +245,7 @@ Object.assign(window, {
   activateTab: viewer.activateTab, closeTab: viewer.closeTab, tabMenu,
   // Safari-compact horizontal content tabs (per-context web/file links)
   setActiveLink: viewer.setActiveLink, ctabAdd: viewer.ctabAdd, editLink: viewer.editLink, ctabClick: viewer.ctabClick,
-  openDiffTab: viewer.openDiffTab, closeDiffTab: viewer.closeDiffTab, closeBuildTab: viewer.closeBuildTab,
+  openDiffTab: viewer.openDiffTab, closeDiffTab: viewer.closeDiffTab, closeBuildTab: viewer.closeBuildTab, openBuildTab: viewer.openBuildTab,
   ctabInputKey: viewer.ctabInputKey, ctabInputBlur: viewer.ctabInputBlur,
   closeLink: viewer.closeLink, closeOtherLinks: viewer.closeOtherLinks, ctabMenu: viewer.ctabMenu,
   saveLinkFile: viewer.saveLinkFile, openFileTab: viewer.openFileTab,

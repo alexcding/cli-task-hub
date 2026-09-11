@@ -52,8 +52,10 @@ function linkIcon(l) {
 const hasDiffTab = t => !!(t && t.diffOpen && t.termId && state.terms.get(t.termId));
 export const inDiff = t => hasDiffTab(t) && t.paneView === 'diff';
 // The Build chip appears once this context HAS a build terminal (the toolbar's play button made
-// one); it's the way back to the output after looking at the page or the diff.
-const hasBuildTab = t => !!buildTerm(t);
+// one) AND hasn't had the chip closed; it's the way back to the output after looking at the page or
+// the diff. Closing the chip does NOT end the build terminal (it's a paired PTY, build:<url>, and
+// paired terminals outlive their tabs here) — the output is kept, and the "+" menu offers it back.
+const hasBuildTab = t => !!buildTerm(t) && t.buildOpen !== false;
 export const inBuild = t => hasBuildTab(t) && t.paneView === 'build';
 
 // ── The strip's order ─────────────────────────────────────────────────────────

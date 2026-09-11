@@ -43,9 +43,12 @@ export async function newWorktreeTask(projectId) {
   if (!project?.workspace) { toastErr('Project has no local workspace'); return; }
   const pick = await newSessionDialog(project);
   if (!pick) return;
-  const worktree = await ensureWorktree(project, pick.branch, { base: pick.base });
+  // A PR/ticket url was given → the branch already exists on the remote (a PR's head), so adopt it
+  // rather than forking a new one; a ticket's branch is new like any other.
+  const fromPr = pick.page?.kind === 'github';
+  const worktree = await ensureWorktree(project, pick.branch, { base: pick.base, create: !fromPr });
   if (!worktree) return;
-  await createTask(project, worktree, { branch: pick.branch, cli: pick.cli });
+  await createTask(project, worktree, { branch: pick.branch, cli: pick.cli, page: pick.page });
 }
 
 // Record a task on `worktree` and open it. A session with no page of its own still gets a CONTEXT
@@ -53,12 +56,16 @@ export async function newWorktreeTask(projectId) {
 // PR/Jira-backed session: the same tab opens the same terminal panel, split toggle, diff view and
 // web tabs. `cli` is stamped on the record first, which is what makes openPrPanel launch that agent
 // (and, later, resume the same conversation) — one launch path, not a second one here.
-async function createTask(project, worktree, { branch = '', cli = '' } = {}) {
+async function createTask(project, worktree, { branch = '', cli = '', page = null } = {}) {
   const id = newTaskId();
+  // The sidebar titles a session by its worktree folder either way; `page` only decides what the
+  // context SHOWS — the PR/ticket page it was started from, or the synthetic session: url that has
+  // no page of its own. Everything downstream (terminal, split, diff, tabs) is the one code path.
   const title = basename(worktree);
   const task = await persistTask({ id, projectId: project.id, workspace: project.workspace, worktree,
-    branch, title, kind: 'web', url: sessionUrl(id), jiraKey: '', cli, sessionId: '', createdAt: new Date().toISOString() });
-  openInSplit(task.url, title, 'web', {});
+    branch, title, kind: page?.kind || 'web', url: page?.url || sessionUrl(id), jiraKey: page?.jiraKey || '',
+    cli, sessionId: '', createdAt: new Date().toISOString() });
+  openInSplit(task.url, page?.title || title, task.kind, { jiraKey: task.jiraKey });
 }
 
 // Analyze a session's last message into { summary, state } — called ONLY when its turn-done (Stop)
