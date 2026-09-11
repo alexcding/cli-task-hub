@@ -37,6 +37,9 @@ export function createWcvShim() {
   const id = 'wcv' + (++_wcvSeq);
   const el = document.createElement('div');
   el.className = 'wcv-shim';
+  // The Tauri webview label. viewer.js's memory budget reads it back (owner.wv.dataset.wcv) to
+  // match a page against the content process webview_memory reports for it.
+  el.dataset.wcv = id;
   document.getElementById('split-body').appendChild(el);
 
   const wcv = window.taskhub.wcv;

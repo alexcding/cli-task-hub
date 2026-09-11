@@ -176,9 +176,14 @@ separation everything follows:
   a content tab (`window.__openContentTab` → `openWebLink`), so a PR or CI link the agent prints
   lands beside the terminal that printed it. ⌥-click is the escape hatch to the real browser.
   `openWebLink` goes through `showActiveView`, so a link arriving while the pane is closed opens it.
-- **Embedded webviews are pooled.** `tab.wv` / `link.wv` are built lazily on first show and torn
-  down when they fall out of the LRU pool (`state.webviewPool`, Settings → System), then rebuilt
-  from `tab.cur` / `link.url`. Never cache a `wv` reference; re-read `owner.wv` (may be null) and
+- **Embedded webviews are pooled, by MEMORY not by count.** `tab.wv` / `link.wv` are built lazily on
+  first show and torn down when the loaded pages exceed `state.webviewBudgetMb` (Settings → System,
+  default 2GB), least-recently-shown first, then rebuilt from `tab.cur` / `link.url`. Each page's
+  content-process RSS comes from the host (`bridge.js webviewMemory` → `commands.rs webview_memory`
+  → `viewer.rs webview_procs`, keyed by the shim's webview label, which `wcv-shim.js` puts on
+  `el.dataset.wcv`). A page count (`state.webviewPool`) remains ONLY as the fallback where the host
+  can't measure (a plain browser, non-macOS): the first successful measurement sets `_memMode` and
+  the count stops evicting, so the two never fight. Never cache a `wv` reference; re-read `owner.wv` (may be null) and
   attach listeners inside `buildTabWebview` / `buildLinkWebview` so they survive a rebuild.
 - Jira keys link via `jiraUrl(key)` with `onclick="jiraClick(event, this.href, key)"`.
 - Icons come from `lib/icons.js` (`ICON` for UI strokes, `TAB_ICON` for GitHub/Jira

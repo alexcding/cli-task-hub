@@ -123,15 +123,26 @@ const isWebUrl = u => !!u && /^https?:/i.test(u);
 // only the N most recently shown webviews alive (state.webviewPool, Settings → System); the rest are
 // torn down and rebuilt from their saved URL the next time they're shown (a browser's tab discard).
 // The pool holds owner objects (tab or link, whichever has the `.wv`), least-recent first.
+//
+// The limit is MEMORY, not a page count: pages differ by an order of magnitude (a Jira board against
+// a diff view), so "3 pages" meant anything between 300MB and 3GB. The host reports each page's
+// content-process RSS (bridge.js webviewMemory → commands.rs webview_memory, keyed by the shim's
+// webview label) and pages are evicted least-recently-shown-first until the total is under
+// state.webviewBudgetMb (Settings → System). The count pool survives as the FALLBACK for a host that
+// can't measure — a plain browser, or any platform where webview_procs is empty.
 let _live = [];
+let _memMode = false;      // a measurement has succeeded: the byte budget is in charge
 
-// Record `owner` as the most recently shown live webview and evict whatever exceeds the pool.
+// Record `owner` as the most recently shown live webview and evict whatever exceeds the limit.
 function touchLive(owner) {
   _live = _live.filter(o => o !== owner && o.wv);
   _live.push(owner);
   trimLive();
+  scheduleMemTrim();
 }
+// Count fallback. Skipped once the budget is measuring, so the two can't both be evicting.
 function trimLive() {
+  if (_memMode) return;
   const max = Math.max(1, state.webviewPool | 0);
   const shown = shownOwner();
   while (_live.length > max) {
@@ -139,6 +150,46 @@ function trimLive() {
     if (!victim) break;
     disposeWebview(victim);   // evicted: page state (scroll, history) is lost; its URL survives (tab.cur / link.url)
   }
+}
+
+// ── The byte budget ──────────────────────────────────────────────────────────────
+const wcvLabel = o => o?.wv?.dataset?.wcv || '';
+let _memTimer = 0, _memBusy = false;
+
+// A page's memory lands well after it is shown (loading, then settling), so measure on a short
+// delay after a show and on a slow heartbeat while more than one page is alive. Coalesced: a burst
+// of tab switches measures once.
+function scheduleMemTrim(delay = 1500) {
+  if (!window.taskhub?.webviewMemory || _memTimer) return;
+  _memTimer = setTimeout(() => { _memTimer = 0; trimLiveByMemory(); }, delay);
+}
+export function startWebviewMemWatch() {
+  if (!window.taskhub?.webviewMemory) return;
+  setInterval(() => { if (_live.length > 1) scheduleMemTrim(0); }, 15000);
+}
+
+// Evict least-recently-shown pages until the measured total is under the budget. The eviction is
+// charged against the running total immediately (the process takes its time to actually go away),
+// so one pass frees enough rather than one page per measurement.
+async function trimLiveByMemory() {
+  if (_memBusy || !window.taskhub?.webviewMemory) return;
+  _memBusy = true;
+  try {
+    const rows = await window.taskhub.webviewMemory();
+    if (!Array.isArray(rows) || !rows.length) return;   // can't measure: leave the count pool in charge
+    _memMode = true;
+    const kb = new Map(rows.map(r => [r.label, r.kb | 0]));
+    let total = rows.reduce((n, r) => n + (r.kb | 0), 0);
+    const budget = Math.max(1, state.webviewBudgetMb | 0) * 1024;
+    const shown = shownOwner();
+    for (const owner of [..._live]) {          // least-recent first
+      if (total <= budget) break;
+      if (owner === shown || !owner.wv) continue;   // never evict the page on screen
+      total -= kb.get(wcvLabel(owner)) || 0;
+      disposeWebview(owner);
+    }
+  } catch { /* a failed measurement just means no eviction this round */ }
+  finally { _memBusy = false; }
 }
 // Drop an owner's webview (if any) and forget it. The single teardown for evictions AND the
 // close paths (disposeLink / closeTab / closeSplit) — null-safe on either build. Callers must
@@ -155,10 +206,22 @@ function shownOwner() {
   if (t.activeLink) return (t.links || []).find(l => l.id === t.activeLink) || null;
   return inDiff(t) ? null : t;   // a page hidden behind the Diff view is evictable like any other
 }
-// Settings → System: change the pool size at runtime (also persisted by settings.js).
+// Settings → System: change the limit at runtime (also persisted by settings.js).
+// The budget is what the UI shows; the count is the fallback for a host that can't measure.
+export const WEBVIEW_BUDGET_DEFAULT = 2048;   // MB
+export function clampWebviewBudget(v) {
+  const n = Math.round(Number(v));
+  return Number.isFinite(n) ? Math.min(32768, Math.max(256, n)) : WEBVIEW_BUDGET_DEFAULT;
+}
+export function setWebviewBudgetMb(mb) {
+  state.webviewBudgetMb = clampWebviewBudget(mb);
+  scheduleMemTrim(0);
+}
 export const WEBVIEW_POOL_DEFAULT = 3;
 // Clamp a setting value to a valid pool size; anything non-numeric → the default (not 1).
 export function clampWebviewPool(v) { const n = parseInt(v, 10); return Number.isFinite(n) ? Math.min(20, Math.max(1, n)) : WEBVIEW_POOL_DEFAULT; }
+// Fallback-count setter. Nothing in the UI sets it any more (the budget replaced it); kept so a
+// host that can't measure still has one knob, settable from the console or a future setting.
 export function setWebviewPoolSize(n) {
   state.webviewPool = clampWebviewPool(n);
   trimLive();

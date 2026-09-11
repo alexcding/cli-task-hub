@@ -8,7 +8,7 @@ import { confirmDialog } from '../components/confirm.js';
 import { renderProjectNav } from '../components/sidebar.js';
 import { loadLogs } from './logs.js';
 import { GIT_CLIENTS, resolveGitClientCmd } from '../lib/git-clients.js';
-import { updateGitClient, setWebviewPoolSize, clampWebviewPool, WEBVIEW_POOL_DEFAULT } from '../components/viewer.js';
+import { updateGitClient, setWebviewBudgetMb, clampWebviewBudget, WEBVIEW_BUDGET_DEFAULT } from '../components/viewer.js';
 
 export async function loadSettings() {
   const [cfg, dbinfo, settings, sounds] = await Promise.all([
@@ -18,7 +18,7 @@ export async function loadSettings() {
   populateSoundPicker(sounds, settings?.reviewSound);
   setActivityNotifyUI(settings?.activityNotify !== 'off'); // default on when unset
   populateGitClientPicker(settings);
-  setWebviewPoolUI(settings?.webviewPool);
+  setWebviewBudgetUI(settings?.webviewBudgetMb);
   setDefaultCliUI(settings?.defaultCli ?? state.defaultCli);
 
   if (cfg.poll_interval)      document.getElementById('poll-interval').value = cfg.poll_interval;
@@ -248,19 +248,20 @@ export async function setDefaultCli(value) {
   } catch (e) { toastErr(e.message); }
 }
 
-// ── Memory: live-webview pool size ─────────────────────────────────────────────
-// How many embedded pages stay loaded (see the pool in components/viewer.js). Persisted as the
-// `webviewPool` setting; applied to the running viewer immediately (evicts on shrink).
-function setWebviewPoolUI(value) {
-  const el = document.getElementById('webview-pool');
-  if (el) el.value = clampWebviewPool(value ?? WEBVIEW_POOL_DEFAULT);
+// ── Memory: the embedded pages' budget ─────────────────────────────────────────
+// How much memory the loaded pages may hold BETWEEN them (see the budget in components/viewer.js).
+// Stored in MB as the `webviewBudgetMb` setting, shown in GB because that's the unit the number is
+// chosen in; applied to the running viewer immediately (evicts on shrink).
+function setWebviewBudgetUI(value) {
+  const el = document.getElementById('webview-budget');
+  if (el) el.value = (clampWebviewBudget(value ?? WEBVIEW_BUDGET_DEFAULT) / 1024).toFixed(1).replace(/\.0$/, '');
 }
-export async function setWebviewPool(value) {
-  const n = clampWebviewPool(value);
+export async function setWebviewBudget(value) {
+  const mb = clampWebviewBudget(Number(value) * 1024);
   try {
-    await apiJson(ROUTES.settingsKey('webviewPool'), 'PUT', { value: String(n) });
-    setWebviewPoolUI(n);
-    setWebviewPoolSize(n);
+    await apiJson(ROUTES.settingsKey('webviewBudgetMb'), 'PUT', { value: String(mb) });
+    setWebviewBudgetUI(mb);
+    setWebviewBudgetMb(mb);
   } catch (e) { toastErr(e.message); }
 }
 

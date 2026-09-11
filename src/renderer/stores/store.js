@@ -46,7 +46,8 @@ export const state = {
   // substituted — derived from the id (preset) or the stored custom template, never persisted
   // for presets. Loaded at bootstrap (app.js), updated by the Settings picker (setGitClient).
   gitClient: { id: '', cmd: '' },
-  webviewPool: 3,      // max embedded pages kept loaded at once (Settings → System); WEBVIEW_POOL_DEFAULT in viewer.js owns the value
+  webviewBudgetMb: 2048, // memory the embedded pages may hold between them (Settings → System); WEBVIEW_BUDGET_DEFAULT in viewer.js owns the value
+  webviewPool: 3,      // fallback page count, used only where the host can't measure memory; WEBVIEW_POOL_DEFAULT in viewer.js owns the value
   defaultCli: 'claude', // agent preselected in the sidebar's New session dialog (Settings → CLIs): 'claude' | 'codex' | '' (shell only)
   knownStatuses: new Set(),
   // Optimistic board moves awaiting server confirmation: ticket key -> { status, statusId }.

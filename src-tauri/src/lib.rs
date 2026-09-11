@@ -323,6 +323,7 @@ pub fn run() {
       commands::open_in_git_client,
       commands::preview_sound,
       commands::get_usage,
+      commands::webview_memory,
       commands::wcv_eval,
       commands::wcv_kill_content,
       commands::refresh_tray,

@@ -289,6 +289,44 @@ pub fn get_usage(app: tauri::AppHandle) -> Usage {
   Usage { total_kb, total_cpu, breakdown }
 }
 
+// Per-embedded-page memory, keyed by the webview's label ('wcv<n>' — the shim id the renderer
+// knows each page by). The renderer's live-page budget (viewer.js) evicts least-recently-shown
+// pages until the total is under it, which needs a per-page number, not get_usage's grand total.
+// macOS only in substance: webview_procs is empty elsewhere, and the renderer falls back to its
+// count-based pool when this returns nothing.
+#[derive(Serialize, Clone)]
+pub struct WebviewMem {
+  label: String,
+  kb: u64,
+}
+
+#[tauri::command]
+pub fn webview_memory(app: tauri::AppHandle) -> Vec<WebviewMem> {
+  use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System};
+
+  let procs = crate::viewer::webview_procs(&app);
+  if procs.is_empty() {
+    return Vec::new();
+  }
+  // Refresh ONLY these pids (no cpu): this runs on a timer while pages are open, and a full
+  // refresh_processes of every process on the machine costs far more than the answer is worth.
+  let pids: Vec<Pid> = procs.iter().map(|(_, pid)| Pid::from_u32(*pid as u32)).collect();
+  let mut sys = System::new();
+  sys.refresh_processes_specifics(
+    ProcessesToUpdate::Some(&pids),
+    true,
+    ProcessRefreshKind::nothing().with_memory(),
+  );
+  procs
+    .into_iter()
+    .filter_map(|(label, pid)| {
+      sys
+        .process(Pid::from_u32(pid as u32))
+        .map(|p| WebviewMem { label, kb: p.memory() / 1024 })
+    })
+    .collect()
+}
+
 // Fetch a PR author's GitHub avatar as a base64 data URI so the renderer can freeze it onto a tab
 // (survives reloads). Returns null on any failure — the tab falls back to the live avatar URL.
 // `login` is validated to GitHub's handle charset so it's safe to interpolate into the shell.

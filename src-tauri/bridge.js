@@ -311,6 +311,9 @@
 
     fetchAvatar: function (login) { return invoke('fetch_avatar', { login: login }); },
     getUsage: function () { return invoke('get_usage'); },     // M7 (sysinfo, host process)
+    // Per-embedded-page memory ([{label,kb}], label = the wcv shim id) for the renderer's live-page
+    // budget. Empty off macOS, which is the renderer's signal to fall back to a page count.
+    webviewMemory: function () { return invoke('webview_memory'); },
     pathForFile: function () { return ''; },              // M4 follow-up (Tauri drag-drop carries paths)
 
     // M6 — embedded GitHub/Jira viewer via Tauri multiwebview (unstable feature). One child

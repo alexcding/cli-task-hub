@@ -25,7 +25,7 @@ import { loadScrumboard, setBoardFilter, applyBoardQuery } from './pages/scrumbo
 import { loadLogs, setLogCategory, clearLogs } from './pages/logs.js';
 import { openTaskSession, analyzeSession, newWorktreeTask } from './components/tasks.js';
 import { loadPersistedTasks, persistTask } from './services/tasks.js';
-import { loadSettings, saveConfig, switchSettingsTab, setReviewSound, previewReviewSound, setActivityNotify, setAutostart, toggleSecret, setGitClient, setGitClientCmd, toggleHook, setWebviewPool, setDefaultCli, showEvents, deleteProject } from './pages/settings.js';
+import { loadSettings, saveConfig, switchSettingsTab, setReviewSound, previewReviewSound, setActivityNotify, setAutostart, toggleSecret, setGitClient, setGitClientCmd, toggleHook, setWebviewBudget, setDefaultCli, showEvents, deleteProject } from './pages/settings.js';
 import { showActivityToast } from './components/activity-toast.js';
 import * as modal from './components/modal.js';
 
@@ -272,7 +272,7 @@ Object.assign(window, {
   wfNew, wfDelete, wfSetName, wfSetCli, wfAddStep, wfRemoveStep, wfEditStepCommand, wfEditStepTitle, saveWorkflows,
   loadLogs, setLogCategory, clearLogs, showEvents, toggleEventsPopover, // the sidebar bell
   openTaskSession, newWorktreeTask, sessionMenu, toggleSessionPin, // the sidebar's session rows (click, hover pin, right-click menu)
-  loadSettings, saveConfig, switchSettingsTab, setReviewSound, previewReviewSound, setActivityNotify, setAutostart, toggleSecret, setGitClient, setGitClientCmd, toggleHook, setWebviewPool, setDefaultCli, projectClick,
+  loadSettings, saveConfig, switchSettingsTab, setReviewSound, previewReviewSound, setActivityNotify, setAutostart, toggleSecret, setGitClient, setGitClientCmd, toggleHook, setWebviewBudget, setDefaultCli, projectClick,
   __activityToast: showActivityToast, // main pushes activity toasts here when the app is frontmost
   // New Project modal (editing a project lives in its Settings tab)
   openNewProjectModal: modal.openNewProjectModal,
@@ -283,6 +283,7 @@ Object.assign(window, {
 // ── Init ──────────────────────────────────────────────────────────────────────
 initTheme();
 viewer.initTrayBridge();
+viewer.startWebviewMemWatch();   // the embedded pages' memory budget (Settings → System)
 split.initPrDivider();
 initSidebarResize();
 terminal.initTerminals();
@@ -331,7 +332,7 @@ state.tabTermInit = (async () => {
     // re-sync the theme from it and re-apply if it differs from the pre-paint guess.
     syncThemeFromSettings(settings.theme);
     syncFontsFromSettings(settings); // any terminal rehydrated before this lands is updated in place by applyFonts
-    if (settings.webviewPool != null) viewer.setWebviewPoolSize(settings.webviewPool); // live-webview pool cap (Settings → System); clamped, bad values → default
+    if (settings.webviewBudgetMb != null) viewer.setWebviewBudgetMb(settings.webviewBudgetMb); // memory the embedded pages may hold (Settings → System); clamped, bad values → default
     if (settings.defaultCli != null) state.defaultCli = settings.defaultCli; // agent preselected by the New session dialog (Settings → CLIs)
   } catch {}
   populateFontMenus(); // fill the font pickers from this machine's installed fonts (replaces the static fallback)

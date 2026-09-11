@@ -377,15 +377,15 @@
 
           <!-- Memory: how many embedded web pages (PR/ticket pages, content-tab links — any webview) stay loaded. Each is its own WebContent
                process; the rest are torn down and reload from their last URL when reselected
-               (viewer.js live-webview pool). Persisted as the `webviewPool` setting. -->
+               (viewer.js live-webview budget). Persisted as the `webviewBudgetMb` setting. -->
           <div class="card">
             <div class="card-header"><h3>Memory</h3></div>
             <div class="card-pad theme-row">
               <div>
-                <div class="theme-row-title">Web views kept loaded</div>
-                <div class="theme-row-sub">Embedded web pages of any kind held in memory at once — PR and ticket pages as well as tabs you open. Others reload where you left them when reselected. Lower saves RAM; higher makes switching instant.</div>
+                <div class="theme-row-title">Memory for open pages (GB)</div>
+                <div class="theme-row-sub">How much memory the loaded pages may hold between them — PR and ticket pages as well as tabs you open. Over it, the least recently viewed are unloaded and reload where you left them when reselected. A page is measured, not counted: a heavy board and a small diff no longer cost the same.</div>
               </div>
-              <input type="number" id="webview-pool" min="1" max="20" step="1" style="width:72px" aria-label="Web views kept loaded" onchange="setWebviewPool(this.value)">
+              <input type="number" id="webview-budget" min="0.25" max="32" step="0.25" style="width:72px" aria-label="Memory for open pages in GB" onchange="setWebviewBudget(this.value)">
             </div>
           </div>
 
