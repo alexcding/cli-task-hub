@@ -243,15 +243,15 @@
    a soft drop shadow, with tight rows and a solid highlight pill on the hovered item. Arrow cursor
    (not pointer), like a native menu. Radii read off a real Finder menu at 2x: 12px on the card,
    8px on the highlighted row (its arc is two thirds of the card's, not a pill).
-   The vibrancy is measured off a real menu over the desktop: a light-gray ground at ~.72 alpha
-   with a wide blur AND a saturation boost behind it, which is what lets the color underneath tint
-   the card instead of only greying it. Over our own flat chrome (the sidebar, the toolbar) there is
-   little to sample and it reads nearly solid — that is correct, and the same thing AppKit does;
-   the effect appears where there is content underneath: the terminal, the diff, a PR page.
+   Barely translucent ON PURPOSE. A full vibrancy pass (a .72 ground under blur+saturate, measured
+   off a real menu over the desktop) was tried and read as glassy here: right-click menus are the
+   OS's now (bridge.js popupMenu), so this card is the fallback and the in-app pickers — the Jira
+   status list, a plain-browser session — where a heavy material next to flat app chrome just looks
+   like a bug. .97 alpha over a short blur keeps the edge from sitting dead flat and nothing more.
    The blur needs a translucent background, so the ground is its own token (--menu-bg) rather than
    --surface; the border likewise (--border would disappear against a blurred backdrop).
    Both themes define both, so this stays a pure palette swap. */
-.status-menu { position:absolute;z-index:2000;background:var(--menu-bg);-webkit-backdrop-filter:blur(50px) saturate(170%);backdrop-filter:blur(50px) saturate(170%);border:0.5px solid var(--menu-border);border-radius:12px;box-shadow:0 10px 30px -6px rgb(16 24 40/.24),0 2px 8px -3px rgb(16 24 40/.14);padding:7px 8px;min-width:200px;max-height:360px;overflow-y:auto;font:menu;-webkit-font-smoothing:auto; }
+.status-menu { position:absolute;z-index:2000;background:var(--menu-bg);-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);border:0.5px solid var(--menu-border);border-radius:12px;box-shadow:0 10px 30px -6px rgb(16 24 40/.24),0 2px 8px -3px rgb(16 24 40/.14);padding:7px 8px;min-width:200px;max-height:360px;overflow-y:auto;font:menu;-webkit-font-smoothing:auto; }
 /* No backdrop-filter (an old browser in web-only dev): fall back to the opaque card, or the menu
    is a see-through smear over the page behind it. */
 @supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))) {

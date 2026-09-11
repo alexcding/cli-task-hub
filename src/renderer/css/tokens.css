@@ -12,7 +12,7 @@
   --border: #e7e9ee; --border-focus: #c2c7d0;
   /* Menu vibrancy: a translucent ground the backdrop blurs through, plus the hairline AppKit
      draws over it (a touch darker than --border, which would vanish on a blurred backdrop). */
-  --menu-bg: rgb(246 246 248 / .72); --menu-border: rgb(0 0 0 / .10);
+  --menu-bg: rgb(252 252 253 / .97); --menu-border: rgb(0 0 0 / .12);
   --text: #16181d; --text-2: #565d68; --text-3: #9298a3;
   --nav-text: #3b3d3f; /* sidebar row + icon colour — sampled from ChatGPT's sidebar (charcoal on #f9f9f9) */
   /* Session status (unpeel DESIGN.md §5) — semantic, same in both themes: attention dot, and the
@@ -48,7 +48,7 @@ html[data-theme="dark"] {
   color-scheme: dark;
   --bg: #1e1e1e; --surface: #1e1e1e; --surface-hover: #2a2a2a;
   --border: #323232; --border-focus: #525252;
-  --menu-bg: rgb(40 40 42 / .72); --menu-border: rgb(255 255 255 / .12);
+  --menu-bg: rgb(42 42 44 / .97); --menu-border: rgb(255 255 255 / .14);
   --text: #e8e8e8; --text-2: #a2a2a2; --text-3: #6e6e6e;
   --nav-text: #c9cbce; /* dark-mode counterpart: same contrast step below --text */
   --accent: #4b86f0; --accent-bg: #1c2740; --accent-hover: #6d9ef4;
