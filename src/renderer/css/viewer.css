@@ -192,18 +192,16 @@ body.viewing-tab main { display:none; }
 /* Reserve room at the right so typed text never slides under the absolute ✕. */
 .ctab.editing .ctab-input { padding-right:20px; }
 .ctab.default { font-weight:600; }
-/* Both side groups are empty counterweights — the left one balances the spacer that holds the
-   pinned toggle's width, so a lone centered tab lands at true bar-center (see .bar-wv.single). */
+/* .bar-nav is an empty leading counterweight; .bar-add holds the width of the pinned split toggle
+   so the strip can't run under it. */
 .bar-nav, .bar-add { display:flex; align-items:center; gap:4px; flex-shrink:0; }
 .bar-add { justify-content:flex-end; }
-/* Single tab (default only): give both side groups equal flex so the lone pill centers against
-   the WHOLE bar (not offset by the heavier left cluster), large but with leading/trailing room. */
-.bar-wv.single .bar-nav, .bar-wv.single .bar-add { flex:1 1 0; }
-/* The "+" now rides at the END of the strip, so the strip's content is chip + 36px button: the lone
-   pill would sit 36px left of centre with the side groups merely equal. Give the left counterweight
-   that 36px on top of its equal share and the CHIP lands at true bar-centre again. */
-.bar-wv.single .bar-nav { min-width:36px; }
-.bar-wv.single .ctabs { flex:0 1 auto; justify-content:center; }
+/* Tabs START AT THE LEFT, always — one tab or six, the strip fills from the same edge, and the "+"
+   trails them. (A lone tab used to center against the whole bar, which moved the tab as soon as a
+   second one appeared and left the first tab's position depending on how many there were.) The one
+   thing `single` still does is cap that lone chip's width: flex:1 1 0 would otherwise stretch it
+   across the entire pane. */
+.bar-wv.single .ctabs { justify-content:flex-start; }
 .bar-wv.single .ctab { flex:0 1 560px; }
 .ctab-ic { display:inline-flex; flex-shrink:0; position:relative; width:16px; height:16px; }
 .ctab-ic svg { width:16px; height:16px; display:block; }

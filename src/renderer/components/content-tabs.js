@@ -133,8 +133,8 @@ export function renderContentTabs(force = false) {
   if (!force && el.contains(document.activeElement) && document.activeElement?.classList.contains('ctab-input')) return;
   const t = activeTab();
   if (!t) { el.innerHTML = ''; el._lastHtml = ''; el.classList.remove('ctabs-single', 'ctabs-empty'); return; }
-  // With just the default tab (no extra tabs), center a larger pill against the whole bar
-  // (CSS .bar-wv.single balances the side groups). Multiple tabs share the bar equally.
+  // With just the default tab (no extra tabs), cap the lone pill's width (CSS .bar-wv.single) —
+  // it starts at the strip's left edge either way. Multiple tabs share the bar equally.
   const diffTab = hasDiffTab(t);
   // A bare session's context has no page, so it has no default chip — the bar is just the Diff
   // chip and whatever web tabs the user added (plus the toolbar's "+"). Same bar, one chip fewer.
