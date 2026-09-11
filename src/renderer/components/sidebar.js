@@ -13,7 +13,7 @@ import { closeTab, saveTabs, updateTitles } from './viewer.js';
 import { renderContentTabs } from './content-tabs.js';
 import { workflowRunState } from './workflow.js';
 import { taskSessions, taskUrls, taskById, persistTask } from '../services/tasks.js';
-import { openMenu } from './menu.js';
+import { openMenu, closeMenu } from './menu.js';
 import { toast, toastErr } from './toast.js';
 import { deleteTaskSession } from './tasks.js';
 
@@ -254,17 +254,33 @@ export function toggleSessionPin(id) {
 // Right-click a session row: Pin/Unpin, Reveal in Finder (its worktree folder), Copy link (when the
 // session has a PR/Jira page), and Remove session — which removes the worktree with it (one unit;
 // tasks.js → deleteTaskSession is the single removal path).
-// The in-page menu (components/menu.js), like every other right-click menu in the app — the native
-// muda popup is no longer used anywhere in the renderer. It returns false, so the inline
-// `return sessionMenu(...)` suppresses the browser's own menu.
-export function sessionMenu(e, id) {
+// The real macOS menu (bridge.js sessionMenu → muda popup: it resolves the chosen id and the
+// actions run HERE, since they need the task record and the in-app confirm). Native because a DOM
+// menu cannot paint over the embedded page — that is a native child webview above every DOM layer —
+// and half-native/half-DOM menus looked like two different apps. components/menu.js stays as the
+// fallback for a plain browser (web-only dev, where window.taskhub is undefined). preventDefault up
+// front — an async handler returns a promise, so `return sessionMenu(...)` can't suppress the
+// browser's own menu.
+export async function sessionMenu(e, id) {
+  e.preventDefault();
   const t = taskById(id);
   const url = t?.url && /^https?:/.test(t.url) ? t.url : null;
   const reveal = () => window.taskhub?.openPath?.(t.worktree);
+  // Guarded: after the modal native popup the webview may have no transient activation left, so a
+  // clipboard write can be refused — silently, and as an unhandled rejection, without this.
   const copy = async () => {
     try { await navigator.clipboard.writeText(url); toast('Link copied'); }
     catch { toastErr('Could not copy the link'); }
   };
+  if (window.taskhub?.sessionMenu) {
+    closeMenu(); // dismiss any open in-page menu (the native menu won't fire the click that would)
+    const action = await window.taskhub.sessionMenu({ pinned: !!t?.pinned, hasWorktree: !!t?.worktree, hasUrl: !!url });
+    if (action === 'pin') toggleSessionPin(id);
+    else if (action === 'finder') reveal();
+    else if (action === 'copy') copy();
+    else if (action === 'remove') deleteTaskSession(id);
+    return false;
+  }
   return openMenu(e, [
     { label: t?.pinned ? 'Unpin session' : 'Pin session', onClick: () => toggleSessionPin(id) },
     t?.worktree && { label: 'Reveal in Finder', onClick: reveal },
@@ -302,12 +318,18 @@ function syncTabOrder() {
   saveTabs();
 }
 
-// Right-click a tab row → the in-page menu (components/menu.js), same as every other right-click
-// menu in the app. Open/Copy act on the tab's url (both are no-ops without one); Close tab needs
-// the renderer's tab state, which is here anyway.
-export function tabMenu(e, id) {
+// Right-click a tab row → the real macOS menu (bridge.js tabMenu), like every other menu here.
+// Open Link in Browser / Copy Link are done inside the bridge; only 'close' comes back, since it
+// needs the renderer's tab state. The in-page menu is the plain-browser fallback.
+export async function tabMenu(e, id) {
+  e.preventDefault();
   const tab = state.tabs.find(t => t.id === id);
   const url = tab?.url || '';
+  if (window.taskhub?.tabMenu) {
+    closeMenu();
+    if (await window.taskhub.tabMenu(url) === 'close') closeTab(id);
+    return false;
+  }
   const isHttp = /^https?:\/\//i.test(url);
   const copy = async () => {
     try { await navigator.clipboard.writeText(url); toast('Link copied'); }

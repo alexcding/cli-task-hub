@@ -79,17 +79,20 @@ separation everything follows:
   the hovered pin is filled to read as the toggle that undoes it. Pinning is purely additive — the original row stays
   where it was, and nothing reorders. Both copies carry the same `data-task`/`data-term`, which is
   why every post-render pass (`refreshTermBusy`, `syncSpinner`) walks rows with `querySelectorAll`.
-  **Every menu is the in-page one — `components/menu.js` (`openMenu`).** Right-click menus
-  (`sessionMenu` / `tabMenu` in `sidebar.js`, `ctabMenu` / `folderMenu` in `viewer.js`) and
-  click-anchored pickers (the toolbar's ＋) are one implementation, so they look and behave the same
-  and work in a plain browser (web-only dev). The native muda popups the shell used to offer
-  (`window.taskhub.sessionMenu`/`ctabMenu`/`tabMenu`/`folderMenu`) are gone from `src-tauri/bridge.js`
-  — don't reintroduce a native branch. The bridge still suppresses WKWebView's own page menu, so a
-  handler must `preventDefault` (returning `openMenu(...)`'s `false` does it). Right-click is the only removal:
+  **Right-click menus are the real macOS menu when the shell offers one** — `window.taskhub`'s
+  `sessionMenu` / `tabMenu` (sidebar) and `ctabMenu` / `folderMenu` / `ideMenu` (viewer), all
+  `src-tauri/bridge.js` → muda `popupMenu`, which resolves the chosen item id; the actions run in the
+  renderer, which owns the state and the confirm dialog. They are native for a reason worth keeping:
+  a DOM menu is painted UNDER the embedded page, which is a native child webview above every DOM
+  layer, so an in-page menu opening over the pane loses its lower half. `components/menu.js`
+  (`openMenu`) stays as the fallback for a plain browser (web-only dev) and for click-anchored
+  pickers like the toolbar's ＋, which are not context menus. A native handler is async, so it must
+  `preventDefault()` up front — a returned promise can't cancel WKWebView's own menu.
+  Right-click is the only removal:
   "Remove session" (`deleteTaskSession`, the single path) stops the terminal, forgets the task and
   force-removes the worktree folder, behind `confirmDialog()` (`components/confirm.js`) — never
   native `confirm()`. A session's tab is not closable by any browser-tab path (middle-click, ⌘W, the
-  default chip's ×, the tab's right-click menu): `closeTab` refuses task tabs; only `removeTaskRecord` drops
+  default chip's ×, the native tab menu): `closeTab` refuses task tabs; only `removeTaskRecord` drops
   one via `removeTaskTab`. A tab whose URL is a task renders only as a session row. There is no
   Tasks page, no Tasks group, no worktree row, and no grouping setting.
 - **Every session has a CONTEXT tab — one implementation, different UI states.** A session started

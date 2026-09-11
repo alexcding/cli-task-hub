@@ -163,10 +163,12 @@ body.viewing-tab main { display:none; }
    sits at the segment's left edge, where it lived when it was a child of .bar-nav. */
 .ctabs .ctab-add { flex:0 0 auto; }
 .ctabs.ctabs-empty { margin-left:0; }
-/* Safari-compact tabs: every tab fills the bar equally (flex:1), content centered, on a flat
-   gray rounded rect (a browser tab's modest radius, not a full pill). The active tab lifts to
-   white + a border; the address-entry tab gets the blue focus ring and left-aligns its field. */
-.ctab { position:relative; display:flex; align-items:center; justify-content:center; gap:8px; flex:1 1 0; min-width:84px; height:36px; padding:0 16px; border-radius:10px; background:var(--surface-hover); color:var(--text-2); cursor:default; user-select:none; border:1px solid transparent; overflow:hidden; transition:background-color .2s ease, border-color .2s ease, color .2s ease, box-shadow .2s ease; }
+/* Safari-compact tabs: a FIXED default width (220px) that shrinks when the bar runs out of room,
+   never grows — tabs used to split the bar equally, so two of them were half the pane each and one
+   web tab was 500px of mostly empty chip. Content centered, on a flat gray rounded rect (a browser
+   tab's modest radius, not a full pill). The active tab lifts to white + a border; the address-entry
+   tab gets the blue focus ring and left-aligns its field. */
+.ctab { position:relative; display:flex; align-items:center; justify-content:center; gap:8px; flex:0 1 220px; min-width:84px; height:36px; padding:0 16px; border-radius:10px; background:var(--surface-hover); color:var(--text-2); cursor:default; user-select:none; border:1px solid transparent; overflow:hidden; transition:background-color .2s ease, border-color .2s ease, color .2s ease, box-shadow .2s ease; }
 /* Add/close animations — the bar rebuilds wholesale, so JS (playTabIn/playTabOut) tags the
    specific tab element with these classes. Width is driven by max-width (flex caps the visible
    size), so a tab grows in from 0 and shrinks out to 0; siblings reflow to fill. A subtle
@@ -196,13 +198,12 @@ body.viewing-tab main { display:none; }
    so the strip can't run under it. */
 .bar-nav, .bar-add { display:flex; align-items:center; gap:4px; flex-shrink:0; }
 .bar-add { justify-content:flex-end; }
-/* Tabs START AT THE LEFT, always — one tab or six, the strip fills from the same edge, and the "+"
-   trails them. (A lone tab used to center against the whole bar, which moved the tab as soon as a
-   second one appeared and left the first tab's position depending on how many there were.) The one
-   thing `single` still does is cap that lone chip's width: flex:1 1 0 would otherwise stretch it
-   across the entire pane. */
+/* Tabs START AT THE LEFT, always — one tab or six, the strip fills from the same edge at the same
+   width, and the "+" trails them. (A lone tab used to center against the whole bar at 560px, so the
+   first tab both moved and shrank the moment a second appeared.) `single` no longer changes the
+   geometry; content-tabs.js still sets it, and it is the hook if the page chip ever needs to differ
+   from the tabs the user added. */
 .bar-wv.single .ctabs { justify-content:flex-start; }
-.bar-wv.single .ctab { flex:0 1 560px; }
 .ctab-ic { display:inline-flex; flex-shrink:0; position:relative; width:16px; height:16px; }
 .ctab-ic svg { width:16px; height:16px; display:block; }
 .ctab-ic img { width:16px; height:16px; border-radius:3px; object-fit:cover; display:block; }

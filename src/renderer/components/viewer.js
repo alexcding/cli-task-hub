@@ -11,7 +11,7 @@ import { gitClientLabel, gitClientIcon } from '../lib/git-clients.js';
 import { ideLabel, ideIcon, resolveIdeCmd, ideProbe } from '../lib/ides.js';
 import { toast, toastErr } from './toast.js';
 import { renderTabs } from './sidebar.js';
-import { openMenu } from './menu.js';
+import { openMenu, closeMenu } from './menu.js';
 import { ensurePrTerminal, applyPrLayout, clearPrLayout, resolveTabFolder, removeWorktree, openPrPanel, leaveReview, rightPaneOpen, rightPaneHidden, setPaneView, showEmptyPane } from './split.js';
 import { jiraTaskBranch } from '../lib/workflow.mjs';
 import { persistTask, taskForTab, taskById } from '../services/tasks.js';
@@ -595,9 +595,18 @@ export function closeOtherLinks() {
   saveTabs();
 }
 
-// Right-click an extra tab → close / close others, in the in-page menu (components/menu.js) like
-// every other right-click menu in the app — same shape as sessionMenu/folderMenu.
-export function ctabMenu(e, id) {
+// Right-click an extra tab → close / close others. The real macOS menu (bridge.js ctabMenu) — a DOM
+// menu here would be painted UNDER the embedded page, which is a native child webview above every
+// DOM layer. The in-page menu is the plain-browser fallback; same shape as sessionMenu/folderMenu.
+export async function ctabMenu(e, id) {
+  e.preventDefault();
+  if (window.taskhub?.ctabMenu) {
+    closeMenu();
+    const action = await window.taskhub.ctabMenu();
+    if (action === 'close') closeLink(id);
+    else if (action === 'closeOthers') closeOtherLinks();
+    return false;
+  }
   return openMenu(e, [
     { label: 'Close tab', onClick: () => closeLink(id) },
     { label: 'Close other tabs', onClick: closeOtherLinks },
@@ -1074,16 +1083,27 @@ export function openTabFolder() {
 
 // Right-click the folder chip → reveal in Finder always (plus "Open in <client>" when one's
 // configured, since a left-click now opens the client), and "Delete worktree" when the chip is
-// a worktree (not the shared main checkout). The in-page menu (components/menu.js), like every
-// other right-click menu in the app.
+// a worktree (not the shared main checkout). The real macOS menu (bridge.js folderMenu) with the
+// in-page menu as the plain-browser fallback, like every other menu here.
 // The IDE is NOT here: a chip's menu offers that chip's own actions, and the IDE has its own chip
 // (ideMenu below). Two chips both offering "Open in Xcode" only made you guess which one meant it.
-export function folderMenu(e) {
+export async function folderMenu(e) {
+  e.preventDefault();
   const el = document.getElementById('split-folder');
-  if (!el || el.hidden) { e.preventDefault(); return false; }
+  if (!el || el.hidden) return false;
   const { id, cmd } = state.gitClient || {};
   const hasClient = !!(id && cmd);
   const isWorktree = el.dataset.worktree === '1';
+  if (window.taskhub?.folderMenu) {
+    closeMenu(); // dismiss any open in-page menu (the native menu won't fire the click that would)
+    const action = await window.taskhub.folderMenu({
+      hasClient, clientLabel: hasClient ? gitClientLabel(id) : '', isWorktree,
+    });
+    if (action === 'client') folderChipClick();
+    else if (action === 'finder') openTabFolder();
+    else if (action === 'delete') removeTabWorktree();
+    return false;
+  }
   return openMenu(e, [
     hasClient && { label: `Open in ${gitClientLabel(id)}`, onClick: folderChipClick },
     { label: 'Reveal in Finder', onClick: openTabFolder },
@@ -1094,12 +1114,22 @@ export function folderMenu(e) {
 // Right-click the IDE chip → its own two actions, the ones its halves already are: open the
 // checkout in the project's editor, and run (or stop) the project's script. Each is listed only
 // when that half exists, so the menu says exactly what this project is configured for.
-export function ideMenu(e) {
+export async function ideMenu(e) {
+  e.preventDefault();
   const el = document.getElementById('split-ide');
-  if (!el || el.hidden) { e.preventDefault(); return false; }
+  if (!el || el.hidden) return false;
   const hasIde = !!el.dataset.ide, ideId = el.dataset.ideId || '';
   const running = isBuilding(activeTab());
   const hasRun = !!el.querySelector('.fc-run');
+  if (window.taskhub?.ideMenu) {
+    closeMenu();
+    const action = await window.taskhub.ideMenu({
+      hasIde, ideLabel: hasIde ? ideLabel(ideId) : '', hasRun, running,
+    });
+    if (action === 'open') openTabIde();
+    else if (action === 'run') (running ? stopBuildClick : runBuildClick)();
+    return false;
+  }
   return openMenu(e, [
     hasIde && { label: `Open in ${ideLabel(ideId)}`, onClick: openTabIde },
     hasRun && (running
