@@ -239,24 +239,19 @@
 .status-btn:hover { border-color:var(--accent); }
 .status-caret { display:inline-flex;opacity:.55;margin-left:1px; }
 .status-caret svg { width:11px;height:11px;display:block; }
-/* Context menus, macOS-style: a mostly-opaque card that still lets the backdrop blur through, over
-   a soft drop shadow, with tight rows and a solid highlight pill on the hovered item. Arrow cursor
-   (not pointer), like a native menu. Radii read off a real Finder menu at 2x: 12px on the card,
+/* Context menus, macOS-style: a solid card over a soft drop shadow, with tight rows and a solid
+   highlight pill on the hovered item. Arrow cursor (not pointer), like a native menu. Radii read off a real Finder menu at 2x: 12px on the card,
    8px on the highlighted row (its arc is two thirds of the card's, not a pill).
-   Barely translucent ON PURPOSE. A full vibrancy pass (a .72 ground under blur+saturate, measured
-   off a real menu over the desktop) was tried and read as glassy here: right-click menus are the
-   OS's now (bridge.js popupMenu), so this card is the fallback and the in-app pickers — the Jira
-   status list, a plain-browser session — where a heavy material next to flat app chrome just looks
-   like a bug. .97 alpha over a short blur keeps the edge from sitting dead flat and nothing more.
-   The blur needs a translucent background, so the ground is its own token (--menu-bg) rather than
-   --surface; the border likewise (--border would disappear against a blurred backdrop).
-   Both themes define both, so this stays a pure palette swap. */
-.status-menu { position:absolute;z-index:2000;background:var(--menu-bg);-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);border:0.5px solid var(--menu-border);border-radius:12px;box-shadow:0 10px 30px -6px rgb(16 24 40/.24),0 2px 8px -3px rgb(16 24 40/.14);padding:7px 8px;min-width:200px;max-height:360px;overflow-y:auto;font:menu;-webkit-font-smoothing:auto; }
-/* No backdrop-filter (an old browser in web-only dev): fall back to the opaque card, or the menu
-   is a see-through smear over the page behind it. */
-@supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))) {
-  .status-menu { background:var(--surface);border-color:var(--border); }
-}
+   OPAQUE on purpose, and with no backdrop-filter at all. A vibrancy pass (a .72 ground under
+   blur+saturate, measured off a real menu over the desktop) was tried twice and read as glassy both
+   times: right-click menus are the OS's now (bridge.js popupMenu), so what is left on this card is
+   the fallback path and the in-app pickers, which open over the sidebar — itself Liquid Glass under
+   native-mac — where a second translucent layer just looks like a bug. The card is the solid thing
+   in front; the shadow does the lifting.
+   The ground is its own token (--menu-bg) rather than --surface: a menu sits in FRONT of the app,
+   so it is a shade off the page's surface, and its hairline (--menu-border) is darker than the
+   --border used for edges inside the page. Both themes define both — still a pure palette swap. */
+.status-menu { position:absolute;z-index:2000;background:var(--menu-bg);border:0.5px solid var(--menu-border);border-radius:12px;box-shadow:0 10px 30px -6px rgb(16 24 40/.24),0 2px 8px -3px rgb(16 24 40/.14);padding:7px 8px;min-width:200px;max-height:360px;overflow-y:auto;font:menu;-webkit-font-smoothing:auto; }
 /* font:menu on the card (above) is the CSS system-font keyword: WebKit resolves it to the real
    macOS menu font AND its size, so the menu is set exactly as AppKit would set it rather than in
    the page font at a guessed size. The rows are <button>s, which do NOT inherit font from their
