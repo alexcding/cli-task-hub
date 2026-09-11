@@ -972,8 +972,9 @@ export async function updateFolderChip(force = false) {
   paintIdeChip(info);
 }
 
-// The IDE chip (#split-ide) — its own control beside the folder chip, so it can carry more than
-// one action later (a Run half, say) without reshaping the folder chip. The IDE is a PROJECT
+// The IDE chip (#split-ide) — its own control, not a half of the folder chip, so it can carry
+// more than one action (open + run) without reshaping that one. It sits at the terminal
+// segment's right edge (see #split-ide in viewer.css), apart from the folder/Run group. The IDE is a PROJECT
 // setting (which editor a checkout belongs in is a property of the repo), resolved from the
 // project this folder hangs off: info.workspace is that project's main checkout. Everything the
 // click needs is cached on the element so it needs no second lookup.

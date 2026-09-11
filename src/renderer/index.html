@@ -433,10 +433,12 @@
                #split-folder — the current folder (the worktree, or the project workspace before one
                  exists): opens it in the app-level git client (Settings → Appearance); Reveal in
                  Finder and Delete worktree are its right-click menu. Icons only, no folder name.
-               #split-ide — the project's IDE (its Settings tab), wearing that editor's own mark. A
-                 chip of its own, not a half of the folder chip, so it can hold more than one action.
                #wf-group — the Run + workflow picker as one outlined segmented control (Run executes
                  the picker's workflow).
+               #split-ide — the project's IDE (its Settings tab), wearing that editor's own mark. A
+                 chip of its own, not a half of the folder chip, so it can hold more than one action.
+                 It sits at the segment's RIGHT edge (margin-left:auto), away from the folder/Run
+                 group: it's what leaves TaskHub, not another control over the terminal.
              The split toggle that shows/hides the right pane is NOT in this segment — it's pinned
              to the whole toolbar's right edge (see below). -->
         <!-- No session for this page yet: start one here (viewer.js newSession — a PR/Jira tab knows
@@ -446,7 +448,6 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg><span>New session</span>
         </button>
         <div class="tb-chip pf-term" id="split-folder" hidden oncontextmenu="return folderMenu(event)"></div>
-        <div class="tb-chip pf-term" id="split-ide" hidden></div>
         <div class="wf-group pf-term" id="wf-group" hidden>
           <button class="pf-btn wf-btn" id="term-workflow" title="Run the selected workflow" onclick="toggleWorkflowRun()">
             <svg class="wf-play" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 4 13.5h7L11 22l9-11.5h-7z"/></svg>
@@ -454,6 +455,7 @@
           </button>
           <select class="wf-select" id="wf-select" title="Workflow to run"></select>
         </div>
+        <div class="tb-chip pf-term" id="split-ide" hidden></div>
       </div>
       <!-- Webview segment (over the PR pane — the RIGHT pane in split mode, full-width otherwise).
            Holds the "+" (add to this panel), then the Safari-compact horizontal tab bar (#ctabs)
@@ -465,9 +467,12 @@
              toggle pinned over it. -->
         <div class="bar-nav">
           <!-- Back / Forward / Home moved to the browser foot (#browser-foot) at the bottom of the pane. -->
-          <!-- Opens the menu of what this pane can hold (Diff / Web page… / File…) — viewer.js ctabAdd. -->
+          <!-- Opens the menu of what this pane can hold (Diff / Web page… / File…) — viewer.js ctabAdd.
+               The glyph is the split toggle's panel, carrying a plus: the two controls sit at opposite
+               ends of the same bar and act on the same pane — one shows or hides it, this one fills
+               it — so they share a shape and a size rather than reading as unrelated buttons. -->
           <button class="ctab-add" id="ctab-add" title="Add to this panel" onclick="return ctabAdd(event)">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+            <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="15" rx="3.5"/><path d="M12 9.25v5.5M9.25 12h5.5"/></svg>
           </button>
         </div>
         <!-- Horizontal content tabs render here (content-tabs.js): the page's default chip, then
