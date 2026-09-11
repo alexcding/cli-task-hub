@@ -158,11 +158,6 @@ body.viewing-tab main { display:none; }
    only — switching tabs never disturbs the right split view. */
 .ctabs { display:flex; align-items:center; gap:7px; min-width:0; flex:1; margin-left:10px; overflow-x:auto; overflow-y:hidden; height:100%; }
 .ctabs::-webkit-scrollbar { height:0; }
-/* The "+" trails the chips inside the strip. It must NOT take the chips' equal flex — it is a
-   fixed 36px control — and with no chips at all the strip drops its leading margin so the "+"
-   sits at the segment's left edge, where it lived when it was a child of .bar-nav. */
-.ctabs .ctab-add { flex:0 0 auto; }
-.ctabs.ctabs-empty { margin-left:0; }
 /* Safari-compact tabs: a FIXED default width (220px) that shrinks when the bar runs out of room,
    never grows — tabs used to split the bar equally, so two of them were half the pane each and one
    web tab was 500px of mostly empty chip. Content centered, on a flat gray rounded rect (a browser
@@ -199,8 +194,8 @@ body.viewing-tab main { display:none; }
 .bar-nav, .bar-add { display:flex; align-items:center; gap:4px; flex-shrink:0; }
 .bar-add { justify-content:flex-end; }
 /* Tabs START AT THE LEFT, always — one tab or six, the strip fills from the same edge at the same
-   width, and the "+" trails them. (A lone tab used to center against the whole bar at 560px, so the
-   first tab both moved and shrank the moment a second appeared.) `single` no longer changes the
+   width, after the "+" in .bar-nav. (A lone tab used to center against the whole bar at 560px, so
+   the first tab both moved and shrank the moment a second appeared.) `single` no longer changes the
    geometry; content-tabs.js still sets it, and it is the hook if the page chip ever needs to differ
    from the tabs the user added. */
 .bar-wv.single .ctabs { justify-content:flex-start; }

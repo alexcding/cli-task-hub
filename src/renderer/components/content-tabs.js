@@ -114,15 +114,6 @@ function linkChipHtml(t, l) {
    </div>`;
 }
 
-// The "+" — opens the menu of what this pane can hold (Diff / Web page… / File…; viewer.js ctabAdd).
-// A bare plus: the panel outline it once wore read as a second split toggle at the other end of the
-// same bar. Sized by .ctab-add svg.
-function addBtnHtml() {
-  return `<button class="ctab-add" id="ctab-add" title="Add to this panel" onclick="return ctabAdd(event)">
-     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
-   </button>`;
-}
-
 // Render the bar for the active viewer tab. Hidden entirely when no tab is open.
 export function renderContentTabs(force = false) {
   const el = document.getElementById('ctabs');
@@ -132,7 +123,7 @@ export function renderContentTabs(force = false) {
   // `force` is passed by the explicit actions (commit/close/switch) that MUST re-render.
   if (!force && el.contains(document.activeElement) && document.activeElement?.classList.contains('ctab-input')) return;
   const t = activeTab();
-  if (!t) { el.innerHTML = ''; el._lastHtml = ''; el.classList.remove('ctabs-single', 'ctabs-empty'); return; }
+  if (!t) { el.innerHTML = ''; el._lastHtml = ''; el.classList.remove('ctabs-single'); return; }
   // With just the default tab (no extra tabs), cap the lone pill's width (CSS .bar-wv.single) —
   // it starts at the strip's left edge either way. Multiple tabs share the bar equally.
   const diffTab = hasDiffTab(t);
@@ -142,14 +133,11 @@ export function renderContentTabs(force = false) {
   const single = page && !(t.links && t.links.length) && !diffTab && !hasBuildTab(t);
   el.classList.toggle('ctabs-single', single);
   el.closest('.bar-wv')?.classList.toggle('single', single);
-  const chips = (page ? defaultChipHtml(t) : '') + (diffTab ? diffChipHtml(t) : '')
+  // The "+" is a static button in the segment's left group (.bar-nav), not rendered here.
+  const html = (page ? defaultChipHtml(t) : '') + (diffTab ? diffChipHtml(t) : '')
     + (hasBuildTab(t) ? buildChipHtml(t) : '')
     + (t.links || []).map(l => linkChipHtml(t, l)).join('');
-  // …then the "+", trailing the chips like a browser's new-tab button. With no chips it is the
-  // strip's only child, and .ctabs-empty drops the strip's leading margin so it sits exactly where
-  // it used to live in .bar-nav — the segment's left edge.
-  el.classList.toggle('ctabs-empty', !chips);
-  setHtmlIfChanged(el, chips + addBtnHtml());
+  setHtmlIfChanged(el, html);
 }
 
 // Focus (+ select) a specific tab's inline address field — called EXPLICITLY when a tab is added
