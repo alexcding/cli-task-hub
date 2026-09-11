@@ -173,6 +173,9 @@ function tabRowHtml(t) {
   } else {
     icon = `<span class="tab-ic">${TAB_ICON[t.kind] || ICON.globe}</span>`; // web tabs: globe
   }
+  // The hover × closes the tab and frees what it was holding (closeTab tears the webview down).
+  // Only TAB rows get one: a session row's tab is not closable — it goes through Remove session,
+  // which stops the terminal and the worktree with it (see sessionRowHtml / deleteTaskSession).
   return `<div class="opentab" data-id="${t.id}"
         onclick="activateTab('${t.id}')"
         onauxclick="if(event.button===1){event.preventDefault();closeTab('${t.id}')}"
@@ -180,6 +183,7 @@ function tabRowHtml(t) {
      ${icon}
      <span class="tab-title">${esc(t.title)}</span>
      ${spin}
+     <span class="tab-x" title="Close tab" onclick="event.stopPropagation();closeTab('${t.id}')">${ICON.close}</span>
    </div>`;
 }
 
