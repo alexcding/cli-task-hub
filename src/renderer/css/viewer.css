@@ -57,18 +57,19 @@ body.split-closed .bar-term { flex:1; border-right:none; }
 /* position:absolute above (and .split-btn's display:inline-flex) out-specify the UA [hidden] rule,
    so hiding the button needs to be explicit — as it does for every other toolbar control here. */
 .bar-toggle[hidden] { display:none; }
-/* One glyph at a time (identical 19px boxes, so the button never resizes): the full-height divider
+/* One glyph at a time (identical 21px boxes, so the button never resizes): the full-height divider
    while the pane is open (.on), the short stub while it's closed. */
 .bar-toggle .ic-open, .bar-toggle.on .ic-closed { display:none; }
 .bar-toggle.on .ic-open, .bar-toggle .ic-closed { display:block; }
 /* Reserves the toggle's reach inside the webview segment so the tab strip can't run under it:
-   31px (the button) measured from the segment's own 12px gutter, which matches the toggle's inset. */
-.bar-add { min-width:31px; }
+   33px (the button: a 21px glyph + 6px padding each side) measured from the segment's own 12px
+   gutter, which matches the toggle's inset. */
+.bar-add { min-width:33px; }
 /* Pane closed: the terminal segment is the whole toolbar and ends under the button — keep its own
-   controls clear of it. 45px = the toggle's 31px box + its 12px inset + 2px of air; it replaces the
+   controls clear of it. 47px = the toggle's 33px box + its 12px inset + 2px of air; it replaces the
    segment's own 12px gutter, so it must cover the whole reach of the button. (body.viewing-term
    needs no such gutter: that state nulls activeTabId, so syncSplitToggle always hides the toggle.) */
-body.split-closed .bar-term { padding-right:45px; }
+body.split-closed .bar-term { padding-right:47px; }
 
 .split-btn.on { color:var(--text); background:var(--surface-hover); }
 .split-btn { background:none; border:none; color:var(--text-2); cursor:pointer; padding:6px; border-radius:6px; flex-shrink:0; display:inline-flex; align-items:center; justify-content:center; transition:color .28s ease, background-color .12s ease; }
@@ -95,21 +96,27 @@ body.split-closed .bar-term { padding-right:45px; }
    (inherits .pf-btn's --text-2, → --text on hover) — not the accent. */
 .wf-btn { padding:7px 9px; }
 /* Toolbar chips at the head of the terminal segment (.bar-term): #split-folder (the current
-   folder — git client + Finder) and #split-ide (the project's IDE). Each is its own outlined
-   group (like .wf-group), so they read as separate controls and either can grow a second half
-   without disturbing the other — .fc-ic + .fc-ic draws the hairline between halves.
+   folder — git client + Finder) and #split-ide (the project's IDE). Each is its own group, so
+   they read as separate controls and either can grow a second half without disturbing the other.
+   GHOST, not outlined and not filled: the chip carries no box of its own — same as the ＋ and the
+   split toggle at the other end of the bar (.split-btn/.ctab-add), so the whole toolbar is one
+   family of bare glyphs. An outline competed with the .ctab tabs an inch to the right; a filled
+   well read as pressed, since --surface-hover is what .split-btn.on uses to mean "toggled on".
+   The two halves are separated by a short hairline centered in their gap — INSET (14px, not the
+   full height) so it reads as a divider between two glyphs rather than as the leftover edge of the
+   box that used to be drawn around them.
    Icons only: the folder NAME is not a segment (the sidebar already titles the session by its
    worktree), and Finder lives in the right-click menu. */
-.tb-chip { flex-shrink:0; display:inline-flex; align-items:center; border:1px solid var(--border); border-radius:16px; overflow:hidden;
-  color:var(--text-2); font:inherit; font-size:12px; font-weight:500; }
-.tb-chip:hover { border-color:var(--border-focus); }
-.tb-chip .fc-ic { display:inline-flex; align-items:center; border:none; background:none; cursor:pointer; color:inherit; font:inherit; padding:7px 10px; flex-shrink:0; }
-.tb-chip .fc-ic + .fc-ic { border-left:1px solid var(--border); }
-.tb-chip .fc-ic svg { flex-shrink:0; width:16px; height:16px; display:block; }
-/* When a git client is configured the glyph is that client's brand mark (an <img>). Sized 18px —
-   a touch larger than the 16px workflow play glyph to optically match it, since brand logos bake
-   in their own padding and read smaller than an edge-to-edge stroke icon at the same box size. */
-.tb-chip .fc-ic img { flex-shrink:0; width:18px; height:18px; display:block; border-radius:3px; object-fit:contain; }
+.tb-chip { flex-shrink:0; display:inline-flex; align-items:center; gap:7px; border:none; border-radius:8px; background:none;
+  color:var(--text-2); font:inherit; font-size:12px; font-weight:500; transition:color .28s ease; }
+.tb-chip .fc-ic + .fc-ic { position:relative; }
+.tb-chip .fc-ic + .fc-ic::before { content:""; position:absolute; left:-4px; top:50%; transform:translateY(-50%); width:1px; height:14px; background:var(--border); }
+.tb-chip .fc-ic { display:inline-flex; align-items:center; border:none; background:none; cursor:pointer; color:inherit; font:inherit; padding:7px 10px; flex-shrink:0; border-radius:6px; transition:background-color .12s ease, color .12s ease; }
+.tb-chip .fc-ic svg { flex-shrink:0; width:18px; height:18px; display:block; }
+/* When a git client is configured the glyph is that client's brand mark (an <img>). Sized 2px
+   larger than the stroke glyphs beside it to optically match them, since brand logos bake in their
+   own padding and read smaller than an edge-to-edge stroke icon at the same box size. */
+.tb-chip .fc-ic img { flex-shrink:0; width:20px; height:20px; display:block; border-radius:3px; object-fit:contain; }
 .tb-chip .fc-ic:hover { background:var(--surface-hover); color:var(--text); }
 /* The IDE chip's play half (build.js): the accent while a build is running, so the stop square
    reads as live state rather than another launcher. */
@@ -215,11 +222,11 @@ body.viewing-tab main { display:none; }
 .ctab-save { color:var(--accent); opacity:1; }
 .ctab-save:hover { background:var(--accent-bg); }
 /* Match the back/forward/home nav buttons (.split-btn.nav-lg: 7px padding + 22px glyph). */
-/* Same box as the split toggle (.split-btn): 19px glyph, 6px padding, 6px radius — the pair that
+/* Same box as the split toggle (.split-btn): 21px glyph, 6px padding, 6px radius — the pair that
    bookends the bar is one control size, not two. */
 .ctab-add { flex-shrink:0; padding:6px; border:none; background:none; color:var(--text-2); cursor:pointer; border-radius:6px; display:inline-flex; align-items:center; justify-content:center; transition:color .28s ease, background-color .12s ease; }
 .ctab-add:hover { background:var(--surface-hover); color:var(--text); }
-.ctab-add svg { width:19px; height:19px; display:block; }
+.ctab-add svg { width:21px; height:21px; display:block; }
 
 /* Window-inactive (app not frontmost): the webview chrome desaturates to the native macOS
    not-frontmost look. COLORS ONLY — every property below is a color/background/border and the
