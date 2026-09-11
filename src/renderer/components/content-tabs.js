@@ -119,8 +119,9 @@ export function diffPos(t) {
   return i < 0 ? 0 : order.slice(0, i).filter(id => id !== 'diff' && id !== 'build').length;
 }
 
-// Its × ends the build terminal with the tab — there is no other way to be rid of the console once
-// a run is done, and a chip you can't close is the only one on the bar.
+// Its × takes the chip off the bar and LEAVES the terminal running (viewer.js closeBuildTab): the
+// output is the reason to come back, and the "+" menu offers it again. Removing the context is what
+// ends it.
 function buildChipHtml(t) {
   return `<div class="ctab source buildtab ${inBuild(t) ? 'active' : ''}" data-id="build"
         onclick="setPaneView('build')" title="Output of this worktree's build">

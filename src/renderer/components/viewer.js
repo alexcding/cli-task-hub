@@ -584,7 +584,10 @@ export function closeDiffTab() {
   if (!tab || !tab.diffOpen) return;
   // Losing the Diff chip can be the 2→1 transition the bar animates specially (see closeLink):
   // with no other chip left beside the page, the bar flips multi→single.
-  const toSingle = hasPage(tab) && !(tab.links || []).length && !buildTerm(tab);
+  // Is the Build CHIP on the bar — not merely "does a build terminal exist". Since closeBuildTab
+  // keeps the terminal alive behind a closed chip, the two answers differ, and this one decides
+  // whether losing the Diff is the 2→1 transition the page chip morphs for.
+  const toSingle = hasPage(tab) && !(tab.links || []).length && !(buildTerm(tab) && tab.buildOpen !== false);
   const remove = () => {
     tab.diffOpen = false;
     dropChip(tab, 'diff');

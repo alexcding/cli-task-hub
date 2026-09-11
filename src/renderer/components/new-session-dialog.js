@@ -139,6 +139,15 @@ export async function newSessionDialog(project) {
       // exists for the one case the url can't answer (a pull request we haven't loaded).
       const typed = input.value.trim();
       const raw = page ? (page.branch || branch2.value.trim()) : typed;
+      // The placeholder is a NEW branch name, so it can only stand in where a new branch is what we
+      // are making. A pull request needs its own head branch — falling back here would check out a
+      // branch that doesn't exist (the worktree adopts, it doesn't create, for a PR).
+      if (!raw && page?.kind === 'github') {
+        hint.textContent = 'Name the pull request’s branch';
+        hint.classList.add('form-hint-err');
+        branch2.focus();
+        return;
+      }
       const branch = (raw || placeholder).replace(/\s+/g, '-');
       const err = branchNameError(branch);
       if (err) {
