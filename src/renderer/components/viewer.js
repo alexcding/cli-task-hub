@@ -444,8 +444,8 @@ export async function ctabAdd(e) {
   // Ordered by what you reach for: the two things you can always open, then the two the context
   // may or may not have to give.
   return nativeMenu(e, [
-    { label: 'Web page…', onClick: () => addLink('web') },
-    { label: 'File…', onClick: addFileTab },
+    { label: 'Web page', onClick: () => addLink('web') },
+    { label: 'File', onClick: addFileTab },
     canDiff && { label: 'Diff', onClick: openDiffTab },
     canBuild && { label: 'Build output', onClick: openBuildTab },
     rows.length && { separator: true },
@@ -454,7 +454,7 @@ export async function ctabAdd(e) {
       ...rows.map(r => ({ label: r.label, onClick: r.open })),
       { separator: true },
       // A native menu row has no hover ×, so removal is a second pass over the same list.
-      { label: 'Remove from History…', onClick: () => forgetMenu(e, tab) },
+      { label: 'Remove from History', onClick: () => forgetMenu(e, tab) },
     ] },
   ]);
 }

@@ -124,13 +124,13 @@ separation everything follows:
   context's pane holds only the context's own page (a bare session has none, so it shows
   `#pane-empty`); the Diff is NOT pinned there. ＋ (`viewer.js → ctabAdd`, the in-page `openMenu`)
   offers what the pane can hold — **Diff** (only beside a live terminal, and only once),
-  **Web page…**, **File…** — the last two opening the inline address chip with the kind forced
+  **Web page**, **File** — the last two opening the inline address chip with the kind forced
   (`link.want` → `resolveInput`) instead of guessed — and then **History ▸**, this context's own
   address history (`tab.history`, persisted as `tabs.history`): every page and file it has had open,
   **oldest first**, minus whatever is already a tab on the bar. A PR/Jira context is seeded with its
   own page (`createTab`), which is what the menu used to hard-code as "Pull request #N" / the ticket
   key — don't add per-address entries back. A native menu row has no hover ×, so removal is a second
-  pass over the same list ("Remove from History…" → `forgetMenu`). `nativeMenu` carries ONE level of
+  pass over the same list ("Remove from History" → `forgetMenu`). `nativeMenu` carries ONE level of
   submenu (`items`), sending the host the item's path ("4.2") so the answer maps back onto the array
   that built it; the in-page fallback renders a group inline under a heading. The Diff tab's existence is `tab.diffOpen`,
   persisted per context (`tabs.diff_open`); its × (`closeDiffTab`) takes it off the bar, ⇧⌘D /
