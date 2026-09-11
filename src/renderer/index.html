@@ -456,20 +456,22 @@
         </div>
       </div>
       <!-- Webview segment (over the PR pane — the RIGHT pane in split mode, full-width otherwise).
-           Holds the "+" (new tab), then the Safari-compact horizontal tab bar (#ctabs) for the
-           content pane: a read-only default tab (the PR/Jira page) + extra web/file tabs. -->
+           Holds the "+" (add to this panel), then the Safari-compact horizontal tab bar (#ctabs)
+           for the content pane: a read-only default tab (the PR/Jira page) + whatever the user has
+           added — the Diff, web pages, files. Nothing else is there by default. -->
       <div class="bar-seg bar-wv">
         <!-- The two side groups are equal-flex so a lone centered tab lands at true bar-center.
              LEFT: the "+" (new content tab). RIGHT: empty — it just holds the width of the split
              toggle pinned over it. -->
         <div class="bar-nav">
           <!-- Back / Forward / Home moved to the browser foot (#browser-foot) at the bottom of the pane. -->
-          <button class="ctab-add" id="ctab-add" title="New tab" onclick="addLink()">
+          <!-- Opens the menu of what this pane can hold (Diff / Web page… / File…) — viewer.js ctabAdd. -->
+          <button class="ctab-add" id="ctab-add" title="Add to this panel" onclick="return ctabAdd(event)">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
           </button>
         </div>
-        <!-- Horizontal content tabs render here (content-tabs.js): the page's default chip, the
-             pinned Diff chip while a terminal is beside the pane, then extra web/file tabs. The "+"
+        <!-- Horizontal content tabs render here (content-tabs.js): the page's default chip, then
+             whatever has been added to this context — the Diff tab, web tabs, file tabs. The "+"
              that adds one is the left group above, not part of this strip. -->
         <div class="ctabs" id="ctabs"></div>
         <!-- Empty: it only reserves the width of the absolutely-pinned split toggle (below), so
@@ -495,14 +497,15 @@
     <div class="split-body" id="split-body">
       <!-- Diff pane: takes the RIGHT (page) pane while Review is on — the webview hides under it; diff.js renders into it. -->
       <div class="diff-pane" id="diff-pane" style="display:none"></div>
-      <!-- The right pane with nothing in it: a session that has no page of its own (started from a
-           project's "+") and is showing neither the diff nor a web tab. It's a real surface, not a
-           void — it names what the pane is for, and it gives the open/close animation something to
-           resize. viewer.js paintLeft toggles it (body.pane-blank). -->
+      <!-- The right pane with nothing in it — the DEFAULT for a session that has no page of its
+           own (started from a project's "+"), and where any context lands once everything in the
+           pane is closed. It's a real surface, not a void: it names what the pane is for, and it
+           gives the open/close animation something to resize. viewer.js paintLeft toggles it
+           (body.pane-blank). -->
       <div class="pane-empty" id="pane-empty" hidden>
         <div class="pane-empty-in">
           <div class="pane-empty-t">Nothing open in this panel</div>
-          <div class="pane-empty-s">Pick <b>Diff</b> for this worktree’s changes, or ＋ to open a page.</div>
+          <div class="pane-empty-s">Use ＋ to open this worktree’s <b>Diff</b>, a web page or a file.</div>
         </div>
       </div>
       <!-- Inline commit history for the tab's worktree, drawn over the diff pane when the

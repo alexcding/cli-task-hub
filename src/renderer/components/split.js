@@ -10,7 +10,7 @@
 import { ROUTES } from '/shared/routes.mjs';
 import { state, activeTab, projectByRepo, projectByPrUrl, projectByJiraKey, projectById } from '../stores/store.js';
 import { api, apiJson } from '../services/api.js';
-import { jiraKeyFromUrl, canSplitTerminal, errMsg, basename, hasPage } from '../lib/util.js';
+import { jiraKeyFromUrl, canSplitTerminal, errMsg, basename } from '../lib/util.js';
 import { toastErr } from './toast.js';
 import { createTermView, disposeTerm, fitTerm, visibleTerm } from './terminal.js';
 import { buildTerm } from './build.js';
@@ -340,6 +340,7 @@ export function setPaneView(view) {
   // cover (or hide) the page the moment the task's terminal lands.
   if (!t) return;
   if (cur !== 'off') tab.paneLast = cur;      // what the toggle reopens to (view-only, not persisted)
+  if (next === 'diff') tab.diffOpen = true;   // showing the diff implies its chip is on the bar
   tab.paneView = next;
   saveTabs();
   // ONE geometry path. Only a change in the pane's VISIBILITY slides the boundary; swapping the
@@ -348,12 +349,12 @@ export function setPaneView(view) {
 }
 
 // Toolbar split toggle (pinned to the toolbar's right edge): hide or show the right pane of THIS context.
-// Reopening restores the view it had ('term' page / 'diff'), defaulting to the diff for a bare
-// session — its pane has no page, so the diff is the only thing it can show without a web tab.
+// Reopening restores the view it had ('term' page / 'diff'); with nothing ever opened in it that
+// is 'term', which for a context with no page is the empty pane — the ＋ says what can go there.
 export function toggleSplitPane() {
   const tab = activeTab();
   if (!tab) return;
-  setPaneView(rightPaneOpen(tab) ? 'off' : (tab.paneLast || (hasPage(tab) ? 'term' : 'diff')));
+  setPaneView(rightPaneOpen(tab) ? 'off' : (tab.paneLast || 'term'));
 }
 
 // Collapse the split — a tab that can't carry a terminal became the view, or the shell exited.

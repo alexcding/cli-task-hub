@@ -8,9 +8,11 @@ export function closeMenu() {
   document.removeEventListener('click', closeMenu, true);
 }
 
-// Open at the event's position. `items` is an array of { label, onClick, danger };
-// falsy entries are skipped so callers can inline conditionals. Returns false so inline
-// `oncontextmenu="return openMenu(...)"` cancels the native menu.
+// Open at the event's position. `items` is an array of { label, onClick, danger }, or
+// { separator:true } for a rule BETWEEN groups — one that would lead, trail or double up is
+// dropped, so a caller can inline it ahead of a group that may turn out empty and never get a
+// stray line; falsy entries are skipped so callers can inline conditionals. Returns false so inline `oncontextmenu="return openMenu(...)"`
+// cancels the native menu.
 export function openMenu(e, items) {
   e.preventDefault();
   closeMenu();
@@ -18,12 +20,24 @@ export function openMenu(e, items) {
   m.className = 'status-menu';
   for (const it of items) {
     if (!it) continue;
+    if (it.separator) {
+      // Nothing above it to divide from, or the previous entry was itself a rule → skip. The
+      // trailing case (a group that turned out empty) is dropped after the loop.
+      if (!m.lastElementChild || m.lastElementChild.classList.contains('status-menu-sep')) continue;
+      const sep = document.createElement('div');
+      sep.className = 'status-menu-sep';
+      m.appendChild(sep);
+      continue;
+    }
     const b = document.createElement('button');
     b.className = 'status-menu-item' + (it.danger ? ' danger' : '');
     b.textContent = it.label;
     b.onclick = () => { closeMenu(); it.onClick(); };
     m.appendChild(b);
   }
+  // A rule with nothing under it is a line across the bottom of the menu: the group it was
+  // introducing had no items (a context with no page and no ticket). Drop it.
+  while (m.lastElementChild?.classList.contains('status-menu-sep')) m.lastElementChild.remove();
   document.body.appendChild(m);
   // Clamp into the viewport on both axes (offset* is known now that it's in the DOM): near the
   // bottom edge the menu rides up so it stays fully visible — e.g. the Run button in the bottom bar.

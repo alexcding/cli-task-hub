@@ -242,8 +242,13 @@ pub fn term_write(app: AppHandle, state: State<Terminals>, id: String, data: Str
 }
 
 #[tauri::command(async)]
-pub fn term_resize(app: AppHandle, state: State<Terminals>, id: String, cols: u16, rows: u16) {
-  state.fire(&app, json!({ "op": "resize", "term": id, "cols": cols, "rows": rows }));
+// Unlike the other fire-and-forget ops this one REPORTS a failed send. The renderer memoizes the
+// last grid it sent (terminal.js fitTerm, so an unchanged size doesn't SIGWINCH a full-screen TUI
+// into a repaint); if the write is lost — ptyd disconnected mid-drag — that memo would suppress
+// every later fit at the same size and leave the PTY stuck at its old dimensions. The error is
+// what tells the renderer to drop the memo and re-send.
+pub fn term_resize(app: AppHandle, state: State<Terminals>, id: String, cols: u16, rows: u16) -> Result<(), String> {
+  state.send(&app, json!({ "op": "resize", "term": id, "cols": cols, "rows": rows }), false).map(|_| ())
 }
 
 // Renderer flow control: pause/resume this terminal's PTY reads while xterm's write buffer runs ahead.

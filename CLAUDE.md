@@ -100,6 +100,14 @@ separation everything follows:
   branch for it. Creating and reopening a session both go through
   `openInSplit → activateTab → openPrPanel` (`openTaskSession` has no second path), which is also
   the single place an agent is launched or resumed.
+- **Nothing is open in the right pane by default, and the toolbar's ＋ is what fills it.** A new
+  context's pane holds only the context's own page (a bare session has none, so it shows
+  `#pane-empty`); the Diff is NOT pinned there. ＋ (`viewer.js → ctabAdd`, the in-page `openMenu`)
+  offers what the pane can hold — **Diff** (only beside a live terminal, and only once),
+  **Web page…**, **File…** — the last two opening the inline address chip with the kind forced
+  (`link.want` → `resolveInput`) instead of guessed. The Diff tab's existence is `tab.diffOpen`,
+  persisted per context (`tabs.diff_open`); its × (`closeDiffTab`) takes it off the bar, ⇧⌘D /
+  `openDiffTab` puts it back. Never re-pin a view onto the bar: everything there was added.
 - **The right pane is one toggled state: `tab.paneView`.** `'off'` (hidden — the terminal fills the
   panel, `body.split-closed`), `'term'` (the context's page; blank for a bare session,
   `body.pane-blank`), `'diff'` (the worktree diff, `body.pane-diff`) or `'build'` (this context's

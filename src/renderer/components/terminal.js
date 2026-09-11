@@ -439,7 +439,12 @@ export function fitTerm(t) {
     // by the pre-fit/finish pair and by the ResizeObserver passes around it.
     if (t.ptyCols === cols && t.ptyRows === rows) return;
     t.ptyCols = cols; t.ptyRows = rows;
-    taskhub.term.resize([...state.terms].find(([, v]) => v === t)[0], cols, rows);
+    // …but the memo is only valid if the size actually got there. A rejected send (ptyd dropped
+    // the write) clears it — otherwise this grid could never be re-sent and the PTY would stay at
+    // its old dimensions until the window happened to change to some other size. A newer fit that
+    // has already moved the memo on wins; this only undoes its own entry.
+    Promise.resolve(taskhub.term.resize([...state.terms].find(([, v]) => v === t)[0], cols, rows))
+      .catch(() => { if (t.ptyCols === cols && t.ptyRows === rows) { t.ptyCols = 0; t.ptyRows = 0; } });
   } catch {}
 }
 

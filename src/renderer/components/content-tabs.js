@@ -3,13 +3,15 @@
 // tabs — it does NOT mirror the sidebar's vertical PR/Jira tabs.
 //
 // The bar belongs to the ACTIVE viewer tab (the "context"): its first chip is the default
-// tab (the PR/Jira page — read-only url; its × closes the context), then — while the terminal split is
-// open with a live terminal — a pinned Diff chip (the worktree's `git diff`, drawn over the
-// page; tab.paneView === 'diff'), followed by that context's extra web/file tabs. The `+` that
-// adds one is a static button in the segment's LEFT group, ahead of the strip.
-// Extra tabs are added only two ways: the user's `+` (type a URL or file path inline) or a
-// file link clicked in the terminal. Picking a page chip leaves the Diff view; the terminal
-// beside the pane is never touched by any of this.
+// tab (the PR/Jira page — read-only url; its × closes the context), then — if the user has added
+// it — a Diff chip (the worktree's `git diff`, drawn over the page; tab.paneView === 'diff'),
+// followed by that context's extra web/file tabs. NOTHING but the context's own page is on the bar
+// by default: a fresh pane has nothing open in it, and the Diff is a tab you add like any other.
+// The `+` that adds one is a static button in the segment's LEFT group, ahead of the strip; it
+// opens a menu (viewer.js → ctabAdd) of what this pane can hold — Diff, a web page, a file.
+// Extra tabs are added only three ways: that menu, ⇧⌘D (the Diff), or a file link clicked in the
+// terminal. Picking a page chip leaves the Diff view; the terminal beside the pane is never
+// touched by any of this.
 //
 // Data lives on the active viewer tab: tab.links[] + tab.activeLink (null = default). All
 // mutations live in viewer.js (added to window.*); this module only renders + reads.
@@ -41,11 +43,12 @@ function linkIcon(l) {
   return `<span class="ctab-ic">${ICON.globe}</span>`;
 }
 
-// The Diff chip exists only while the split is open with a live terminal (the diff needs its
-// worktree). While it's the shown view no page chip is active. Both are PURE STATE predicates
-// (no DOM class) so a paint that runs before split.js has synced body.pane-diff — activateTab's
-// first paintLeft — still agrees with what the split will show; viewer.js imports inDiff for that.
-const hasDiffTab = t => !!(t && t.termId && state.terms.get(t.termId));
+// The Diff chip exists once the user has ADDED it (`tab.diffOpen`, persisted per context) and
+// only while the split is open with a live terminal (the diff needs its worktree). While it's the
+// shown view no page chip is active. Both are PURE STATE predicates (no DOM class) so a paint that
+// runs before split.js has synced body.pane-diff — activateTab's first paintLeft — still agrees
+// with what the split will show; viewer.js imports inDiff for that.
+const hasDiffTab = t => !!(t && t.diffOpen && t.termId && state.terms.get(t.termId));
 export const inDiff = t => hasDiffTab(t) && t.paneView === 'diff';
 // The Build chip appears once this context HAS a build terminal (the toolbar's play button made
 // one); it's the way back to the output after looking at the page or the diff.
@@ -61,10 +64,11 @@ function buildChipHtml(t) {
 }
 
 function diffChipHtml(t) {
-  return `<div class="ctab source ${inDiff(t) ? 'active' : ''}"
+  return `<div class="ctab source ${inDiff(t) ? 'active' : ''}" data-id="diff"
         onclick="setPaneView('diff')" title="Working changes in the task's worktree (⇧⌘D)">
      <span class="ctab-ic">${ICON.branch}</span>
      <span class="ctab-title">Diff</span>
+     <button class="ctab-btn ctab-x" title="Close tab" onclick="event.stopPropagation();closeDiffTab()">${ICON.close}</button>
    </div>`;
 }
 

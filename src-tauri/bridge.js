@@ -513,7 +513,8 @@
       return {
         create: function (opts) { wire(); return invoke('term_create', { opts: opts || {} }); },
         write: function (id, data) { invoke('term_write', { id: id, data: data }); },
-        resize: function (id, cols, rows) { invoke('term_resize', { id: id, cols: cols, rows: rows }); },
+        // Returns the promise: a rejected resize tells fitTerm to drop its size memo and retry.
+        resize: function (id, cols, rows) { return invoke('term_resize', { id: id, cols: cols, rows: rows }); },
         flow: function (id, pause) { invoke('term_flow', { id: id, pause: !!pause }); },
         kill: function (id) { return invoke('term_kill', { id: id }); },
         list: function () { return invoke('term_list'); },

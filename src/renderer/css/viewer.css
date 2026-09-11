@@ -144,10 +144,10 @@ body.viewing-tab main { display:none; }
    only — switching tabs never disturbs the right split view. */
 .ctabs { display:flex; align-items:center; gap:7px; min-width:0; flex:1; margin-left:10px; overflow-x:auto; overflow-y:hidden; height:100%; }
 .ctabs::-webkit-scrollbar { height:0; }
-/* Safari-compact pills: every tab fills the bar equally (flex:1), content centered, on a
-   flat gray pill. The active tab lifts to a white pill + border; the address-entry tab gets
-   the blue focus ring and left-aligns its field. */
-.ctab { position:relative; display:flex; align-items:center; justify-content:center; gap:8px; flex:1 1 0; min-width:84px; height:36px; padding:0 16px; border-radius:18px; background:var(--surface-hover); color:var(--text-2); cursor:default; user-select:none; border:1px solid transparent; overflow:hidden; transition:background-color .2s ease, border-color .2s ease, color .2s ease, box-shadow .2s ease; }
+/* Safari-compact tabs: every tab fills the bar equally (flex:1), content centered, on a flat
+   gray rounded rect (a browser tab's modest radius, not a full pill). The active tab lifts to
+   white + a border; the address-entry tab gets the blue focus ring and left-aligns its field. */
+.ctab { position:relative; display:flex; align-items:center; justify-content:center; gap:8px; flex:1 1 0; min-width:84px; height:36px; padding:0 16px; border-radius:10px; background:var(--surface-hover); color:var(--text-2); cursor:default; user-select:none; border:1px solid transparent; overflow:hidden; transition:background-color .2s ease, border-color .2s ease, color .2s ease, box-shadow .2s ease; }
 /* Add/close animations — the bar rebuilds wholesale, so JS (playTabIn/playTabOut) tags the
    specific tab element with these classes. Width is driven by max-width (flex caps the visible
    size), so a tab grows in from 0 and shrinks out to 0; siblings reflow to fill. A subtle
@@ -305,6 +305,10 @@ body.pr-split .split-body .diff-pane { left:var(--term-w); }
 /* Empty right pane (a bare session showing neither diff nor page). A plain surface with the panel
    background so the pane still reads as a panel — and so the toggle has something to resize. */
 .pane-empty { position:absolute; inset:0; background:var(--bg); display:flex; align-items:center; justify-content:center; padding:24px; }
+/* display:flex above overrides the UA [hidden]{display:none}, so paintLeft's el.hidden alone
+   won't hide it — without this the empty surface stays painted over whatever the pane then
+   shows (it's the LAST absolute child of #split-body, so it covers the diff). */
+.pane-empty[hidden] { display:none; }
 body.pr-split .split-body .pane-empty { left:var(--term-w); }
 .pane-empty-in { max-width:260px; text-align:center; }
 .pane-empty-t { font-size:13px; font-weight:600; color:var(--text-2); }

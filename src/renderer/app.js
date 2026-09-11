@@ -119,7 +119,10 @@ function handleShortcut(action) {
     case 'find:next':     find.findNext(true); break;
     case 'find:prev':     find.findNext(false); break;
     case 'pane:toggleView':
-      split.setPaneView(tab?.paneView === 'diff' ? 'term' : 'diff'); // setPaneView re-checks the tab
+      // ⇧⌘D shows the diff — adding its tab to the bar first if this context hasn't got one
+      // (nothing is open in a pane by default). Pressed again it goes back to the page.
+      if (tab?.paneView === 'diff') split.setPaneView('term');
+      else viewer.openDiffTab();                                     // both re-check the tab
       break;
     // Hide/show the right pane of the context in view (the toolbar's split toggle).
     case 'pane:toggleSplit': split.toggleSplitPane(); break;
@@ -241,7 +244,8 @@ Object.assign(window, {
   // sidebar / tabs
   activateTab: viewer.activateTab, closeTab: viewer.closeTab, tabMenu,
   // Safari-compact horizontal content tabs (per-context web/file links)
-  setActiveLink: viewer.setActiveLink, addLink: viewer.addLink, editLink: viewer.editLink, ctabClick: viewer.ctabClick,
+  setActiveLink: viewer.setActiveLink, ctabAdd: viewer.ctabAdd, editLink: viewer.editLink, ctabClick: viewer.ctabClick,
+  openDiffTab: viewer.openDiffTab, closeDiffTab: viewer.closeDiffTab,
   ctabInputKey: viewer.ctabInputKey, ctabInputBlur: viewer.ctabInputBlur,
   closeLink: viewer.closeLink, closeOtherLinks: viewer.closeOtherLinks, ctabMenu: viewer.ctabMenu,
   saveLinkFile: viewer.saveLinkFile, openFileTab: viewer.openFileTab,

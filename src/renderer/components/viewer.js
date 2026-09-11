@@ -4,7 +4,7 @@
 import { ROUTES } from '/shared/routes.mjs';
 import { state, activeTab, prByUrl, prGroup, prTabTitle, jiraTabTitle, jiraByKey, projectByWorkspace } from '../stores/store.js';
 import { api, apiJson } from '../services/api.js';
-import { esc, jiraKeyFromUrl, canSplitTerminal, isPrUrl, ghAvatarSrc, basename, hasPage, isSessionUrl } from '../lib/util.js';
+import { esc, jiraKeyFromUrl, canSplitTerminal, isPrUrl, ghAvatarSrc, basename, hasPage, isSessionUrl, jiraUrl } from '../lib/util.js';
 import { seedAvatar } from '../lib/avatars.js';
 import { ICON } from '../lib/icons.js';
 import { gitClientLabel, gitClientIcon } from '../lib/git-clients.js';
@@ -77,10 +77,15 @@ function createTab(url, title, kind, meta = {}) {
   // 'term' (the context's page) or 'diff' (the worktree diff). A bare session has no page, so its
   // pane starts hidden; a page-backed context starts showing its page, as it always did.
   const pv = ['off', 'diff', 'term'].includes(meta.paneView) ? meta.paneView : (isSessionUrl(url) ? 'off' : 'term');
+  // diffOpen is the Diff TAB's existence on the content bar (persisted). It is never on by
+  // default: a new context's pane holds only the context's own page — the diff, like a web page
+  // or a file, is something the user adds from the toolbar's "+" (or ⇧⌘D). A context restored
+  // while showing the diff necessarily has the tab.
+  const diffOpen = meta.diffOpen === true || pv === 'diff';
   const tab = { id, kind: k, title: title || url, url, cur: meta.cur || '', wv: null,
     loaded: false, started: false, repo: meta.repo || '', branch: meta.branch || '',
     jiraKey: meta.jiraKey || jiraKeyFromUrl(url),
-    paneView: pv, category: meta.category || '',
+    paneView: pv, diffOpen, category: meta.category || '',
     login: meta.login || '', avatar: meta.avatar || '',
     links: (meta.links || []).map(rebuildLink), activeLink: null };
   return tab;
@@ -203,13 +208,17 @@ function disposeLink(l) {
 
 // Rebuild a persisted link into a runtime link object (no DOM element until shown).
 function rebuildLink(s) {
-  return { id: 'lnk' + (++_linkSeq), kind: s.kind === 'file' ? 'file' : 'web', url: s.url || '',
+  return { id: 'lnk' + (++_linkSeq), kind: s.kind === 'file' ? 'file' : 'web', url: s.url || '', want: '',
     title: s.title || '', icon: s.icon || '', path: s.path || (s.kind === 'file' ? pathFromUrl(s.url) : ''),
     home: s.url || '', wv: null, ed: null, edView: null, started: false, loaded: false, dirty: false, editing: false };
 }
-function makeWebLink() {
+// `want` ('web' | 'file' | '') is what the user picked from the "+" menu — it forces how the
+// typed text is read, so "File…" accepts `notes` and "Web page…" accepts `localhost:3000`
+// without either being second-guessed by classifyInput's heuristic. '' = let the text decide
+// (a re-edited tab, where the user is retyping an address that already committed once).
+function makeWebLink(want = '') {
   return { id: 'lnk' + (++_linkSeq), kind: 'web', url: '', title: '', icon: '', path: '',
-    wv: null, started: false, loaded: false, editing: true };
+    want, wv: null, started: false, loaded: false, editing: true };
 }
 function makeFileLink(p) {
   return { id: 'lnk' + (++_linkSeq), kind: 'file', url: fileUrl(p), title: basename(p) || p, icon: '',
@@ -322,12 +331,105 @@ export function setActiveLink(linkId) {
   if (link?.kind === 'file' && link.edView) focusEditor(link);
 }
 
-// `+` → open a blank tab whose chip is an inline address field (type a URL or file path).
-export function addLink() {
+// The toolbar's "+" → a menu of what this context's pane can hold. The pane starts with nothing
+// open in it, so everything that appears there is added from here: the worktree Diff, a web page,
+// a local file. A click-anchored picker, not a context menu, so it's the in-page menu (openMenu)
+// rather than the native one. Returns false so the inline onclick can't also do anything else.
+export function ctabAdd(e) {
+  const tab = activeTab();
+  if (!tab) return false;
+  // The diff needs a worktree, so it's offered only beside a live terminal — and only once.
+  const canDiff = !!(tab.termId && state.terms.get(tab.termId)) && !tab.diffOpen;
+  // …then, below a rule, the addresses this context ALREADY has: a session made from a PR (or a
+  // Jira ticket) knows its url forever, so the way back to it is always one click away — even
+  // after the pane has been emptied, and whatever else is open in it.
+  // tab.jiraKey has no column of its own (createTab re-derives it from the url, which yields
+  // nothing for a PR), so after a restart the task record is where the ticket still lives.
+  const key = tab.jiraKey || taskForTab(tab)?.jiraKey || '';
+  const jira = key && tab.kind !== 'jira' && state.jiraBase ? key : '';
+  return openMenu(e, [
+    canDiff && { label: 'Diff', onClick: openDiffTab },
+    { label: 'Web page…', onClick: () => addLink('web') },
+    { label: 'File…', onClick: addFileTab },
+    { separator: true },
+    hasPage(tab) && { label: pageLabel(tab), onClick: () => setActiveLink(null) },
+    jira && { label: jira, onClick: () => openWebLink(jiraUrl(jira)) },
+  ]);
+}
+
+// Menu label for the context's own page: the PR number, the Jira key, or just "Page" — short,
+// because the menu is one line per item and the tab title can be a whole PR title.
+function pageLabel(tab) {
+  const num = tab.kind === 'github' && (tab.url.match(/\/pull\/(\d+)/) || [])[1];
+  return num ? `Pull request #${num}` : tab.kind === 'jira' ? (tab.jiraKey || 'Ticket') : 'Page';
+}
+
+// "File…" → the native file picker rooted at THIS context's worktree, so what it offers is the
+// checkout the agent is working in (each session has its own). The picked file opens as a file
+// tab through the one path every file tab uses (openFileTab). Outside the app (plain-browser
+// dev) there is no picker, so it falls back to the inline path field.
+async function addFileTab() {
+  const tab = activeTab();
+  if (!tab) return;
+  if (!window.taskhub?.chooseFile) { addLink('file'); return; }
+  // The terminal's cwd is the worktree it was created in — the same folder resolveTabFolder
+  // computes, but already known, so it costs no API call when a session is live.
+  const t = tab.termId && state.terms.get(tab.termId);
+  const start = t?.cwd || (await resolveTabFolder(tab))?.path || '';
+  const picked = await window.taskhub.chooseFile({ start, title: 'Open file in this panel' });
+  // The picker is modal to nothing — the active context can change while it's up (a tray
+  // "open PR", a task row). The file was picked from THIS worktree, so it opens in THIS
+  // context; openFileTab brings it back into view if the user has moved on.
+  if (picked) openFileTab(picked, 0, tab);
+}
+
+// Add the Diff tab to this context's bar and show it. setPaneView does the persisting + the
+// layout; the chip is painted first so it's there for playTabIn to grow.
+export function openDiffTab() {
+  const tab = activeTab();
+  if (!tab || !(tab.termId && state.terms.get(tab.termId))) return;
+  if (tab.diffOpen) { setPaneView('diff'); return; }
+  tab.diffOpen = true;
+  // setPaneView → applyPrLayout → showPaneContent rebuilds #ctabs (the chip gains .active), which
+  // would throw away an element tagged before it. So lay out first, then tag what survived.
+  setPaneView('diff');
+  renderContentTabs(true);
+  playTabIn('diff');
+}
+
+// Close the Diff tab (its ×). If the diff was the shown view, the pane falls back to the page —
+// or, for a context that has none, to the empty pane; paintLeft decides that, as it always does.
+export function closeDiffTab() {
+  const tab = activeTab();
+  if (!tab || !tab.diffOpen) return;
+  // Losing the Diff chip can be the 2→1 transition the bar animates specially (see closeLink):
+  // with no other chip left beside the page, the bar flips multi→single.
+  const toSingle = hasPage(tab) && !(tab.links || []).length && !buildTerm(tab);
+  const remove = () => {
+    tab.diffOpen = false;
+    // The callback lands up to 290ms later — the user may have switched contexts meanwhile, and
+    // setPaneView/renderContentTabs all act on whatever is active NOW. Fix only THIS tab's state.
+    if (tab !== activeTab()) {
+      if (tab.paneView === 'diff') tab.paneView = 'term';   // never left pointing at a chip it hasn't got
+      saveTabs();
+      return;
+    }
+    const prevRect = toSingle ? defaultChipRect() : null;
+    if (tab.paneView === 'diff') setPaneView('term');   // repaints + saves
+    else { renderContentTabs(true); saveTabs(); }
+    if (prevRect) flipDefaultChip(prevRect);
+  };
+  if (toSingle) remove();            // morph the page chip straight to its centered size
+  else playTabOut('diff', remove);
+}
+
+// "+" → Web page… (and the File… fallback outside the app): open a blank tab whose chip is an
+// inline address field. Module-internal now that the "+" is a menu — nothing in markup calls it.
+function addLink(want = '') {
   const tab = activeTab();
   if (!tab) return;
   tab.links = tab.links || [];
-  const link = makeWebLink();
+  const link = makeWebLink(want);
   tab.links.push(link);
   tab.activeLink = link.id;
   leaveReview(tab);
@@ -398,13 +500,24 @@ function classifyInput(v) {
   return { kind: 'file', value: v };
 }
 
+// …and what the tab actually becomes: `want` (the "+" menu item the user picked) overrides the
+// heuristic, which only has the text to go on. Asking for a file and typing `readme` must give a
+// file, not a search; asking for a web page and typing `localhost:3000` must give a page.
+function resolveInput(v, want) {
+  const c = classifyInput(v);
+  if (!want || want === c.kind) return c;
+  if (want === 'file') return { kind: 'file', value: /^file:\/\//i.test(v) ? pathFromUrl(v) : v };
+  return { kind: 'web', value: /^https?:\/\//i.test(v) ? v : 'https://' + v };
+}
+
 // Commit the inline address input: turn the tab into a web or file tab and load it.
 function commitLinkInput(id, raw) {
   const { tab, link } = linkById(id);
   if (!link) return;
   const v = (raw || '').trim();
   if (!v) return;            // nothing entered → keep the tab blank; only a real value commits
-  const { kind, value } = classifyInput(v);
+  const { kind, value } = resolveInput(v, link.want);
+  link.want = '';            // committed once — a later re-edit reads the text on its own terms
   // Tear down any element from a prior value (e.g. re-edited tab whose kind changed).
   disposeLink(link); link.ed = null;
   link.kind = kind; link.editing = false; link.started = false; link.loaded = false; link.icon = '';
@@ -497,14 +610,15 @@ export function saveLinkFile(id) {
   if (link) saveEditor(link);
 }
 
-// Open a local file as an extra tab in the CURRENT context (a terminal file-link click).
+// Open a local file as an extra tab in the CURRENT context (a terminal file-link click), or in
+// `forTab` when the caller has one (the "+" file picker, whose dialog outlives the click).
 // Reuses an already-open file in this context; `line` (1-based) jumps there.
-export function openFileTab(filePath, line = 0) {
+export function openFileTab(filePath, line = 0, forTab = null) {
   if (!filePath) return;
-  // Resolve the owning context: the active viewer tab, or — when a full-screen (standalone)
-  // terminal is showing (activeTabId is null then) — the tab that owns the active terminal,
-  // found by its pairKey. Without this, terminal file-links no-op in a solo task terminal.
-  let tab = activeTab();
+  // Resolve the owning context: the caller's, else the active viewer tab, or — when a full-screen
+  // (standalone) terminal is showing (activeTabId is null then) — the tab that owns the active
+  // terminal, found by its pairKey. Without this, terminal file-links no-op in a solo task terminal.
+  let tab = forTab || activeTab();
   if (!tab && state.activeTermId) {
     const term = state.terms.get(state.activeTermId);
     const task = term?.pairKey ? taskById(term.pairKey) : null;
@@ -548,7 +662,7 @@ export function saveTabs() {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      tabs: state.tabs.map(t => ({ kind: t.kind, title: t.title, url: t.url, cur: t.cur || '', repo: t.repo, branch: t.branch, jiraKey: t.jiraKey, paneView: t.paneView, category: t.category, login: t.login, avatar: t.avatar,
+      tabs: state.tabs.map(t => ({ kind: t.kind, title: t.title, url: t.url, cur: t.cur || '', repo: t.repo, branch: t.branch, jiraKey: t.jiraKey, paneView: t.paneView, diffOpen: t.diffOpen, category: t.category, login: t.login, avatar: t.avatar,
         // The context's extra horizontal tabs (web pages + local files). Only committed ones
         // (with a url) — a blank, never-entered tab isn't persisted.
         links: (t.links || []).filter(l => l.url).map(l => ({ kind: l.kind, url: l.url, title: l.title, path: l.path || '', icon: l.icon || '' })) })),
@@ -582,7 +696,7 @@ export async function restoreTabs() {
     // closed, the context is dead — don't rehydrate a tab with no session behind it.
     if (isSessionUrl(t?.url) && !state.tasks.some(x => x.url === t.url)) continue;
     if (t && t.url && !state.tabs.some(x => x.url === t.url)) {
-      state.tabs.push(createTab(t.url, t.title, t.kind, { cur: t.cur, repo: t.repo, branch: t.branch, jiraKey: t.jiraKey, paneView: t.paneView, category: t.category, login: t.login, avatar: t.avatar, links: Array.isArray(t.links) ? t.links : [] }));
+      state.tabs.push(createTab(t.url, t.title, t.kind, { cur: t.cur, repo: t.repo, branch: t.branch, jiraKey: t.jiraKey, paneView: t.paneView, diffOpen: t.diffOpen, category: t.category, login: t.login, avatar: t.avatar, links: Array.isArray(t.links) ? t.links : [] }));
       seedAvatar(t.login, t.avatar);   // share the restored data URI so the dashboard reuses it
     }
   }
