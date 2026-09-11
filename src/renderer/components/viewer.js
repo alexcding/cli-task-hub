@@ -327,7 +327,9 @@ function buildLinkWebview(link) {
   wv.addEventListener('did-navigate', onNavUrl);
   wv.addEventListener('did-navigate-in-page', onNavUrl);
   // After load, the tab adopts the page's title + favicon (a browser tab).
-  wv.addEventListener('page-title-updated', e => { if (e.title) { link.title = e.title; noteLinkHistory(activeTab(), link); renderContentTabs(); saveTabsSoon(); } });
+  // ownerOf(link), never activeTab(): a title lands long after the page was opened, often while
+  // another context is in front, and history belongs to the context that opened the address.
+  wv.addEventListener('page-title-updated', e => { if (e.title) { link.title = e.title; noteLinkHistory(ownerOf(link), link); renderContentTabs(); saveTabsSoon(); } });
   wv.addEventListener('page-favicon-updated', e => { const ic = e.favicons && e.favicons[0]; if (ic) { link.icon = ic; renderContentTabs(); } });
 }
 function buildLinkEditorPane(link) {
@@ -630,8 +632,10 @@ function insertLink(tab, link) {
 }
 
 // ── Address history (per context) ────────────────────────────────────────────────
-// Everything this context has ever had open — web pages and local files — ordered by when it was
-// FIRST opened and kept after the tab is closed, so the "+" menu can offer it back. A context made
+// Everything THIS context has ever had open — web pages and local files — ordered by when it was
+// FIRST opened and kept after the tab is closed, so the "+" menu can offer it back. Strictly per
+// context: a session's history is what that session opened, never a global list, so every record
+// goes through the owning tab (ownerOf), never through whatever happens to be active. A context made
 // from a PR or a ticket is seeded with its own page (createTab), which is what the menu used to
 // hard-code as a "Pull request #N" / "TASK-123" entry: the same address, now one row of history
 // among the rest instead of a special case.
@@ -639,6 +643,10 @@ const HISTORY_MAX = 40;
 // Web pages are keyed by url, files by path — the same identity openFileTab/openWebLink use to
 // decide whether a tab for it is already open.
 const histKey = e => (e.kind === 'file' ? 'f:' + normFilePath(e.path || '') : 'w:' + (e.url || ''));
+
+// The context a link belongs to — the one whose links array holds it. Not the active tab: these
+// callbacks fire on network timing, not on what the user is looking at.
+const ownerOf = link => state.tabs.find(t => (t.links || []).includes(link)) || null;
 
 function noteHistory(tab, entry) {
   if (!tab || !entry || !(entry.url || entry.path)) return;
