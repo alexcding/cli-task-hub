@@ -28,13 +28,11 @@
 body:not(.pr-split):not(.viewing-term) .bar-term { border-right:none; order:2; }
 /* No terminal beside this page (a web tab with no session): the segment holds just the
    "New session" button, at the toolbar's right edge (above). */
-/* The one PRIMARY action on this toolbar — it appears only when this page has no session, and
-   starting one is the whole point of that empty state — so it carries the accent while every other
-   control here stays neutral. TINTED, not filled: a solid accent pill was a button-shaped hole in a
-   toolbar of bare glyphs. The accent tint (--accent-bg + accent text, the app's soft-primary pair)
-   is enough to be the only colored thing on the bar. */
-.bar-session { display:inline-flex; align-items:center; gap:6px; padding:6px 13px 6px 10px; border:1px solid transparent; background:var(--accent-bg); color:var(--accent); font:inherit; font-size:12px; font-weight:600; border-radius:99px; cursor:pointer; white-space:nowrap; transition:background .12s, border-color .12s, color .12s; }
-.bar-session:hover { border-color:var(--accent); }
+/* Quiet, not accented: the toolbar's other controls are bare glyphs, and a colored pill among them
+   was the loudest thing on screen for an action you take once per page. It sits on the one recessed
+   tone (--surface-hover) in the neutral text color, and only sharpens on hover. */
+.bar-session { display:inline-flex; align-items:center; gap:6px; padding:6px 13px 6px 10px; border:1px solid transparent; background:var(--surface-hover); color:var(--text-2); font:inherit; font-size:12px; font-weight:500; border-radius:99px; cursor:pointer; white-space:nowrap; transition:background .12s, border-color .12s, color .12s; }
+.bar-session:hover { color:var(--text); border-color:var(--border-focus); }
 .bar-session:disabled { opacity:.5; cursor:default; }
 /* display:inline-flex above overrides the UA [hidden] rule, so hiding needs to be explicit. */
 .bar-session[hidden] { display:none; }
@@ -267,9 +265,8 @@ body.win-inactive .bar-title { color:var(--text-3); }
    .split-btn/.ctab-add ease color above), so the toolbar never reflows on focus changes.
    Driven by body.win-inactive, toggled from app.js on real OS window focus/blur. */
 body.win-inactive .split-bar { border-bottom-color:var(--border); }
-/* The accent CTA desaturates with everything else when the window isn't frontmost — the only
-   colored thing on the bar would otherwise still be colored on a background window. */
-body.win-inactive .bar-session { background:var(--surface-hover); border-color:transparent; color:var(--text-2); }
+/* …and one step quieter again on a background window, like every other label here. */
+body.win-inactive .bar-session { color:var(--text-3); border-color:transparent; }
 body.win-inactive .split-btn,
 body.win-inactive .ctab-add,
 body.win-inactive .ctab .ctab-title { color:var(--text-3); }
