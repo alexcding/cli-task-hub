@@ -464,9 +464,31 @@ function historyMenu(tab) {
     .filter(h => { const k = histKey(h); return !open.has(k) && !openHomes.has(k); })
     .map(h => ({
       key: histKey(h),
-      label: h.title || h.path || h.url,
+      label: histLabel(h),
       open: () => (h.kind === 'file' ? openFileTab(h.path, 0, tab) : openWebLink(h.url)),
     }));
+}
+
+// A menu sizes itself to its widest row, and these rows are page titles, URLs and absolute paths —
+// a single one can stretch the menu across the window. So each is cut to fit:
+//   • a page → its title, or the URL without the scheme when it has none yet
+//   • a file → the basename under its parent folder ("src/renderer/viewer.js"), the part that
+//     identifies it; the leading path is what makes these long and never what you read
+// and whatever is left is elided in the MIDDLE, so both ends — which is what tells two similar
+// addresses apart — survive.
+const HIST_LABEL_MAX = 48;
+function histLabel(h) {
+  if (h.kind === 'file') {
+    const parts = (h.path || '').split('/').filter(Boolean);
+    return elide(parts.slice(-2).join('/') || h.path || '', HIST_LABEL_MAX);
+  }
+  const text = h.title || (h.url || '').replace(/^https?:\/\//i, '').replace(/\/$/, '');
+  return elide(text, HIST_LABEL_MAX);
+}
+function elide(s, max) {
+  if (!s || s.length <= max) return s || '';
+  const head = Math.ceil((max - 1) / 2), tail = Math.floor((max - 1) / 2);
+  return s.slice(0, head) + '…' + s.slice(s.length - tail);
 }
 
 // The second pass: the same rows, where picking one FORGETS it instead of opening it. This is what
