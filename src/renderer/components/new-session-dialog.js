@@ -1,6 +1,6 @@
-// "New session" dialog behind the sidebar's "+" on a project: optionally paste the PR or ticket the
-// session is FOR, name the branch (→ worktree folder), pick the base branch it forks from, and
-// choose the agent to launch in its terminal. An in-app
+// "New session" dialog behind the sidebar's "+" on a project: name the branch (→ worktree folder)
+// OR paste the PR / ticket the session is for — one field, read by shape — pick the base branch it
+// forks from, and choose the agent to launch in its terminal. An in-app
 // modal on the shared .modal-backdrop — the webview swallows native prompt()/confirm(), so those
 // are never used here. Resolves { branch, base, cli } on Create, or null on Cancel / Escape /
 // backdrop click. One dialog at a time: opening a second cancels the first.
@@ -10,6 +10,8 @@ import { api } from '../services/api.js';
 import { esc, isPrUrl, jiraKeyFromUrl } from '../lib/util.js';
 import { jiraTaskBranch } from '../lib/workflow.mjs';
 
+// One field takes either: a branch name to create, or the address of the page the session is FOR.
+const HINT = 'Also names the worktree folder — or paste a GitHub PR / Jira URL to start on that page.';
 const PREFERRED_BASE = 'develop'; // preselected when the repo has it; else the repo's default branch
 const CLI_CHOICES = [
   { id: 'claude', label: 'Claude' },
@@ -92,14 +94,15 @@ export async function newSessionDialog(project) {
     back.innerHTML = `<div class="modal modal-session" role="dialog" aria-modal="true">
         <h2>New session on ${esc(project.name || 'project')}</h2>
         <div class="form-group">
-          <label class="form-label" for="ns-url">Pull request or ticket</label>
-          <input type="text" id="ns-url" placeholder="Optional — paste a GitHub PR or Jira URL" autocomplete="off" spellcheck="false">
-          <div class="form-hint" id="ns-url-hint">The session opens on that page instead of a blank one, and takes its branch.</div>
-        </div>
-        <div class="form-group">
-          <label class="form-label" for="ns-branch">Branch name</label>
+          <label class="form-label" for="ns-branch">Branch name or URL</label>
           <input type="text" id="ns-branch" placeholder="${esc(placeholder)}" autocomplete="off" spellcheck="false">
-          <div class="form-hint" id="ns-hint">Also names the worktree folder. Leave blank to use the placeholder.</div>
+          <div class="form-hint" id="ns-hint">${esc(HINT)}</div>
+        </div>
+        <!-- Only for a pull request whose branch we don't know yet (its PR hasn't been loaded):
+             everything else derives the branch from what was typed. -->
+        <div class="form-group" id="ns-branch-row" hidden>
+          <label class="form-label" for="ns-branch2">Branch for that pull request</label>
+          <input type="text" id="ns-branch2" placeholder="${esc(placeholder)}" autocomplete="off" spellcheck="false">
         </div>
         <div class="form-group">
           <label class="form-label" for="ns-base">Branch from</label>
@@ -117,8 +120,8 @@ export async function newSessionDialog(project) {
         </div>
       </div>`;
     const input = back.querySelector('#ns-branch');
-    const urlInput = back.querySelector('#ns-url');
-    const urlHint = back.querySelector('#ns-url-hint');
+    const branchRow = back.querySelector('#ns-branch-row');
+    const branch2 = back.querySelector('#ns-branch2');
     const baseSel = back.querySelector('#ns-base');
     let cli = cli0;
     let page = null;
@@ -132,24 +135,35 @@ export async function newSessionDialog(project) {
     const cancel = () => done(null);
     const hint = back.querySelector('#ns-hint');
     const submit = () => {
-      const branch = (input.value.trim() || placeholder).replace(/\s+/g, '-');
+      // A url in the field names its own branch; anything else IS the branch. The second input only
+      // exists for the one case the url can't answer (a pull request we haven't loaded).
+      const typed = input.value.trim();
+      const raw = page ? (page.branch || branch2.value.trim()) : typed;
+      const branch = (raw || placeholder).replace(/\s+/g, '-');
       const err = branchNameError(branch);
-      if (err) { hint.textContent = err; hint.classList.add('form-hint-err'); input.focus(); return; }
-      if (urlInput.value.trim() && !page) { urlHint.textContent = 'Not a GitHub pull request or Jira issue URL'; urlHint.classList.add('form-hint-err'); urlInput.focus(); return; }
+      if (err) {
+        const el = page ? branch2 : input;
+        hint.textContent = err; hint.classList.add('form-hint-err'); el.focus();
+        return;
+      }
       done({ branch, base: baseSel.value, cli, page });
     };
-    input.oninput = () => { hint.classList.remove('form-hint-err'); hint.textContent = 'Also names the worktree folder. Leave blank to use the placeholder.'; };
-    // Reading the url fills the branch in, but never overwrites one the user typed: the field is a
-    // shortcut, not a lock, and a PR we haven't loaded yields no branch at all.
-    urlInput.oninput = () => {
-      const raw = urlInput.value.trim();
-      page = parseSessionUrl(raw);
-      urlHint.classList.toggle('form-hint-err', !!raw && !page);
-      urlHint.textContent = !raw ? 'The session opens on that page instead of a blank one, and takes its branch.'
-        : !page ? 'Not a GitHub pull request or Jira issue URL'
-        : page.branch ? `${page.kind === 'jira' ? page.jiraKey : 'Pull request'} — branch ${page.branch}`
-        : `${page.kind === 'jira' ? page.jiraKey : 'Pull request'} — name the branch below`;
-      if (page?.branch && !input.value.trim()) input.value = page.branch;
+    // What was typed decides what it is — a url (the page this session is for) or a branch name.
+    // The hint says which reading won, so nothing is silently misread.
+    input.oninput = () => {
+      const typed = input.value.trim();
+      page = /^https?:\/\//i.test(typed) ? parseSessionUrl(typed) : null;
+      const urlish = /^https?:\/\//i.test(typed);
+      hint.classList.toggle('form-hint-err', urlish && !page);
+      hint.textContent = !typed ? HINT
+        : urlish && !page ? 'Not a GitHub pull request or Jira issue URL'
+        : page ? (page.branch
+            ? `Opens ${page.kind === 'jira' ? page.jiraKey : 'that pull request'} — branch ${page.branch}`
+            : `Opens that pull request — it isn’t loaded yet, so name its branch below`)
+        : HINT;
+      // The extra input appears only for a PR whose head branch we can't know from here.
+      branchRow.hidden = !(page && !page.branch);
+      if (!branchRow.hidden && !branch2.value) branch2.focus();
     };
     const onKey = e => {
       if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); cancel(); }
@@ -167,6 +181,6 @@ export async function newSessionDialog(project) {
     document.addEventListener('keydown', onKey, true);
     document.body.appendChild(back);
     _open = cancel;
-    urlInput.focus();   // the shortcut first: paste, and the rest of the form fills itself in
+    input.focus();
   });
 }
