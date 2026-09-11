@@ -437,7 +437,8 @@
                  chip of its own, not a half of the folder chip, so it can hold more than one action.
                #wf-group — the Run + workflow picker as one outlined segmented control (Run executes
                  the picker's workflow).
-             The split toggle at the segment's right edge shows/hides the whole right pane. -->
+             The split toggle that shows/hides the right pane is NOT in this segment — it's pinned
+             to the whole toolbar's right edge (see below). -->
         <!-- No session for this page yet: start one here (viewer.js newSession — a PR/Jira tab knows
              its branch; a web page takes the next free worktree name, asking only which project when
              there's more than one). viewer.js syncSessionButton shows/hides it. -->
@@ -453,32 +454,43 @@
           </button>
           <select class="wf-select" id="wf-select" title="Workflow to run"></select>
         </div>
-        <!-- Split toggle (right edge of the terminal segment): hide/show this context's RIGHT pane.
-             Same control for every session — with the pane open you pick what it shows (the page,
-             the Diff chip, or a web tab) from the content-tab bar. viewer.js syncSplitToggle shows
-             it only when there's a terminal to fill the panel. -->
-        <button class="split-btn bar-toggle" id="split-toggle" hidden title="Show/hide the right panel (⌥⌘Return)" onclick="toggleSplitPane()">
-          <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="15" rx="2.5"/><path d="M14 4.5v15"/></svg>
-        </button>
       </div>
       <!-- Webview segment (over the PR pane — the RIGHT pane in split mode, full-width otherwise).
-           Holds the back/home controls, then the Safari-compact horizontal tab bar (#ctabs) for the content pane:
-           a read-only default tab (the PR/Jira page) + extra web/file tabs + a "+". -->
+           Holds the "+" (new tab), then the Safari-compact horizontal tab bar (#ctabs) for the
+           content pane: a read-only default tab (the PR/Jira page) + extra web/file tabs. -->
       <div class="bar-seg bar-wv">
-        <!-- The (now empty) left group and the right "+" are equal-flex side groups so a lone
-             centered tab lands at true bar-center. -->
+        <!-- The two side groups are equal-flex so a lone centered tab lands at true bar-center.
+             LEFT: the "+" (new content tab). RIGHT: empty — it just holds the width of the split
+             toggle pinned over it. -->
         <div class="bar-nav">
           <!-- Back / Forward / Home moved to the browser foot (#browser-foot) at the bottom of the pane. -->
-        </div>
-        <!-- Horizontal content tabs render here (content-tabs.js): the page's default chip, the
-             pinned Diff chip while a terminal is beside the pane, then extra web/file tabs. -->
-        <div class="ctabs" id="ctabs"></div>
-        <div class="bar-add">
           <button class="ctab-add" id="ctab-add" title="New tab" onclick="addLink()">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
           </button>
         </div>
+        <!-- Horizontal content tabs render here (content-tabs.js): the page's default chip, the
+             pinned Diff chip while a terminal is beside the pane, then extra web/file tabs. The "+"
+             that adds one is the left group above, not part of this strip. -->
+        <div class="ctabs" id="ctabs"></div>
+        <!-- Empty: it only reserves the width of the absolutely-pinned split toggle (below), so
+             the tab strip can't run under it. -->
+        <div class="bar-add"></div>
       </div>
+      <!-- Split toggle: hide/show this context's RIGHT pane. Same control for every session — with
+           the pane open you pick what it shows (the page, the Diff chip, or a web tab) from the
+           content-tab bar. It is a child of the BAR, not of either segment, pinned to the toolbar's
+           right edge: that edge belongs to the right pane while it's open and to the terminal (which
+           is then the whole panel) while it's closed, so the control sits over what it toggles in
+           both states without ever moving — no reparenting, nothing to flicker mid-animation.
+           viewer.js syncSplitToggle shows it only when there's a terminal to fill the panel. -->
+      <button class="split-btn bar-toggle" id="split-toggle" hidden title="Show/hide the right panel (⌥⌘Return)" onclick="toggleSplitPane()">
+        <!-- Two glyphs in the same 19px box: .on (pane open) is the full-height divider at the
+             pane's edge; closed is a stub near the right edge — the pane reduced to a mark at the
+             side it collapsed into, inset the same 4 units from the top, bottom and trailing edge.
+             viewer.css swaps them. -->
+        <svg class="ic-open" viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="15" rx="3.5"/><path d="M14 4.5v15"/></svg>
+        <svg class="ic-closed" viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="15" rx="3.5"/><path d="M17 8.5v7"/></svg>
+      </button>
     </div>
     <div class="split-body" id="split-body">
       <!-- Diff pane: takes the RIGHT (page) pane while Review is on — the webview hides under it; diff.js renders into it. -->

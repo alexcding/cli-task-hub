@@ -105,8 +105,13 @@ separation everything follows:
   `body.pane-blank`), `'diff'` (the worktree diff, `body.pane-diff`) or `'build'` (this context's
   build terminal, `body.pane-build` — see the IDE/run chip below). `applyPrLayout` is the only
   place that turns that state into geometry; `setPaneView` the only mutator (it persists + calls it).
-  The toolbar's split toggle (`#split-toggle`, terminal segment, right edge) and ⌥⌘Return flip
-  `'off'` ↔ the last shown view. `--pr-split` is the RIGHT pane's width, so `applyPrLayout`'s
+  The toolbar's split toggle (`#split-toggle`) and ⌥⌘Return flip
+  `'off'` ↔ the last shown view. The toggle is a child of `.split-bar` itself, absolutely pinned to
+  the toolbar's right edge — that edge is the right pane's while it's open and the terminal's while
+  it's closed, so the control sits over what it toggles in both states without moving; the segments
+  reserve its width (`.bar-add`, `body.split-closed .bar-term`), and `.bar-toggle[hidden]` is what
+  actually hides it (the pinned/inline-flex rules out-specify the UA `[hidden]`). Never move it between segments: it
+  then flickers across the boundary animation. `--pr-split` is the RIGHT pane's width, so `applyPrLayout`'s
   `animate` names the edge that moves: `'pane'` (the toggle — the pane grows out of / collapses into
   the right edge) or `'term'` (a session was just created — the terminal slides in from the left).
   Only a change in the pane's visibility animates; swapping page↔diff↔build inside an open pane does not.

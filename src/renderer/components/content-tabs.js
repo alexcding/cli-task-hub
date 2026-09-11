@@ -1,11 +1,12 @@
 // Safari-compact horizontal tab bar for the viewer's LEFT content pane (#ctabs, inline in
-// the toolbar's webview segment after the back/home controls). This bar is its OWN set of
+// the toolbar's webview segment, after the "+" that adds a tab). This bar is its OWN set of
 // tabs — it does NOT mirror the sidebar's vertical PR/Jira tabs.
 //
 // The bar belongs to the ACTIVE viewer tab (the "context"): its first chip is the default
 // tab (the PR/Jira page — read-only url; its × closes the context), then — while the terminal split is
 // open with a live terminal — a pinned Diff chip (the worktree's `git diff`, drawn over the
-// page; tab.paneView === 'diff'), followed by that context's extra web/file tabs and a `+`.
+// page; tab.paneView === 'diff'), followed by that context's extra web/file tabs. The `+` that
+// adds one is a static button in the segment's LEFT group, ahead of the strip.
 // Extra tabs are added only two ways: the user's `+` (type a URL or file path inline) or a
 // file link clicked in the terminal. Picking a page chip leaves the Diff view; the terminal
 // beside the pane is never touched by any of this.
@@ -128,7 +129,7 @@ export function renderContentTabs(force = false) {
   const single = page && !(t.links && t.links.length) && !diffTab && !hasBuildTab(t);
   el.classList.toggle('ctabs-single', single);
   el.closest('.bar-wv')?.classList.toggle('single', single);
-  // The New-tab "+" is a static button in the toolbar (pinned far right), not rendered here.
+  // The New-tab "+" is a static button in the segment's left group (.bar-nav), not rendered here.
   const html = (page ? defaultChipHtml(t) : '') + (diffTab ? diffChipHtml(t) : '')
     + (hasBuildTab(t) ? buildChipHtml(t) : '')
     + (t.links || []).map(l => linkChipHtml(t, l)).join('');

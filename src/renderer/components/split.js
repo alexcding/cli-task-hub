@@ -347,7 +347,7 @@ export function setPaneView(view) {
   applyPrLayout(tab, (cur === 'off') !== (next === 'off') ? 'pane' : false);
 }
 
-// Toolbar split toggle (terminal segment, right edge): hide or show the right pane of THIS context.
+// Toolbar split toggle (pinned to the toolbar's right edge): hide or show the right pane of THIS context.
 // Reopening restores the view it had ('term' page / 'diff'), defaulting to the diff for a bare
 // session — its pane has no page, so the diff is the only thing it can show without a web tab.
 export function toggleSplitPane() {

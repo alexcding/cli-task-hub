@@ -771,9 +771,9 @@ export function updateTitles() {
   syncSplitToggle(activeTab());
 }
 
-// Split toggle (terminal segment, right edge). It exists wherever a terminal fills the panel — a
-// PR/Jira session, a web-page session and a bare one alike — and only its pressed state differs;
-// with no terminal there is nothing to collapse the pane onto, so it goes away.
+// Split toggle. It exists wherever a terminal fills the panel — a PR/Jira session, a web-page
+// session and a bare one alike — and only its pressed state differs; with no terminal there is
+// nothing to collapse the pane onto, so it goes away.
 function syncSplitToggle(tab) {
   const b = document.getElementById('split-toggle');
   if (!b) return;
