@@ -681,10 +681,10 @@ body.find-open .split-body webview, body.find-open .split-body .wcv-shim { botto
 /* Hover × on a TAB row (never a session row — a session is removed, not closed). Same manners as
    the project "+" and the row pin: invisible until the row is hovered, and pointing at it only
    darkens the glyph rather than laying a second plate inside the row's own highlight. */
-.tab-x { flex-shrink:0; display:flex; align-items:center; justify-content:center; width:16px; height:16px; color:var(--text-3); opacity:0; }
+.tab-x { flex-shrink:0; display:flex; align-items:center; justify-content:center; width:18px; height:18px; color:var(--text-3); opacity:0; }
 .opentab:hover .tab-x { opacity:.6; }
 .tab-x:hover { opacity:1 !important; color:var(--text); }
-.tab-x svg { width:13px; height:13px; }
+.tab-x svg { width:15px; height:15px; }
 /* A busy tab shows its spinner instead — the two share the row's trailing slot. */
 .opentab.busy .tab-x { display:none; }
 .opentab .tab-title { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
