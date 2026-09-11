@@ -473,7 +473,7 @@
       <div class="bar-seg bar-wv">
         <!-- LEFT: the "+". RIGHT: empty — it just holds the width of the split toggle pinned over it.
              Back / Forward / Home moved to the browser foot (#browser-foot) at the bottom of the pane. -->
-        <div class="bar-nav">
+        <div class="bar-nav" id="bar-nav">
           <!-- Opens the menu of what this pane can hold (Diff / Web page… / File…) — viewer.js
                ctabAdd, which pops the NATIVE menu (it drops down across the pane, where DOM is
                painted under the embedded page). A bare plus: the panel outline it once wore read as
@@ -536,7 +536,10 @@
            The webview/editor reserve --foot-h at the bottom for it — the native webview would
            otherwise paint over it. Back/Home act on whichever webview the content pane shows. -->
       <div class="pane-foot browser-foot" id="browser-foot">
-        <div class="pf-side pf-left">
+        <!-- Back / Forward / Home. This group is MOVED into the toolbar (.bar-nav) for a page with
+             no session — that state has its own chrome and no bottom strip; content-tabs.js
+             (placeBrowserNav) re-homes it and puts it back when a session arrives. -->
+        <div class="pf-side pf-left" id="browser-nav">
           <button class="split-btn nav-lg" id="split-back" title="Back (⌘[)" onclick="splitBack()">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
           </button>

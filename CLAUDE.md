@@ -111,7 +111,10 @@ separation everything follows:
   (or any context whose terminal isn't live) shows no tab strip, no ＋ and nothing to close: the
   toolbar carries its title, centred (`#bar-title`, `body.page-only`, painted by
   `content-tabs.js → renderContentTabs`), and the only action on it is the **New session** CTA that
-  converts the page into a session. The Diff needs a live terminal and File… needs a worktree, so
+  converts the page into a session. Back/Forward/Home come UP into that toolbar: the group
+  (`#browser-nav`) is MOVED between the pane's bottom strip and `.bar-nav` by `placeBrowserNav`,
+  never duplicated, and this state has no bottom strip at all (`--foot-h:0`, so the page fills the
+  pane; `--find-h` is pinned because the find bar still docks there). The Diff needs a live terminal and File… needs a worktree, so
   two of the ＋ menu's three entries can't apply there anyway; a link opened from the page
   (`__openContentTab`) becomes its own tab under "Tabs" instead of a content tab. Extra tabs a
   context already has are not lost — they stay persisted and return to the strip once it has a

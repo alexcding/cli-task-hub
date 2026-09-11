@@ -176,6 +176,16 @@ function linkChipHtml(t, l) {
    </div>`;
 }
 
+// Back / Forward / Home live in the pane's bottom strip beside a session, and in the TOOLBAR for a
+// page that has no session — that state has its own chrome and no bottom strip at all. One group of
+// buttons either way (they're the same three actions on the same webview), moved between the two
+// homes rather than duplicated, so nothing can drift out of sync.
+function placeBrowserNav(toBar) {
+  const nav = document.getElementById('browser-nav');
+  const want = document.getElementById(toBar ? 'bar-nav' : 'browser-foot');
+  if (nav && want && nav.parentElement !== want) want.insertBefore(nav, want.firstChild);
+}
+
 // Render the bar for the active viewer tab. Hidden entirely when no tab is open.
 export function renderContentTabs(force = false) {
   const el = document.getElementById('ctabs');
@@ -199,6 +209,7 @@ export function renderContentTabs(force = false) {
   // back on the strip the moment the page has a session.)
   const soloPage = !(t.termId && state.terms.get(t.termId));
   document.body.classList.toggle('page-only', soloPage);
+  placeBrowserNav(soloPage);
   if (title) {
     title.hidden = !soloPage;
     if (soloPage) setHtmlIfChanged(title, `${defaultIcon(t)}<span class="bar-title-t">${esc(t.title || t.url || '')}</span>`);

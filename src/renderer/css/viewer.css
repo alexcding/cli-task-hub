@@ -214,7 +214,17 @@ body.viewing-tab main { display:none; }
    title is centred against the whole segment rather than 36px off it. */
 .bar-title { display:none; align-items:center; justify-content:center; gap:7px; flex:1; min-width:0; padding:0 8px; color:var(--text-2); font-size:13px; font-weight:500; }
 body.page-only .bar-title { display:flex; }
-body.page-only .bar-nav, body.page-only .bar-add, body.page-only .ctabs { display:none; }
+/* The strip goes; the two side groups stay and take equal flex so the title is centred against the
+   whole segment. The left one hosts Back/Forward/Home for this state (content-tabs.js
+   placeBrowserNav moves them up from the pane's bottom strip), so only the "+" is hidden. */
+body.page-only .ctabs { display:none; }
+body.page-only .bar-nav, body.page-only .bar-add { flex:1 1 0; }
+body.page-only #ctab-add { display:none; }
+/* …and with the buttons up here there is no bottom strip: hide it, and stop the panes reserving its
+   height so the page fills the pane. --find-h is pinned because the find bar docks in that same
+   strip and still needs its own height. */
+body.page-only .split { --foot-h:0px; --find-h:46px; }
+body.page-only .browser-foot { display:none; }
 .bar-title-t { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .bar-title .ctab-ic, .bar-title .ctab-ic svg, .bar-title .ctab-ic img { width:15px; height:15px; }
 /* Window-inactive desaturation, like the chips' titles. */
@@ -407,7 +417,7 @@ body.pr-split.pane-diff .review-foot { display:flex; }
    a solo terminal. */
 .browser-foot { justify-content:flex-start; }
 body.pr-split .browser-foot { left:var(--term-w); }
-body:not(.pane-diff):not(.pane-build):not(.viewing-term):not(.split-closed):not(.pane-blank) .browser-foot { display:flex; }
+body:not(.pane-diff):not(.pane-build):not(.viewing-term):not(.split-closed):not(.pane-blank):not(.page-only) .browser-foot { display:flex; }
 /* The find bar docks in the same bottom strip (same height, higher z) — yield to it while open. */
 body.find-open .browser-foot { display:none; }
 .pf-side { display:flex; align-items:center; gap:6px; min-width:0; }
