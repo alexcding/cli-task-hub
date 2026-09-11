@@ -5,7 +5,7 @@
 // workflow runner uses to gate its loop — extract once, analyze once, two consumers.
 import { ROUTES } from '/shared/routes.mjs';
 import { state, projectById } from '../stores/store.js';
-import { apiJson } from '../services/api.js';
+import { api, apiJson } from '../services/api.js';
 import { basename, sessionUrl } from '../lib/util.js';
 import { toast, toastErr } from './toast.js';
 import { workflowRunState } from './workflow.js';
@@ -43,12 +43,33 @@ export async function newWorktreeTask(projectId) {
   if (!project?.workspace) { toastErr('Project has no local workspace'); return; }
   const pick = await newSessionDialog(project);
   if (!pick) return;
-  // A PR/ticket url was given → the branch already exists on the remote (a PR's head), so adopt it
-  // rather than forking a new one; a ticket's branch is new like any other.
+  // A LINK names a specific piece of work, and that work has one checkout: if this project already
+  // has a worktree for that ticket or that PR's branch, the session runs there instead of forking a
+  // second one beside it. Only for a link — a typed branch name is a request to make a new branch,
+  // and two sessions on two new branches are two different things.
+  // It matters most for a ticket: its branch carries the summary (feature/KEY-what-broke), so the
+  // name derived before the summary loaded and the one derived after are different strings for the
+  // same ticket. The key is the identity; the server matches on it (worktreeForJiraKey).
+  const existing = pick.page ? await existingWorktree(project, pick.page, pick.branch) : null;
   const fromPr = pick.page?.kind === 'github';
-  const worktree = await ensureWorktree(project, pick.branch, { base: pick.base, create: !fromPr });
+  // A PR's head branch already exists on the remote, so its worktree adopts it rather than forking.
+  const worktree = existing?.path || await ensureWorktree(project, pick.branch, { base: pick.base, create: !fromPr });
   if (!worktree) return;
-  await createTask(project, worktree, { branch: pick.branch, cli: pick.cli, page: pick.page });
+  await createTask(project, worktree, { branch: existing?.branch || pick.branch, cli: pick.cli, page: pick.page });
+}
+
+// This project's existing worktree for a pasted PR/ticket, or null. The match is the server's
+// (ROUTES.WORKTREE: exact branch for a PR, the key embedded in a branch name for a ticket, and
+// nothing when two worktrees both match — ambiguous is not reuse). The main checkout is never it:
+// a session runs on a worktree. The second call is only to learn that worktree's own branch, which
+// may differ from the one we derived.
+async function existingWorktree(project, page, branch) {
+  const q = page.kind === 'jira' ? `key=${encodeURIComponent(page.jiraKey)}` : `branch=${encodeURIComponent(branch || '')}`;
+  if (q.endsWith('=')) return null;
+  const found = await api(`${ROUTES.WORKTREE}?path=${encodeURIComponent(project.workspace)}&${q}`).catch(() => null);
+  if (!found?.matched || !found.isWorktree) return null;
+  const all = await api(`${ROUTES.WORKTREES}?path=${encodeURIComponent(project.workspace)}`).catch(() => []);
+  return { path: found.path, branch: (all || []).find(w => w.path === found.path)?.branch || branch };
 }
 
 // Record a task on `worktree` and open it. A session with no page of its own still gets a CONTEXT
