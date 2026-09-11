@@ -26,6 +26,13 @@ function register(app) {
     }
   });
 
+  // One PR by url — the only PR read that ISN'T snapshot-backed, because its whole job is to answer
+  // for a PR no snapshot has: a link pasted into the New session dialog. Always 200: a lookup that
+  // fails (offline, no access, not a PR) returns null and the dialog carries on with what was typed.
+  app.get(ROUTES.PR_LOOKUP, async (req, res) => {
+    res.json(await github.lookupPr(req.query.url || ''));
+  });
+
   // Compact list with CI for the tray — read straight from snapshots. For PRs awaiting my
   // review we attach reviewPending: the tray's "Review requested" list shows a PR while its
   // latest request (requestedAt, set by the poller) is newer than when I last opened it

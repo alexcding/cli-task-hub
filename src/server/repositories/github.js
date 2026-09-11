@@ -237,6 +237,23 @@ async function worktreeForJiraKey(dir, key) {
   return hits.length === 1 ? hits[0] : null;
 }
 
+// One pull request, by its url — title, number and HEAD BRANCH, straight from `gh`. Everything else
+// here reads the snapshot the sync loop writes, but this answers for a PR the app has never listed:
+// a link pasted into the New session dialog, where the branch is what the worktree will adopt and
+// the title is what the session will be called. Returns null on any failure (offline, no access, a
+// url that isn't a PR) — the caller falls back to what the user typed.
+async function lookupPr(url) {
+  const m = /^https?:\/\/github\.com\/([^/]+\/[^/]+)\/pull\/(\d+)/i.exec(String(url || ''));
+  if (!m) return null;
+  const [, repo, number] = m;
+  try {
+    const out = await gh(['pr', 'view', number, '--repo', repo, '--json', 'number,title,headRefName,url,isCrossRepository']);
+    const pr = JSON.parse(out);
+    return { repo, number: pr.number, title: pr.title || '', headRefName: pr.headRefName || '',
+      url: pr.url || url, fork: !!pr.isCrossRepository };
+  } catch { return null; }
+}
+
 // Create a git worktree for `branch` as a sibling of the main checkout:
 //   <workspace>.worktrees/<name>   where <name> is just the LAST branch segment — the
 //   user/feature prefix is dropped, so `alex/feature/RECORD-1234` → `RECORD-1234`.
@@ -961,4 +978,6 @@ const getRecentClosedPRs = (repo, { limit = 30, since = null } = {}) => fetchPRP
 
 // ghStats reads the metrics; noteInflight/noteCoalesced let the poller's sync-dedup layer
 // bump the gauges without reaching into _gh's field names.
-module.exports = { gh, ghStats, noteInflight, noteCoalesced, getPRs, getOpenPRs, getRecentClosedPRs, getPRBody, getCurrentUser, getUserName, reviewRequestedAt, categoryOf, awaitingReview, parseRepo, gitRemoteRepo, worktreeForBranch, worktreeForJiraKey, createWorktree, removeWorktree, worktreeHolders, gitDiff, gitCommit, gitPush, gitDiscard, gitLog, gitShow, gitBranches, gitDefaultBranch, commitAvatars, listWorktrees, summarizeCI };
+module.exports = { gh, ghStats, noteInflight, noteCoalesced, getPRs, getOpenPRs, getRecentClosedPRs, getPRBody, getCurrentUser, getUserName, reviewRequestedAt, categoryOf, awaitingReview, parseRepo, gitRemoteRepo, worktreeForBranch, worktreeForJiraKey, createWorktree, removeWorktree, worktreeHolders, gitDiff, gitCommit, gitPush, gitDiscard, gitLog, gitShow, gitBranches, gitDefaultBranch, commitAvatars, listWorktrees, summarizeCI,
+  lookupPr,
+};

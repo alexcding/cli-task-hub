@@ -61,8 +61,9 @@ separation everything follows:
   `category==='review'` (see AGENTS.md).
 - **The sidebar is laid out by project → session, and reads ONLY session records.** A session
   (`services/tasks.js → taskSessions()`, one task record per worktree) is the agent running on a
-  worktree — live or stopped — keyed by id (its terminal's `pairKey`), titled by its worktree folder,
-  linked to its context tab by `url`. The renderer keeps no worktree list and shows no
+  worktree — live or stopped — keyed by id (its terminal's `pairKey`), linked to its context tab by
+  `url`, and titled by **the page it was started from** (a PR's title, `KEY Summary` for a ticket,
+  capped at 60 chars in `tasks.js`) or, for a session with no page, by its worktree folder. The renderer keeps no worktree list and shows no
   worktree UI: a git worktree without a session is invisible in the app.
   **Open tabs that are not tasks never sit under a project folder**: every task-less tab — PR, Jira
   issue or plain web page (`kind:'web'`, any URL that isn't a PR) — renders in one "Tabs" group below

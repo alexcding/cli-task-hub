@@ -6,7 +6,7 @@
 // backdrop click. One dialog at a time: opening a second cancels the first.
 import { ROUTES } from '/shared/routes.mjs';
 import { state, prByUrl, jiraByKey } from '../stores/store.js';
-import { api } from '../services/api.js';
+import { api, apiJson } from '../services/api.js';
 import { esc, isPrUrl, jiraKeyFromUrl } from '../lib/util.js';
 import { jiraTaskBranch } from '../lib/workflow.mjs';
 
@@ -41,7 +41,7 @@ export function parseSessionUrl(raw) {
   if (!url) return null;
   if (isPrUrl(url)) {
     const pr = prByUrl(url);
-    return { url, kind: 'github', jiraKey: '', title: pr?.title || url, branch: pr?.headRefName || '' };
+    return { url, kind: 'github', jiraKey: '', title: pr?.title || '', branch: pr?.headRefName || '' };
   }
   const key = jiraKeyFromUrl(url);
   if (key) {
@@ -50,6 +50,27 @@ export function parseSessionUrl(raw) {
       branch: jiraTaskBranch(key, it?.summary || '') };
   }
   return null;
+}
+
+// …and what the sidebar's snapshots couldn't answer, asked live. A pasted link is usually for
+// something the app has never listed (another project's PR, a ticket outside the board's filter),
+// and both things we want from it are missing then: the TITLE, which becomes the session's name,
+// and for a PR the HEAD BRANCH, which is what its worktree adopts. Best-effort — a failed lookup
+// leaves the page as parsed, and the dialog still works on what the user typed.
+async function completePage(page) {
+  if (!page) return page;
+  if (page.kind === 'github' && (!page.branch || !page.title)) {
+    const pr = await api(`${ROUTES.PR_LOOKUP}?url=${encodeURIComponent(page.url)}`).catch(() => null);
+    if (pr) return { ...page, title: page.title || pr.title || '', branch: page.branch || pr.headRefName || '' };
+    return page;
+  }
+  if (page.kind === 'jira' && page.title === page.jiraKey) {
+    // `key = X` is the whole search: one issue, by id.
+    const snap = await apiJson(ROUTES.JIRA_SEARCH, 'POST', { jql: `key = ${page.jiraKey}`, limit: 1 }).catch(() => null);
+    const it = (snap?.items || [])[0];
+    if (it?.summary) return { ...page, title: `${page.jiraKey} ${it.summary}`, branch: jiraTaskBranch(page.jiraKey, it.summary) };
+  }
+  return page;
 }
 
 // The defaults the dialog would show for a project — a free branch name and the base it forks from
@@ -159,20 +180,36 @@ export async function newSessionDialog(project) {
     };
     // What was typed decides what it is — a url (the page this session is for) or a branch name.
     // The hint says which reading won, so nothing is silently misread.
-    input.oninput = () => {
-      const typed = input.value.trim();
-      page = /^https?:\/\//i.test(typed) ? parseSessionUrl(typed) : null;
-      const urlish = /^https?:\/\//i.test(typed);
-      hint.classList.toggle('form-hint-err', urlish && !page);
+    // Repaint the hint + the conditional branch row for whatever `page` currently is.
+    const paint = (typed, urlish, pending = false) => {
+      hint.classList.toggle('form-hint-err', urlish && !page && !pending);
+      const name = page && (page.kind === 'jira' ? page.jiraKey : 'that pull request');
       hint.textContent = !typed ? HINT
+        : pending ? 'Looking it up…'
         : urlish && !page ? 'Not a GitHub pull request or Jira issue URL'
         : page ? (page.branch
-            ? `Opens ${page.kind === 'jira' ? page.jiraKey : 'that pull request'} — branch ${page.branch}`
-            : `Opens that pull request — it isn’t loaded yet, so name its branch below`)
+            ? `Opens ${page.title || name} — branch ${page.branch}`
+            : `Opens ${name} — name its branch below`)
         : HINT;
-      // The extra input appears only for a PR whose head branch we can't know from here.
+      // The extra input appears only for a PR whose head branch nothing could tell us.
       branchRow.hidden = !(page && !page.branch);
-      if (!branchRow.hidden && !branch2.value) branch2.focus();
+      if (!branchRow.hidden && !branch2.value && document.activeElement !== branch2) branch2.focus();
+    };
+    let seq = 0;
+    input.oninput = () => {
+      const typed = input.value.trim();
+      const urlish = /^https?:\/\//i.test(typed);
+      page = urlish ? parseSessionUrl(typed) : null;
+      const mine = ++seq;
+      paint(typed, urlish, !!page);
+      if (!page) return;
+      // The title and (for a PR) the branch may need a live lookup — the snapshots only hold what
+      // this app lists. Ignore an answer that lands after the field moved on.
+      completePage(page).then(done => {
+        if (mine !== seq) return;
+        page = done;
+        paint(typed, urlish);
+      });
     };
     const onKey = e => {
       if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); cancel(); }

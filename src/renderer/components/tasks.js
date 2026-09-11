@@ -56,16 +56,25 @@ export async function newWorktreeTask(projectId) {
 // PR/Jira-backed session: the same tab opens the same terminal panel, split toggle, diff view and
 // web tabs. `cli` is stamped on the record first, which is what makes openPrPanel launch that agent
 // (and, later, resume the same conversation) — one launch path, not a second one here.
+// A session started from a PR or a ticket is NAMED by it — "RECORD-8383 Something broke", the PR's
+// title — because that is what you are looking for in the sidebar; the worktree folder is a detail
+// of where it runs. A session with no page keeps the folder name, which is all it has.
+// Capped: a Jira summary or a PR title runs to whatever length its author felt like, and the row is
+// one line in a narrow sidebar (CSS ellipsis handles the rest, but the STORED name shouldn't be a
+// paragraph — it is also the tooltip, the tray entry and the terminal's title).
+const TITLE_MAX = 60;
+const capTitle = t => (t && t.length > TITLE_MAX ? t.slice(0, TITLE_MAX - 1).trimEnd() + '…' : t);
+
 async function createTask(project, worktree, { branch = '', cli = '', page = null } = {}) {
   const id = newTaskId();
-  // The sidebar titles a session by its worktree folder either way; `page` only decides what the
-  // context SHOWS — the PR/ticket page it was started from, or the synthetic session: url that has
-  // no page of its own. Everything downstream (terminal, split, diff, tabs) is the one code path.
-  const title = basename(worktree);
+  // `page` also decides what the context SHOWS — the PR/ticket page it was started from, or the
+  // synthetic session: url that has no page of its own. Everything downstream (terminal, split,
+  // diff, tabs) is the one code path either way.
+  const title = capTitle(page?.title) || basename(worktree);
   const task = await persistTask({ id, projectId: project.id, workspace: project.workspace, worktree,
     branch, title, kind: page?.kind || 'web', url: page?.url || sessionUrl(id), jiraKey: page?.jiraKey || '',
     cli, sessionId: '', createdAt: new Date().toISOString() });
-  openInSplit(task.url, page?.title || title, task.kind, { jiraKey: task.jiraKey });
+  openInSplit(task.url, title, task.kind, { jiraKey: task.jiraKey });
 }
 
 // Analyze a session's last message into { summary, state } — called ONLY when its turn-done (Stop)

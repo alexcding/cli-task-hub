@@ -58,6 +58,7 @@ export const ROUTES = Object.freeze({
   GIT_DISCARD: '/api/git/discard',
 
   // ── PRs / dashboard ──────────────────────────────────────────────────────────
+  PR_LOOKUP: '/api/prs/lookup',             // GET ?url= — one PR by its url (title + head branch), live `gh`
   PRS_TRAY: '/api/prs/tray',
   PRS_VIEWED: '/api/prs/viewed',
   DASHBOARD: '/api/dashboard',
