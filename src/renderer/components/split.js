@@ -420,32 +420,54 @@ async function _openPrPanel(tab, animate) {
   applyPrLayout(tab, animate);
 }
 
-// Drag the PR/terminal divider: update the split fraction (CSS var) live and refit the terminal
-// as it moves (rAF-throttled), so the grid follows the boundary rather than snapping on drop.
+// Drag the PR/terminal divider. Every mousemove does the LEAST it can: one CSS-var write, coalesced
+// to one per frame. The pane's geometry is measured once at mousedown — reading it per move forced a
+// synchronous layout of the whole document, one the previous move's var write had just invalidated,
+// so the pointer dragged the layout engine along with it.
+// The terminal's grid refit is DEBOUNCED, not throttled: a refit re-sizes the tty whenever the
+// column count changes, and a full-screen TUI answers that with a clear + full repaint — text
+// rewrapping under a moving pointer is what reads as the terminal jumping. So while the pointer is
+// moving the pane simply clips the terminal (cheap, and nothing moves that the pointer didn't move),
+// and the grid reflows the moment the pointer settles — a pause mid-drag or the drop, whichever
+// comes first. body.resizing keeps the terminals' ResizeObserver out of it, so this is the only
+// refit during a drag.
 // Drag lifecycle (incl. the native-webview mouseup trap) lives in lib/drag.js.
+const SETTLE_MS = 90;
 export function initPrDivider() {
   const d = document.getElementById('pr-divider');
   if (!d) return;
-  let raf = 0;
+  let rect = null, x = 0, raf = 0, settle = 0;
+  const refit = () => { settle = 0; fitTerm(visibleTerm()); };
+  const apply = () => {
+    raf = 0;
+    if (!rect) return;
+    // Clamp by PIXEL width, not just ratio: the terminal pane (left) needs room for the foot
+    // buttons (Run/picker/Commit) and the PR pane (right) needs to stay readable. A pure ratio cap
+    // let the terminal shrink to a sliver on a small window, overlapping the foot controls.
+    // `ratio` is the WEBVIEW's share (--pr-split), i.e. the fraction right of the cursor.
+    const MIN_PR = 360, MIN_TERM = 300;
+    let ratio = 1 - (x - rect.left) / rect.width;
+    const lo = MIN_PR / rect.width, hi = 1 - MIN_TERM / rect.width;
+    ratio = lo < hi ? Math.min(hi, Math.max(lo, ratio)) : 0.5;  // window too small for both mins → split evenly
+    state.prRatio = ratio;
+    setPrSplit(Math.round(ratio * 100));
+  };
   dragDivider(d, {
-    move(e) {
+    start() {
       stopPrTween();
-      const r = document.getElementById('split-body').getBoundingClientRect();
-      // Clamp by PIXEL width, not just ratio: the terminal pane (left) needs room for the foot
-      // buttons (Run/picker/Commit) and the PR pane (right) needs to stay readable. A pure ratio cap
-      // let the terminal shrink to a sliver on a small window, overlapping the foot controls.
-      // `ratio` is the WEBVIEW's share (--pr-split), i.e. the fraction right of the cursor.
-      const MIN_PR = 360, MIN_TERM = 300;
-      let ratio = 1 - (e.clientX - r.left) / r.width;
-      const lo = MIN_PR / r.width, hi = 1 - MIN_TERM / r.width;
-      ratio = lo < hi ? Math.min(hi, Math.max(lo, ratio)) : 0.5;  // window too small for both mins → split evenly
-      state.prRatio = ratio;
-      setPrSplit(Math.round(state.prRatio * 100));
-      if (!raf) raf = requestAnimationFrame(() => { raf = 0; fitTerm(visibleTerm()); });
+      rect = document.getElementById('split-body').getBoundingClientRect();
+    },
+    move(e) {
+      x = e.clientX;
+      if (!raf) raf = requestAnimationFrame(apply);
+      clearTimeout(settle);                              // still moving: the grid waits
+      settle = setTimeout(refit, SETTLE_MS);
     },
     end() {
+      if (raf) { cancelAnimationFrame(raf); apply(); }   // the last move must land before we persist
+      clearTimeout(settle); settle = 0; rect = null;
       localStorage.setItem('taskhub.prRatio', String(state.prRatio));
-      fitTerm(visibleTerm());
+      fitTerm(visibleTerm());     // land on the exact boundary, whatever the last settled fit saw
     },
   });
 }

@@ -221,7 +221,8 @@ async function attachTermView(id, dir, title, { paired = false, pairKey = '', ha
   // content-tab bar or the find bar appears, and a stale grid clips the bottom row. Skipped while
   // the split boundary is animating (body.pr-tweening) — the animation deliberately clips the
   // terminal and refits once at the end; reflowing the grid on every frame is janky and expensive.
-  const busyLayout = () => el.style.display === 'none' || document.body.classList.contains('pr-tweening');
+  // Same during a divider drag (body.resizing) — see initPrDivider.
+  const busyLayout = () => el.style.display === 'none' || document.body.classList.contains('pr-tweening') || document.body.classList.contains('resizing');
   try {
     let raf = 0;
     const ro = new ResizeObserver(() => {
@@ -432,6 +433,12 @@ export function fitTerm(t) {
     t.fit.fit();
     clampRows(t);
     const { cols, rows } = t.term;
+    // Only touch the PTY when the GRID actually changed. Setting the tty size re-sends SIGWINCH
+    // even for identical dimensions, and a full-screen TUI (Claude Code, Codex) answers that with a
+    // clear + full repaint — the flash seen on every split toggle, where the same size is re-sent
+    // by the pre-fit/finish pair and by the ResizeObserver passes around it.
+    if (t.ptyCols === cols && t.ptyRows === rows) return;
+    t.ptyCols = cols; t.ptyRows = rows;
     taskhub.term.resize([...state.terms].find(([, v]) => v === t)[0], cols, rows);
   } catch {}
 }

@@ -5,11 +5,13 @@
 // mouseup, pointerup, OR the window losing focus — whichever comes first — and `dragging` can
 // never be left stuck on. While a drag is live, body.resizing is set (viewer.css uses it).
 //
-//   dragDivider(handleEl, { hit?, move(e), end() })
-//     hit(e)  — optional filter on the mousedown target (for a handle inside a larger element)
-//     move(e) — every mousemove while dragging (throttle inside if the work is heavy)
-//     end()   — once, when the drag ends (persist, refit)
-export function dragDivider(handle, { hit, move, end }) {
+//   dragDivider(handleEl, { hit?, start?, move(e), end() })
+//     hit(e)   — optional filter on the mousedown target (for a handle inside a larger element)
+//     start(e) — once, when the drag begins (measure now: the geometry can't be read per move
+//                without forcing a layout the drag itself just invalidated)
+//     move(e)  — every mousemove while dragging (throttle inside if the work is heavy)
+//     end()    — once, when the drag ends (persist, refit)
+export function dragDivider(handle, { hit, start, move, end }) {
   let dragging = false;
   const stop = () => {
     if (!dragging) return;
@@ -19,6 +21,7 @@ export function dragDivider(handle, { hit, move, end }) {
   handle.addEventListener('mousedown', e => {
     if (hit && !hit(e)) return;
     dragging = true; e.preventDefault(); document.body.classList.add('resizing');
+    start?.(e);
   });
   window.addEventListener('mousemove', e => { if (dragging) move(e); });
   window.addEventListener('mouseup', stop);
