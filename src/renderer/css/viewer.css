@@ -21,10 +21,16 @@
    together on the left. Hidden it is display:none, so the margin costs nothing when absent. */
 #split-ide { margin-left:auto; }
 /* No terminal pane below (a page with no session, holding just the "New session" button): the
-   segment's edge would be a divider over nothing — drop it. */
-body:not(.pr-split):not(.viewing-term) .bar-term { border-right:none; }
+   segment's edge would be a divider over nothing — drop it, and send the segment to the END of the
+   toolbar (order:2) so the button sits at the RIGHT edge. Otherwise the button occupies the head of
+   the bar and the content strip starts a button's width further right than it does once a session
+   exists — the "+" and the first tab would move the moment a session was created. This way the
+   webview segment always begins at the toolbar's left gutter, and its controls keep one inset.
+   No extra right padding: the split toggle is hidden in this state (syncSplitToggle needs a live
+   terminal), so the segment's own 12px gutter is the whole inset and the button lands on the edge. */
+body:not(.pr-split):not(.viewing-term) .bar-term { border-right:none; order:2; }
 /* No terminal beside this page (a web tab with no session): the segment holds just the
-   "New session" button at the toolbar's left edge. */
+   "New session" button, at the toolbar's right edge (above). */
 .bar-session { display:inline-flex; align-items:center; gap:5px; padding:5px 11px 5px 8px; border:1px solid var(--border); background:var(--surface); color:var(--text-2); font:inherit; font-size:12px; font-weight:500; border-radius:99px; cursor:pointer; white-space:nowrap; transition:color .12s, border-color .12s, background .12s; }
 .bar-session:hover { color:var(--text); border-color:var(--border-focus); background:var(--surface-hover); }
 .bar-session:disabled { opacity:.5; cursor:default; }
