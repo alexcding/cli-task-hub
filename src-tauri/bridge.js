@@ -191,20 +191,24 @@
       (async function () {
         try {
           var M = window.__TAURI__.menu;
-          var built = [];
-          for (var i = 0; i < items.length; i++) {
-            var it = items[i];
-            if (it.separator) {
-              built.push(await M.PredefinedMenuItem.new({ item: 'Separator' }));
-              continue;
+          // One item, or a submenu when it carries `items` of its own (nested one deep — that is
+          // all any menu here needs, and a deeper tree in a context menu is a maze).
+          async function build(it) {
+            if (it.separator) return await M.PredefinedMenuItem.new({ item: 'Separator' });
+            if (it.items) {
+              var kids = [];
+              for (var k = 0; k < it.items.length; k++) kids.push(await build(it.items[k]));
+              return await M.Submenu.new({ text: it.label, enabled: it.enabled !== false, items: kids });
             }
-            built.push(await M.MenuItem.new({
+            return await M.MenuItem.new({
               id: String(it.id),
               text: it.label,
               enabled: it.enabled !== false,
               action: (function (id) { return function () { pick(id); }; })(it.id),
-            }));
+            });
           }
+          var built = [];
+          for (var i = 0; i < items.length; i++) built.push(await build(items[i]));
           var menu = await M.Menu.new({ items: built });
           await menu.popup();
           // Menu closed: give a click's action event a moment to arrive; if none, it was dismissed.
@@ -246,7 +250,8 @@
     },
 
     // Generic native popup for menus the renderer builds itself (the toolbar's "+", the project
-    // picker): takes [{id,label,enabled}|{separator:true}] and resolves the chosen id, or null.
+    // picker): takes [{id,label,enabled}|{separator:true}|{label,items:[…]}] and resolves the chosen
+    // id, or null.
     // Everything drawn in DOM is painted UNDER the embedded page (a native child webview above the
     // renderer's whole layer tree), so any menu that can open over the pane has to be native.
     menu: function (items) { return popupMenu(items || []); },

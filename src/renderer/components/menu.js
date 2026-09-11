@@ -29,6 +29,13 @@ export function openMenu(e, items) {
       m.appendChild(sep);
       continue;
     }
+    if (it.heading) {
+      const h = document.createElement('div');
+      h.className = 'status-menu-head';
+      h.textContent = it.heading;
+      m.appendChild(h);
+      continue;
+    }
     const b = document.createElement('button');
     b.className = 'status-menu-item' + (it.danger ? ' danger' : '');
     b.textContent = it.label;
@@ -56,14 +63,36 @@ export function openMenu(e, items) {
 // carries only labels, so each item's onClick runs here, by index.
 // Async: `return nativeMenu(...)` can't cancel a context menu (a promise is truthy), so a
 // contextmenu caller must preventDefault() itself before awaiting.
+// An item may carry `items` of its own — one level of submenu ("History ▸ …"). The id sent to the
+// host is the item's PATH ("4" / "4.2"), so the answer maps straight back onto the array that built
+// it and only the chosen leaf's onClick runs.
 export async function nativeMenu(e, items) {
   const list = items.filter(Boolean);
-  if (!window.taskhub?.menu) return openMenu(e, list);
+  if (!window.taskhub?.menu) return openMenu(e, flattenForDom(list));
   closeMenu();   // the native popup won't fire the outside-click that dismisses an in-page one
-  const picked = await window.taskhub.menu(list.map((it, i) => it.separator
-    ? { separator: true }
-    : { id: String(i), label: it.label }));
-  const hit = picked == null ? null : list[Number(picked)];
-  if (hit && !hit.separator) hit.onClick();
+  const spec = (arr, prefix = '') => arr.filter(Boolean).map((it, i) => {
+    const id = prefix ? `${prefix}.${i}` : String(i);
+    if (it.separator) return { separator: true };
+    if (it.items) return { label: it.label, items: spec(it.items, id) };
+    return { id, label: it.label };
+  });
+  const picked = await window.taskhub.menu(spec(list));
+  if (picked == null) return false;
+  const hit = String(picked).split('.').reduce((node, i) => {
+    const arr = Array.isArray(node) ? node : node?.items;
+    return (arr || []).filter(Boolean)[Number(i)];
+  }, list);
+  if (hit && !hit.separator && hit.onClick) hit.onClick();
   return false;
+}
+
+// The in-page menu (plain-browser fallback) has no submenus: a group's children are shown inline
+// between rules, under their parent's label as a heading.
+function flattenForDom(list) {
+  const out = [];
+  for (const it of list) {
+    if (!it?.items) { out.push(it); continue; }
+    out.push({ separator: true }, { heading: it.label }, ...it.items.filter(Boolean), { separator: true });
+  }
+  return out;
 }

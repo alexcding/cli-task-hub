@@ -92,9 +92,16 @@ function createTab(url, title, kind, meta = {}) {
   const tab = { id, kind: k, title: title || url, url, cur: meta.cur || '', wv: null,
     loaded: false, started: false, repo: meta.repo || '', branch: meta.branch || '',
     jiraKey: meta.jiraKey || jiraKeyFromUrl(url),
-    paneView: pv, diffOpen, diffIdx: Number(meta.diffIdx) || 0, category: meta.category || '',
+    paneView: pv, diffOpen, diffIdx: Number(meta.diffIdx) || 0, history: Array.isArray(meta.history) ? meta.history : [], category: meta.category || '',
     login: meta.login || '', avatar: meta.avatar || '',
     links, activeLink: activeSaved >= 0 ? links[activeSaved].id : null };
+  // A context made from a PR or a ticket starts with its own page in the history — the address it
+  // exists because of, and what the "+" menu used to carry as a hard-coded entry. A bare session
+  // (its synthetic session: url) and a plain web tab seed nothing: there is no page behind them, or
+  // the page IS the tab. Seeded only for a NEW context; a restored one keeps what it had.
+  if (!tab.history.length && (k === 'github' || k === 'jira')) {
+    tab.history.push({ kind: 'web', url, path: '', title: title || url });
+  }
   return tab;
 }
 
@@ -320,7 +327,7 @@ function buildLinkWebview(link) {
   wv.addEventListener('did-navigate', onNavUrl);
   wv.addEventListener('did-navigate-in-page', onNavUrl);
   // After load, the tab adopts the page's title + favicon (a browser tab).
-  wv.addEventListener('page-title-updated', e => { if (e.title) { link.title = e.title; renderContentTabs(); saveTabsSoon(); } });
+  wv.addEventListener('page-title-updated', e => { if (e.title) { link.title = e.title; noteLinkHistory(activeTab(), link); renderContentTabs(); saveTabsSoon(); } });
   wv.addEventListener('page-favicon-updated', e => { const ic = e.favicons && e.favicons[0]; if (ic) { link.icon = ic; renderContentTabs(); } });
 }
 function buildLinkEditorPane(link) {
@@ -426,33 +433,49 @@ export async function ctabAdd(e) {
   if (!tab) return false;
   // The diff needs a worktree, so it's offered only beside a live terminal — and only once.
   const canDiff = !!(tab.termId && state.terms.get(tab.termId)) && !tab.diffOpen;
-  // …then, below a rule, the addresses this context ALREADY has: a session made from a PR (or a
-  // Jira ticket) knows its url forever, so the way back to it is always one click away — even
-  // after the pane has been emptied, and whatever else is open in it.
-  // tab.jiraKey has no column of its own (createTab re-derives it from the url, which yields
-  // nothing for a PR), so after a restart the task record is where the ticket still lives.
-  // Offered only while the ticket ISN'T already a tab here — the menu is for things the pane can
-  // still be given, and a ticket that's on the bar is one click away on the bar. (`home` as well as
-  // `url`: the tab keeps its opening address when the embedded page navigates away from it.)
-  const key = tab.jiraKey || taskForTab(tab)?.jiraKey || '';
-  const ticket = key && state.jiraBase ? jiraUrl(key) : '';
-  const ticketOpen = !!ticket && (tab.links || []).some(l => l.kind === 'web' && (l.url === ticket || l.home === ticket));
-  const jira = ticket && tab.kind !== 'jira' && !ticketOpen ? key : '';
+  // …then, below a rule, a History submenu: everything this context has had open, oldest first,
+  // minus whatever is already a tab on the bar (the menu offers what the pane can still be given).
+  // It replaced two hard-coded entries — the context's own page and its Jira ticket — which were
+  // just the first addresses it ever opened; createTab seeds those into the history instead.
+  const rows = historyMenu(tab);
   return nativeMenu(e, [
     canDiff && { label: 'Diff', onClick: openDiffTab },
     { label: 'Web page…', onClick: () => addLink('web') },
     { label: 'File…', onClick: addFileTab },
-    { separator: true },
-    hasPage(tab) && { label: pageLabel(tab), onClick: () => setActiveLink(null) },
-    jira && { label: jira, onClick: () => openWebLink(jiraUrl(jira)) },
+    rows.length && { separator: true },
+    // One submenu, so a context with a long history doesn't bury the three things the menu is for.
+    rows.length && { label: 'History', items: [
+      ...rows.map(r => ({ label: r.label, onClick: r.open })),
+      { separator: true },
+      // A native menu row has no hover ×, so removal is a second pass over the same list.
+      { label: 'Remove from History…', onClick: () => forgetMenu(e, tab) },
+    ] },
   ]);
 }
 
-// Menu label for the context's own page: the PR number, the Jira key, or just "Page" — short,
-// because the menu is one line per item and the tab title can be a whole PR title.
-function pageLabel(tab) {
-  const num = tab.kind === 'github' && (tab.url.match(/\/pull\/(\d+)/) || [])[1];
-  return num ? `Pull request #${num}` : tab.kind === 'jira' ? (tab.jiraKey || 'Ticket') : 'Page';
+// This context's history as menu rows: oldest first, skipping anything already open as a tab, and
+// labelled by title with the address as the fallback.
+function historyMenu(tab) {
+  const open = new Set((tab.links || []).map(l => l.kind === 'file'
+    ? 'f:' + normFilePath(l.path || '')
+    : 'w:' + (l.url || '')));
+  const openHomes = new Set((tab.links || []).filter(l => l.home).map(l => 'w:' + l.home));
+  return (tab.history || [])
+    .filter(h => { const k = histKey(h); return !open.has(k) && !openHomes.has(k); })
+    .map(h => ({
+      key: histKey(h),
+      label: h.title || h.path || h.url,
+      open: () => (h.kind === 'file' ? openFileTab(h.path, 0, tab) : openWebLink(h.url)),
+    }));
+}
+
+// The second pass: the same rows, where picking one FORGETS it instead of opening it. This is what
+// a hover × would be on an in-page menu; the menu here is the OS's (it has to be — a DOM menu is
+// painted under the embedded page), and AppKit has no hover affordance inside a menu row.
+function forgetMenu(e, tab) {
+  const rows = historyMenu(tab);
+  if (!rows.length) return false;
+  return nativeMenu(e, rows.map(r => ({ label: r.label, onClick: () => forgetHistory(tab, r.key) })));
 }
 
 // "File…" → the native file picker rooted at THIS context's worktree, so what it offers is the
@@ -538,6 +561,37 @@ function insertLink(tab, link) {
   addChip(tab, link.id, at);
 }
 
+// ── Address history (per context) ────────────────────────────────────────────────
+// Everything this context has ever had open — web pages and local files — ordered by when it was
+// FIRST opened and kept after the tab is closed, so the "+" menu can offer it back. A context made
+// from a PR or a ticket is seeded with its own page (createTab), which is what the menu used to
+// hard-code as a "Pull request #N" / "TASK-123" entry: the same address, now one row of history
+// among the rest instead of a special case.
+const HISTORY_MAX = 40;
+// Web pages are keyed by url, files by path — the same identity openFileTab/openWebLink use to
+// decide whether a tab for it is already open.
+const histKey = e => (e.kind === 'file' ? 'f:' + normFilePath(e.path || '') : 'w:' + (e.url || ''));
+
+function noteHistory(tab, entry) {
+  if (!tab || !entry || !(entry.url || entry.path)) return;
+  tab.history = tab.history || [];
+  const key = histKey(entry);
+  const seen = tab.history.find(e => histKey(e) === key);
+  // First-opened order: a page opened again keeps its original place, and only its title is
+  // refreshed (a PR's title lands after the page loads, long after the address did).
+  if (seen) { if (entry.title) seen.title = entry.title; return; }
+  tab.history.push({ kind: entry.kind === 'file' ? 'file' : 'web', url: entry.url || '', path: entry.path || '', title: entry.title || '' });
+  if (tab.history.length > HISTORY_MAX) tab.history.splice(0, tab.history.length - HISTORY_MAX);
+}
+// Record whatever a link currently points at. Called wherever a link gains or changes its address.
+const noteLinkHistory = (tab, link) => noteHistory(tab, link);
+
+export function forgetHistory(tab, key) {
+  if (!tab?.history) return;
+  const i = tab.history.findIndex(e => histKey(e) === key);
+  if (i >= 0) { tab.history.splice(i, 1); saveTabs(); }
+}
+
 // "+" → Web page… (and the File… fallback outside the app): open a blank tab whose chip is an
 // inline address field. Module-internal now that the "+" is a menu — nothing in markup calls it.
 function addLink(want = '') {
@@ -568,6 +622,7 @@ function openWebLink(url) {
   if (existing) { setActiveLink(existing.id); return true; }
   const link = makeWebLink();
   link.editing = false; link.url = url; link.title = url; link.home = url;
+  noteLinkHistory(tab, link);
   insertLink(tab, link);
   tab.activeLink = link.id;
   leaveReview(tab);
@@ -641,6 +696,7 @@ function commitLinkInput(id, raw) {
   link.kind = kind; link.editing = false; link.started = false; link.loaded = false; link.icon = '';
   if (kind === 'file') { link.path = value; link.url = fileUrl(value); link.title = basename(value) || value; }
   else { link.url = value; link.title = value; link.home = value; }   // home = the entered URL (Home button)
+  noteLinkHistory(tab, link);
   leaveReview(tab);
   paintLeft(tab);
   renderContentTabs(true);   // force past the typing guard — the input is still focused here
@@ -749,6 +805,7 @@ export function openFileTab(filePath, line = 0, forTab = null) {
   const want = normFilePath(filePath);
   let link = tab.links.find(l => l.kind === 'file' && normFilePath(l.path) === want);
   if (!link) { link = makeFileLink(filePath); tab.links.push(link); }
+  noteLinkHistory(tab, link);
   if (line) link._pendingLine = line;
   tab.activeLink = link.id;
   leaveReview(tab);          // a file link wants to be SEEN — even if the Diff view was up
@@ -782,7 +839,7 @@ export function saveTabs() {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      tabs: state.tabs.map(t => ({ kind: t.kind, title: t.title, url: t.url, cur: t.cur || '', repo: t.repo, branch: t.branch, jiraKey: t.jiraKey, paneView: t.paneView, diffOpen: t.diffOpen, diffIdx: diffPos(t), category: t.category, login: t.login, avatar: t.avatar,
+      tabs: state.tabs.map(t => ({ kind: t.kind, title: t.title, url: t.url, cur: t.cur || '', repo: t.repo, branch: t.branch, jiraKey: t.jiraKey, paneView: t.paneView, diffOpen: t.diffOpen, diffIdx: diffPos(t), history: (t.history || []).slice(-40), category: t.category, login: t.login, avatar: t.avatar,
         // The context's extra horizontal tabs (web pages + local files). Only committed ones
         // (with a url) — a blank, never-entered tab isn't persisted.
         // `active` marks the one in front, so a restored context comes back on the tab the user
@@ -820,7 +877,9 @@ export async function restoreTabs() {
     // closed, the context is dead — don't rehydrate a tab with no session behind it.
     if (isSessionUrl(t?.url) && !state.tasks.some(x => x.url === t.url)) continue;
     if (t && t.url && !state.tabs.some(x => x.url === t.url)) {
-      state.tabs.push(createTab(t.url, t.title, t.kind, { cur: t.cur, repo: t.repo, branch: t.branch, jiraKey: t.jiraKey, paneView: t.paneView, diffOpen: t.diffOpen, diffIdx: diffPos(t), category: t.category, login: t.login, avatar: t.avatar, links: Array.isArray(t.links) ? t.links : [] }));
+      // diffIdx is READ here (diffPos() is for saving — it reads a live tab's chipOrder, which a
+      // saved payload hasn't got).
+      state.tabs.push(createTab(t.url, t.title, t.kind, { cur: t.cur, repo: t.repo, branch: t.branch, jiraKey: t.jiraKey, paneView: t.paneView, diffOpen: t.diffOpen, diffIdx: t.diffIdx || 0, history: Array.isArray(t.history) ? t.history : [], category: t.category, login: t.login, avatar: t.avatar, links: Array.isArray(t.links) ? t.links : [] }));
       seedAvatar(t.login, t.avatar);   // share the restored data URI so the dashboard reuses it
     }
   }
