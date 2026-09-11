@@ -158,6 +158,11 @@ body.viewing-tab main { display:none; }
    only — switching tabs never disturbs the right split view. */
 .ctabs { display:flex; align-items:center; gap:7px; min-width:0; flex:1; margin-left:10px; overflow-x:auto; overflow-y:hidden; height:100%; }
 .ctabs::-webkit-scrollbar { height:0; }
+/* The "+" trails the chips inside the strip. It must NOT take the chips' equal flex — it is a
+   fixed 36px control — and with no chips at all the strip drops its leading margin so the "+"
+   sits at the segment's left edge, where it lived when it was a child of .bar-nav. */
+.ctabs .ctab-add { flex:0 0 auto; }
+.ctabs.ctabs-empty { margin-left:0; }
 /* Safari-compact tabs: every tab fills the bar equally (flex:1), content centered, on a flat
    gray rounded rect (a browser tab's modest radius, not a full pill). The active tab lifts to
    white + a border; the address-entry tab gets the blue focus ring and left-aligns its field. */
@@ -187,13 +192,17 @@ body.viewing-tab main { display:none; }
 /* Reserve room at the right so typed text never slides under the absolute ✕. */
 .ctab.editing .ctab-input { padding-right:20px; }
 .ctab.default { font-weight:600; }
-/* Left controls (the "+") + the right group (a spacer for the pinned toggle) are equal-flex side groups
-   (see .bar-wv.single below). */
+/* Both side groups are empty counterweights — the left one balances the spacer that holds the
+   pinned toggle's width, so a lone centered tab lands at true bar-center (see .bar-wv.single). */
 .bar-nav, .bar-add { display:flex; align-items:center; gap:4px; flex-shrink:0; }
 .bar-add { justify-content:flex-end; }
 /* Single tab (default only): give both side groups equal flex so the lone pill centers against
    the WHOLE bar (not offset by the heavier left cluster), large but with leading/trailing room. */
 .bar-wv.single .bar-nav, .bar-wv.single .bar-add { flex:1 1 0; }
+/* The "+" now rides at the END of the strip, so the strip's content is chip + 36px button: the lone
+   pill would sit 36px left of centre with the side groups merely equal. Give the left counterweight
+   that 36px on top of its equal share and the CHIP lands at true bar-centre again. */
+.bar-wv.single .bar-nav { min-width:36px; }
 .bar-wv.single .ctabs { flex:0 1 auto; justify-content:center; }
 .bar-wv.single .ctab { flex:0 1 560px; }
 .ctab-ic { display:inline-flex; flex-shrink:0; position:relative; width:16px; height:16px; }

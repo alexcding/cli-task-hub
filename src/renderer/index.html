@@ -458,25 +458,20 @@
         <div class="tb-chip pf-term" id="split-ide" hidden oncontextmenu="return ideMenu(event)"></div>
       </div>
       <!-- Webview segment (over the PR pane — the RIGHT pane in split mode, full-width otherwise).
-           Holds the "+" (add to this panel), then the Safari-compact horizontal tab bar (#ctabs)
-           for the content pane: a read-only default tab (the PR/Jira page) + whatever the user has
-           added — the Diff, web pages, files. Nothing else is there by default. -->
+           Holds the Safari-compact horizontal tab bar (#ctabs) for the content pane: a read-only
+           default tab (the PR/Jira page) + whatever the user has added — the Diff, web pages, files
+           — and then the "+". Nothing else is there by default. -->
       <div class="bar-seg bar-wv">
         <!-- The two side groups are equal-flex so a lone centered tab lands at true bar-center.
-             LEFT: the "+" (new content tab). RIGHT: empty — it just holds the width of the split
-             toggle pinned over it. -->
-        <div class="bar-nav">
-          <!-- Back / Forward / Home moved to the browser foot (#browser-foot) at the bottom of the pane. -->
-          <!-- Opens the menu of what this pane can hold (Diff / Web page… / File…) — viewer.js ctabAdd.
-               A bare plus: the panel outline it used to wear read as a second split toggle sitting at
-               the other end of the same bar. Size comes from .ctab-add svg. -->
-          <button class="ctab-add" id="ctab-add" title="Add to this panel" onclick="return ctabAdd(event)">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
-          </button>
-        </div>
+             LEFT: empty, the counterweight. RIGHT: also empty — it holds the width of the split
+             toggle pinned over it.
+             Back / Forward / Home moved to the browser foot (#browser-foot) at the bottom of the pane. -->
+        <div class="bar-nav"></div>
         <!-- Horizontal content tabs render here (content-tabs.js): the page's default chip, then
-             whatever has been added to this context — the Diff tab, web tabs, file tabs. The "+"
-             that adds one is the left group above, not part of this strip. -->
+             whatever has been added to this context — the Diff tab, web tabs, file tabs — and the
+             "+" LAST, after them, the way a browser puts it. It is rendered by content-tabs.js
+             (this element's innerHTML is rebuilt wholesale, so a static button here would be wiped);
+             with no chips at all the strip is just the "+", back at the segment's left edge. -->
         <div class="ctabs" id="ctabs"></div>
         <!-- Empty: it only reserves the width of the absolutely-pinned split toggle (below), so
              the tab strip can't run under it. -->
