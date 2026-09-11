@@ -34,7 +34,9 @@ body:not(.pr-split):not(.viewing-term) .bar-term { border-right:none; }
    belongs to the terminal. Belt and braces: the JS only shows the button for a tab that can't
    carry a terminal, but a terminal view is entered without a tab activation. */
 body.viewing-term .bar-session { display:none; }
-.bar-session svg { width:14px; height:14px; display:block; }
+/* 16px, not the 14px the bare plus wore: the glyph now carries a window, a prompt and a badge,
+   and at 14 the badge closed up into the frame. */
+.bar-session svg { width:16px; height:16px; display:block; }
 /* Split open: the segment spans the terminal pane. The full-height #pr-divider already draws the
    boundary line through the toolbar, so drop the segment's own border-right — otherwise the two
    sit ~3px apart and read as a double line. */

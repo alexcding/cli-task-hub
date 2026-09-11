@@ -444,8 +444,17 @@
         <!-- No session for this page yet: start one here (viewer.js newSession — a PR/Jira tab knows
              its branch; a web page takes the next free worktree name, asking only which project when
              there's more than one). viewer.js syncSessionButton shows/hides it. -->
+        <!-- The glyph is what the button DOES: open a terminal on this page — a console window with
+             a prompt, carrying a small + at the corner it leaves open for it. A bare plus said only
+             "add something", and by now it was the third one on screen (the pane's +, a project's
+             + in the sidebar). -->
         <button class="bar-session" id="split-new-session" hidden title="Create a session for this page" onclick="newSession(event)">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg><span>New session</span>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14.5 4.5H4.5A2 2 0 0 0 2.5 6.5v11a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-4"/>
+            <path d="M6.5 10 9 12.5 6.5 15"/>
+            <path d="M11.5 15.5h3.5"/>
+            <path d="M19.5 2.5v6M16.5 5.5h6"/>
+          </svg><span>New session</span>
         </button>
         <div class="tb-chip pf-term" id="split-folder" hidden oncontextmenu="return folderMenu(event)"></div>
         <div class="wf-group pf-term" id="wf-group" hidden>
