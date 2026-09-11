@@ -92,7 +92,7 @@ function createTab(url, title, kind, meta = {}) {
   const tab = { id, kind: k, title: title || url, url, cur: meta.cur || '', wv: null,
     loaded: false, started: false, repo: meta.repo || '', branch: meta.branch || '',
     jiraKey: meta.jiraKey || jiraKeyFromUrl(url),
-    paneView: pv, diffOpen, diffIdx: Number(meta.diffIdx) || 0, history: Array.isArray(meta.history) ? meta.history : [], category: meta.category || '',
+    paneView: pv, diffOpen, pageClosed: meta.pageClosed === true, diffIdx: Number(meta.diffIdx) || 0, history: Array.isArray(meta.history) ? meta.history : [], category: meta.category || '',
     login: meta.login || '', avatar: meta.avatar || '',
     links, activeLink: activeSaved >= 0 ? links[activeSaved].id : null };
   // A context made from a PR or a ticket starts with its own page in the history — the address it
@@ -446,13 +446,13 @@ export async function ctabAdd(e) {
   // Ordered by what you reach for: the two things you can always open, then the two the context
   // may or may not have to give.
   return nativeMenu(e, [
-    { label: 'Web page', onClick: () => addLink('web') },
-    { label: 'File', onClick: addFileTab },
-    canDiff && { label: 'Diff', onClick: openDiffTab },
-    canBuild && { label: 'Build output', onClick: openBuildTab },
+    { label: 'Web Page', onClick: () => addLink('web') },
+    { label: 'Open File', onClick: addFileTab },
+    canDiff && { label: 'Git Diff', onClick: openDiffTab },
+    canBuild && { label: 'Build Output', onClick: openBuildTab },
     rows.length && { separator: true },
     // One submenu, so a context with a long history doesn't bury the three things the menu is for.
-    rows.length && { label: 'History', items: [
+    rows.length && { label: 'Open History', items: [
       ...rows.map(r => ({ label: r.label, onClick: r.open })),
       { separator: true },
       // A native menu row has no hover ×, so removal is a second pass over the same list.
@@ -461,20 +461,29 @@ export async function ctabAdd(e) {
   ]);
 }
 
-// This context's history as menu rows: oldest first, skipping anything already open as a tab, and
-// labelled by title with the address as the fallback.
+// This context's history as menu rows: oldest first, everything the context has had open, labelled
+// by title with the address as the fallback. An entry is NOT dropped while it is open on the bar —
+// picking one that already has a chip focuses that chip; picking the context's own page (closed
+// via its chip's ×) puts the page chip back instead of adding a link tab.
 function historyMenu(tab) {
-  const open = new Set((tab.links || []).map(l => l.kind === 'file'
+  const links = tab.links || [];
+  const openLink = k => links.find(l => (l.kind === 'file'
     ? 'f:' + normFilePath(l.path || '')
-    : 'w:' + (l.url || '')));
-  const openHomes = new Set((tab.links || []).filter(l => l.home).map(l => 'w:' + l.home));
-  return (tab.history || [])
-    .filter(h => { const k = histKey(h); return !open.has(k) && !openHomes.has(k); })
-    .map(h => ({
-      key: histKey(h),
+    : 'w:' + (l.url || '')) === k || (l.home && 'w:' + l.home === k));
+  const pageKey = tab.url && !isSessionUrl(tab.url) ? 'w:' + tab.url : null;
+  return (tab.history || []).map(h => {
+    const k = histKey(h);
+    return {
+      key: k,
       label: histLabel(h),
-      open: () => (h.kind === 'file' ? openFileTab(h.path, 0, tab) : openWebLink(h.url)),
-    }));
+      open: () => {
+        if (k === pageKey) return reopenPageTab(tab);
+        const l = openLink(k);
+        if (l) return setActiveLink(l.id);
+        return h.kind === 'file' ? openFileTab(h.path, 0, tab) : openWebLink(h.url);
+      },
+    };
+  });
 }
 
 // A menu sizes itself to its widest row, and these rows are page titles, URLs and absolute paths —
@@ -503,7 +512,9 @@ function elide(s, max) {
 // a hover × would be on an in-page menu; the menu here is the OS's (it has to be — a DOM menu is
 // painted under the embedded page), and AppKit has no hover affordance inside a menu row.
 function forgetMenu(e, tab) {
-  const rows = historyMenu(tab);
+  // The context's own page is not removable: it is what brings a closed page chip back.
+  const pageKey = tab.url && !isSessionUrl(tab.url) ? 'w:' + tab.url : null;
+  const rows = historyMenu(tab).filter(r => r.key !== pageKey);
   if (!rows.length) return false;
   return nativeMenu(e, rows.map(r => ({ label: r.label, onClick: () => forgetHistory(tab, r.key) })));
 }
@@ -609,6 +620,30 @@ export function closeDiffTab() {
   else playTabOut('diff', remove);
 }
 
+// Close the page chip of a session started from a PR/Jira tab. The page is not lost: it stays in
+// the context's history (the toolbar's ＋ → History) and reopenPageTab puts the chip back. The
+// tab record itself — its url, the sidebar row, the terminal — is untouched; only the page's
+// webview goes, so the context reads as a bare session until the page is reopened.
+export function closePageTab() {
+  const tab = activeTab();
+  if (!tab || !hasPage(tab) || !taskForTab(tab)) return;
+  closeFind();
+  tab.pageClosed = true;
+  disposeWebview(tab);
+  // The page was in front → fall to the first extra tab, else the pane shows blank.
+  if (!tab.activeLink && !inDiff(tab)) tab.activeLink = (tab.links || []).find(l => l.url)?.id || null;
+  paintLeft(tab);
+  renderContentTabs(true);
+  updateNavButtons();
+  saveTabs();
+}
+function reopenPageTab(tab) {
+  tab.pageClosed = false;
+  if (tab !== activeTab()) { saveTabs(); return; }
+  setActiveLink(null);       // shows the page (rebuilding its webview), re-renders, saves
+  renderContentTabs(true);
+}
+
 // Put a chip immediately after the active one (browser behaviour; content-tabs.js owns the order).
 function addChip(tab, id, at = nextChipIdx(tab)) {
   const order = Array.isArray(tab.chipOrder) ? tab.chipOrder : initChipOrder(tab);
@@ -657,7 +692,13 @@ function noteHistory(tab, entry) {
   // refreshed (a PR's title lands after the page loads, long after the address did).
   if (seen) { if (entry.title) seen.title = entry.title; return; }
   tab.history.push({ kind: entry.kind === 'file' ? 'file' : 'web', url: entry.url || '', path: entry.path || '', title: entry.title || '' });
-  if (tab.history.length > HISTORY_MAX) tab.history.splice(0, tab.history.length - HISTORY_MAX);
+  // Trim the oldest — except the context's own page: it is the only way back to a closed page chip.
+  const pageKey = tab.url && !isSessionUrl(tab.url) ? 'w:' + tab.url : null;
+  while (tab.history.length > HISTORY_MAX) {
+    const i = tab.history.findIndex(e => histKey(e) !== pageKey);
+    if (i < 0) break;
+    tab.history.splice(i, 1);
+  }
 }
 // Record whatever a link currently points at. Called wherever a link gains or changes its address.
 const noteLinkHistory = (tab, link) => noteHistory(tab, link);
@@ -915,7 +956,7 @@ export function saveTabs() {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      tabs: state.tabs.map(t => ({ kind: t.kind, title: t.title, url: t.url, cur: t.cur || '', repo: t.repo, branch: t.branch, jiraKey: t.jiraKey, paneView: t.paneView, diffOpen: t.diffOpen, diffIdx: diffPos(t), history: (t.history || []).slice(-40), category: t.category, login: t.login, avatar: t.avatar,
+      tabs: state.tabs.map(t => ({ kind: t.kind, title: t.title, url: t.url, cur: t.cur || '', repo: t.repo, branch: t.branch, jiraKey: t.jiraKey, paneView: t.paneView, diffOpen: t.diffOpen, pageClosed: t.pageClosed || undefined, diffIdx: diffPos(t), history: (t.history || []).slice(-40), category: t.category, login: t.login, avatar: t.avatar,
         // The context's extra horizontal tabs (web pages + local files). Only committed ones
         // (with a url) — a blank, never-entered tab isn't persisted.
         // `active` marks the one in front, so a restored context comes back on the tab the user
@@ -955,7 +996,7 @@ export async function restoreTabs() {
     if (t && t.url && !state.tabs.some(x => x.url === t.url)) {
       // diffIdx is READ here (diffPos() is for saving — it reads a live tab's chipOrder, which a
       // saved payload hasn't got).
-      state.tabs.push(createTab(t.url, t.title, t.kind, { cur: t.cur, repo: t.repo, branch: t.branch, jiraKey: t.jiraKey, paneView: t.paneView, diffOpen: t.diffOpen, diffIdx: t.diffIdx || 0, history: Array.isArray(t.history) ? t.history : [], category: t.category, login: t.login, avatar: t.avatar, links: Array.isArray(t.links) ? t.links : [] }));
+      state.tabs.push(createTab(t.url, t.title, t.kind, { cur: t.cur, repo: t.repo, branch: t.branch, jiraKey: t.jiraKey, paneView: t.paneView, diffOpen: t.diffOpen, pageClosed: t.pageClosed === true, diffIdx: t.diffIdx || 0, history: Array.isArray(t.history) ? t.history : [], category: t.category, login: t.login, avatar: t.avatar, links: Array.isArray(t.links) ? t.links : [] }));
       seedAvatar(t.login, t.avatar);   // share the restored data URI so the dashboard reuses it
     }
   }
@@ -1384,8 +1425,8 @@ export async function ideMenu(e) {
   return openMenu(e, [
     hasIde && { label: `Open in ${ideLabel(ideId)}`, onClick: openTabIde },
     hasRun && (running
-      ? { label: 'Stop build', onClick: stopBuildClick }
-      : { label: 'Run', onClick: runBuildClick }),
+      ? { label: 'Stop Build', onClick: stopBuildClick }
+      : { label: 'Run Script', onClick: runBuildClick }),
   ]);
 }
 

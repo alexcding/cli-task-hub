@@ -140,12 +140,16 @@ function diffChipHtml(t) {
    </div>`;
 }
 
-// The default chip IS the context (the sidebar's PR/Jira tab), so its × closes the whole context —
-// page, extra tabs, and the paired terminal binding — exactly like closing it from the sidebar. A
-// task session's tab has no ×: it is removed only via the task row's right-click Remove session.
+// The default chip IS the context (the sidebar's PR/Jira tab), so on a task-less tab its × closes
+// the whole context — page, extra tabs, and the paired terminal binding — exactly like closing it
+// from the sidebar. On a task session the × closes only the PAGE chip (closePageTab): the session
+// is removed solely via the task row's right-click Remove session, and the page stays in the
+// context's history to be reopened from the toolbar's ＋.
 function defaultChipHtml(t) {
   const active = !t.activeLink && !inDiff(t);
-  const x = taskForTab(t) ? '' : `<button class="ctab-btn ctab-x" title="Close tab" onclick="event.stopPropagation();closeTab('${t.id}')">${ICON.close}</button>`;
+  const x = taskForTab(t)
+    ? `<button class="ctab-btn ctab-x" title="Close page" onclick="event.stopPropagation();closePageTab()">${ICON.close}</button>`
+    : `<button class="ctab-btn ctab-x" title="Close tab" onclick="event.stopPropagation();closeTab('${t.id}')">${ICON.close}</button>`;
   return `<div class="ctab default ${active ? 'active' : ''}"
         onclick="setActiveLink(null)" title="${esc(t.url || '')}">
      ${defaultIcon(t)}
@@ -214,6 +218,9 @@ export function renderContentTabs(force = false) {
   // turns this page INTO a session. (Extra tabs are not lost — they're still persisted, and come
   // back on the strip the moment the page has a session.)
   const soloPage = !(t.termId && state.terms.get(t.termId));
+  // A closed page chip is only reachable through the strip's ＋ → History, which this state has no
+  // room for: with the session gone the page is all the tab is, so it comes back on its own.
+  if (soloPage && t.pageClosed) t.pageClosed = false;   // the next saveTabs persists it; a reload lands here again anyway
   document.body.classList.toggle('page-only', soloPage);
   placeBrowserNav(soloPage);
   if (title) {

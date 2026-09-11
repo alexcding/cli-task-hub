@@ -58,7 +58,9 @@ export const sessionUrl = id => 'session:' + id;
 export const isSessionUrl = u => /^session:/.test(String(u || ''));
 // Does this context have a page for the right pane? (A bare session's pane holds only the diff
 // view or the web tabs the user adds.)
-export const hasPage = t => !!t && !!t.url && !isSessionUrl(t.url);
+// A session started from a PR/Jira tab can close its page chip (it stays in the context's
+// history and reopens from there); while closed, the context behaves exactly like a bare session.
+export const hasPage = t => !!t && !!t.url && !isSessionUrl(t.url) && !t.pageClosed;
 
 // Last path segment (folder/file name), ignoring trailing slashes. '' for empty input.
 export const basename = p => String(p || '').split('/').filter(Boolean).pop() || '';

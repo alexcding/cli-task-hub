@@ -128,9 +128,14 @@ separation everything follows:
   **Web page**, **File** — the last two opening the inline address chip with the kind forced
   (`link.want` → `resolveInput`) instead of guessed — and then **History ▸**, this context's own
   address history (`tab.history`, persisted as `tabs.history`): every page and file it has had open,
-  **oldest first**, minus whatever is already a tab on the bar. A PR/Jira context is seeded with its
-  own page (`createTab`), which is what the menu used to hard-code as "Pull request #N" / the ticket
-  key — don't add per-address entries back. A native menu row has no hover ×, so removal is a second
+  **oldest first**, every entry whether or not it is currently a chip (picking an open one focuses
+  its chip — never filter open entries out). A PR/Jira context is seeded with its own page
+  (`createTab`), which is what the menu used to hard-code as "Pull request #N" / the ticket key —
+  don't add per-address entries back. **On a task session the page chip is closable** (its × →
+  `closePageTab`, `tab.pageClosed`, persisted as `tabs.page_closed`): the page's webview goes and
+  `hasPage` turns false, so the context reads as a bare session; the page stays in History, and
+  picking it there (`reopenPageTab`) restores the chip. On a task-less tab the same × still closes
+  the whole tab (`closeTab`). A native menu row has no hover ×, so removal is a second
   pass over the same list ("Remove from History" → `forgetMenu`). `nativeMenu` carries ONE level of
   submenu (`items`), sending the host the item's path ("4.2") so the answer maps back onto the array
   that built it; the in-page fallback renders a group inline under a heading. The Diff tab's existence is `tab.diffOpen`,

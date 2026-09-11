@@ -138,6 +138,9 @@ for (const stmt of [
   // …and WHERE on the bar it sits: a new tab opens beside the active one, so the Diff no longer has
   // a fixed slot. The index is into this context's links array (see content-tabs.js chipEntries).
   `ALTER TABLE tabs ADD COLUMN diff_pos INTEGER NOT NULL DEFAULT 0`,
+  // A task session started from a PR/Jira page can close that page's chip; the page stays in
+  // history and the context shows as a bare session until it is reopened from there.
+  `ALTER TABLE tabs ADD COLUMN page_closed INTEGER NOT NULL DEFAULT 0`,
   // Everything this context has had open (web pages + local files), oldest first, as a JSON array.
   // It outlives the tabs themselves — it's what the toolbar's "+" offers back. See viewer.js
   // noteHistory.
@@ -288,12 +291,12 @@ function getTabs() {
   // links is a JSON array of the tab's extra horizontal tabs (web pages + local files).
   const parseLinks = s => { try { const v = JSON.parse(s || '[]'); return Array.isArray(v) ? v : []; } catch { return []; } };
   return {
-    tabs: rows.map(r => ({ kind: r.kind, title: r.title, url: r.url, cur: r.cur || '', repo: r.repo || '', branch: r.branch || '', paneView: r.pane_view || 'term', diffOpen: !!r.diff_open, diffIdx: r.diff_pos || 0, history: parseLinks(r.history), category: r.category || '', login: r.login || '', avatar: r.avatar || '', links: parseLinks(r.links) })),
+    tabs: rows.map(r => ({ kind: r.kind, title: r.title, url: r.url, cur: r.cur || '', repo: r.repo || '', branch: r.branch || '', paneView: r.pane_view || 'term', diffOpen: !!r.diff_open, pageClosed: !!r.page_closed, diffIdx: r.diff_pos || 0, history: parseLinks(r.history), category: r.category || '', login: r.login || '', avatar: r.avatar || '', links: parseLinks(r.links) })),
     active: active ? active.url : null,
   };
 }
 const _insertTab = db.prepare(
-  `INSERT INTO tabs (url, kind, title, cur, repo, branch, pane_view, diff_open, diff_pos, category, login, avatar, links, history, position, active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  `INSERT INTO tabs (url, kind, title, cur, repo, branch, pane_view, diff_open, page_closed, diff_pos, category, login, avatar, links, history, position, active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 );
 function setTabs(tabs = [], active = null) {
   db.exec('BEGIN');
@@ -304,7 +307,7 @@ function setTabs(tabs = [], active = null) {
       const links = JSON.stringify(Array.isArray(t.links) ? t.links : []);
       const history = JSON.stringify(Array.isArray(t.history) ? t.history : []);
       _insertTab.run(t.url, t.kind === 'jira' ? 'jira' : t.kind === 'web' ? 'web' : 'github', t.title || t.url, typeof t.cur === 'string' ? t.cur : '',
-        t.repo || '', t.branch || '', ['off', 'diff'].includes(t.paneView) ? t.paneView : 'term', t.diffOpen ? 1 : 0,
+        t.repo || '', t.branch || '', ['off', 'diff'].includes(t.paneView) ? t.paneView : 'term', t.diffOpen ? 1 : 0, t.pageClosed ? 1 : 0,
         Math.max(0, Number(t.diffIdx) || 0),
         t.category || '', t.login || '', t.avatar || '', links, history, i, active && t.url === active ? 1 : 0);
     });
