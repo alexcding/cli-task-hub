@@ -211,8 +211,11 @@
           for (var i = 0; i < items.length; i++) built.push(await build(items[i]));
           var menu = await M.Menu.new({ items: built });
           await menu.popup();
-          // Menu closed: give a click's action event a moment to arrive; if none, it was dismissed.
-          setTimeout(function () { pick(null); }, 150);
+          // Menu closed: give a click's action event time to arrive; if none comes, it was a
+          // dismissal. 600ms, not 150: an item picked inside a SUBMENU (History) reports well after
+          // popup() returns, and the old window settled on null first — the click did nothing.
+          // Nothing waits on this timer (the menu is already gone), so a longer one costs nothing.
+          setTimeout(function () { pick(null); }, 600);
         } catch (e) {
           console.warn('[menu] native popup failed', e);
           pick(null);

@@ -117,11 +117,14 @@ export function diffPos(t) {
   return i < 0 ? 0 : order.slice(0, i).filter(id => id !== 'diff' && id !== 'build').length;
 }
 
+// Its × ends the build terminal with the tab — there is no other way to be rid of the console once
+// a run is done, and a chip you can't close is the only one on the bar.
 function buildChipHtml(t) {
-  return `<div class="ctab source buildtab ${inBuild(t) ? 'active' : ''}"
+  return `<div class="ctab source buildtab ${inBuild(t) ? 'active' : ''}" data-id="build"
         onclick="setPaneView('build')" title="Output of this worktree's build">
      <span class="ctab-ic">${ICON.play}</span>
      <span class="ctab-title">Build</span>
+     <button class="ctab-btn ctab-x" title="Close tab" onclick="event.stopPropagation();closeBuildTab()">${ICON.close}</button>
    </div>`;
 }
 

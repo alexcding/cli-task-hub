@@ -534,6 +534,30 @@ export function openDiffTab() {
   playTabIn('diff');
 }
 
+// Close the Build tab (its ×): the console goes with it — the PTY is this context's own
+// (build:<url>), nothing else would ever end it, and a chip left behind with no terminal under it
+// would fall back to the page on every click. Mirrors closeDiffTab's shrink-out and its 2→1 case.
+export function closeBuildTab() {
+  const tab = activeTab();
+  if (!tab || !buildTerm(tab)) return;
+  const toSingle = hasPage(tab) && !(tab.links || []).length && !tab.diffOpen;
+  const remove = () => {
+    disposeBuildTerm(tab);
+    dropChip(tab, 'build');
+    if (tab !== activeTab()) {
+      if (tab.paneView === 'build') tab.paneView = 'term';   // never left pointing at a chip it hasn't got
+      saveTabs();
+      return;
+    }
+    const prevRect = toSingle ? defaultChipRect() : null;
+    if (tab.paneView === 'build') setPaneView('term');       // repaints + saves
+    else { renderContentTabs(true); saveTabs(); }
+    if (prevRect) flipDefaultChip(prevRect);
+  };
+  if (toSingle) remove();
+  else playTabOut('build', remove);
+}
+
 // Close the Diff tab (its ×). If the diff was the shown view, the pane falls back to the page —
 // or, for a context that has none, to the empty pane; paintLeft decides that, as it always does.
 export function closeDiffTab() {
