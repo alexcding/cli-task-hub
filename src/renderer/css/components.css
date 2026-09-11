@@ -239,18 +239,57 @@
 .status-btn:hover { border-color:var(--accent); }
 .status-caret { display:inline-flex;opacity:.55;margin-left:1px; }
 .status-caret svg { width:11px;height:11px;display:block; }
-/* Context menus, macOS-style: hairline-bordered card with a soft drop shadow, tight
-   rows, and a solid accent "highlight" pill (white text) on the hovered item — the
-   signature mac look. Arrow cursor (not pointer), like a native menu. */
-.status-menu { position:absolute;z-index:2000;background:var(--surface);border:0.5px solid var(--border);border-radius:8px;box-shadow:0 10px 30px -6px rgb(16 24 40/.24),0 2px 8px -3px rgb(16 24 40/.14);padding:5px;min-width:180px;max-height:320px;overflow-y:auto; }
-.status-menu-head { font-size:11px;color:var(--text-3);padding:5px 10px 3px; }
-.status-menu-sep { height:1px;margin:5px 8px;background:var(--border); }
-.status-menu-item { display:block;width:100%;text-align:left;background:none;border:none;color:var(--text);font-size:13px;line-height:1.3;padding:5px 10px;border-radius:5px;cursor:default;white-space:nowrap; }
-.status-menu-item:hover { background:var(--accent);color:#fff; }
+/* Context menus, macOS-style: a mostly-opaque card that still lets the backdrop blur through, over
+   a soft drop shadow, with tight rows and a solid highlight pill on the hovered item. Arrow cursor
+   (not pointer), like a native menu. Radii read off a real Finder menu at 2x: 12px on the card,
+   8px on the highlighted row (its arc is two thirds of the card's, not a pill).
+   The vibrancy is measured off a real menu over the desktop: a light-gray ground at ~.72 alpha
+   with a wide blur AND a saturation boost behind it, which is what lets the color underneath tint
+   the card instead of only greying it. Over our own flat chrome (the sidebar, the toolbar) there is
+   little to sample and it reads nearly solid — that is correct, and the same thing AppKit does;
+   the effect appears where there is content underneath: the terminal, the diff, a PR page.
+   The blur needs a translucent background, so the ground is its own token (--menu-bg) rather than
+   --surface; the border likewise (--border would disappear against a blurred backdrop).
+   Both themes define both, so this stays a pure palette swap. */
+.status-menu { position:absolute;z-index:2000;background:var(--menu-bg);-webkit-backdrop-filter:blur(50px) saturate(170%);backdrop-filter:blur(50px) saturate(170%);border:0.5px solid var(--menu-border);border-radius:12px;box-shadow:0 10px 30px -6px rgb(16 24 40/.24),0 2px 8px -3px rgb(16 24 40/.14);padding:7px 8px;min-width:200px;max-height:360px;overflow-y:auto;font:menu;-webkit-font-smoothing:auto; }
+/* No backdrop-filter (an old browser in web-only dev): fall back to the opaque card, or the menu
+   is a see-through smear over the page behind it. */
+@supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))) {
+  .status-menu { background:var(--surface);border-color:var(--border); }
+}
+/* font:menu on the card (above) is the CSS system-font keyword: WebKit resolves it to the real
+   macOS menu font AND its size, so the menu is set exactly as AppKit would set it rather than in
+   the page font at a guessed size. The rows are <button>s, which do NOT inherit font from their
+   parent — that's why they came out in the UA default — so the row takes `font:inherit` to pick the
+   card's system font up whole. The header is a <div> and inherits the family on its own; it only
+   overrides the size.
+   -webkit-font-smoothing:auto (not the body's `antialiased`) is the other half of the match: macOS
+   draws menu labels with subpixel smoothing, and antialiased renders them a visible notch lighter.
+   Same reason .nav-btn/.opentab opt out in layout.css. */
+.status-menu-head { font-size:11px;color:var(--text-3);padding:6px 12px 4px; }
+/* --menu-border, not --border: on the blurred ground the flat hairline all but vanishes. */
+.status-menu-sep { height:1px;margin:7px 10px;background:var(--menu-border); }
+.status-menu-item { display:block;width:100%;text-align:left;background:none;border:none;color:var(--text);font:inherit;line-height:1.35;padding:7px 12px;border-radius:8px;cursor:default;white-space:nowrap; }
+/* The highlight is the SYSTEM selection color, not --accent: our brand indigo sat next to a real
+   macOS menu and read as the wrong blue. Two declarations, cascading — AccentColor is WebKit's
+   public keyword but resolves to the CONTROL accent (a lighter blue than the one AppKit fills a
+   highlighted menu row with), and -apple-system-selected-content-background is that exact selection
+   color; an engine that doesn't know the second keyword drops the line and keeps the first. Both
+   track whatever the user picked in System Settings → Appearance.
+   Then a third: AppKit does not paint the highlight FLAT — it blends the accent into the menu's
+   material, which is why a real menu's selected row is visibly lighter and softer than the raw
+   selection blue. color-mix against transparent reproduces that over our own translucent ground.
+   The label INVERTS on it — white, hardcoded, not AccentColorText: WKWebView resolves that keyword
+   to the ordinary text color, so the row came out dark-on-blue. @supports falls back to the brand
+   accent where the system keywords are unknown (web-only dev). */
+.status-menu-item:hover { background:AccentColor;background:-apple-system-selected-content-background;background:color-mix(in srgb, -apple-system-selected-content-background 72%, transparent);color:#fff; }
 .status-menu-item.danger { color:var(--danger); }
-/* Destructive item still highlights with the accent (mac keeps the highlight uniform);
+/* Destructive item still highlights like the rest (mac keeps the highlight uniform);
    the red text only signals at rest. */
-.status-menu-item.danger:hover { background:var(--accent);color:#fff; }
+.status-menu-item.danger:hover { background:AccentColor;background:-apple-system-selected-content-background;background:color-mix(in srgb, -apple-system-selected-content-background 72%, transparent);color:#fff; }
+@supports not (color:AccentColor) {
+  .status-menu-item:hover, .status-menu-item.danger:hover { background:var(--accent);color:#fff; }
+}
 
 /* Table */
 .table-wrap { overflow-x:auto; }

@@ -253,7 +253,7 @@ Object.assign(window, {
   openPrSplit: viewer.openPrSplit, openRepo: viewer.openRepo, openExternal: viewer.openExternal, jiraClick: viewer.jiraClick,
   openTabFolder: viewer.openTabFolder, openTabIde: viewer.openTabIde, newSession: viewer.newSession,
   runBuild: viewer.runBuildClick, stopBuild: viewer.stopBuildClick,   // the IDE chip's play/stop half
-  folderMenu: viewer.folderMenu, removeTabWorktree: viewer.removeTabWorktree,
+  folderMenu: viewer.folderMenu, ideMenu: viewer.ideMenu, removeTabWorktree: viewer.removeTabWorktree,
   folderChipClick: viewer.folderChipClick,
   // viewer toolbar
   splitBack: viewer.splitBack, splitForward: viewer.splitForward, splitHome: viewer.splitHome,

@@ -57,30 +57,29 @@ body.split-closed .bar-term { flex:1; border-right:none; }
 /* position:absolute above (and .split-btn's display:inline-flex) out-specify the UA [hidden] rule,
    so hiding the button needs to be explicit — as it does for every other toolbar control here. */
 .bar-toggle[hidden] { display:none; }
-/* One glyph at a time (identical 21px boxes, so the button never resizes): the full-height divider
+/* One glyph at a time (identical 22px boxes, so the button never resizes): the full-height divider
    while the pane is open (.on), the short stub while it's closed. */
 .bar-toggle .ic-open, .bar-toggle.on .ic-closed { display:none; }
 .bar-toggle.on .ic-open, .bar-toggle .ic-closed { display:block; }
 /* Reserves the toggle's reach inside the webview segment so the tab strip can't run under it:
-   33px (the button: a 21px glyph + 6px padding each side) measured from the segment's own 12px
+   36px (the button: a 22px glyph + 7px padding each side) measured from the segment's own 12px
    gutter, which matches the toggle's inset. */
-.bar-add { min-width:33px; }
+.bar-add { min-width:36px; }
 /* Pane closed: the terminal segment is the whole toolbar and ends under the button — keep its own
-   controls clear of it. 47px = the toggle's 33px box + its 12px inset + 2px of air; it replaces the
+   controls clear of it. 50px = the toggle's 36px box + its 12px inset + 2px of air; it replaces the
    segment's own 12px gutter, so it must cover the whole reach of the button. (body.viewing-term
    needs no such gutter: that state nulls activeTabId, so syncSplitToggle always hides the toggle.) */
-body.split-closed .bar-term { padding-right:47px; }
+body.split-closed .bar-term { padding-right:50px; }
 
 .split-btn.on { color:var(--text); background:var(--surface-hover); }
-.split-btn { background:none; border:none; color:var(--text-2); cursor:pointer; padding:6px; border-radius:6px; flex-shrink:0; display:inline-flex; align-items:center; justify-content:center; transition:color .28s ease, background-color .12s ease; }
+.split-btn { background:none; border:none; color:var(--text-2); cursor:pointer; padding:7px; border-radius:6px; flex-shrink:0; display:inline-flex; align-items:center; justify-content:center; transition:color .28s ease, background-color .12s ease; }
 .split-btn:hover { background:var(--surface-hover); color:var(--text); }
 .split-btn:disabled { opacity:.3; cursor:default; }
 .split-btn:disabled:hover { background:none; color:var(--text-2); }
-.split-btn svg { display:block; }
-/* Larger back/forward/home controls in the content-tab toolbar (their inline svgs carry no
-   width/height, so CSS sizes them). */
-.split-btn.nav-lg { padding:7px; }
-.split-btn.nav-lg svg { width:22px; height:22px; stroke-width:1.6; }
+.split-btn svg { display:block; width:22px; height:22px; }
+/* Back/forward/home in the content-tab toolbar: the shared 22px box (above), lighter strokes —
+   their inline svgs carry no width/height, so CSS sizes them. */
+.split-btn.nav-lg svg { stroke-width:1.6; }
 
 /* Workflow run button: play triangle when idle; a spinning ring around a stop square while a run
    is in flight (click to stop). Reuses the `spin` keyframe from pages.css, like .tab-spin. */
@@ -112,11 +111,11 @@ body.split-closed .bar-term { padding-right:47px; }
 .tb-chip .fc-ic + .fc-ic { position:relative; }
 .tb-chip .fc-ic + .fc-ic::before { content:""; position:absolute; left:-4px; top:50%; transform:translateY(-50%); width:1px; height:14px; background:var(--border); }
 .tb-chip .fc-ic { display:inline-flex; align-items:center; border:none; background:none; cursor:pointer; color:inherit; font:inherit; padding:7px 10px; flex-shrink:0; border-radius:6px; transition:background-color .12s ease, color .12s ease; }
-.tb-chip .fc-ic svg { flex-shrink:0; width:18px; height:18px; display:block; }
+.tb-chip .fc-ic svg { flex-shrink:0; width:22px; height:22px; display:block; }
 /* When a git client is configured the glyph is that client's brand mark (an <img>). Sized 2px
    larger than the stroke glyphs beside it to optically match them, since brand logos bake in their
    own padding and read smaller than an edge-to-edge stroke icon at the same box size. */
-.tb-chip .fc-ic img { flex-shrink:0; width:20px; height:20px; display:block; border-radius:3px; object-fit:contain; }
+.tb-chip .fc-ic img { flex-shrink:0; width:24px; height:24px; display:block; border-radius:4px; object-fit:contain; }
 .tb-chip .fc-ic:hover { background:var(--surface-hover); color:var(--text); }
 /* The IDE chip's play half (build.js): the accent while a build is running, so the stop square
    reads as live state rather than another launcher. */
@@ -221,12 +220,13 @@ body.viewing-tab main { display:none; }
 /* Save on a dirty file tab is always visible — it doubles as the unsaved indicator. */
 .ctab-save { color:var(--accent); opacity:1; }
 .ctab-save:hover { background:var(--accent-bg); }
-/* Match the back/forward/home nav buttons (.split-btn.nav-lg: 7px padding + 22px glyph). */
-/* Same box as the split toggle (.split-btn): 21px glyph, 6px padding, 6px radius — the pair that
-   bookends the bar is one control size, not two. */
-.ctab-add { flex-shrink:0; padding:6px; border:none; background:none; color:var(--text-2); cursor:pointer; border-radius:6px; display:inline-flex; align-items:center; justify-content:center; transition:color .28s ease, background-color .12s ease; }
+/* Same HEIGHT box as every other toolbar control: a 22px glyph in 7px of padding on a 6px radius,
+   36px square — what .bar-add and body.split-closed .bar-term reserve for the toggle. The .tb-chip
+   halves match on height only: they add horizontal padding (7px 10px), and a brand <img> runs 2px
+   larger than a stroke glyph on purpose, so they are wider. */
+.ctab-add { flex-shrink:0; padding:7px; border:none; background:none; color:var(--text-2); cursor:pointer; border-radius:6px; display:inline-flex; align-items:center; justify-content:center; transition:color .28s ease, background-color .12s ease; }
 .ctab-add:hover { background:var(--surface-hover); color:var(--text); }
-.ctab-add svg { width:21px; height:21px; display:block; }
+.ctab-add svg { width:22px; height:22px; display:block; }
 
 /* Window-inactive (app not frontmost): the webview chrome desaturates to the native macOS
    not-frontmost look. COLORS ONLY — every property below is a color/background/border and the
@@ -571,7 +571,10 @@ body.find-open .split-body webview, body.find-open .split-body .wcv-shim { botto
 .find-bar input::placeholder { color:var(--text-3); }
 .find-count { color:var(--text-3); font-size:12px; font-variant-numeric:tabular-nums; min-width:38px; text-align:right; padding:0 4px; white-space:nowrap; }
 .find-sep { width:1px; align-self:stretch; background:var(--border); margin:3px 3px; }
+/* The find bar is not the toolbar: its buttons keep the 15px glyph their markup carries, so the
+   shared .split-btn svg size (22px, for the toolbar) must be undone here. */
 .find-bar .split-btn { padding:5px; }
+.find-bar .split-btn svg { width:15px; height:15px; }
 
 /* Open tabs render as nav rows under GitHub / Jira group labels. */
 /* Session row status — unpeel's sidebar visuals (DESIGN.md §5). A fixed 16px leading slot so the

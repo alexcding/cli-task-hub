@@ -225,9 +225,13 @@ function openPopupMenu(btn, headText, items) {
   document.body.appendChild(menu);
 
   const r = btn.getBoundingClientRect();
-  // Flip above the button if it would overflow the viewport bottom.
+  // Flip above the button if it would overflow the viewport bottom — then clamp, exactly as
+  // components/menu.js does: in a short window a tall menu (the status list runs to .status-menu's
+  // max-height) flipped above lands at a NEGATIVE top, clipping its header and first rows off the
+  // top of the window.
   const below = r.bottom + menu.offsetHeight + 6 < window.innerHeight;
-  menu.style.top  = window.scrollY + (below ? r.bottom + 4 : r.top - menu.offsetHeight - 4) + 'px';
+  const top = window.scrollY + (below ? r.bottom + 4 : r.top - menu.offsetHeight - 4);
+  menu.style.top  = Math.max(window.scrollY + 8, top) + 'px';
   menu.style.left = Math.min(window.scrollX + r.left, window.scrollX + window.innerWidth - menu.offsetWidth - 8) + 'px';
   _menuEl = menu;
   setTimeout(() => {

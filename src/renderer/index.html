@@ -455,7 +455,7 @@
           </button>
           <select class="wf-select" id="wf-select" title="Workflow to run"></select>
         </div>
-        <div class="tb-chip pf-term" id="split-ide" hidden></div>
+        <div class="tb-chip pf-term" id="split-ide" hidden oncontextmenu="return ideMenu(event)"></div>
       </div>
       <!-- Webview segment (over the PR pane — the RIGHT pane in split mode, full-width otherwise).
            Holds the "+" (add to this panel), then the Safari-compact horizontal tab bar (#ctabs)
@@ -490,12 +490,13 @@
            both states without ever moving — no reparenting, nothing to flicker mid-animation.
            viewer.js syncSplitToggle shows it only when there's a terminal to fill the panel. -->
       <button class="split-btn bar-toggle" id="split-toggle" hidden title="Show/hide the right panel (⌥⌘Return)" onclick="toggleSplitPane()">
-        <!-- Two glyphs in the same 19px box: .on (pane open) is the full-height divider at the
+        <!-- Two glyphs in the same 22px box (the attributes here; .split-btn svg sizes them
+             anyway): .on (pane open) is the full-height divider at the
              pane's edge; closed is a stub near the right edge — the pane reduced to a mark at the
              side it collapsed into, inset the same 4 units from the top, bottom and trailing edge.
              viewer.css swaps them. -->
-        <svg class="ic-open" viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="15" rx="3.5"/><path d="M14 4.5v15"/></svg>
-        <svg class="ic-closed" viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="15" rx="3.5"/><path d="M17 8.5v7"/></svg>
+        <svg class="ic-open" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="15" rx="3.5"/><path d="M14 4.5v15"/></svg>
+        <svg class="ic-closed" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="15" rx="3.5"/><path d="M17 8.5v7"/></svg>
       </button>
     </div>
     <div class="split-body" id="split-body">
