@@ -17,12 +17,20 @@ let _wcvSeq = 0;
 // Any rendered modal backdrop (the static #modal is always in the DOM, display:none when closed).
 // Backdrops are position:fixed, whose offsetParent is ALWAYS null — so test laid-out size instead.
 const modalOpen = () => [...document.querySelectorAll('.modal-backdrop')].some(b => b.offsetWidth > 0 || b.offsetHeight > 0);
-// Every live shim, so a modal opening/closing can push its visibility change synchronously (the rAF
-// loop is throttled when the renderer isn't painting) rather than wait for the next frame.
-// Dialogs append/remove a backdrop under <body> (confirm, new-session); the static #modal toggles its
-// inline display — watch exactly those, not the whole tree. Installed lazily by the first shim (the
-// DOM is guaranteed by then; module-evaluation order is not). The observer callback is a microtask,
-// so a change lands before the next paint without waiting on the (possibly throttled) rAF loop.
+// The in-page context menu (components/menu.js appends one .status-menu to <body>) is DOM too, so
+// the native webview paints over it — the toolbar's "+" menu drops down across the page and its
+// lower half vanishes. Unlike a modal, a menu covers a small area, so the page is hidden only while
+// the menu actually OVERLAPS this shim: a menu popped over the sidebar or the terminal leaves the
+// embedded page alone.
+const menuRect = () => document.querySelector('.status-menu')?.getBoundingClientRect() || null;
+const overlaps = (a, b) => !!b && a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
+// Every live shim, so a modal or menu opening/closing can push its visibility change synchronously
+// (the rAF loop is throttled when the renderer isn't painting) rather than wait for the next frame.
+// Dialogs append/remove a backdrop under <body> (confirm, new-session) and openMenu appends its
+// .status-menu there too; the static #modal toggles its inline display — watch exactly those, not
+// the whole tree. Installed lazily by the first shim (the DOM is guaranteed by then;
+// module-evaluation order is not). The observer callback is a microtask, so a change lands before
+// the next paint without waiting on the (possibly throttled) rAF loop.
 const shims = new Set();
 let _modalObserver = null;
 function watchModals() {
@@ -78,15 +86,17 @@ export function createWcvShim() {
     if (typeof e.progress === 'number' && wasLoading) { const ev = new Event('did-progress'); ev.progress = e.progress; el.dispatchEvent(ev); }
   });
 
-  // Shown ⇔ displayed and laid out (offsetParent null ⇒ this or an ancestor is display:none) AND no
-  // modal is open. The native webview is a child of the WINDOW, painted above every DOM layer, so a
-  // .modal-backdrop (project modal, confirm / new-session dialogs) can't overlay it — hide the page
-  // for the dialog's lifetime instead; the rAF loop re-shows it the frame the backdrop is gone.
-  const isVisible = () => el.style.display !== 'none' && el.offsetParent !== null && !modalOpen();
+  // Shown ⇔ displayed and laid out (offsetParent null ⇒ this or an ancestor is display:none), no
+  // modal is open, and no in-page menu is drawn over this shim's rect. The native webview is a child
+  // of the WINDOW, painted above every DOM layer, so neither a .modal-backdrop (project modal,
+  // confirm / new-session dialogs) nor a .status-menu can overlay it — hide the page for that
+  // element's lifetime instead; the rAF loop re-shows it the frame the element is gone.
+  const isVisible = (r) => el.style.display !== 'none' && el.offsetParent !== null && !modalOpen()
+    && !overlaps(r, menuRect());
 
   function pushBounds() {
     const r = el.getBoundingClientRect();
-    const vis = isVisible();
+    const vis = isVisible(r);
     const key = [Math.round(r.x), Math.round(r.y), Math.round(r.width), Math.round(r.height), vis].join(',');
     if (key !== lastKey) {
       lastKey = key;
