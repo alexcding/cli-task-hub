@@ -114,8 +114,14 @@ function wireTermDnd(el, entry, term) {
 // that contain a slash (so a bare word isn't a false positive), with an optional :line[:col].
 // Registered per terminal; failures are swallowed so a link-API change never breaks the term.
 const FILE_LINK_RE = /(?:~\/|\.{1,2}\/|\/)?(?:[\w.@+-]+\/)+[\w.@+-]+\.[\w]+(?::\d+(?::\d+)?)?/g;
+// …and URLs, which the agent prints constantly (a PR it just opened, a CI run, a doc it read).
+// They open in the RIGHT PANE as a content tab, beside the terminal that printed them, instead of
+// throwing you out to Safari — the pane is a browser and the link is part of the work. Trailing
+// punctuation is trimmed: a URL at the end of a sentence, or wrapped in (parens)/<angles>.
+const URL_LINK_RE = /https?:\/\/[^\s'"`<>()\[\]]+/g;
+const trimUrl = u => u.replace(/[.,;:!?]+$/, '');
 
-function wireFileLinks(term, getEntry) {
+function wireTermLinks(term, getEntry) {
   try {
     term.registerLinkProvider({
       provideLinks(lineNo, callback) {
@@ -123,21 +129,40 @@ function wireFileLinks(term, getEntry) {
         if (!line) { callback(undefined); return; }
         const text = line.translateToString(true);
         const links = [];
-        FILE_LINK_RE.lastIndex = 0;
-        let m;
-        while ((m = FILE_LINK_RE.exec(text))) {
-          const raw = m[0];
-          if (raw.includes('://')) continue;                 // part of a URL, not a file path
-          links.push({
-            text: raw,
-            range: { start: { x: m.index + 1, y: lineNo }, end: { x: m.index + raw.length, y: lineNo } },
-            activate: () => openFileLink(raw, getEntry?.()),
-          });
+        for (const [re, activate] of [
+          // URLs first: a file-looking token inside one (github.com/o/r/blob/main/x.js) is part of
+          // the URL, not a path — the file pass skips anything containing "://" for the same reason.
+          [URL_LINK_RE, (raw, ev) => openUrlLink(trimUrl(raw), ev)],
+          [FILE_LINK_RE, raw => openFileLink(raw, getEntry?.())],
+        ]) {
+          re.lastIndex = 0;
+          let m;
+          while ((m = re.exec(text))) {
+            const raw = re === URL_LINK_RE ? trimUrl(m[0]) : m[0];
+            if (re === FILE_LINK_RE && (m[0].includes('://') || covered(links, m.index))) continue;
+            links.push({
+              text: raw,
+              range: { start: { x: m.index + 1, y: lineNo }, end: { x: m.index + raw.length, y: lineNo } },
+              activate: (ev) => activate(raw, ev),
+            });
+          }
         }
         callback(links.length ? links : undefined);
       },
     });
   } catch { /* link provider API unavailable — terminals still work */ }
+}
+
+// Is this column already inside a link found by an earlier pass? Keeps the path inside a URL from
+// being offered as a second, overlapping link.
+const covered = (links, i) => links.some(l => i + 1 >= l.range.start.x && i + 1 <= l.range.end.x);
+
+// A URL printed by the agent → a content tab in the ACTIVE context's right pane (the same path the
+// embedded page's "Open Link in New Tab" uses, so it focuses an already-open tab rather than
+// duplicating it). ⌥-click still sends it to the real browser, for when you want the whole thing.
+function openUrlLink(url, ev) {
+  if (ev?.altKey) { window.taskhub?.openExternal?.(url); return; }
+  window.__openContentTab?.(url);
 }
 
 // Resolve a clicked path token (strip a trailing :line[:col], join a relative path to the
@@ -176,7 +201,7 @@ async function attachTermView(id, dir, title, { paired = false, pairKey = '', ha
   const fit = new FitAddon.FitAddon();
   term.loadAddon(fit);
   term.open(el);
-  wireFileLinks(term, () => state.terms.get(id)); // ⌘-click a printed file path → open it in an editor tab
+  wireTermLinks(term, () => state.terms.get(id)); // click a printed path → editor tab; a printed URL → the right pane
   // GPU renderer. The WebGL context can be lost (GPU reset, sleep/wake, the window backgrounded);
   // when it is, the addon stops painting and the terminal would freeze blank. Dispose it on loss so
   // xterm falls back to its DOM renderer (slower, but always paints) instead of a dead screen.

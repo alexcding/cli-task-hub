@@ -158,6 +158,11 @@ separation everything follows:
   session's own terminal (the agent lives there and is rarely at a
   prompt): `components/build.js` gives each context its own `build:<url>`-keyed PTY, shown in the
   right pane with a pinned Build chip, and polls `term.foreground` to flip the button play↔stop.
+- **A link printed in the terminal opens in the right pane, not the browser.** `terminal.js`
+  (`wireTermLinks`) linkifies both file paths → an editor tab (`openFileTab`) and `http(s)` URLs →
+  a content tab (`window.__openContentTab` → `openWebLink`), so a PR or CI link the agent prints
+  lands beside the terminal that printed it. ⌥-click is the escape hatch to the real browser.
+  `openWebLink` goes through `showActiveView`, so a link arriving while the pane is closed opens it.
 - **Embedded webviews are pooled.** `tab.wv` / `link.wv` are built lazily on first show and torn
   down when they fall out of the LRU pool (`state.webviewPool`, Settings → System), then rebuilt
   from `tab.cur` / `link.url`. Never cache a `wv` reference; re-read `owner.wv` (may be null) and

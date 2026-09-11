@@ -481,8 +481,9 @@ function addLink(want = '') {
 
 // Open a URL as a new content (top horizontal) tab in the ACTIVE context, loaded immediately —
 // the same kind of tab `+` creates, but pre-filled and shown. Used by the embedded webview's
-// "Open Link in New Tab" (webview_menu.rs → window.__openContentTab). Focuses an existing match
-// instead of duplicating. Returns false when there's no active viewer tab.
+// "Open Link in New Tab" (webview_menu.rs → window.__openContentTab) and by a URL clicked in the
+// terminal (terminal.js openUrlLink). Focuses an existing match instead of duplicating. Returns
+// false when there's no active viewer tab.
 function openWebLink(url) {
   if (!url) return false;
   const tab = activeTab();
@@ -495,7 +496,9 @@ function openWebLink(url) {
   insertLink(tab, link);
   tab.activeLink = link.id;
   leaveReview(tab);
-  paintLeft(tab);            // builds + loads the link's webview
+  // showActiveView, not paintLeft: a link can arrive while the pane is CLOSED (a URL clicked in the
+  // terminal, which fills the panel then), and a new tab you can't see is not an opened tab.
+  showActiveView(tab);       // builds + loads the link's webview, opening the pane if it was hidden
   renderContentTabs(true);
   playTabIn(link.id);
   saveTabs();
