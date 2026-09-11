@@ -48,3 +48,22 @@ export function openMenu(e, items) {
   setTimeout(() => document.addEventListener('click', closeMenu, true), 0);
   return false;
 }
+
+// Native-first menu: the real macOS popup when the shell offers one (bridge.js `menu` → muda),
+// the in-page menu above as the plain-browser fallback. Use this for any menu that can open OVER
+// THE PANE — a DOM menu there is painted under the embedded page, which is a native child webview
+// composited above the renderer's entire layer tree. `items` is openMenu's array; the native path
+// carries only labels, so each item's onClick runs here, by index.
+// Async: `return nativeMenu(...)` can't cancel a context menu (a promise is truthy), so a
+// contextmenu caller must preventDefault() itself before awaiting.
+export async function nativeMenu(e, items) {
+  const list = items.filter(Boolean);
+  if (!window.taskhub?.menu) return openMenu(e, list);
+  closeMenu();   // the native popup won't fire the outside-click that dismisses an in-page one
+  const picked = await window.taskhub.menu(list.map((it, i) => it.separator
+    ? { separator: true }
+    : { id: String(i), label: it.label }));
+  const hit = picked == null ? null : list[Number(picked)];
+  if (hit && !hit.separator) hit.onClick();
+  return false;
+}

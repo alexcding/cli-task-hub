@@ -11,7 +11,7 @@ import { gitClientLabel, gitClientIcon } from '../lib/git-clients.js';
 import { ideLabel, ideIcon, resolveIdeCmd, ideProbe } from '../lib/ides.js';
 import { toast, toastErr } from './toast.js';
 import { renderTabs } from './sidebar.js';
-import { openMenu, closeMenu } from './menu.js';
+import { openMenu, closeMenu, nativeMenu } from './menu.js';
 import { ensurePrTerminal, applyPrLayout, clearPrLayout, resolveTabFolder, removeWorktree, openPrPanel, leaveReview, rightPaneOpen, rightPaneHidden, setPaneView, showEmptyPane } from './split.js';
 import { jiraTaskBranch } from '../lib/workflow.mjs';
 import { persistTask, taskForTab, taskById } from '../services/tasks.js';
@@ -341,9 +341,11 @@ export function setActiveLink(linkId) {
 
 // The toolbar's "+" → a menu of what this context's pane can hold. The pane starts with nothing
 // open in it, so everything that appears there is added from here: the worktree Diff, a web page,
-// a local file. A click-anchored picker, not a context menu, so it's the in-page menu (openMenu)
-// rather than the native one. Returns false so the inline onclick can't also do anything else.
-export function ctabAdd(e) {
+// a local file. Native (nativeMenu), like every other menu: it is anchored in the pane's toolbar and
+// drops DOWN ACROSS the pane, so an in-page menu would be painted under the embedded page.
+// Async now, so the inline onclick gets a promise rather than the old `false` — the "+" is a plain
+// <button> outside any form, so there is no default action left to cancel.
+export async function ctabAdd(e) {
   const tab = activeTab();
   if (!tab) return false;
   // The diff needs a worktree, so it's offered only beside a live terminal — and only once.
@@ -355,7 +357,7 @@ export function ctabAdd(e) {
   // nothing for a PR), so after a restart the task record is where the ticket still lives.
   const key = tab.jiraKey || taskForTab(tab)?.jiraKey || '';
   const jira = key && tab.kind !== 'jira' && state.jiraBase ? key : '';
-  return openMenu(e, [
+  return nativeMenu(e, [
     canDiff && { label: 'Diff', onClick: openDiffTab },
     { label: 'Web page…', onClick: () => addLink('web') },
     { label: 'File…', onClick: addFileTab },
@@ -1199,7 +1201,7 @@ export async function newSession(ev, project = null) {
       if (projects.length > 1) {
         const r = ev?.currentTarget?.getBoundingClientRect();
         const at = r ? { preventDefault() {}, clientX: r.left, clientY: r.bottom + 6 } : ev;
-        openMenu(at, projects.map(p => ({ label: p.name, onClick: () => newSession(null, p) })));
+        nativeMenu(at, projects.map(p => ({ label: p.name, onClick: () => newSession(null, p) })));
         return;
       }
       project = projects[0];

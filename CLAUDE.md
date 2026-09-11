@@ -85,8 +85,10 @@ separation everything follows:
   renderer, which owns the state and the confirm dialog. They are native for a reason worth keeping:
   a DOM menu is painted UNDER the embedded page, which is a native child webview above every DOM
   layer, so an in-page menu opening over the pane loses its lower half. `components/menu.js`
-  (`openMenu`) stays as the fallback for a plain browser (web-only dev) and for click-anchored
-  pickers like the toolbar's ＋, which are not context menus. A native handler is async, so it must
+  (`openMenu`) stays as the fallback for a plain browser (web-only dev), reached through
+  `nativeMenu(e, items)` — the same file's native-first helper (`window.taskhub.menu` → the generic
+  muda popup), which is what any menu the renderer builds its own items for should use: the
+  toolbar's ＋ and the project picker both open over the pane and so are native too. A native handler is async, so it must
   `preventDefault()` up front — a returned promise can't cancel WKWebView's own menu.
   Right-click is the only removal:
   "Remove session" (`deleteTaskSession`, the single path) stops the terminal, forgets the task and

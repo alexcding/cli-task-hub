@@ -245,6 +245,12 @@
       set: function (enabled) { return invoke('autostart_set', { enabled: !!enabled }); },
     },
 
+    // Generic native popup for menus the renderer builds itself (the toolbar's "+", the project
+    // picker): takes [{id,label,enabled}|{separator:true}] and resolves the chosen id, or null.
+    // Everything drawn in DOM is painted UNDER the embedded page (a native child webview above the
+    // renderer's whole layer tree), so any menu that can open over the pane has to be native.
+    menu: function (items) { return popupMenu(items || []); },
+
     // Tab right-click: open/copy handled here (matches Electron, where main did them); only
     // 'close' (or null) is returned for the renderer to act on.
     tabMenu: function (url) {
