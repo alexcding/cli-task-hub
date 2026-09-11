@@ -11,7 +11,7 @@ import { gitClientLabel, gitClientIcon } from '../lib/git-clients.js';
 import { ideLabel, ideIcon, resolveIdeCmd, ideProbe } from '../lib/ides.js';
 import { toast, toastErr } from './toast.js';
 import { renderTabs } from './sidebar.js';
-import { openMenu, closeMenu } from './menu.js';
+import { openMenu } from './menu.js';
 import { ensurePrTerminal, applyPrLayout, clearPrLayout, resolveTabFolder, removeWorktree, openPrPanel, leaveReview, rightPaneOpen, rightPaneHidden, setPaneView, showEmptyPane } from './split.js';
 import { jiraTaskBranch } from '../lib/workflow.mjs';
 import { persistTask, taskForTab, taskById } from '../services/tasks.js';
@@ -595,17 +595,9 @@ export function closeOtherLinks() {
   saveTabs();
 }
 
-// Right-click an extra tab → close / close others. Native menu in the app (bridge.js ctabMenu),
-// the in-page menu as the browser fallback — same shape as sessionMenu/folderMenu.
-export async function ctabMenu(e, id) {
-  e.preventDefault();
-  if (window.taskhub?.ctabMenu) {
-    closeMenu();
-    const action = await window.taskhub.ctabMenu();
-    if (action === 'close') closeLink(id);
-    else if (action === 'closeOthers') closeOtherLinks();
-    return false;
-  }
+// Right-click an extra tab → close / close others, in the in-page menu (components/menu.js) like
+// every other right-click menu in the app — same shape as sessionMenu/folderMenu.
+export function ctabMenu(e, id) {
   return openMenu(e, [
     { label: 'Close tab', onClick: () => closeLink(id) },
     { label: 'Close other tabs', onClick: closeOtherLinks },
@@ -1082,30 +1074,16 @@ export function openTabFolder() {
 
 // Right-click the folder chip → reveal in Finder always (plus "Open in <client>" when one's
 // configured, since a left-click now opens the client), and "Delete worktree" when the chip is
-// a worktree (not the shared main checkout). A native macOS menu popped from main (matching the
-// sidebar tab / webview / tray menus); the action comes back here to dispatch. Falls back to the
-// in-page menu in a plain browser, where there's no main process.
-export async function folderMenu(e) {
-  e.preventDefault();
+// a worktree (not the shared main checkout). The in-page menu (components/menu.js), like every
+// other right-click menu in the app.
+export function folderMenu(e) {
   const el = document.getElementById('split-folder');
-  if (!el || el.hidden) return false;
+  if (!el || el.hidden) { e.preventDefault(); return false; }
   const { id, cmd } = state.gitClient || {};
   const hasClient = !!(id && cmd);
   const isWorktree = el.dataset.worktree === '1';
   const ideEl = document.getElementById('split-ide');
   const ideId = ideEl?.dataset.ideId || '', hasIde = !!ideEl?.dataset.ide;
-  if (window.taskhub?.folderMenu) {
-    closeMenu(); // dismiss any open in-page menu (the native menu won't fire the click that would)
-    const action = await window.taskhub.folderMenu({
-      hasClient, clientLabel: hasClient ? gitClientLabel(id) : '',
-      hasIde, ideLabel: hasIde ? ideLabel(ideId) : '', isWorktree,
-    });
-    if (action === 'client') folderChipClick();
-    else if (action === 'ide') openTabIde();
-    else if (action === 'finder') openTabFolder();
-    else if (action === 'delete') removeTabWorktree();
-    return false;
-  }
   return openMenu(e, [
     hasClient && { label: `Open in ${gitClientLabel(id)}`, onClick: folderChipClick },
     hasIde && { label: `Open in ${ideLabel(ideId)}`, onClick: openTabIde },

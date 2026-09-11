@@ -19,7 +19,7 @@
   //   • Text selection: off on the chrome; on for form fields, the Monaco editor, the xterm
   //     terminal, diff code cells (.dc), and anything tagged .selectable.
   //   • Context menu: the native page menu is suppressed everywhere except text fields (so cut/
-  //     copy/paste still works); the app draws its own menus via popupMenu below.
+  //     copy/paste still works); the app draws its own menus in the renderer (components/menu.js).
   (function () {
     var css =
       'html,body{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;}' +
@@ -37,7 +37,7 @@
       var t = e.target;
       if (t && t.closest && t.closest('input,textarea,[contenteditable]')) return; // native editing menu
       e.preventDefault();
-    }, false); // bubble: the app's own oncontextmenu handlers (popupMenu) run first
+    }, false); // bubble: the app's own oncontextmenu handlers (openMenu) run first
   })();
 
   // ── Avatar caching (no flicker) ───────────────────────────────────────────────
@@ -180,43 +180,6 @@
     animateZoom();
   }, true);
 
-  // Native macOS context menu (muda via window.__TAURI__.menu). Same contract as the old DOM menu —
-  // resolves the chosen item id, or null if dismissed — so tabMenu/folderMenu are unchanged. On
-  // macOS popup() is modal (returns after the menu closes); item clicks fire their `action`. We
-  // resolve from the action when one fires, else null shortly after popup() returns (dismissed).
-  function popupMenu(items) {
-    return new Promise(function (resolve) {
-      var settled = false;
-      function pick(v) { if (!settled) { settled = true; resolve(v); } }
-      (async function () {
-        try {
-          var M = window.__TAURI__.menu;
-          var built = [];
-          for (var i = 0; i < items.length; i++) {
-            var it = items[i];
-            if (it.separator) {
-              built.push(await M.PredefinedMenuItem.new({ item: 'Separator' }));
-              continue;
-            }
-            built.push(await M.MenuItem.new({
-              id: String(it.id),
-              text: it.label,
-              enabled: it.enabled !== false,
-              action: (function (id) { return function () { pick(id); }; })(it.id),
-            }));
-          }
-          var menu = await M.Menu.new({ items: built });
-          await menu.popup();
-          // Menu closed: give a click's action event a moment to arrive; if none, it was dismissed.
-          setTimeout(function () { pick(null); }, 150);
-        } catch (e) {
-          console.warn('[menu] native popup failed', e);
-          pick(null);
-        }
-      })();
-    });
-  }
-
   window.taskhub = {
     // Sync platform string in Electron's vocabulary (this is the macOS build).
     platform: 'darwin',
@@ -245,54 +208,6 @@
       set: function (enabled) { return invoke('autostart_set', { enabled: !!enabled }); },
     },
 
-    // Tab right-click: open/copy handled here (matches Electron, where main did them); only
-    // 'close' (or null) is returned for the renderer to act on.
-    tabMenu: function (url) {
-      var u = String(url || '');
-      var isHttp = /^https?:\/\//i.test(u);
-      return popupMenu([
-        { id: 'open', label: 'Open Link in Browser', enabled: isHttp },
-        { id: 'copy', label: 'Copy Link', enabled: !!u },
-        { separator: true },
-        { id: 'close', label: 'Close Tab' },
-      ]).then(function (action) {
-        if (action === 'open') { invoke('open_external', { url: u }); return null; }
-        if (action === 'copy') { try { navigator.clipboard.writeText(u); } catch (e) {} return null; }
-        return action; // 'close' | null
-      });
-    },
-    // Folder-chip right-click: the renderer acts on 'client' | 'finder' | 'delete' | null.
-    // Content-tab right-click (the left pane's horizontal tab bar). Both actions are renderer
-    // state, so this returns the id only.
-    ctabMenu: function () {
-      return popupMenu([
-        { id: 'close', label: 'Close Tab' },
-        { id: 'closeOthers', label: 'Close Other Tabs' },
-      ]);
-    },
-
-    // Session row right-click (sidebar). Actions all need renderer state (the task record, the
-    // in-app confirm dialog), so this only returns the chosen id — like folderMenu, unlike tabMenu.
-    sessionMenu: function (ctx) {
-      ctx = ctx || {};
-      var items = [{ id: 'pin', label: ctx.pinned ? 'Unpin Session' : 'Pin Session' }];
-      if (ctx.hasWorktree || ctx.hasUrl) items.push({ separator: true });
-      if (ctx.hasWorktree) items.push({ id: 'finder', label: 'Reveal in Finder' });
-      if (ctx.hasUrl) items.push({ id: 'copy', label: 'Copy Link' });
-      items.push({ separator: true });
-      items.push({ id: 'remove', label: 'Remove Session…' });
-      return popupMenu(items);
-    },
-
-    folderMenu: function (ctx) {
-      ctx = ctx || {};
-      var items = [];
-      if (ctx.hasClient) items.push({ id: 'client', label: 'Open in ' + (ctx.clientLabel || 'git client') });
-      if (ctx.hasIde) items.push({ id: 'ide', label: 'Open in ' + (ctx.ideLabel || 'IDE') });
-      items.push({ id: 'finder', label: 'Reveal in Finder' });
-      if (ctx.isWorktree) { items.push({ separator: true }); items.push({ id: 'delete', label: 'Delete Worktree…' }); }
-      return popupMenu(items);
-    },
     fetchAvatar: function (login) { return invoke('fetch_avatar', { login: login }); },
     getUsage: function () { return invoke('get_usage'); },     // M7 (sysinfo, host process)
     pathForFile: function () { return ''; },              // M4 follow-up (Tauri drag-drop carries paths)
