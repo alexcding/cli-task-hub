@@ -49,6 +49,9 @@ pub struct Terminals {
 pub struct Attached {
   buf: String,
   seq: u64,
+  // false only when the daemon reports the id unknown (PTY gone). A daemon that couldn't answer
+  // (timeout, older protocol without the field) reads as live: never dispose on doubt.
+  live: bool,
 }
 
 #[derive(Serialize)]
@@ -283,8 +286,9 @@ pub fn term_attach(app: AppHandle, state: State<Terminals>, id: String) -> Attac
     Ok(v) => Attached {
       buf: v["buf"].as_str().unwrap_or("").to_string(),
       seq: v["seq"].as_u64().unwrap_or(0),
+      live: v["live"].as_bool().unwrap_or(true),
     },
-    Err(_) => Attached { buf: String::new(), seq: 0 },
+    Err(_) => Attached { buf: String::new(), seq: 0, live: true },
   }
 }
 

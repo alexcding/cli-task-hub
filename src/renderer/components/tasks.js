@@ -10,7 +10,7 @@ import { basename, sessionUrl } from '../lib/util.js';
 import { toast, toastErr } from './toast.js';
 import { workflowRunState } from './workflow.js';
 import { openInSplit, activateTab, removeTaskTab, updateTitles } from './viewer.js';
-import { closeTerminal, disposeTerm } from './terminal.js';
+import { closeTerminal, disposeTerm, awaitRehydrate } from './terminal.js';
 import { removeWorktree, worktreeHolders, openPrPanel, clearPrLayout } from './split.js';
 import { renderTabs } from './sidebar.js';
 import { confirmDialog } from './confirm.js';
@@ -139,6 +139,7 @@ export async function openTaskSession(id) {
 export async function restartTaskSession(id) {
   const task = taskById(id);
   if (!task || !task.worktree) return;
+  await awaitRehydrate([task.id]); // a boot reattach still in flight would read as "no terminal"
   const live = taskTerm(task);
   if (live && !(await confirmDialog({ title: 'Restart session?', message: `“${task.title || basename(task.worktree)}” is running. Restarting stops its terminal and resumes the agent in a new one.`, label: 'Restart' }))) return;
   const tab = state.tabs.find(x => x.url === task.url);
@@ -189,6 +190,7 @@ async function removeTaskRecord(task, termId) {
 export async function deleteWorktreeAt(workspace, worktree) {
   if (!workspace || !worktree) return false;
   const tasks = state.tasks.filter(t => t.worktree === worktree);
+  await awaitRehydrate(tasks.map(t => t.id)); // else a PTY still reattaching is missed and outlives its removed folder
   const liveCount = tasks.filter(t => taskTerm(t)).length;
   const holders = await worktreeHolders(worktree);
   const parts = [];
@@ -208,6 +210,7 @@ export async function deleteWorktreeAt(workspace, worktree) {
 export async function deleteTaskSession(id) {
   const task = taskById(id);
   if (!task) return;
+  await awaitRehydrate([task.id]);
   const project = projectById(task.projectId);
   // Project gone (orphan): there is no workspace to remove a worktree from — stop the terminal and
   // forget the record; the folder is left alone.

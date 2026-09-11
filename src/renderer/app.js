@@ -312,10 +312,17 @@ function initWindowFocus() {
 // Restore saved web tabs first, then reattach live paired PTYs to matching tabs.
 // The state.tabsReady guard in saveTabs() means a tab opened from the tray before this
 // lands can't clobber the saved set — restore merges it in instead.
+// Startup latency: xterm + its addons + the SF Mono load are fetched now, in parallel with the
+// HTTP loads below, instead of when the first attach needs them. The tasks fetch (HTTP) and the
+// live PTY list (daemon IPC) don't depend on each other, so they run together; tabs need tasks
+// (a bare session's tab is dropped when its task is gone). The reattaches themselves are NOT
+// awaited here — they run concurrently in the background and a tab opened meanwhile waits only
+// for its own terminal (state.termRehydrate, see ensurePrTerminal).
+terminal.loadXterm().catch(() => {});
 state.tabTermInit = (async () => {
-  await loadPersistedTasks();          // tasks first: terminals are keyed by task id and bind to tabs through the task
+  const [, live] = await Promise.all([loadPersistedTasks(), terminal.listLiveTerminals()]);
   await viewer.restoreTabs();          // rehydrate GitHub/Jira tabs from the last session
-  await terminal.rehydrateTerminals(); // reattach PTYs that outlived a window close / app relaunch
+  terminal.rehydrateTerminals(live).catch(e => console.error('[init] terminal rehydrate failed:', e));
 })().catch(e => console.error('[init] tab/terminal restore failed:', e)); // never leave it unhandled — awaiters in ensurePrTerminal() still try/catch
 
 

@@ -592,9 +592,11 @@ impl Daemon {
           poke(t.wake_w);
         }
         let b = t.ring.lock().unwrap();
-        json!({ "buf": b.chunks.concat(), "seq": b.seq })
+        json!({ "buf": b.chunks.concat(), "seq": b.seq, "live": true })
       }
-      None => json!({ "buf": "", "seq": 0 }),
+      // Unknown id: the PTY exited (or never existed). Say so, so the renderer doesn't keep a view
+      // for it — its exit broadcast may have predated the renderer's subscription.
+      None => json!({ "buf": "", "seq": 0, "live": false }),
     }
   }
 

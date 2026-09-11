@@ -12,7 +12,7 @@ import { state, activeTab, projectByRepo, projectByPrUrl, projectByJiraKey, proj
 import { api, apiJson } from '../services/api.js';
 import { jiraKeyFromUrl, canSplitTerminal, errMsg, basename } from '../lib/util.js';
 import { toastErr } from './toast.js';
-import { createTermView, disposeTerm, fitTerm, visibleTerm } from './terminal.js';
+import { createTermView, disposeTerm, fitTerm, visibleTerm, awaitRehydrate } from './terminal.js';
 import { buildTerm } from './build.js';
 import { dragDivider } from '../lib/drag.js';
 import { hideDiffPane } from './diff.js';
@@ -114,6 +114,10 @@ export function ensurePrTerminal(tab, cwd0, meta = {}) {
   if (tab._termPromise) return tab._termPromise;
   tab._termPromise = (async () => {
     if (state.tabTermInit) { try { await state.tabTermInit; } catch {} }
+    // Only THIS tab's terminals need to have finished reattaching — not every session's. Every
+    // task on the url, not taskForTab(): that helper prefers the task with a live terminal, which
+    // is exactly what isn't known until these land.
+    await awaitRehydrate(state.tasks.filter(t => t.url === tab.url).map(t => t.id));
     if (tab.termId && state.terms.has(tab.termId)) return tab.termId;
     if (!adoptPairedTerminal(tab)) {           // no surviving terminal for this tab's task → create one
       const f = cwd0 != null ? null : await resolveTabFolder(tab);

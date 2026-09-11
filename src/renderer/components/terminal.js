@@ -21,14 +21,21 @@ let _xtReady = null;
 // the marker immediately before EACH script evaluates (not once up front) so a Monaco load
 // running concurrently can't re-install it in the gap. Monaco doesn't need the marker.
 const loadUmd = src => { try { if (window.define) delete window.define.amd; } catch {} return loadScript(src); };
-function loadXterm() {
+export function loadXterm() {
   if (_xtReady) return _xtReady;
   _xtReady = (async () => {
-    const css = document.createElement('link'); css.rel = 'stylesheet'; css.href = '/vendor/xterm.css'; document.head.appendChild(css);
-    await loadUmd('/vendor/xterm.js');
-    await Promise.all([loadUmd('/vendor/xterm-addon-fit.js'), loadUmd('/vendor/xterm-addon-webgl.js')]);
+    // Each step is skipped when a previous (failed, then retried) attempt already got it, so a
+    // retry fetches only the missing asset and never re-evaluates xterm.js under live terminals.
+    if (!document.querySelector('link[href="/vendor/xterm.css"]')) {
+      const css = document.createElement('link'); css.rel = 'stylesheet'; css.href = '/vendor/xterm.css'; document.head.appendChild(css);
+    }
+    if (!window.Terminal) await loadUmd('/vendor/xterm.js');
+    await Promise.all([
+      window.FitAddon ? null : loadUmd('/vendor/xterm-addon-fit.js'),
+      window.WebglAddon ? null : loadUmd('/vendor/xterm-addon-webgl.js'),
+    ]);
     await ensureTermFont(); // load SF Mono (if present) before xterm measures glyph width
-  })();
+  })().catch(e => { _xtReady = null; throw e; }); // a failed vendor fetch (server restarting) is retried by the next attach, not cached forever
   return _xtReady;
 }
 
@@ -283,6 +290,9 @@ async function attachTermView(id, dir, title, { paired = false, pairKey = '', ha
     let attachSeq = 0;
     try {
       const res = await taskhub.term.attach(id);
+      // The PTY was gone by the time we asked (exited between list and attach — its one `exit`
+      // broadcast predates our onExit subscription). Don't keep a view for it.
+      if (res && typeof res === 'object' && res.live === false) { disposeTerm(id); return id; }
       const buf = typeof res === 'string' ? res : res?.buf;
       if (buf) term.write(buf);
       attachSeq = typeof res === 'object' && res ? res.seq || 0 : 0;
@@ -383,18 +393,39 @@ function bindPairedTermToTab(id, pairKey) {
 // After the window is reopened (or the app relaunched — PTYs live in the daemon), the renderer is
 // fresh but the terminals are still alive. They are reattached hidden, keyed by their task url,
 // until their matching GitHub/Jira tab is opened again.
-export async function rehydrateTerminals() {
-  if (!window.taskhub?.term?.list) return;
-  let live = [];
-  try { live = await taskhub.term.list(); } catch { return; }
+// The daemon's live PTYs (empty when there is no daemon bridge). Split from rehydrateTerminals
+// so boot can fetch it in parallel with the tasks/tabs HTTP loads.
+export async function listLiveTerminals() {
+  if (!window.taskhub?.term?.list) return [];
+  try { return (await taskhub.term.list()) || []; } catch { return []; }
+}
+
+// Reattach `live` (from listLiveTerminals) CONCURRENTLY: each attach is an independent xterm build
+// plus one attach round-trip to the daemon, so N sessions cost ~one attach, not N in a row. The
+// per-task promise is published in state.termRehydrate synchronously, before the first await, so
+// ensurePrTerminal can wait for JUST the terminal of the tab being opened instead of all of them.
+// Returns once every attach has settled.
+export async function rehydrateTerminals(live) {
+  const jobs = [];
   for (const { id, cwd, title, pairKey, hasContext } of live) {
     if (state.terms.has(id)) continue;
-    try {
-      await attachTermView(id, cwd, title, { paired: true, pairKey, hasContext, replay: true });
-      bindPairedTermToTab(id, pairKey);
-    } catch {}
+    const p = attachTermView(id, cwd, title, { paired: true, pairKey, hasContext, replay: true })
+      .then(() => { bindPairedTermToTab(id, pairKey); renderTabs(); }) // each row goes live as its own attach lands, not after the slowest
+      .catch(() => {})
+      .finally(() => { if (state.termRehydrate.get(pairKey || id) === p) state.termRehydrate.delete(pairKey || id); });
+    state.termRehydrate.set(pairKey || id, p);
+    jobs.push(p);
   }
+  await Promise.allSettled(jobs);
   if (live.length) renderTabs();
+}
+
+// Wait for the in-flight boot reattach of these tasks' terminals (no-op once landed). Every path
+// that reads taskTerm() to decide whether a session is live — kill, restart, remove — must call
+// this first, or a click in the first second of boot sees "no terminal" for a PTY that is alive.
+export async function awaitRehydrate(taskIds) {
+  const pending = taskIds.map(id => state.termRehydrate.get(id)).filter(Boolean);
+  if (pending.length) await Promise.allSettled(pending);
 }
 
 // Tear down a terminal's listeners + PTY + xterm view. No view switching.

@@ -27,7 +27,8 @@ export const state = {
   // Terminals (xterm views bound to main-process PTYs)
   terms: new Map(),    // id -> { el, term, fit, off, offExit, cwd, title, paired, pairKey, hasContext }
   activeTermId: null,
-  tabTermInit: null,   // promise: tabs restored + PTYs rehydrated (awaited by ensurePrTerminal)
+  tabTermInit: null,   // promise: tasks + tabs restored and the live PTY list read (awaited by ensurePrTerminal)
+  termRehydrate: new Map(), // task id → in-flight attach of its rehydrating terminal (ensurePrTerminal awaits only its own)
 
   // Jira snapshots + filters
   boardSnap: { items: [] },   // the open project's sprint board (all assignees) — project page Board section
