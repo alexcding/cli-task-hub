@@ -1316,7 +1316,10 @@ export function runBuildClick() {
   const tab = activeTab();
   if (tab && !(buildTerm(tab) && tab.buildOpen !== false)) addChip(tab, 'build');   // closed, or never opened: it comes back
   if (tab) tab.buildOpen = true;
-  runBuild(tab, { setView: setPaneView, onState: syncBuildBtn });
+  // Run doesn't open the right pane: a closed pane stays closed (the Build chip is on the bar for
+  // when you want the output); an open one switches to the build so the output is watched.
+  const paneOpen = tab && tab.paneView !== 'off';
+  runBuild(tab, { setView: paneOpen ? setPaneView : null, onState: syncBuildBtn });
 }
 export function stopBuildClick() { stopBuild(activeTab()); }
 

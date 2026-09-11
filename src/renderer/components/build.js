@@ -107,7 +107,7 @@ export async function runBuild(tab, { setView, onState } = {}) {
       } catch (e) { toastErr(`Couldn't start a build terminal: ${e.message}`); return; }
     }
     if (!t) return;
-    setView?.('build');                   // show the pane before typing, so the output is watched
+    setView?.('build');                   // switch an open pane to the build before typing (never opens a closed one)
     if (_running.has(t.id)) { toast('A build is already running'); return; }
     // Marked running (and the button flipped to stop) BEFORE the first line is typed: submitting a
     // multi-line script takes several awaits, and a click landing inside that window would
