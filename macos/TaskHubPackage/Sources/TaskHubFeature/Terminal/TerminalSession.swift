@@ -31,7 +31,7 @@ final class TerminalSession: Identifiable {
         self.pairKey = pairKey
         self.cwd = cwd
         self.paired = paired
-        pipe = TerminalPipe(onError: { [weak self] text in Task { @MainActor in self?.setError(text) } },
+        pipe = TerminalPipe(onError: { [weak self] text in Task { @MainActor in self?.setError(text, prefer: true) } },
                             onExit: { [weak self] code in Task { @MainActor in self?.status = "Exited (\(code))"; self?.ready = false } })
         surface.configuration = .init(backend: .inMemory(pipe.memory), fontSize: 13, resizeThrottleMilliseconds: 80)
         surface.makePlatformView = { [weak self] in
@@ -72,6 +72,7 @@ final class TerminalSession: Identifiable {
             self.client = client
             hello = try await host.connect(client: client)
             try hello?.validateByteTransport()
+            try hello?.validateInputAcknowledgements()
             try Task.checkCancellation()
             let terminals: [PtyInfo] = try await client.request(.init(op: "list"))
             let info: PtyInfo
@@ -109,10 +110,10 @@ final class TerminalSession: Identifiable {
         } catch { setError(error.localizedDescription); client?.close() }
     }
 
-    private func setError(_ text: String) {
+    private func setError(_ text: String, prefer: Bool = false) {
         // Closing a failed pipeline also reports a socket disconnect; preserve
         // the actionable root cause (for example truncated restoration).
-        if error == nil { error = text }
+        if error == nil || prefer { error = text }
         status = "Disconnected"
         ready = false
     }

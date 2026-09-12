@@ -1,5 +1,7 @@
 import Darwin
+import AppKit
 import Foundation
+import GhosttyTerminal
 import Testing
 @testable import TaskHubFeature
 
@@ -36,6 +38,56 @@ private struct ProtocolFixture {
         if process.isRunning { process.terminate(); process.waitUntilExit() }
         try? FileManager.default.removeItem(at: directory)
     }
+}
+
+private final class FailureMessages: @unchecked Sendable {
+    private let lock = NSLock()
+    private var values: [String] = []
+    func append(_ value: String) { lock.lock(); values.append(value); lock.unlock() }
+    var all: [String] { lock.lock(); defer { lock.unlock() }; return values }
+}
+
+@MainActor @Test(.timeLimit(.minutes(1))) func ghosttyEncodedInputReportsSocketRejectionAndStopsLaterKeystrokes() async throws {
+    _ = NSApplication.shared
+    let fixture = try await ProtocolFixture.start()
+    defer { fixture.stop() }
+    let messages = FailureMessages()
+    let pipe = TerminalPipe(onError: messages.append, onExit: { _ in })
+    let client = PtydClient(onEvent: { pipe.receive($0) })
+    _ = try await client.connect(path: fixture.socket)
+    defer { pipe.close(); client.close() }
+    pipe.bind(client: client, id: "fixture")
+    let state = TerminalViewState()
+    let view = WorkspaceTerminalView(frame: NSRect(x: 0, y: 0, width: 640, height: 320))
+    view.delegate = state; view.controller = state.controller
+    view.configuration = .init(backend: .inMemory(pipe.memory), fontSize: 13)
+    let window = NSWindow(contentRect: view.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+    window.isReleasedWhenClosed = false; window.contentView = view
+    defer { window.contentView = nil; window.close() }
+    view.layoutSubtreeIfNeeded()
+    for _ in 0..<100 {
+        if state.surface != nil { break }
+        try await Task.sleep(for: .milliseconds(10))
+    }
+    _ = try #require(state.surface)
+    pipe.attach(.init(bytes: Data(), seq: 0, live: true, truncated: false)) { messages.append("ready") }
+    for _ in 0..<100 {
+        if messages.all.contains("ready") { break }
+        try await Task.sleep(for: .milliseconds(10))
+    }
+    #expect(messages.all == ["ready"])
+    #expect(view.sendKey(.enter))
+    for _ in 0..<100 {
+        if messages.all.count > 1 { break }
+        try await Task.sleep(for: .milliseconds(10))
+    }
+    #expect(messages.all.last?.contains("fixture input queue is full") == true)
+    #expect(messages.all.last?.contains("Earlier input may have been sent") == true)
+    #expect(view.sendKey(.enter))
+    try await Task.sleep(for: .milliseconds(30))
+    let written = try String(contentsOf: fixture.directory.appendingPathComponent("ready.writes"), encoding: .utf8)
+    #expect(written == Data([13]).base64EncodedString() + "\n")
+    #expect(messages.all.count == 2)
 }
 
 @Test func incompleteReplayIsRejectedAndOldHelpersAreDetected() throws {

@@ -603,6 +603,33 @@ does not).
   Plain printed file-path detection, broad IME/focus acceptance, full VT restoration
   and the terminal performance benchmark remain open.
 
+### M1 acknowledged terminal input — 2026-09-12
+
+- Fixed a daemon correctness bug: full input queues and missing terminals previously
+  returned success after discarding input. Writes now reject the entire new chunk
+  before queue mutation. Nonblocking partial writes retain accepted order; a fatal
+  writer error is latched and reported instead of silently clearing bytes. A failure
+  during a later queue drain emits a terminal-specific inputError event.
+- Native Ghostty input now passes through a bounded queue with one acknowledged
+  64 KiB write at a time. The 1 MiB limit includes pending and in-flight bytes.
+  Rejection, timeout or overflow stops the remaining suffix, reports that earlier
+  input may have been sent, and requires checking the shell before reattaching.
+  Nothing retries an uncertain command or paste automatically. Closing a pipeline
+  also stops queued input. Acknowledgement means accepted by the daemon, not that
+  the shell has executed or consumed the bytes.
+- The hello response advertises acknowledgedInput; native sessions require it before
+  attaching. An older running helper is explained without replacing it or killing
+  its shells. The protocol remains version 2 and the legacy transport is compatible.
+- Verification covers bounded pending/in-flight bytes, ordered acknowledgement,
+  partial failure, stopped suffixes, helper capability checks and decoded drain-error
+  events. Real-PTY tests fill the queue of a non-reading process, verify overflow
+  and missing-terminal errors, and confirm the original process is preserved.
+  The real Ghostty key-encoding path is exercised against a rejecting socket peer.
+  All 73 native tests and nine Rust tests pass; the native app builds and the legacy
+  Tauri host passes cargo check with its existing vendor warnings.
+  Automatic reconnect, full VT restoration and the hardware performance acceptance
+  gate remain open.
+
 ## Why now, and why native
 
 The Tauri shell works, but roughly half of `src-tauri/` exists to work around what a DOM

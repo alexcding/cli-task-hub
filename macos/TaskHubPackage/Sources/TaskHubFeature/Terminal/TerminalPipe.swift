@@ -9,6 +9,7 @@ final class TerminalPipe: @unchecked Sendable {
     private let outputQueue = DispatchQueue(label: "taskhub.terminal.output", qos: .userInitiated)
     private var client: PtydClient?
     private var termID: String?
+    private var input: TerminalInputQueue?
     private var replaying = true
     private var attaching = true
     private var buffered: [PtyEvent] = []
@@ -32,6 +33,13 @@ final class TerminalPipe: @unchecked Sendable {
     func bind(client: PtydClient, id: String) {
         lock.lock()
         self.client = client; termID = id
+        input?.close()
+        input = TerminalInputQueue(send: { data in
+            let _: Bool? = try await client.request(.init(op: "write", term: id, bytes: data))
+        }, onError: { [weak self] message in
+            guard let self else { return }
+            self.lock.lock(); self.failLocked(message); self.lock.unlock()
+        })
         let grid = latestGrid
         lock.unlock()
         if let grid { resize(columns: grid.0, rows: grid.1) }
@@ -41,6 +49,10 @@ final class TerminalPipe: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         guard event.id == termID, !failed else { return }
+        if event.ev == "inputError" {
+            failLocked("Terminal input delivery failed: \(event.message ?? "PTY write failed.") Earlier input may have been sent; remaining input was stopped. Check the shell before reattaching.")
+            return
+        }
         if event.ev == "data" {
             guard let bytes = event.bytes, event.seq != nil else {
                 failLocked("The terminal daemon sent an incomplete byte frame."); return
@@ -113,7 +125,9 @@ final class TerminalPipe: @unchecked Sendable {
     }
 
     private func failLocked(_ message: String) {
+        guard !failed else { return }
         failed = true
+        input?.close()
         buffered.removeAll()
         if paused { flowLocked(false) }
         client?.close()
@@ -122,11 +136,12 @@ final class TerminalPipe: @unchecked Sendable {
 
     private func write(_ data: Data) {
         lock.lock()
-        defer { lock.unlock() }
         // The drain fence keeps replies to historical terminal queries from being
         // injected into the live shell after the replay has supposedly finished.
-        guard !replaying, !failed, let termID else { return }
-        client?.fire(.init(op: "write", term: termID, bytes: data))
+        guard !replaying, !failed, termID != nil else { lock.unlock(); return }
+        let input = input
+        lock.unlock()
+        input?.enqueue(data)
     }
 
     private func resize(columns: UInt16, rows: UInt16) {
@@ -141,6 +156,7 @@ final class TerminalPipe: @unchecked Sendable {
     func close() {
         lock.lock()
         failed = true
+        input?.close()
         buffered.removeAll()
         if paused { flowLocked(false) }
         client?.close()

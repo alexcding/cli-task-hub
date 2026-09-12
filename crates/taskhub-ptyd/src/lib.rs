@@ -59,7 +59,7 @@ const BATCH_MAX_MS: u128 = 32; // …but never hold a batch longer than this
 const BATCH_MAX_BYTES: usize = 128 * 1024; // …or larger than this
 const READ_CHUNK: usize = 64 * 1024;
 
-const INPUT_MAX: usize = 1024 * 1024; // queued keystrokes/paste per terminal before we drop input
+const INPUT_MAX: usize = 1024 * 1024; // maximum queued keystrokes/paste per terminal
 const OUTBOX_MAX: usize = 8 * 1024 * 1024; // per-client unsent bytes before the client is dropped
 const STALL_DROP: Duration = Duration::from_secs(60); // owing bytes with no progress this long → drop
 const BACKLOG_HIGH: usize = 4 * 1024 * 1024; // any client owing this much pauses PTY reads…
@@ -170,7 +170,7 @@ mod ring_tests {
 struct Input {
   writer: Box<dyn Write + Send>,
   queue: VecDeque<u8>,
-  dropped: usize,
+  failure: Option<String>,
 }
 
 struct Term {
@@ -281,23 +281,85 @@ fn poke(fd: RawFd) {
 }
 
 // Drain the input queue with non-blocking writes. Returns true when something is still queued.
-fn drain_input(inp: &mut Input) -> bool {
+fn drain_input(inp: &mut Input) -> Result<bool, String> {
+  if let Some(error) = &inp.failure { return Err(error.clone()); }
   while !inp.queue.is_empty() {
     let (a, _) = inp.queue.as_slices();
-    match inp.writer.write(a) {
-      Ok(0) => break,
-      Ok(n) => {
-        inp.queue.drain(..n);
-      }
+    let error = match inp.writer.write(a) {
+      Ok(0) => Some("terminal input writer made no progress".to_string()),
+      Ok(n) => { inp.queue.drain(..n); None }
       Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => break,
       Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
-      Err(_) => {
-        inp.queue.clear();
-        break;
-      }
+      Err(e) => Some(format!("terminal input write failed: {e}")),
+    };
+    if let Some(error) = error {
+      inp.failure = Some(error.clone());
+      inp.queue.clear();
+      return Err(error);
     }
   }
-  !inp.queue.is_empty()
+  Ok(!inp.queue.is_empty())
+}
+
+fn queue_input(inp: &mut Input, data: &[u8]) -> Result<bool, String> {
+  if let Some(error) = &inp.failure { return Err(error.clone()); }
+  // Reject the whole new chunk before modifying the queue. Never acknowledge a
+  // dropped suffix: a caller must know that earlier input may already have run.
+  if data.len() > INPUT_MAX.saturating_sub(inp.queue.len()) {
+    return Err("terminal input queue is full; this input was not accepted".into());
+  }
+  inp.queue.extend(data);
+  drain_input(inp)
+}
+
+#[cfg(test)]
+mod input_tests {
+  use super::*;
+
+  struct Writer { bytes: Arc<Mutex<Vec<u8>>>, budget: Arc<Mutex<usize>>, fatal: bool }
+  impl Write for Writer {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+      let mut budget = self.budget.lock().unwrap();
+      if *budget == 0 {
+        return Err(std::io::Error::from(if self.fatal { std::io::ErrorKind::BrokenPipe } else { std::io::ErrorKind::WouldBlock }));
+      }
+      let count = bytes.len().min(*budget);
+      self.bytes.lock().unwrap().extend_from_slice(&bytes[..count]);
+      *budget -= count;
+      Ok(count)
+    }
+    fn flush(&mut self) -> std::io::Result<()> { Ok(()) }
+  }
+
+  #[test]
+  fn full_input_queue_rejects_whole_chunk_and_preserves_accepted_order() {
+    let bytes = Arc::new(Mutex::new(Vec::new()));
+    let budget = Arc::new(Mutex::new(2));
+    let mut input = Input { writer: Box::new(Writer { bytes: bytes.clone(), budget: budget.clone(), fatal: false }), queue: VecDeque::new(), failure: None };
+    let accepted = vec![b'a'; INPUT_MAX];
+    assert!(queue_input(&mut input, &accepted).unwrap());
+    let before = input.queue.clone();
+    assert!(queue_input(&mut input, b"REJECTED").is_err());
+    assert_eq!(input.queue, before);
+    *budget.lock().unwrap() = INPUT_MAX;
+    assert!(!drain_input(&mut input).unwrap());
+    assert_eq!(*bytes.lock().unwrap(), accepted);
+    assert!(!queue_input(&mut input, b"ok").unwrap());
+    assert!(bytes.lock().unwrap().ends_with(b"ok"));
+  }
+
+  #[test]
+  fn partial_writer_failure_is_reported_and_never_replayed() {
+    let bytes = Arc::new(Mutex::new(Vec::new()));
+    let budget = Arc::new(Mutex::new(2));
+    let mut input = Input { writer: Box::new(Writer { bytes: bytes.clone(), budget: budget.clone(), fatal: true }), queue: VecDeque::new(), failure: None };
+    assert!(queue_input(&mut input, b"abcdef").is_err());
+    assert_eq!(*bytes.lock().unwrap(), b"ab");
+    assert!(input.queue.is_empty() && input.failure.is_some());
+    *budget.lock().unwrap() = 100;
+    assert!(queue_input(&mut input, b"later").is_err());
+    assert_eq!(*bytes.lock().unwrap(), b"ab");
+  }
 }
 
 impl Daemon {
@@ -427,7 +489,7 @@ impl Daemon {
       created: now_ms(),
     };
     let ring = Arc::new(Mutex::new(Ring { chunks: VecDeque::new(), len: 0, seq: 0, truncated: false }));
-    let input = Arc::new(Mutex::new(Input { writer, queue: VecDeque::new(), dropped: 0 }));
+    let input = Arc::new(Mutex::new(Input { writer, queue: VecDeque::new(), failure: None }));
     let paused = Arc::new(AtomicBool::new(false));
     let killed = Arc::new(AtomicBool::new(false));
     let child = Arc::new(Mutex::new(child));
@@ -493,7 +555,10 @@ impl Daemon {
           while unsafe { libc::read(wake_r, sink.as_mut_ptr() as *mut libc::c_void, sink.len()) } > 0 {}
         }
         if fds[0].revents & libc::POLLOUT != 0 {
-          drain_input(&mut input.lock().unwrap());
+          let result = drain_input(&mut input.lock().unwrap());
+          if let Err(message) = result {
+            me.broadcast(&json!({ "ev": "inputError", "id": id, "message": message }));
+          }
         }
         if fds[0].revents & (libc::POLLIN | libc::POLLHUP | libc::POLLERR) != 0 {
           // First read, then keep collecting for the batch window while bytes keep arriving.
@@ -560,10 +625,10 @@ impl Daemon {
 
   // Queue input for a terminal and try to push it through right away (non-blocking). Holds the
   // registry lock only to look the terminal up — a stuck program stalls nobody else.
-  fn write(&self, id: &str, data: &[u8]) {
+  fn write(&self, id: &str, data: &[u8]) -> Result<(), String> {
     let (input, wake, manifest) = {
       let mut map = self.terms.lock().unwrap();
-      let Some(t) = map.get_mut(id) else { return };
+      let Some(t) = map.get_mut(id) else { return Err("terminal no longer exists".into()) };
       let manifest = if !t.info.has_context {
         t.info.has_context = true;
         Some(t.info.clone())
@@ -577,20 +642,12 @@ impl Daemon {
     }
     let still_queued = {
       let mut inp = input.lock().unwrap();
-      if inp.queue.len() + data.len() > INPUT_MAX {
-        inp.dropped += data.len();
-        if inp.dropped == data.len() {
-          log(&format!("{id}: input queue full ({INPUT_MAX} bytes) — dropping input until it drains"));
-        }
-        return;
-      }
-      inp.dropped = 0;
-      inp.queue.extend(data);
-      drain_input(&mut inp)
+      queue_input(&mut inp, data)?
     };
     if still_queued {
       poke(wake); // make the poll thread watch POLLOUT
     }
+    Ok(())
   }
 
   fn resize(&self, id: &str, cols: u16, rows: u16) {
@@ -708,7 +765,7 @@ impl Daemon {
           }
         }
         let encoding = if client.byte_transport { "base64" } else { "utf8" };
-        Ok(json!({ "protocol": PROTOCOL, "pid": std::process::id(), "version": env!("CARGO_PKG_VERSION"), "dataEncoding": encoding }))
+        Ok(json!({ "protocol": PROTOCOL, "pid": std::process::id(), "version": env!("CARGO_PKG_VERSION"), "dataEncoding": encoding, "acknowledgedInput": true }))
       }
       "create" => {
         let opts: CreateOpts = req.get("opts").cloned().map(serde_json::from_value).transpose().map_err(|e| e.to_string())?.unwrap_or_default();
@@ -721,9 +778,9 @@ impl Daemon {
           if encoded.len() > ((INPUT_MAX + 2) / 3) * 4 { return Err("terminal input exceeds buffer limit".into()); }
           let bytes = BASE64.decode(encoded).map_err(|_| "invalid base64 terminal input")?;
           if bytes.len() > INPUT_MAX { return Err("terminal input exceeds buffer limit".into()); }
-          self.write(&sid(), &bytes);
+          self.write(&sid(), &bytes)?;
         } else {
-          self.write(&sid(), req.get("data").and_then(Value::as_str).unwrap_or("").as_bytes());
+          self.write(&sid(), req.get("data").and_then(Value::as_str).unwrap_or("").as_bytes())?;
         }
         Ok(Value::Null)
       }

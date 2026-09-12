@@ -29,6 +29,13 @@ struct PtyHello: Decodable, Sendable {
     let `protocol`: UInt32
     let pid: Int32
     let dataEncoding: String?
+    let acknowledgedInput: Bool?
+
+    func validateInputAcknowledgements() throws {
+        guard acknowledgedInput == true else {
+            throw PtyError.connection("This PTY helper cannot acknowledge input failures. Save your work, quit TaskHub explicitly, rebuild the helper, and reopen. Existing shells have been preserved.")
+        }
+    }
 
     func validateByteTransport() throws {
         guard dataEncoding == "base64" else {
@@ -61,6 +68,7 @@ struct PtyEvent: Decodable, Sendable {
     let seq: UInt64?
     let exitCode: Int?
     let signal: Int?
+    var message: String? = nil
 }
 
 struct PtyRequest: Encodable, Sendable {

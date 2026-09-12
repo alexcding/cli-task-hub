@@ -45,6 +45,7 @@ private final class EventLog: @unchecked Sendable {
     defer { client.close(); _ = kill(hello.pid, SIGTERM) }
     #expect(hello.protocol == 2)
     try hello.validateByteTransport()
+    try hello.validateInputAcknowledgements()
     let terminal: PtyInfo = try await client.request(.init(op: "create", opts: .init(cwd: directory.path, shell: shell.path, pairKey: "fixture")))
     for _ in 0..<100 {
         if log.text.contains("PTY_READY") { break }
@@ -168,4 +169,40 @@ private final class EventLog: @unchecked Sendable {
     #expect(kill(secondHello.pid, 0) == -1)
     // A second Quit with only the stale socket must not start a replacement.
     try await relaunchedHost.stopExisting()
+}
+
+@Test(.timeLimit(.minutes(1))) func realDaemonRejectsInputOverflowAndMissingTerminalInsteadOfAcknowledgingDroppedBytes() async throws {
+    var root = URL(fileURLWithPath: #filePath)
+    for _ in 0..<5 { root.deleteLastPathComponent() }
+    let directory = URL(fileURLWithPath: "/tmp/th-input-\(UUID().uuidString.prefix(12))")
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let shell = directory.appendingPathComponent("blocked-reader")
+    try "#!/bin/sh\n/bin/stty raw -echo || exit 1\nprintf 'INPUT_READY\\n'\nexec /bin/sleep 30\n".write(to: shell, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: shell.path)
+    let config = PtydConfiguration(executable: root.appendingPathComponent("crates/taskhub-ptyd/target/debug/taskhub-ptyd"),
+                                   directory: directory, socketPath: directory.appendingPathComponent("pty.sock").path)
+    let host = PtydHost(configuration: config), log = EventLog()
+    let client = PtydClient(onEvent: log.append)
+    let hello = try await host.connect(client: client)
+    defer { client.close(); _ = kill(hello.pid, SIGTERM) }
+    try hello.validateInputAcknowledgements()
+    let terminal: PtyInfo = try await client.request(.init(op: "create", opts: .init(cwd: directory.path, shell: shell.path, pairKey: "blocked-input")))
+    for _ in 0..<100 {
+        if log.text.contains("INPUT_READY") { break }
+        try await Task.sleep(for: .milliseconds(20))
+    }
+    #expect(log.text.contains("INPUT_READY"))
+    let _: Bool? = try await client.request(.init(op: "write", term: terminal.id, bytes: Data(repeating: 97, count: 1024 * 1024)))
+    do {
+        let _: Bool? = try await client.request(.init(op: "write", term: terminal.id, bytes: Data(repeating: 98, count: 64 * 1024)))
+        Issue.record("Overflow was falsely acknowledged")
+    } catch { #expect(error.localizedDescription.contains("queue is full")) }
+    do {
+        let _: Bool? = try await client.request(.init(op: "write", term: "missing-terminal", data: "never accepted"))
+        Issue.record("Missing terminal write was falsely acknowledged")
+    } catch { #expect(error.localizedDescription.contains("no longer exists")) }
+    let terms: [PtyInfo] = try await client.request(.init(op: "list"))
+    #expect(terms.first?.pid == terminal.pid)
+    await host.quit(client: client, hello: hello)
 }

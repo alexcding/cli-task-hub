@@ -17,6 +17,10 @@ const server = net.createServer(socket => {
       };
       switch (request.op) {
         case 'hello': reply({ protocol: mode === 'mismatch' ? 999 : 2, pid: process.pid }); break;
+        case 'write':
+          fs.appendFileSync(`${readyFile}.writes`, `${request.bytes}\n`);
+          socket.write(JSON.stringify({ id: request.id, err: 'fixture input queue is full' }) + '\n');
+          break;
         case 'slow': setTimeout(() => reply('stale reply'), 100); break;
         case 'list': setTimeout(() => reply([]), 180); break;
         case 'drop': socket.destroy(); break;
