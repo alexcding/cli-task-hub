@@ -1,20 +1,23 @@
 import AppKit
 import SwiftUI
 import TaskHubFeature
+import Observation
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let store = AppStore()
     private var window: NSWindow?
     private var statusItem: NSStatusItem?
+    private let popover = NSPopover()
     private var quitting = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        store.shell.applyAppearance()
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1000, height: 680),
                               styleMask: [.titled, .closable, .miniaturizable, .resizable],
                               backing: .buffered, defer: false)
         window.title = "TaskHub Native"
-        window.contentView = NSHostingView(rootView: ContentView(store: store))
+        window.contentView = NSHostingView(rootView: ContentView(store: store, showTray: { [weak self] in self?.toggleTray() }))
         window.delegate = self
         window.isReleasedWhenClosed = false
         window.setFrameAutosaveName("TaskHubNativeMain")
@@ -22,16 +25,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         self.window = window
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         item.button?.image = NSImage(systemSymbolName: "square.stack.3d.up", accessibilityDescription: "TaskHub Native")
-        let menu = NSMenu()
-        menu.addItem(withTitle: "Open TaskHub Native", action: #selector(showWindow), keyEquivalent: "").target = self
-        menu.addItem(.separator())
-        menu.addItem(withTitle: "Quit TaskHub Native", action: #selector(quitFromTray), keyEquivalent: "").target = self
-        item.menu = menu
+        item.button?.image?.isTemplate = true
+        item.button?.setAccessibilityIdentifier("taskhub-status-item")
+        item.button?.target = self
+        item.button?.action = #selector(toggleTray)
         statusItem = item
+        popover.behavior = .transient
+        popover.contentSize = NSSize(width: 380, height: 580)
+        popover.contentViewController = NSHostingController(rootView: NativeTrayView(
+            store: store, openWindow: { [weak self] in self?.showWindow() },
+            dismiss: { [weak self] in self?.popover.performClose(nil) },
+            quit: { [weak self] in self?.quitFromTray() }))
+        observeStatus()
         showWindow()
     }
 
+    @objc private func toggleTray() {
+        if popover.isShown { popover.performClose(nil); return }
+        guard let button = statusItem?.button else { return }
+        store.trayWillOpen()
+        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        popover.contentViewController?.view.window?.makeKey()
+    }
+
+    private func observeStatus() {
+        withObservationTracking {
+            let reviews = store.shell.pendingReviewCount
+            statusItem?.button?.contentTintColor = reviews > 0
+                ? NSColor(srgbRed: 0.596, green: 0.443, blue: 0.173, alpha: 1)
+                : (store.hasOpenWork ? .systemBlue : .labelColor)
+            statusItem?.button?.toolTip = reviews > 0 ? "TaskHub: \(reviews) pending reviews" : "TaskHub Native"
+        } onChange: { [weak self] in
+            Task { @MainActor in self?.observeStatus() }
+        }
+    }
+
     @objc private func showWindow() {
+        popover.performClose(nil)
         window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
@@ -55,6 +85,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     @objc private func quitFromTray() {
         guard !quitting else { return }
         quitting = true
+        popover.performClose(nil)
         Task {
             do {
                 try await store.quit()

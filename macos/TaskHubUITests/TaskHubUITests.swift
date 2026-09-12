@@ -28,4 +28,20 @@ final class TaskHubUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Native foundation"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["Reconnect"].waitForExistence(timeout: 15))
     }
+
+    @MainActor
+    func testTrayOpensOfflineAndEscapeDismisses() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--backend-url", "http://127.0.0.1:1"]
+        app.launch()
+        XCTAssertTrue(app.buttons["Reviews & Usage"].waitForExistence(timeout: 5))
+        app.buttons["Reviews & Usage"].click()
+        XCTAssertTrue(app.staticTexts["Review requested"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Connect to load review requests"].exists)
+        XCTAssertTrue(app.buttons["Quit TaskHub"].exists)
+        app.typeKey(.escape, modifierFlags: [])
+        let dismissed = expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: app.buttons["Quit TaskHub"])
+        wait(for: [dismissed], timeout: 5)
+        XCTAssertTrue(app.buttons["Reviews & Usage"].exists)
+    }
 }

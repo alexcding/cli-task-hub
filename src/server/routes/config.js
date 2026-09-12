@@ -39,6 +39,7 @@ function register(app) {
   app.get(ROUTES.SETTINGS, wrap((req, res) => res.json(configdb.getAllSettings())));
   app.put(ROUTES.SETTINGS_KEY, wrap((req, res) => {
     configdb.setSetting(req.params.key, req.body.value);
+    sse.broadcast({ type: 'settings' });
     res.json({ ok: true });
   }));
 

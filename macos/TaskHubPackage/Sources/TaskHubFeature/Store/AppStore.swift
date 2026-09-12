@@ -3,6 +3,7 @@ import Observation
 
 @MainActor @Observable
 public final class AppStore {
+    public let shell = ShellStore()
     public private(set) var projects: [Project] = []
     public private(set) var connection = "Connecting"
     public private(set) var error: String?
@@ -34,6 +35,18 @@ public final class AppStore {
         }
     }
     var terminal: TerminalSession? { activeTerminalKey.flatMap { terminals[$0] } }
+    public var hasOpenWork: Bool { !sessions.isEmpty || !tabs.isEmpty }
+
+    func selectTrayTab(_ tab: SavedTab) {
+        if let session = sessions.first(where: { $0.url == tab.url }) { select(.session(session.id)) }
+        else { select(.tab(tab.url)) }
+    }
+
+    public func trayWillOpen() {
+        refresh()
+        shell.refreshUsage()
+        shell.loadSettings()
+    }
 
     func select(_ destination: SidebarDestination) {
         selection = destination
@@ -87,6 +100,7 @@ public final class AppStore {
             owner = process
             api = try await process.start()
             guard started else { await process.stop(); return }
+            if let api { shell.connect(api) }
             startStream(baseURL: config.baseURL)
         } catch {
             connection = "Disconnected"
@@ -96,6 +110,7 @@ public final class AppStore {
     }
 
     public func refresh() {
+        shell.refresh()
         refreshPending = true
         guard refreshTask == nil, let api else { return }
         refreshTask = Task { [weak self] in
@@ -157,6 +172,8 @@ public final class AppStore {
     }
 
     private func received(_ event: ServerEvent) {
+        if event.type == "settings" { shell.loadSettings() }
+        if event.type == "reviews" { shell.refresh() }
         if ["sync", "jira-sync", "tabs", "tasks", "reload"].contains(event.type) { refresh() }
     }
 
@@ -168,6 +185,7 @@ public final class AppStore {
         await refreshTask?.value
         streamTask = nil
         refreshTask = nil
+        await shell.stop()
         await owner?.stop()
         api = nil
     }

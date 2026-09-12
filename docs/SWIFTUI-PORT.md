@@ -9,7 +9,8 @@ Branch: `feat/swiftui-native`. Worktree: `../cli-task-hub-swiftui`.
 ## Implementation status
 
 M0 foundation is committed as `bf0c7a6`; the M1 terminal spike is committed as
-`c05a57a`; M2 sidebar implementation has started in `macos/`
+`c05a57a`; the M2 Cocoa sidebar is committed as `609d889` and native tray/appearance
+work continues in `macos/`
 (see `macos/README.md` for commands).
 The checked-in Xcode workspace uses a local Swift package, Swift 6, macOS 14 minimum,
 and direct distribution without App Sandbox. The current screen is the native
@@ -71,7 +72,7 @@ connection/project-list foundation; it is not the completed Dashboard.
   The user has authorized starting M2 with the Cocoa sidebar while these M1
   acceptance items remain open; this does not mark the terminal gate complete.
 
-### M2 sidebar — AppKit/Cocoa (in progress)
+### M2 native shell — AppKit/Cocoa (in progress)
 
 - User decision: implement the sidebar with `NSOutlineView`, using AppKit's native
   row reuse, disclosure controls, keyboard selection, and context menus. SwiftUI
@@ -93,8 +94,27 @@ connection/project-list foundation; it is not the completed Dashboard.
   pin/unpin mirrors, same shell PID/output across project/pinned selection, and
   output produced while its terminal was hidden. This is functional evidence;
   the sustained terminal performance benchmark remains open.
-- This increment does not complete M2: tray PR/usage views, theme/notifications,
-  full focus/menu parity, and the remaining M1 gates still need implementation and
+- Added native tray: an AppKit `NSStatusItem` opens an `NSPopover` hosting SwiftUI
+  review rows, grouped saved tabs, and a live usage view. No bitmap-rendered usage
+  row is used. Pending reviews use strict `category == review` plus `reviewPending`;
+  saved GitHub tabs use the broader `awaitingMyReview` grouping. Opening a pending
+  review in the browser acknowledges it only after the browser accepts the URL.
+- Usage loads independently of PR snapshots and retains the last successful value
+  on error. The panel shows Claude/Codex token totals, cost, session/weekly/model
+  limits, reset timestamps, and freshness. Opening it triggers a cached API read;
+  no per-frame polling or CLI calls are added to the native client.
+- System/Light/Dark appearance and usage-agent preferences are backed by existing
+  SQLite settings with a native startup cache. Writes are serialized; a stale read
+  cannot override a newer local choice. Offline/failed writes remain queued locally
+  and retry on backend reconnect. Settings/review mutations publish SSE
+  invalidations. The status icon uses bronze for pending reviews, blue for open work.
+- Tray verification: 17 Swift tests and 32 Node tests pass; two native UI tests
+  cover sidebar recovery and opening/dismissing the tray while offline. Integration
+  tests block usage while PRs load, retain usage on failure, acknowledge a review,
+  and persist rapid/offline preference changes. The latest app built and ran with
+  the native PR/usage popover visibly populated by isolated sample data.
+- This increment does not complete M2: notifications/sounds, full focus/menu parity,
+  usage pace indicators, and the remaining M1 gates still need implementation and
   validation. Remote tab selection currently offers browser opening; embedded
   context pages and session creation/restart/removal remain M3.
 
@@ -313,6 +333,8 @@ terminal correctness work must not be traded away to meet the old estimate.
 
 - Native SwiftUI/AppKit shell and native libghostty terminal.
 - Sidebar is Cocoa/AppKit `NSOutlineView` inside a SwiftUI host, per user direction.
+- The native tray uses `NSStatusItem` + `NSPopover` with a SwiftUI content view;
+  usage is rendered as native text/progress controls, replacing the image row.
 - Native SwiftUI Dashboard, including all cards, filters, status indicators, and actions.
 - Diff and code editing may remain web-based; initially reuse the existing diff and
   Monaco editor in focused `WKWebView` hosts. Preserve editing and saving.

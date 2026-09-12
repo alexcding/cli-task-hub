@@ -24,6 +24,33 @@ if (process.env.TASKHUB_SIDEBAR_FIXTURE === '1') {
   configdb.setTabs([{ kind: 'web', title: 'Review context', url: 'https://example.com/review' },
                    { kind: 'web', title: 'Documentation', url: 'https://example.com/docs' }]);
 }
+if (process.env.TASKHUB_TRAY_FIXTURE === '1') {
+  const configdb = require('../../src/server/database/configdb');
+  const project = db.getProjects()[0];
+  const prs = [
+    { number: 1, title: 'Review native navigation', category: 'review', awaitingMyReview: true },
+    { number: 2, title: 'Previously reviewed terminal change', category: 'other', awaitingMyReview: true },
+    { number: 3, title: 'Add native usage panel', category: 'mine', awaitingMyReview: false },
+  ].map(pr => ({ ...pr, state: 'OPEN', repo: 'fixture/taskhub', url: `https://example.com/pr/${pr.number}`,
+    requestedAt: '2026-01-01T00:00:00Z', ci: { status: 'completed', conclusion: 'success' } }));
+  db.setSnapshot(project.id, { prs, lastSynced: new Date().toISOString(), error: null });
+  configdb.setTabs([...configdb.getTabs().tabs.filter(tab => !prs.some(pr => pr.url === tab.url)),
+    ...prs.map(pr => ({ kind: 'github', title: pr.title, url: pr.url, category: pr.category }))]);
+  // Never touch credentials, rollout files, or ccusage during UI/integration tests.
+  require('../../src/server/repositories/usage').getUsage = async () => {
+    if (process.env.TASKHUB_HOLD_USAGE === '1') {
+      while (!fs.existsSync(path.join(process.env.TASKHUB_DATA_DIR, 'release-usage'))) {
+        await new Promise(resolve => setTimeout(resolve, 20));
+      }
+    }
+    await new Promise(resolve => setTimeout(resolve, Number(process.env.TASKHUB_USAGE_DELAY_MS || 0)));
+    if (fs.existsSync(path.join(process.env.TASKHUB_DATA_DIR, 'fail-usage'))) throw new Error('Fixture usage unavailable');
+    const window = usedPct => ({ usedPct, resetsAt: new Date(Date.now() + 3_600_000).toISOString() });
+    return { claude: { tokens: 120000, cost: 2.34 }, codex: { tokens: 45000, cost: 0.87 },
+      limits: { session: window(24), weekly: window(42), scoped: [{ label: 'Model', ...window(10) }] },
+      codexLimits: { session: window(8), weekly: window(18) }, asOf: new Date().toISOString() };
+  };
+}
 const server = app.listen(Number(process.env.PORT || 0), '127.0.0.1', () => {
   const baseURL = `http://127.0.0.1:${server.address().port}`;
   if (process.env.TASKHUB_READY_FILE) fs.writeFileSync(process.env.TASKHUB_READY_FILE, baseURL);

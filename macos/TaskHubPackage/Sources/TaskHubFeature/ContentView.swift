@@ -2,6 +2,7 @@ import SwiftUI
 
 public struct ContentView: View {
     @State private var store: AppStore
+    private let showTray: () -> Void
 
     public var body: some View {
         NavigationSplitView {
@@ -38,6 +39,7 @@ public struct ContentView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .navigationTitle("TaskHub")
             .toolbar {
+                Button("Reviews & Usage", systemImage: "menubar.rectangle", action: showTray)
                 Button("Refresh", systemImage: "arrow.clockwise") { store.refresh() }
                     .disabled(store.connection != "Connected")
             }
@@ -115,5 +117,8 @@ public struct ContentView: View {
         }
     }
 
-    public init(store: AppStore) { _store = State(initialValue: store) }
+    public init(store: AppStore, showTray: @escaping () -> Void = {}) {
+        _store = State(initialValue: store)
+        self.showTray = showTray
+    }
 }

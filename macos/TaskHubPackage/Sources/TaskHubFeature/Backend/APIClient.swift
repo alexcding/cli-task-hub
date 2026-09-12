@@ -80,6 +80,26 @@ public actor APIClient {
         try Self.validate(response)
     }
 
+    func acknowledgeReview(repo: String, number: Int) async throws {
+        struct Payload: Encodable, Sendable { let repo: String; let number: Int }
+        try await send(Routes.PRS_VIEWED, method: "POST", body: Payload(repo: repo, number: number))
+    }
+
+    func setSetting(_ key: String, value: String) async throws {
+        struct Payload: Encodable, Sendable { let value: String }
+        try await send(Routes.settingsKey(key), method: "PUT", body: Payload(value: value))
+    }
+
+    private func send<T: Encodable & Sendable>(_ path: String, method: String, body: T) async throws {
+        var request = URLRequest(url: try url(path))
+        request.httpMethod = method
+        request.timeoutInterval = 10
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder().encode(body)
+        let (_, response) = try await session.data(for: request)
+        try Self.validate(response)
+    }
+
     func url(_ path: String) throws -> URL {
         guard path.hasPrefix("/"), !path.hasPrefix("//"),
               let url = URL(string: baseURL.absoluteString.trimmingCharacters(in: CharacterSet(charactersIn: "/")) + path)

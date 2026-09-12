@@ -21,6 +21,7 @@ struct SavedTab: Decodable, Identifiable, Equatable, Sendable {
     let kind: String
     let title: String
     let url: String
+    var category: String? = nil
     var id: String { url }
 }
 

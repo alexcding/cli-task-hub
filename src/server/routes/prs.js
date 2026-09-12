@@ -6,6 +6,7 @@ const github = require('../repositories/github');
 const { snapshotFor } = require('../services/sync');
 const { PR_CATEGORY } = require('../../shared/constants.mjs');
 const { ROUTES } = require('../../shared/routes.mjs');
+const sse = require('./sse');
 
 function register(app) {
   // Project-scoped PR list. `open` is served from the snapshot; merged/all is a live
@@ -61,6 +62,7 @@ function register(app) {
     const { repo, number } = req.body || {};
     if (!repo || number == null) return res.status(400).json({ error: 'repo and number required' });
     db.setReviewViewed(`${repo}#${number}`, new Date().toISOString());
+    sse.broadcast({ type: 'reviews' });
     res.json({ ok: true });
   });
 

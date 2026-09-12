@@ -29,6 +29,26 @@ For an isolated sample hierarchy, run `macos/scripts/backend-fixture.cjs` with
 then launch the app with `--backend-url` pointing to it. The fixture starts no
 pollers or agent hooks and uses no daily app data.
 
+## Native tray and appearance (M2)
+
+Click the menu-bar icon or **Reviews & Usage** in the window toolbar to open the
+native popover. It shows pending review requests with CI status, saved Mine/Review/
+Jira/Web tabs, and Claude/Codex usage. Review requests open in the browser and are
+then marked opened; saved tabs select their owning native session or tab detail.
+Embedded browser routing remains M3 work.
+
+PRs refresh through snapshot APIs and SSE. Usage loads separately on opening or
+refreshing the panel, retaining previous data on error. Appearance (System/Light/Dark)
+and the selected usage agent persist to the existing backend settings database.
+The menu-bar icon is bronze for pending reviews, blue for open work, and neutral
+when idle. Escape or clicking outside closes the panel; Quit remains explicit.
+
+For sample PRs/usage, add `TASKHUB_TRAY_FIXTURE=1` to the isolated fixture command.
+This replaces usage reads with synthetic data; no credentials or usage CLIs are
+accessed. Automated tests can hold usage with `TASKHUB_HOLD_USAGE=1` until the
+fixture data directory contains `release-usage`, or create `fail-usage` to test
+retention on failure. Notifications/sounds and usage pace indicators remain pending.
+
 ## Build and run
 
 From the repository root:
