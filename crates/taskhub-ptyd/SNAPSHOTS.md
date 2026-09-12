@@ -10,7 +10,8 @@ cargo test --manifest-path crates/taskhub-ptyd/Cargo.toml --features terminal-sn
 The native app and its bundle script require this feature; Tauri keeps its
 existing feature-free helper protocol. Prepare both runtimes before building the
 native app as described in `macos/README.md`. Snapshot v1 omits Kitty images and
-glyph glossary registrations, and offline query response ownership remains open.
+glyph glossary registrations. UI/config-dependent offline queries remain open;
+the state-only response contract below is implemented.
 
 Each terminal owns a headless Ghostty parser from creation. Output enters that
 parser and the legacy ring under one lock. Kernel and parser resizing run on the
@@ -54,3 +55,42 @@ the 256 KiB tail, chunked snapshot transfer, alternate/primary screens, unfinish
 SGR, saved cursor, a resize followed by future output, and restoration from a new
 connection with the same shell PID. Tests also cover revision/token/offset errors,
 expiry, byte/text coexistence and contiguous legacy output across resizes.
+
+## State response ownership
+
+Feature helpers advertise `stateResponseOwner:"daemon-state-v1"` in `hello`.
+The native app requires it before creating a shell and sends the same value in
+`create.opts.stateResponseOwner`. `create` and `list` return each shell's owner.
+Ownership is fixed at creation; it never follows viewer count or connection state.
+Unknown owners are rejected before spawning. The feature-free helper rejects any
+explicit owner. Missing ownership retains the legacy silent parser, including in
+feature-enabled builds, so existing Tauri shells keep their response path.
+
+`daemon-state-v1` owns DSR operating status/cursor position, DECRQM except Kitty
+paste mode 5522, DECRQSS, and Kitty keyboard-flag queries. It filters complete
+synchronous Ghostty response packets, not raw requests, so fragmented queries and
+snapshot continuations use the single authoritative parser. The pinned parser
+ignores ANSI DECRQM in both runtime variants; this existing upstream limitation is
+not changed by ownership. Device attributes, version/terminfo, clipboard (including
+mode 5522), colors, title, visibility/focus, geometry and graphics remain native.
+Those categories still need an explicit offline policy and configuration mediation.
+
+Replies are generated before snapshot capture can observe the advanced state and
+queued by the same PTY I/O worker. They share the bounded input queue and preserve
+accepted input order, but do not set `hasContext`. Collection is capped at 256 KiB
+per output batch. Collection/queue/write failure latches input failure, discards the
+unsent suffix and emits `inputError`; collection failure also invalidates snapshots.
+Neither output nor uncertain input is retried and the shell is preserved.
+
+After checking the shell owner, native attachment imports the snapshot and enables
+selective suppression before applying any newer output. It suppresses only the
+owned handlers, preserving native clipboard/UI effects and ordinary keyboard/paste
+input. Ownership persists through terminal reset and new native surfaces on
+reconnect. An older shell is preserved and rejected rather than silently switching
+its response owner. Legacy renderers must not render state-owned shells; the native
+app uses a separate daemon socket from Tauri.
+
+Real-PTY validation queries with no clients, two snapshot observers and after their
+disconnection, checking exact response bytes, same PID and unchanged `hasContext`.
+Native tests verify suppression across split DCS and reset, native paste/capability
+responses, and exactly one CPR with two live app surfaces.

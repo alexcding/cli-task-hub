@@ -72,6 +72,33 @@ private final class SurfaceHarness {
 @Suite(.serialized)
 @MainActor
 struct NativeSnapshotTests {
+    @Test func daemonOwnedStateQueriesAreSuppressedWithoutSuppressingNativeInputOrCapabilities() async throws {
+        let harness = SurfaceHarness()
+        defer { harness.close() }
+        #expect(!harness.session.enableHostStateResponses())
+        // A request split at the snapshot boundary must also remain daemon-owned.
+        let snapshot = try harness.snapshot(Data("abc\u{1B}P$q".utf8))
+        try #require(harness.session.restoreSnapshot(snapshot))
+        try #require(harness.session.enableHostStateResponses())
+        harness.feed(Data("m\u{1B}\\\u{1B}[6n\u{1B}[5n\u{1B}[?7$p\u{1B}[?9999$p\u{1B}[?u\u{1B}[?5522$p\u{1B}[>c".utf8))
+        let expected = Data("\u{1B}[?5522;2$y\u{1B}[>1;10;0c".utf8)
+        for _ in 0..<100 {
+            if harness.writes.bytes.count >= expected.count { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(harness.writes.bytes == expected)
+        #expect(!harness.session.enableHostStateResponses()) // no mid-stream switch
+        try #require(harness.coordinator.surface?.paste(text: "USER_INPUT") == true)
+        // RIS and subsequent queries must preserve the ownership contract.
+        harness.feed(Data("\u{1B}c\u{1B}[6n\u{1B}[5n\u{1B}[?7$p\u{1B}[?u\u{1B}[>c".utf8))
+        let final = expected + Data("USER_INPUT\u{1B}[>1;10;0c".utf8)
+        for _ in 0..<100 {
+            if harness.writes.bytes.count >= final.count { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(harness.writes.bytes == final)
+    }
+
     @Test func restoredMetadataValidatesLocalURIsWithoutDisturbingParserContinuation() async throws {
         for (uri, title, expectedDirectory, expectedTitle) in [
             ("file://localhost/tmp/restored%20worktree", "Saved title", "/tmp/restored worktree", "Saved title"),

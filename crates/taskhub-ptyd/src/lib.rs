@@ -125,6 +125,8 @@ struct Ring {
   rows: u16,
   #[cfg(feature = "terminal-snapshots")]
   terminal: Result<taskhub_vt::Terminal, String>,
+  state_response_owner: bool,
+  responses: Result<Vec<u8>, String>,
 }
 
 impl Ring {
@@ -132,6 +134,7 @@ impl Ring {
     Ok(Self {
       chunks: VecDeque::new(), len: 0, seq: 0, truncated: false,
       state_seq: 0, cols: 80, rows: 24,
+      state_response_owner: false, responses: Ok(Vec::new()),
       #[cfg(feature = "terminal-snapshots")]
       terminal: Ok(taskhub_vt::Terminal::new(80, 24).map_err(|e| e.to_string())?),
     })
@@ -163,7 +166,16 @@ impl Ring {
 
   fn push(&mut self, bytes: Vec<u8>, text: String) -> u64 {
     #[cfg(feature = "terminal-snapshots")]
-    if let Ok(terminal) = &mut self.terminal { terminal.feed(&bytes); }
+    if let Ok(terminal) = &mut self.terminal {
+      if self.state_response_owner {
+        self.responses = terminal.feed_state_responses(&bytes).map_err(|e| e.to_string());
+        if let Err(error) = &self.responses {
+          // Input was consumed, but its replies could not all be delivered.
+          // Invalidate the snapshot and latch input failure; never replay it.
+          self.terminal = Err(error.clone());
+        }
+      } else { terminal.feed(&bytes); }
+    }
     self.seq += 1;
     self.state_seq += 1;
     let chunk = OutputChunk { bytes, text };
@@ -254,6 +266,8 @@ pub struct TermInfo {
   pub pid: u32,
   #[serde(default)]
   pub created: u64,
+  #[serde(default, skip_serializing_if = "Option::is_none")]
+  pub state_response_owner: Option<String>,
 }
 
 #[derive(Deserialize, Default)]
@@ -265,6 +279,7 @@ pub struct CreateOpts {
   pub paired: bool,
   #[serde(default)]
   pub pair_key: String,
+  pub state_response_owner: Option<String>,
 }
 
 // A connected client: lines go through `tx` to its outbox thread, which is the ONLY writer on the
@@ -370,6 +385,17 @@ fn queue_input(inp: &mut Input, data: &[u8]) -> Result<bool, String> {
   drain_input(inp)
 }
 
+fn queue_responses(inp: &mut Input, responses: Result<Vec<u8>, String>) -> Result<(), String> {
+  let result = responses.and_then(|bytes| {
+    if bytes.is_empty() { Ok(()) } else { queue_input(inp, &bytes).map(|_| ()) }
+  });
+  if let Err(error) = &result {
+    inp.failure = Some(error.clone());
+    inp.queue.clear();
+  }
+  result
+}
+
 #[cfg(test)]
 mod input_tests {
   use super::*;
@@ -404,6 +430,22 @@ mod input_tests {
     assert_eq!(*bytes.lock().unwrap(), accepted);
     assert!(!queue_input(&mut input, b"ok").unwrap());
     assert!(bytes.lock().unwrap().ends_with(b"ok"));
+  }
+
+  #[test]
+  fn response_failures_latch_input_without_replaying_a_partial_reply() {
+    for collection_failure in [false, true] {
+      let bytes = Arc::new(Mutex::new(Vec::new()));
+      let budget = Arc::new(Mutex::new(0));
+      let mut input = Input { writer: Box::new(Writer { bytes: bytes.clone(), budget: budget.clone(), fatal: false }), queue: VecDeque::new(), failure: None };
+      assert!(queue_input(&mut input, &vec![b'a'; INPUT_MAX]).unwrap());
+      let response = if collection_failure { Err("response limit exceeded".into()) } else { Ok(b"reply".to_vec()) };
+      assert!(queue_responses(&mut input, response).is_err());
+      assert!(input.failure.is_some() && input.queue.is_empty());
+      *budget.lock().unwrap() = INPUT_MAX;
+      assert!(queue_input(&mut input, b"later").is_err());
+      assert!(bytes.lock().unwrap().is_empty());
+    }
   }
 
   #[test]
@@ -485,6 +527,13 @@ impl Daemon {
   }
 
   fn create(self: &Arc<Self>, opts: CreateOpts) -> Result<TermInfo, String> {
+    if let Some(owner) = opts.state_response_owner.as_deref() {
+      #[cfg(feature = "terminal-snapshots")]
+      let supported = owner == taskhub_vt::STATE_RESPONSE_OWNER;
+      #[cfg(not(feature = "terminal-snapshots"))]
+      let supported = { let _ = owner; false };
+      if !supported { return Err("unsupported terminal state response owner".into()); }
+    }
     let n = self.seq.fetch_add(1, Ordering::SeqCst) + 1;
     // Unique across daemon restarts so a stale id persisted by the renderer never collides.
     let id = format!("pty{}-{n}", self.boot);
@@ -503,7 +552,9 @@ impl Daemon {
 
     // Allocate the parser before spawning a shell, so a parser failure cannot
     // orphan a child. It sees every raw output batch, even without a viewer.
-    let ring = Arc::new(Mutex::new(Ring::new()?));
+    let mut state = Ring::new()?;
+    state.state_response_owner = opts.state_response_owner.is_some();
+    let ring = Arc::new(Mutex::new(state));
     let pair = native_pty_system()
       .openpty(PtySize { rows: 24, cols: 80, pixel_width: 0, pixel_height: 0 })
       .map_err(|e| e.to_string())?;
@@ -548,6 +599,7 @@ impl Daemon {
       has_context: false,
       pid,
       created: now_ms(),
+      state_response_owner: opts.state_response_owner,
     };
     let master = Arc::new(Mutex::new(pair.master));
     let resizes = Arc::new(Mutex::new(VecDeque::<ResizeRequest>::new()));
@@ -676,12 +728,22 @@ impl Daemon {
             text_pending.extend_from_slice(&bytes);
             let s = utf8::take_text(&mut text_pending, eof);
             if !bytes.is_empty() || !s.is_empty() {
-              let (seq, state_seq) = {
+              let (seq, state_seq, responses) = {
                 let mut state = ring.lock().unwrap();
                 let seq = state.push(bytes.clone(), s.clone());
-                (seq, state.state_seq)
+                (seq, state.state_seq, std::mem::replace(&mut state.responses, Ok(Vec::new())))
               };
               me.broadcast_output(&id, seq, state_seq, &bytes, &s);
+              // Protocol replies share the ordered, bounded input queue but do
+              // not mark a shell as having user context. Never retry a response
+              // after a partial write or collection failure.
+              let result = {
+                let mut inp = input.lock().unwrap();
+                queue_responses(&mut inp, responses)
+              };
+              if let Err(message) = result {
+                me.broadcast(&json!({ "ev": "inputError", "id": id, "message": message }));
+              }
             }
           }
           if eof {
@@ -864,6 +926,7 @@ impl Daemon {
           _session.snapshot_negotiated = false;
           _session.snapshots.clear();
           hello["snapshotRevision"] = json!(taskhub_vt::GHOSTTY_REVISION);
+          hello["stateResponseOwner"] = json!(taskhub_vt::STATE_RESPONSE_OWNER);
           if let Some(revision) = req.get("snapshotRevision") {
             if !client.byte_transport || revision.as_str() != Some(taskhub_vt::GHOSTTY_REVISION) {
               return Err("snapshots require base64 output and the exact Ghostty revision".into());

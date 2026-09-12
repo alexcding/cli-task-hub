@@ -89,3 +89,17 @@ private final class InputErrors: @unchecked Sendable {
     #expect(await receiver.received == [Data("ab".utf8)])
     #expect(errors.all.isEmpty)
 }
+
+@Test func terminalStateResponseOwnershipRequiresBothHelperAndShellAgreement() throws {
+    let decoder = JSONDecoder()
+    for owner in ["", "future-owner"] {
+        let hello = try decoder.decode(PtyHello.self, from: Data("{\"protocol\":2,\"pid\":123,\"stateResponseOwner\":\"\(owner)\"}".utf8))
+        #expect(throws: PtyError.self) { try hello.validateStateResponseOwner() }
+    }
+    let current = try decoder.decode(PtyHello.self, from: Data(#"{"protocol":2,"pid":123,"stateResponseOwner":"daemon-state-v1"}"#.utf8))
+    try current.validateStateResponseOwner()
+    var info = PtyInfo(id: "original", cwd: "/tmp", title: "Shell", paired: false, pairKey: "session", hasContext: true, pid: 123, created: 1)
+    #expect(throws: PtyError.self) { try info.validateStateResponseOwner() }
+    info.stateResponseOwner = PtyHello.stateResponseOwnerVersion
+    try info.validateStateResponseOwner()
+}

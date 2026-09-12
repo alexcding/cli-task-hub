@@ -245,7 +245,7 @@ private final class EventLog: @unchecked Sendable {
     defer { control.close(); _ = kill(hello.pid, SIGTERM) }
     try hello.validateSnapshots()
     let term: PtyInfo = try await control.request(.init(op: "create", opts: .init(
-        cwd: directory.path, shell: shell.path, pairKey: "app-snapshot")))
+        cwd: directory.path, shell: shell.path, pairKey: "app-snapshot", stateResponseOwner: PtyHello.stateResponseOwnerVersion)))
     defer { _ = kill(Int32(term.pid), SIGTERM) }
     for _ in 0..<200 {
         if log.bytes.count >= startup.count { break }
@@ -318,6 +318,12 @@ private final class EventLog: @unchecked Sendable {
     #expect(await second.viewportText()?.hasPrefix("history 0 ") == true)
     // The view keeps its physical size while the daemon changes the logical
     // grid. Subsequent output and its cursor query must observe the ordered grid.
+    let observer = TerminalSession(pairKey: "app-snapshot", cwd: directory.path, configuration: config)
+    let observerWindow = mount(observer, width: 800)
+    defer { observer.disconnect(); observerWindow.contentView = nil; observerWindow.close() }
+    await observer.start()
+    try await observer.waitUntilReady()
+    #expect(observer.shellPID == term.pid)
     let beforeResize = log.bytes.count
     let _: Bool? = try await control.request(.init(op: "resize", term: term.id, cols: 37, rows: 19))
     let _: Bool? = try await control.request(.init(op: "write", term: term.id,
@@ -327,6 +333,13 @@ private final class EventLog: @unchecked Sendable {
         try await Task.sleep(for: .milliseconds(10))
     }
     #expect(String(decoding: log.bytes.dropFirst(beforeResize), as: UTF8.self).contains("\u{1B}[2;4R"))
+    // Let both renderers consume the query and its echoed response. Exactly
+    // one response must reach the program even with two native surfaces.
+    try await Task.sleep(for: .milliseconds(200))
+    #expect(String(decoding: log.bytes.dropFirst(beforeResize), as: UTF8.self)
+        .components(separatedBy: "\u{1B}[2;4R").count == 2)
+    await observer.stopConnecting()
+    observerWindow.contentView = nil
     let _: Bool? = try await control.request(.init(op: "write", term: term.id, data: "\u{1B}]7;\u{07}"))
     let restoredView = try #require(secondWindow.contentView as? WorkspaceTerminalView)
     for _ in 0..<100 {
@@ -359,7 +372,7 @@ private final class EventLog: @unchecked Sendable {
         let hello = try await host.connect(client: control)
         defer { control.close(); _ = kill(hello.pid, SIGTERM) }
         let term: PtyInfo = try await control.request(.init(op: "create", opts: .init(
-            cwd: directory.path, shell: shell.path, pairKey: "reconnect")))
+            cwd: directory.path, shell: shell.path, pairKey: "reconnect", stateResponseOwner: PtyHello.stateResponseOwnerVersion)))
         defer { _ = kill(Int32(term.pid), SIGTERM) }
         // Ctrl-C is data only after this fixture has disabled terminal signals.
         // Surface readiness is independent of shell startup completion.

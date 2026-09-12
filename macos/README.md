@@ -249,8 +249,13 @@ rejected before shell creation; invalid captures and sequence gaps stop attachme
 without terminating the shell. The capture supplies its logical grid even if a
 physical view resize is still pending. Restored titles and working directories use
 native callbacks; only local working-directory URIs become file-link bases, and
-an empty directory report clears the previous base. Offline protocol reply ownership
-and snapshot-v1 image/glyph omissions still require work.
+an empty directory report clears the previous base. New shells use the versioned
+`daemon-state-v1` response owner: status/cursor, mode (except Kitty clipboard mode),
+DECRQSS and Kitty keyboard queries keep working without a viewer. Native surfaces
+suppress that same set, including after reconnect; keyboard, paste and UI effects
+keep their native paths. Older helpers/shell owners are rejected without replacement.
+UI/config-dependent offline queries and snapshot-v1 image/glyph omissions still
+require work; see `crates/taskhub-ptyd/SNAPSHOTS.md`.
 Rebuilding the helper does not upgrade an already-running daemon; use an isolated
 socket to test the new helper without ending an existing shell. Broader
 lifecycle coverage, links, workflow hooks, IME/mouse/selection checks, and the

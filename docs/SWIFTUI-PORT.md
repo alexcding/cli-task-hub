@@ -802,6 +802,35 @@ does not).
   native suppression. Capability/configuration reports and clipboard/UI effects
   need explicit ownership; this foundation does not yet answer offline queries.
 
+### M1 state query ownership — 2026-09-12
+
+- Added the fixed `daemon-state-v1` contract. Native shells select it at creation,
+  and hello/list responses expose helper support and each shell's owner. Old
+  helpers and old shell owners are rejected without replacing their processes;
+  legacy/Tauri shells retain their silent headless parser.
+- The daemon answers DSR operating status/cursor, DECRQM except clipboard mode
+  5522, DECRQSS and Kitty keyboard flags for the entire shell lifetime. Replies
+  enter the existing bounded nonblocking input queue without marking user context.
+  Collection/queue/write errors stop the unsent suffix, latch input failure and
+  report it. A collection failure also invalidates the snapshot; no bytes are
+  replayed and no shell is killed.
+- A maintained native extension enables selective suppression on a freshly
+  imported surface before newer output. It suppresses only the matching state
+  query handlers, persists through reset, and leaves native keyboard/paste and
+  clipboard/UI handling active. It cannot switch ownership after live output.
+- Real-PTY tests check exact replies without clients, with two snapshot observers
+  and after both disconnect, preserving the original PID and `hasContext`.
+  Runtime tests cover the fixed packet classes and split DCS restoration. Native
+  bridge tests check split DCS, reset, native paste and capability replies; the app
+  fixture verifies one cursor reply with two live native surfaces. Verification:
+  six runtime tests, 14 feature-enabled daemon tests, ten legacy daemon tests,
+  seven native bridge tests and 79 app-package tests pass; the macOS app builds.
+- UI/configuration-dependent offline queries, identity/terminfo reports, image/glyph
+  restoration, interaction/performance acceptance and remaining M2–M6 gates remain
+  open. The pinned parser ignores ANSI DECRQM in both variants; this upstream
+  limitation is unchanged. The Sprint board remains web-based, and the final
+  elevate-ios coordinator/VM/DI pass follows the migration work.
+
 ## Why now, and why native
 
 The Tauri shell works, but roughly half of `src-tauri/` exists to work around what a DOM

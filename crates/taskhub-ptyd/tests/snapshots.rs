@@ -92,7 +92,12 @@ impl Fixture {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let root = PathBuf::from(format!("/tmp/th-snapshot-{}-{nonce}", std::process::id()));
+        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let serial = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let root = PathBuf::from(format!(
+            "/tmp/th-snapshot-{}-{nonce}-{serial}",
+            std::process::id()
+        ));
         std::fs::create_dir(&root).unwrap();
         std::fs::set_permissions(&root, std::fs::Permissions::from_mode(0o700)).unwrap();
         let socket = root.join("pty.sock");
@@ -244,4 +249,97 @@ IFS= read -r next
         .request(json!({"op":"snapshotRead", "token":new_header["token"], "offset":0}))
         .is_err());
     other.request(json!({"op":"kill", "term":id})).unwrap();
+}
+
+#[test]
+fn state_queries_have_one_owner_without_viewers_and_across_reconnects() {
+    let fixture = Fixture::start();
+    let script = fixture.root.join("queries.py");
+    std::fs::write(
+        &script,
+        br#"#!/usr/bin/python3
+import os, pathlib, select, time, tty
+tty.setraw(0)
+root = pathlib.Path.cwd()
+for stage in range(3):
+    while not (root / ('go' + str(stage))).exists():
+        time.sleep(0.01)
+    os.write(1, b'\x1b[2J\x1b[Habc\x1b[6n\x1b[5n\x1b[?7$p\x1b[?9999$p\x1b[?u\x1bP$qm\x1b\\')
+    result = b''
+    deadline = time.monotonic() + 0.5
+    while time.monotonic() < deadline:
+        if select.select([0], [], [], max(0, deadline - time.monotonic()))[0]:
+            result += os.read(0, 65536)
+    (root / ('result' + str(stage))).write_text(result.hex())
+while True:
+    time.sleep(1)
+"#,
+    )
+    .unwrap();
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let mut connection = Connection::connect(&fixture.socket);
+    let hello = connection.request(json!({"op":"hello"})).unwrap();
+    assert_eq!(
+        hello["stateResponseOwner"],
+        taskhub_vt::STATE_RESPONSE_OWNER
+    );
+    assert!(connection
+        .request(json!({"op":"create", "opts":{"stateResponseOwner":"future-owner"}}))
+        .is_err());
+    assert_eq!(connection.request(json!({"op":"list"})).unwrap(), json!([]));
+    let term = connection.request(json!({"op":"create", "opts":{
+        "cwd":fixture.root, "shell":script, "stateResponseOwner":taskhub_vt::STATE_RESPONSE_OWNER
+    }})).unwrap();
+    let id = term["id"].as_str().unwrap();
+    assert_eq!(term["stateResponseOwner"], taskhub_vt::STATE_RESPONSE_OWNER);
+    drop(connection);
+    let expected = b"\x1b[1;4R\x1b[0n\x1b[?7;1$y\x1b[?9999;0$y\x1b[?0u\x1bP1$r0m\x1b\\";
+    let expected: String = expected.iter().map(|b| format!("{b:02x}")).collect();
+    let query = |root: &PathBuf, stage: usize, expected: &str| {
+        std::fs::write(root.join(format!("go{stage}")), b"go").unwrap();
+        let path = root.join(format!("result{stage}"));
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while !path.exists() {
+            assert!(
+                Instant::now() < deadline,
+                "query program did not finish stage {stage}"
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert_eq!(
+            std::fs::read_to_string(path).unwrap(),
+            expected,
+            "stage {stage}"
+        );
+    };
+    query(&fixture.root, 0, &expected); // no connected client
+    let mut first = Connection::connect(&fixture.socket);
+    let mut second = Connection::connect(&fixture.socket);
+    first.hello();
+    second.hello();
+    let _ = first.snapshot(id);
+    let _ = second.snapshot(id);
+    query(&fixture.root, 1, &expected); // two snapshot observers
+    drop(first);
+    drop(second);
+    query(&fixture.root, 2, &expected); // observers disconnected again
+    let mut connection = Connection::connect(&fixture.socket);
+    let list = connection.request(json!({"op":"list"})).unwrap();
+    assert_eq!(list[0]["pid"], term["pid"]);
+    assert_eq!(
+        list[0]["hasContext"], false,
+        "protocol traffic is not user input"
+    );
+    assert_eq!(
+        list[0]["stateResponseOwner"],
+        taskhub_vt::STATE_RESPONSE_OWNER
+    );
+    // Legacy/Tauri shells remain silent even in the snapshot-enabled helper.
+    let legacy_root = fixture.root.join("legacy");
+    std::fs::create_dir(&legacy_root).unwrap();
+    let legacy = connection
+        .request(json!({"op":"create", "opts":{"cwd":legacy_root, "shell":script}}))
+        .unwrap();
+    assert!(legacy["stateResponseOwner"].is_null());
+    query(&legacy_root, 0, "");
 }

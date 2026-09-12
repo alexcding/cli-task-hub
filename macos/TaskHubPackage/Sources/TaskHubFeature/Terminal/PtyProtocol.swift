@@ -30,14 +30,29 @@ struct PtyInfo: Codable, Sendable, Identifiable {
     let hasContext: Bool
     let pid: UInt32
     let created: UInt64
+    var stateResponseOwner: String? = nil
+
+    func validateStateResponseOwner() throws {
+        guard stateResponseOwner == PtyHello.stateResponseOwnerVersion else {
+            throw PtyError.connection("This shell uses an older terminal response owner. Save its work and close it explicitly before creating a new terminal. The existing shell has been preserved.")
+        }
+    }
 }
 
 struct PtyHello: Decodable, Sendable {
+    static let stateResponseOwnerVersion = "daemon-state-v1"
     let `protocol`: UInt32
     let pid: Int32
     let dataEncoding: String?
     let acknowledgedInput: Bool?
     var snapshotRevision: String? = nil
+    var stateResponseOwner: String? = nil
+
+    func validateStateResponseOwner() throws {
+        guard stateResponseOwner == Self.stateResponseOwnerVersion else {
+            throw PtyError.connection("This PTY helper cannot own terminal state replies. Save your work, quit TaskHub explicitly, rebuild the helper, and reopen. Existing shells have been preserved.")
+        }
+    }
 
     func validateSnapshots() throws {
         guard snapshotRevision == PtySnapshot.revision else {
@@ -94,6 +109,7 @@ struct PtyRequest: Encodable, Sendable {
         var shell: String?
         var paired = false
         var pairKey: String
+        var stateResponseOwner: String? = nil
     }
     var id: UInt64?
     var op: String

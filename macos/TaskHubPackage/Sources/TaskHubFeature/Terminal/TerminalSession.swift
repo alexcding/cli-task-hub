@@ -112,9 +112,11 @@ final class TerminalSession: Identifiable {
         try hello?.validateByteTransport()
         try hello?.validateInputAcknowledgements()
         try hello?.validateSnapshots()
+        try hello?.validateStateResponseOwner()
         let negotiated: PtyHello = try await client.request(.init(op: "hello", dataEncoding: "base64",
                                                                   snapshotRevision: PtySnapshot.revision))
         try negotiated.validateSnapshots()
+        try negotiated.validateStateResponseOwner()
         try Task.checkCancellation()
         let terminals: [PtyInfo] = try await client.request(.init(op: "list"))
         let info: PtyInfo
@@ -130,16 +132,17 @@ final class TerminalSession: Identifiable {
             created = false
         } else {
             info = try await client.request(.init(op: "create", opts: .init(
-                cwd: cwd, paired: paired, pairKey: pairKey)))
+                cwd: cwd, paired: paired, pairKey: pairKey, stateResponseOwner: PtyHello.stateResponseOwnerVersion)))
             created = true
         }
+        try info.validateStateResponseOwner()
         shellPID = info.pid
         termID = info.id
         pipe.bind(client: client, id: info.id)
         try await pipe.synchronizeGrid()
         status = "Restoring terminal"
         let snapshot = try await PtySnapshotDownloader(client: client).fetch(term: info.id)
-        try await pipe.attach(snapshot) { [weak self] in
+        try await pipe.attach(snapshot, daemonOwnsStateResponses: true) { [weak self] in
             Task { @MainActor in
                 guard let self, self.started, self.surfaceGeneration == generation, self.error == nil else { return }
                 self.status = "Connected"

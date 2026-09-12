@@ -46,7 +46,11 @@ retry the input. Plain `feed` continues to parse silently. This API does not acc
 the host clipboard or write to a PTY; default runtime replies can include protocol
 denials for unsupported host effects.
 
-The daemon still uses silent `feed`. Enabling responses requires the daemon/native
-ownership contract, matching capability/configuration reports, and clipboard/UI
-mediation so only one component responds to each query. Offline query delivery
-and duplicate prevention remain integration work.
+`feed_state_responses` filters complete response effect packets to the fixed
+`daemon-state-v1` set: DSR status/cursor, DECRQM except native clipboard mode 5522,
+DECRQSS, and Kitty keyboard flags. The daemon selects this only for shells created
+with that owner; legacy shells retain silent `feed`. The native renderer suppresses
+the identical set after import. Clipboard/UI, geometry, colors, device identity
+and other configuration-dependent reports remain renderer-owned and require more
+work for complete offline behavior. See the daemon protocol for the contract and
+failure handling.

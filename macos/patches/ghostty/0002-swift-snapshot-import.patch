@@ -1,6 +1,6 @@
 --- a/Sources/GhosttyTerminal/InMemory/InMemoryTerminalSession.swift
 +++ b/Sources/GhosttyTerminal/InMemory/InMemoryTerminalSession.swift
-@@ -91,6 +91,49 @@
+@@ -91,6 +91,59 @@
  
      var currentSurface: ghostty_surface_t? {
          surfaceAccess.currentSurface
@@ -19,6 +19,16 @@
 +                guard let pointer = bytes.baseAddress?.assumingMemoryBound(to: UInt8.self) else { return false }
 +                return ghostty_surface_restore_snapshot(surface, pointer, UInt(bytes.count))
 +            }
++        } ?? false
++    }
++
++    /// Enable daemon-state-v1 after snapshot import, before metadata/live output.
++    /// The daemon must own this exact query set for the shell's whole lifetime.
++    @MainActor
++    public func enableHostStateResponses() -> Bool {
++        surfaceAccess.waitForPendingOutput()
++        return surfaceAccess.withCurrentSurface { surface in
++            ghostty_surface_enable_host_state_responses(surface)
 +        } ?? false
 +    }
 +

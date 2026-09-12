@@ -88,13 +88,16 @@ final class TerminalPipe: @unchecked Sendable {
     }
 
     @MainActor
-    func attach(_ snapshot: PtySnapshot, onReady: @escaping @Sendable () -> Void) async throws {
+    func attach(_ snapshot: PtySnapshot, daemonOwnsStateResponses: Bool = false, onReady: @escaping @Sendable () -> Void) async throws {
         try snapshot.header.validate()
         guard snapshot.bytes.count == snapshot.header.size else {
             throw PtyError.connection("The terminal snapshot is incomplete.")
         }
         guard memory.restoreSnapshot(snapshot.bytes) else {
             throw PtyError.connection("The terminal snapshot could not be imported. Reattach to retry with a fresh capture; the shell is still running.")
+        }
+        if daemonOwnsStateResponses, !memory.enableHostStateResponses() {
+            throw PtyError.connection("Terminal state response ownership could not be configured.")
         }
         let memory = memory!
         // Metadata uses Ghostty's bounded app mailbox. Keep draining it while

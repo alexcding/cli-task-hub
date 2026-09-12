@@ -6,6 +6,8 @@ use std::{ffi::c_void, fmt, ptr::NonNull};
 pub const GHOSTTY_REVISION: &str = "82938b633ba646db38591d969c3c526332bd7e65";
 pub const SNAPSHOT_LIMIT: usize = 32 * 1024 * 1024;
 pub const RESPONSE_LIMIT: usize = 256 * 1024;
+/// Fixed ownership contract; extending this set requires a new version.
+pub const STATE_RESPONSE_OWNER: &str = "daemon-state-v1";
 type Writer = unsafe extern "C" fn(*mut c_void, *const u8, usize) -> bool;
 
 extern "C" {
@@ -57,6 +59,16 @@ impl Terminal {
     /// This does not write to a PTY or grant access to host clipboard/UI effects.
     /// An error can occur after input was consumed; retrying it is not safe.
     pub fn feed_with_responses(&mut self, bytes: &[u8]) -> Result<Vec<u8>, Error> {
+        self.collect_responses(bytes, write_response)
+    }
+    /// Collect only daemon-state-v1 replies: DSR status/cursor, DECRQM,
+    /// DECRQSS, and Kitty keyboard flags. UI/config-dependent replies remain
+    /// renderer-owned. Filtering complete runtime effect packets avoids a
+    /// second VT request parser and preserves split-sequence handling.
+    pub fn feed_state_responses(&mut self, bytes: &[u8]) -> Result<Vec<u8>, Error> {
+        self.collect_responses(bytes, write_state_response)
+    }
+    fn collect_responses(&mut self, bytes: &[u8], writer: Writer) -> Result<Vec<u8>, Error> {
         let mut responses = Vec::new();
         check(
             unsafe {
@@ -64,7 +76,7 @@ impl Terminal {
                     self.0.as_ptr(),
                     bytes.as_ptr(),
                     bytes.len(),
-                    write_response,
+                    writer,
                     (&mut responses as *mut Vec<u8>).cast(),
                 )
             },
@@ -144,6 +156,51 @@ unsafe extern "C" fn write(userdata: *mut c_void, data: *const u8, len: usize) -
 unsafe extern "C" fn write_response(userdata: *mut c_void, data: *const u8, len: usize) -> bool {
     append_bounded(userdata, data, len, RESPONSE_LIMIT)
 }
+// WRITE_PTY supplies a complete response per callback at the pinned revision.
+// Only accept the explicitly owned packet classes; OSC clipboard/color, APC
+// graphics, DA/version/terminfo, title, visibility, and geometry stay native.
+fn is_state_response(bytes: &[u8]) -> bool {
+    fn numbers(bytes: &[u8], count: usize) -> bool {
+        let mut fields = bytes.split(|b| *b == b';');
+        (0..count).all(|_| {
+            fields
+                .next()
+                .is_some_and(|part| !part.is_empty() && part.iter().all(u8::is_ascii_digit))
+        }) && fields.next().is_none()
+    }
+    if bytes == b"\x1b[0n" {
+        return true;
+    }
+    if let Some(csi) = bytes.strip_prefix(b"\x1b[") {
+        if let Some(body) = csi.strip_suffix(b"R") {
+            return numbers(body, 2);
+        }
+        if let Some(body) = csi.strip_suffix(b"$y") {
+            // Paste-event support depends on the renderer's clipboard effect.
+            if body.starts_with(b"?5522;") {
+                return false;
+            }
+            return numbers(body.strip_prefix(b"?").unwrap_or(body), 2);
+        }
+        if let Some(body) = csi.strip_prefix(b"?").and_then(|b| b.strip_suffix(b"u")) {
+            return numbers(body, 1);
+        }
+    }
+    (bytes.starts_with(b"\x1bP0$r") || bytes.starts_with(b"\x1bP1$r")) && bytes.ends_with(b"\x1b\\")
+}
+unsafe extern "C" fn write_state_response(
+    userdata: *mut c_void,
+    data: *const u8,
+    len: usize,
+) -> bool {
+    if len == 0 {
+        return true;
+    }
+    if !is_state_response(std::slice::from_raw_parts(data, len)) {
+        return true;
+    }
+    append_bounded(userdata, data, len, RESPONSE_LIMIT)
+}
 unsafe fn append_bounded(userdata: *mut c_void, data: *const u8, len: usize, limit: usize) -> bool {
     if len == 0 {
         return true;
@@ -159,6 +216,39 @@ unsafe fn append_bounded(userdata: *mut c_void, data: *const u8, len: usize, lim
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn state_owner_answers_only_its_fixed_protocol_classes() {
+        let mut terminal = Terminal::new(80, 24).unwrap();
+        let response = terminal
+            .feed_state_responses(
+                b"abc\x1b[6n\x1b[5n\x1b[?7$p\x1b[4$p\x1b[?9999$p\x1b[?u\x1bP$qm\x1b\\",
+            )
+            .unwrap();
+        assert_eq!(
+            response,
+            b"\x1b[1;4R\x1b[0n\x1b[?7;1$y\x1b[?9999;0$y\x1b[?0u\x1bP1$r0m\x1b\\"
+        );
+        assert!(terminal.feed_state_responses(b"\x1b[?5522$p\x1b[c\x1b[>c\x1b[=c\x1b[>q\x1b[?996n\x1b[?997n\x1b[21t\x1bP+q544e;524742\x1b\\\x1b]52;c;?\x07").unwrap().is_empty());
+        for packet in [
+            b"\x1b[?997;1n".as_slice(),
+            b"\x1b[8;24;80t",
+            b"\x1b]5522;type=read:status=EPERM\x1b\\",
+            b"\x1b_Gi=1;OK\x1b\\",
+            b"\x1bP>|ghostty\x1b\\",
+        ] {
+            assert!(!is_state_response(packet));
+        }
+        assert!(terminal
+            .feed_state_responses(b"\x1bP$q")
+            .unwrap()
+            .is_empty());
+        let mut restored = Terminal::restore(&terminal.snapshot().unwrap()).unwrap();
+        assert_eq!(
+            restored.feed_state_responses(b"m\x1b\\").unwrap(),
+            b"\x1bP1$r0m\x1b\\"
+        );
+    }
+
     #[test]
     fn captures_queries_once_across_snapshot_continuation() {
         let mut terminal = Terminal::new(80, 24).unwrap();
