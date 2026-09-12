@@ -335,6 +335,18 @@ Dashboard; the remaining app pages and action parity are tracked under M4.
   The 38 backend API/poller/route tests pass; the interval ownership regression also
   passes after adding the one-day timer ceiling. Xcode's existing internal UI-runner
   QoS warnings remain; no application failure was reported in these scenarios.
+- Native Settings now includes CLI presence/authentication checks, installation-guide
+  links, login-command copying, and Claude/Codex hook install/remove. Probes run only
+  on visiting CLIs or an explicit recheck; hook reads are independent of slow probes.
+  Mutations are serialized and stale status reads cannot undo a completed edit.
+- Hardened the shared hook service: malformed/unsupported configs are rejected,
+  other commands in mixed hook entries survive install/remove, atomic writes retain
+  private permissions and dotfile symlinks, and quoted data-directory paths remain
+  literal in the hook shell command. These changes benefit both native and web clients.
+- CLI/hook verification: two new Swift tests, 17 Node hook/CLI/route tests, and the
+  native installation/rejection/removal UI flow pass. Node tests exercise real file
+  installation/removal in an isolated directory and stdin forwarding through a fake
+  curl command; native UI uses synthetic hook state. No daily agent config was edited.
 
 Companion docs: `ARCHITECTURE.md` (layers, HTTP-vs-IPC split), `TAURI-PORT.md`
 (the previous shell port — the same boundary makes this one tractable), `CLAUDE.md`

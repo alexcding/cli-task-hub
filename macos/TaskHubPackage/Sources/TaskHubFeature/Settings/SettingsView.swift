@@ -9,6 +9,7 @@ struct SettingsView: View {
                 ForEach(SettingsSection.allCases) { Text($0.rawValue).tag($0) }
             }.pickerStyle(.segmented)
             switch model.section {
+            case .clis: CLISettingsView(model: model.clis)
             case .general:
                 Form {
                     Section("Appearance") {

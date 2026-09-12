@@ -97,8 +97,12 @@ macOS sound list and explicit preview, and persists the default agent for new se
 Connections edits polling intervals, Jira site, token, and ticket limit. Saves send
 only changed fields and preserve drafts on failure/reconnect. Interval edits reschedule
 only running backend loops; saving to a fixture does not start polling.
-CLI/hook controls, diagnostics, launch at login, fonts, git-client actions, and native
-memory-budget policy still need their remaining Settings/parity increments.
+The **CLIs** section probes installed tools and sign-in state on demand, offers
+installation guides and login-command copying, and installs/removes agent hooks.
+Unknown authentication remains distinct from signed out. Hook edits reject malformed
+configuration and preserve other commands, permissions, and dotfile symlinks.
+Diagnostics, launch at login, fonts, git-client actions, and native memory-budget
+policy still need their remaining Settings/parity increments.
 
 ## Native tray and appearance (M2)
 

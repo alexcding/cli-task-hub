@@ -8,6 +8,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { randomUUID } = require('node:crypto');
 const { dataDir } = require('../database/datadir');
 
 // The live HTTP port is written here on server start so the (config-baked) hook command can reach
@@ -31,26 +32,34 @@ function writePort(port) {
 // the CLI and the per-terminal runId (TASKHUB_RUN_ID, injected into the PTY env when WE launch it).
 // Fire-and-forget with a 2s cap so a down/slow TaskHub never blocks the CLI. Built with string
 // concatenation (not a template literal) so $P / $(...) / ${TASKHUB_RUN_ID:-} stay literal.
-function hookCommand(cli, endpoint) {
-  return "sh -c 'P=$(cat \"" + PORT_FILE + "\" 2>/dev/null || echo 3000); "
+const shellQuote = value => "'" + value.replace(/'/g, "'\"'\"'") + "'";
+function hookCommand(cli, endpoint, portFile = PORT_FILE) {
+  const script = "P=$(cat " + shellQuote(portFile) + " 2>/dev/null || echo 3000); "
     + "curl -s -m 2 -X POST \"http://127.0.0.1:$P" + endpoint + "?cli=" + cli + "&runId=${TASKHUB_RUN_ID:-}\" "
-    + "-H \"Content-Type: application/json\" --data-binary @- >/dev/null 2>&1 || true # " + MARKER + "'";
+    + "-H \"Content-Type: application/json\" --data-binary @- >/dev/null 2>&1 || true # " + MARKER;
+  return 'sh -c ' + shellQuote(script);
 }
 
 // ── Pure config transforms (operate on a parsed object; unit-tested directly) ──────────────
-const isOurs = entry => Array.isArray(entry?.hooks) && entry.hooks.some(h => typeof h.command === 'string' && h.command.includes(MARKER));
+const isOurCommand = hook => typeof hook?.command === 'string' && hook.command.includes(MARKER);
+const isOurs = entry => Array.isArray(entry?.hooks) && entry.hooks.some(isOurCommand);
+function stripOurCommands(entry) {
+  if (!isOurs(entry)) return [entry];
+  const hooks = entry.hooks.filter(hook => !isOurCommand(hook));
+  return hooks.length ? [{ ...entry, hooks }] : [];
+}
 const hasOurHookIn = (cfg, ev) => Array.isArray(cfg?.hooks?.[ev]) && cfg.hooks[ev].some(isOurs);
 function addHookTo(cfg, ev, entry) {
   const c = { ...(cfg || {}) };
   c.hooks = { ...(c.hooks || {}) };
   const arr = Array.isArray(c.hooks[ev]) ? c.hooks[ev] : [];
-  c.hooks[ev] = arr.filter(e => !isOurs(e)).concat(entry); // filter-then-add = idempotent
+  c.hooks[ev] = arr.flatMap(stripOurCommands).concat(entry);
   return c;
 }
 function removeHookFrom(cfg, ev) {
   if (!Array.isArray(cfg?.hooks?.[ev])) return cfg;
   const c = { ...cfg, hooks: { ...cfg.hooks } };
-  c.hooks[ev] = c.hooks[ev].filter(e => !isOurs(e));
+  c.hooks[ev] = c.hooks[ev].flatMap(stripOurCommands);
   return c;
 }
 // Claude hook entries carry a `matcher`; Codex entries don't.
@@ -61,13 +70,42 @@ const entryFor = (cli, endpoint) => {
 
 // ── File I/O ───────────────────────────────────────────────────────────────────────────────
 const readJson = file => { try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return null; } };
-// Atomic write (temp file + rename) so a crash or a concurrent edit of the user's settings can
-// never leave it half-written/corrupt — we'd rather no-op than truncate ~/.claude/settings.json.
+function readForUpdate(file, missingValue) {
+  let text;
+  try { text = fs.readFileSync(file, 'utf8'); }
+  catch (error) { if (error.code === 'ENOENT') return missingValue; throw error; }
+  let config;
+  try { config = JSON.parse(text); }
+  catch { throw new Error(`Cannot update hooks: ${file} contains invalid JSON. The file was not changed.`); }
+  const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
+  if (!object(config) || ('hooks' in config && !object(config.hooks)) ||
+      HOOKS.some(([event]) => config.hooks?.[event] !== undefined && !Array.isArray(config.hooks[event]))) {
+    throw new Error(`Cannot update hooks: ${file} has an unsupported configuration shape. The file was not changed.`);
+  }
+  return config;
+}
+// Atomic replacement avoids partial files and retains existing file permissions.
+// New configs are private because the agent file may also contain credentials.
 function writeJson(file, obj) {
+  // Respect dotfile-manager symlinks. A dangling link must not be replaced by a
+  // new ordinary file just because its intended destination cannot be resolved.
+  try { file = fs.realpathSync(file); }
+  catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+    let entry;
+    try { entry = fs.lstatSync(file); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+    if (entry?.isSymbolicLink()) throw new Error(`Cannot update hooks through a dangling link: ${file}`);
+  }
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  const tmp = `${file}.taskhub.${process.pid}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(obj, null, 2) + '\n');
-  fs.renameSync(tmp, file);
+  let mode = 0o600;
+  try { mode = fs.statSync(file).mode & 0o777; } catch (error) { if (error.code !== 'ENOENT') throw error; }
+  const tmp = `${file}.taskhub.${randomUUID()}.tmp`;
+  const descriptor = fs.openSync(tmp, 'wx', mode);
+  try {
+    try { fs.writeFileSync(descriptor, JSON.stringify(obj, null, 2) + '\n'); }
+    finally { fs.closeSync(descriptor); }
+    fs.renameSync(tmp, file);
+  } finally { try { fs.unlinkSync(tmp); } catch (error) { if (error.code !== 'ENOENT') throw error; } }
 }
 
 const TARGETS = {
@@ -88,14 +126,14 @@ function status() {
 function install(cli) {
   const t = TARGETS[cli];
   if (!t) throw new Error(`unknown CLI: ${cli}`);
-  let cfg = readJson(t.file) || t.base;
+  let cfg = readForUpdate(t.file, t.base);
   for (const [ev, ep] of HOOKS) cfg = addHookTo(cfg, ev, entryFor(cli, ep));
   writeJson(t.file, cfg);
 }
 function uninstall(cli) {
   const t = TARGETS[cli];
   if (!t) throw new Error(`unknown CLI: ${cli}`);
-  let cfg = readJson(t.file);
+  let cfg = readForUpdate(t.file, null);
   if (!cfg) return;
   for (const [ev] of HOOKS) cfg = removeHookFrom(cfg, ev);
   writeJson(t.file, cfg);
@@ -106,4 +144,5 @@ module.exports = {
   // exported for tests
   _isOurs: isOurs, _hasOurHookIn: hasOurHookIn, _addHookTo: addHookTo, _removeHookFrom: removeHookFrom,
   _entryFor: entryFor, _hookCommand: hookCommand,
+  _readForUpdate: readForUpdate, _writeJson: writeJson,
 };

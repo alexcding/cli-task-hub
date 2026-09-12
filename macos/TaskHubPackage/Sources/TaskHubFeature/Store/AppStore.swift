@@ -46,7 +46,9 @@ public final class AppStore {
         }, copy: {
             NSPasteboard.general.clearContents(); NSPasteboard.general.setString($0, forType: .string)
         })
-        settings = SettingsViewModel(didSave: { [weak self] patch in
+        settings = SettingsViewModel(clis: CLISettingsViewModel(copy: {
+            NSPasteboard.general.clearContents(); NSPasteboard.general.setString($0, forType: .string)
+        }, openBrowser: { NSWorkspace.shared.open($0) }), didSave: { [weak self] patch in
             guard let self else { return }
             if patch["jira_base_url"] != nil || patch["jira_api_token"] != nil {
                 for model in projectModels.values { await model.tickets?.invalidateSite() }
@@ -374,7 +376,9 @@ public final class AppStore {
             if let api { logs.connect(APILogService(api: api)) }
             if let api {
                 settings.connect(APISettingsService(api: api))
+                settings.clis.connect(APICLISettingsService(api: api))
                 if selection == .settings { settings.refresh() }
+                if selection == .settings && settings.section == .clis { settings.clis.refresh() }
             }
             startStream(baseURL: config.baseURL)
         } catch {

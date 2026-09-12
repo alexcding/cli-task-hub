@@ -3,6 +3,30 @@ import XCTest
 final class TaskHubUITests: XCTestCase {
 
     @MainActor
+    func testNativeCLIStatusAndHookInstallationRecovery() throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard let base = environment["TASKHUB_UI_BACKEND_URL"],
+              let path = environment["TASKHUB_UI_DATA_DIR"], let socket = environment["TASKHUB_UI_PTY_SOCKET"] else {
+            throw XCTSkip("Run macos/scripts/test-browser-ui.sh to provide the isolated fixture.")
+        }
+        let app = XCUIApplication()
+        app.launchArguments = ["--backend-url", base, "--data-dir", path, "--pty-socket", socket]
+        app.launch()
+        XCTAssertTrue(app.outlines["workspace-sidebar"].waitForExistence(timeout: 10))
+        app.typeKey(",", modifierFlags: .command)
+        app.radioButtons["CLIs"].click()
+        XCTAssertTrue(app.staticTexts["Not signed in"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Installed; sign-in status unavailable"].exists)
+        app.buttons["hook-toggle-claude"].click()
+        XCTAssertTrue(app.staticTexts["Claude Code hooks installed."].waitForExistence(timeout: 5))
+        app.buttons["hook-toggle-codex"].click()
+        XCTAssertTrue(app.staticTexts["Fixture hook configuration rejected"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["hook-status-claude"].value as? String, "Installed")
+        app.buttons["hook-toggle-claude"].click()
+        XCTAssertTrue(app.staticTexts["Claude Code hooks removed."].waitForExistence(timeout: 5))
+    }
+
+    @MainActor
     func testNativeSettingsSaveRevertAndMenuNavigation() throws {
         let environment = ProcessInfo.processInfo.environment
         guard let base = environment["TASKHUB_UI_BACKEND_URL"],

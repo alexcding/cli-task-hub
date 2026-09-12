@@ -6,6 +6,20 @@ process.env.TASKHUB_DATA_DIR ||= fs.mkdtempSync(path.join(os.tmpdir(), 'taskhub-
 const { app } = require('../../src/server/app');
 const db = require('../../src/server/database/db');
 const sse = require('../../src/server/routes/sse');
+if (process.env.TASKHUB_CLI_FIXTURE === '1') {
+  require('../../src/server/services/cli-tools').detect = async () => ({
+    claude: { present: true }, codex: { present: false }, gh: { present: true, authed: false }, acli: { present: true, authed: null },
+  });
+  // Exercise HTTP and native UI without reading or editing real agent config files.
+  const hooks = require('../../src/server/services/agent-hooks');
+  const status = { claude: 'absent', codex: 'absent' };
+  hooks.status = () => ({ ...status });
+  hooks.install = cli => {
+    if (cli === 'codex') throw new Error('Fixture hook configuration rejected');
+    status[cli] = 'installed';
+  };
+  hooks.uninstall = cli => { status[cli] = 'absent'; };
+}
 if (process.env.TASKHUB_LOGS_FIXTURE === '1') {
   db.addLog({ category: 'event', level: 'info', type: 'native_activity', payload: 'Synthetic successful operation' });
   db.addLog({ category: 'event', level: 'error', type: 'native_failure', payload: 'Synthetic failed operation' });
