@@ -410,6 +410,31 @@ Dashboard; the remaining app pages and action parity are tracked under M4.
   launch failure/recovery UI flow. The first UI attempt used a session title where the
   sidebar displays its branch; the corrected selector passes. Process/resource usage,
   login items, fonts, and native memory policy remain open.
+- General Settings now uses `SMAppService.mainApp` through an injected service and
+  view model for launch at login. macOS is the source of truth; enabled, unregistered,
+  approval-required, unavailable, and unknown states remain distinct. Mutations are
+  coalesced and reread OS status after success or failure. Returning from System
+  Settings refreshes approval state and clears obsolete errors. Shutdown drains a
+  user-requested mutation. Development/unbundled builds cannot register themselves;
+  disabling an existing native registration stays available. Merely starting the
+  app or visiting Settings never registers a login item.
+- Native login launches (and explicit `--autostart`) start as a menu-bar app without
+  the main window or Dock icon. AppKit now starts the backend independently of view
+  appearance; Open TaskHub/reopen restores regular activation and window/menu behavior.
+  `LSUIElement` is set in the built bundle to avoid initial Dock promotion. Detection
+  follows Apple's [launch Apple event contract](https://developer.apple.com/documentation/coreservices/apple_events/1556410-launch_apple_event_constants);
+  registration follows [SMAppService](https://developer.apple.com/documentation/servicemanagement/smappservice/mainapp).
+- Login/startup verification: three new Swift tests and two existing Settings tests
+  pass for status/approval/failure handling, coalescing, development guards, stale
+  reads, shutdown, and actual Apple event descriptors. The approval-error regression
+  passes after the final status-refresh adjustment. Quiet startup UI passes hidden
+  window, connected tray, opening the main window, and read-only login status. Normal
+  startup/menu navigation/Command-Q-hide UI also passes. The initial quiet UI attempt
+  passed startup checks but assumed a checkbox accessibility type; identifier lookup
+  fixes that assertion. Tests did not alter real login items. Packaged registration,
+  System Settings approval, and logout/login acceptance remain release gates; legacy
+  Tauri login items are not migrated or removed automatically. Process/resource usage,
+  fonts, and native memory policy remain implementation work.
 
 Companion docs: `ARCHITECTURE.md` (layers, HTTP-vs-IPC split), `TAURI-PORT.md`
 (the previous shell port — the same boundary makes this one tractable), `CLAUDE.md`

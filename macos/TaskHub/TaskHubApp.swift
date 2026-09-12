@@ -9,7 +9,9 @@ struct TaskHubApp {
         let application = NSApplication.shared
         let delegate = AppDelegate()
         application.delegate = delegate
-        application.setActivationPolicy(.regular)
+        // Stay out of the Dock until the launch event tells us whether this is
+        // a quiet login launch. Showing the window promotes the app to regular.
+        application.setActivationPolicy(.accessory)
         withExtendedLifetime(delegate) { application.run() }
     }
 }

@@ -14,6 +14,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var menus: NativeMenus?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        let quiet = AppLaunchContext.startsQuietly
         store.shell.applyAppearance()
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1000, height: 680),
                               styleMask: [.titled, .closable, .miniaturizable, .resizable],
@@ -55,7 +56,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         menus = NativeMenus(perform: { [weak self] command in self?.perform(command) },
                             enabled: { [weak self] command in self?.store.canPerform(command) == true })
         menus?.install()
-        showWindow()
+        Task { await store.start() }
+        if !quiet { showWindow() }
     }
 
     private func perform(_ command: ShellCommand) {
@@ -98,6 +100,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     @objc private func showWindow() {
+        NSApp.setActivationPolicy(.regular)
         popover.performClose(nil)
         window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)

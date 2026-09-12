@@ -100,8 +100,24 @@ The **CLIs** section probes installed tools and sign-in state on demand, offers
 installation guides and login-command copying, and installs/removes agent hooks.
 Unknown authentication remains distinct from signed out. Hook edits reject malformed
 configuration and preserve other commands, permissions, and dotfile symlinks.
-Diagnostics, launch at login, fonts, git-client actions, and native memory-budget
-policy still need their remaining Settings/parity increments.
+**Diagnostics** reads database counts, GitHub/Jira/Sprint snapshots, sync failures,
+and CLI timing counters. It refreshes while visible without running CLI commands.
+General also configures the external Git client. Session toolbars open the current
+worktree in that client or the project's configured IDE, resolving Xcode targets
+through the backend. Custom commands group arguments with quotes and substitute
+`{path}` literally; they do not perform shell expansion or pipelines.
+
+**Launch at login** reads macOS ServiceManagement state directly, including pending
+approval, and links to Login Items settings when approval is needed. Registration
+is available only in packaged release builds with a bundled backend; development
+builds may remove an existing native registration. No login item is registered on
+startup or by opening Settings. Login launches start quietly in the menu bar; opening
+TaskHub restores its normal window and Dock presence. `--autostart` exercises quiet
+startup without changing login items. A legacy Tauri login item is separate and is
+not automatically changed by the native app. Real registration and logout/login
+acceptance remain part of packaged-release verification.
+
+Fonts, process/resource usage, and native memory-budget policy remain open.
 
 ## Native tray and appearance (M2)
 

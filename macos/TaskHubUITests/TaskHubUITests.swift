@@ -221,6 +221,32 @@ final class TaskHubUITests: XCTestCase {
     }
 
     @MainActor
+    func testQuietStartupLoadsTrayAndOpensNativeWindow() throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard let base = environment["TASKHUB_UI_BACKEND_URL"],
+              let path = environment["TASKHUB_UI_DATA_DIR"], let socket = environment["TASKHUB_UI_PTY_SOCKET"] else {
+            throw XCTSkip("Run macos/scripts/test-browser-ui.sh to provide the isolated fixture.")
+        }
+        let app = XCUIApplication()
+        app.launchArguments = ["--backend-url", base, "--data-dir", path, "--pty-socket", socket, "--autostart"]
+        app.launch()
+        let status = app.descendants(matching: .any)["taskhub-status-item"].firstMatch
+        XCTAssertTrue(status.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertFalse(app.windows["TaskHub Native"].exists)
+        status.click()
+        XCTAssertTrue(app.staticTexts["Connected"].waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(app.buttons["Open TaskHub"].exists)
+        app.buttons["Open TaskHub"].click()
+        XCTAssertTrue(app.outlines["workspace-sidebar"].waitForExistence(timeout: 10))
+        app.typeKey(",", modifierFlags: .command)
+        app.radioButtons["General"].click()
+        XCTAssertTrue(app.descendants(matching: .any)["settings-launch-at-login"].firstMatch.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(app.staticTexts["Launch at login is unavailable in development builds. Use the packaged release app."].waitForExistence(timeout: 5))
+        // Read-only OS status: this scenario never toggles the user's login item.
+        XCTAssertTrue(app.staticTexts["settings-login-item-status"].exists)
+    }
+
+    @MainActor
     func testNativeGitClientPreferencesAndLaunchFailureRecovery() throws {
         let environment = ProcessInfo.processInfo.environment
         guard let base = environment["TASKHUB_UI_BACKEND_URL"],

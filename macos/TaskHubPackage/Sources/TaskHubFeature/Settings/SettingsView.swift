@@ -13,6 +13,7 @@ struct SettingsView: View {
             case .diagnostics: DiagnosticsView(model: model.diagnostics)
             case .general:
                 Form {
+                    LoginItemView(model: model.loginItem)
                     Section("Appearance") {
                         Picker("Theme", selection: Binding(get: { shell.appearance }, set: shell.setAppearance)) {
                             ForEach(AppAppearance.allCases) { Text($0.title).tag($0) }

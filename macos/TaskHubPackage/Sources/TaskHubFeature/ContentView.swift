@@ -50,7 +50,6 @@ public struct ContentView: View {
             ActivityToastView(notifications: store.shell.notifications)
                 .frame(maxWidth: 420).padding(16)
         }
-        .task { await store.start() }
         .sheet(isPresented: $store.creatingSession) { NewSessionView(model: store.newSessionModel()) }
         .sheet(isPresented: $store.creatingProject) {
             if let model = store.projectEditor() { NewProjectSheet(model: model) }

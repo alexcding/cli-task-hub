@@ -51,7 +51,8 @@ public final class AppStore {
         })
         settings = SettingsViewModel(clis: CLISettingsViewModel(copy: {
             NSPasteboard.general.clearContents(); NSPasteboard.general.setString($0, forType: .string)
-        }, openBrowser: { NSWorkspace.shared.open($0) }), diagnostics: DiagnosticsViewModel(), didSave: { [weak self] patch in
+        }, openBrowser: { NSWorkspace.shared.open($0) }), diagnostics: DiagnosticsViewModel(),
+            loginItem: LoginItemViewModel(service: NativeLoginItemService()), didSave: { [weak self] patch in
             guard let self else { return }
             if patch["jira_base_url"] != nil || patch["jira_api_token"] != nil {
                 for model in projectModels.values { await model.tickets?.invalidateSite() }
