@@ -4,6 +4,7 @@ import Observation
 @MainActor @Observable final class ProjectPageViewModel {
     private(set) var project: Project
     let editor: ProjectEditorViewModel
+    let board: WebBoardViewModel?
     var section = ProjectSection.prs
     var state = "open"
     var search = ""
@@ -13,8 +14,8 @@ import Observation
     private(set) var loading = false
     private var service: (any ProjectService)?
     private var generation = UUID()
-    init(project: Project, service: any ProjectService, editor: ProjectEditorViewModel) {
-        self.project = project; self.service = service; self.editor = editor
+    init(project: Project, service: any ProjectService, editor: ProjectEditorViewModel, board: WebBoardViewModel? = nil) {
+        self.project = project; self.service = service; self.editor = editor; self.board = board
     }
     func connect(_ service: (any ProjectService)?) {
         generation = UUID(); loading = false

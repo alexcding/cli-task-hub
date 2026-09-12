@@ -16,8 +16,44 @@ app.get('/fixture/page', (_req, res) => {
   res.type('html').send('<!doctype html><title>Native Browser Fixture</title><h1>Native browser fixture</h1><p>Find the quokka.</p><a href="/fixture/next">Next page</a><a href="/fixture/next" target="_blank">Popup page</a>');
 });
 app.get('/fixture/next', (_req, res) => res.type('html').send('<!doctype html><title>Next Fixture Page</title><h1>Next page</h1><a href="/fixture/page">Back to fixture</a>'));
+app.get('/browse/:key', (_req, res) => res.type('html').send('<!doctype html><title>Native ticket fixture</title><h1>Native ticket fixture</h1>'));
 if (!db.getProjects().length) {
   db.addProject({ name: 'Native integration fixture', repo: '', color: '#64748b', workspace: process.env.TASKHUB_FIXTURE_WORKSPACE || '/tmp' });
+}
+if (process.env.TASKHUB_BOARD_FIXTURE === '1') {
+  const project = db.getProjects()[0];
+  db.updateProject(project.id, { jiraProjectKey: 'REC' });
+  const items = [
+    { key: 'REC-1', summary: 'Native board integration', status: 'To Do', statusId: '1', assignee: '', assigneeId: '' },
+    { key: 'REC-2', summary: 'Completed fixture task', status: 'Done', statusId: '2', assignee: 'Alice', assigneeId: 'alice' },
+    { key: 'REC-3', summary: 'Blocked fixture task', status: 'Blocked', statusId: '3', assignee: 'Bob', assigneeId: 'bob' },
+  ].map(item => ({ ...item, statusCategory: item.status === 'Done' ? 'done' : 'new', type: 'Task', priority: 'Medium' }));
+  const save = () => {
+    const snapshot = { items, jql: 'project = REC', lastSynced: new Date().toISOString(), error: null,
+      meta: { query: '', sprint: { name: 'Fixture sprint' }, columns: [
+        { name: 'To Do', statusIds: ['1'], statuses: [{ id: '1', name: 'To Do' }] },
+        { name: 'Done', statusIds: ['2'], statuses: [{ id: '2', name: 'Done' }] },
+        { name: 'Blocked', statusIds: ['3'], statuses: [{ id: '3', name: 'Blocked' }] },
+      ] } };
+    db.setJiraSnapshot(`board:${project.id}`, snapshot); db.setJiraSnapshot(project.id, snapshot);
+  };
+  save();
+  const jira = require('../../src/server/repositories/jira');
+  jira.getAuth = async () => ({ email: 'fixture@example.test', site: 'example.test' });
+  require('../../src/server/repositories/jira-rest').myself = async () => ({ accountId: 'fixture-me' });
+  jira.transitionWorkItem = async (key, status) => {
+    if (status === 'Blocked') throw new Error('Fixture transition rejected');
+    const item = items.find(item => item.key === key);
+    if (!item) throw new Error('Fixture ticket missing');
+    item.status = status; item.statusId = status === 'Done' ? '2' : '1'; save();
+  };
+  jira.assignWorkItem = async (key, assignee) => {
+    const item = items.find(item => item.key === key);
+    item.assigneeId = assignee; item.assignee = assignee === 'alice' ? 'Alice' : assignee; save();
+  };
+  const poller = require('../../src/server/services/poller');
+  poller.syncProjectBoard = poller.syncProjectJira = poller.pollJira = async () => { save(); };
+  poller.poll = async () => {};
 }
 // Opt-in sample hierarchy for native sidebar/UI checks. Uses only this fixture's
 // isolated data directory and never reads the daily app's sessions.
@@ -64,6 +100,7 @@ if (process.env.TASKHUB_TRAY_FIXTURE === '1') {
 const server = app.listen(Number(process.env.PORT || 0), '127.0.0.1', error => {
   if (error) { console.error(error.message); process.exit(1); }
   const baseURL = `http://127.0.0.1:${server.address().port}`;
+  if (process.env.TASKHUB_BOARD_FIXTURE === '1') db.set('jira_base_url', baseURL);
   if (process.env.TASKHUB_BROWSER_FIXTURE === '1') {
     const configdb = require('../../src/server/database/configdb');
     const url = `${baseURL}/fixture/page`;

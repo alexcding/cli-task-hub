@@ -3,6 +3,38 @@ import XCTest
 final class TaskHubUITests: XCTestCase {
 
     @MainActor
+    func testWebSprintBoardMovesAssignsAndOpensNativeTicketContext() throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard let base = environment["TASKHUB_UI_BACKEND_URL"],
+              let path = environment["TASKHUB_UI_DATA_DIR"], let socket = environment["TASKHUB_UI_PTY_SOCKET"] else {
+            throw XCTSkip("Run macos/scripts/test-browser-ui.sh to provide the isolated fixture.")
+        }
+        let app = XCUIApplication()
+        app.launchArguments = ["--backend-url", base, "--data-dir", path, "--pty-socket", socket]
+        app.launch()
+        let project = app.outlines["workspace-sidebar"].staticTexts["Native integration fixture"]
+        XCTAssertTrue(project.waitForExistence(timeout: 10))
+        project.click()
+        app.radioButtons["Sprint Board"].click()
+        XCTAssertTrue(app.webViews.staticTexts["Native board integration"].waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(app.webViews.staticTexts["Fixture sprint"].exists)
+        app.webViews.buttons["Move REC-1"].click()
+        app.webViews.buttons["Blocked"].click()
+        XCTAssertTrue(app.webViews.staticTexts["Fixture transition rejected"].waitForExistence(timeout: 5))
+        app.webViews.buttons["Move REC-1"].click()
+        app.webViews.buttons["Done"].click()
+        XCTAssertTrue(app.webViews.staticTexts["REC-1 → Done"].waitForExistence(timeout: 5))
+        app.webViews.buttons["Assign"].firstMatch.click()
+        app.webViews.buttons["Alice"].click()
+        XCTAssertTrue(app.webViews.staticTexts["REC-1 → Alice"].waitForExistence(timeout: 5))
+        app.webViews.links["REC-1"].click()
+        XCTAssertTrue(app.webViews.staticTexts["Native ticket fixture"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["Create Session"].exists)
+        project.click()
+        XCTAssertTrue(app.webViews.staticTexts["Native board integration"].waitForExistence(timeout: 10))
+    }
+
+    @MainActor
     func testNativeActivityFiltersAndConfirmsClear() throws {
         let environment = ProcessInfo.processInfo.environment
         guard let base = environment["TASKHUB_UI_BACKEND_URL"],

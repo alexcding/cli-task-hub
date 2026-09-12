@@ -92,7 +92,7 @@ public struct ContentView: View {
             }
         case .project(let id):
             if let model = store.projectModels[id] {
-                ProjectPageView(model: model, actions: store.dashboard).id(id)
+                ProjectPageView(model: model, actions: store.dashboard, appearance: store.shell.appearance).id(id)
             } else {
                 Text("Connect to load this project.").foregroundStyle(.secondary)
             }

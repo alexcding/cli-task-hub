@@ -181,7 +181,11 @@ public final class AppStore {
             if let project = projects.first(where: { $0.id == id }), let api {
                 if let model = projectModels[id] { model.update(project) }
                 else if let editor = projectEditor(for: project) {
-                    projectModels[id] = ProjectPageViewModel(project: project, service: APIProjectService(api: api), editor: editor)
+                    let board = WebBoardViewModel(projectID: id, baseURL: api.baseURL, openPage: { [weak self] request in
+                        guard let self else { throw BackendError.operation("The workspace has closed.") }
+                        try await self.openPage(request)
+                    }, openBrowser: { NSWorkspace.shared.open($0) })
+                    projectModels[id] = ProjectPageViewModel(project: project, service: APIProjectService(api: api), editor: editor, board: board)
                 }
             }
         case .session(let id):
@@ -344,7 +348,7 @@ public final class AppStore {
             api = try await process.start()
             guard started else { await process.stop(); return }
             if let api { shell.connect(api); viewer.connect(api); dashboard.connect(APIDashboardService(api: api)); shell.refreshUsage() }
-            if let api { for model in projectModels.values { model.connect(APIProjectService(api: api)) } }
+            if let api { for model in projectModels.values { model.connect(APIProjectService(api: api)); model.board?.connect(baseURL: api.baseURL) } }
             if let api { logs.connect(APILogService(api: api)) }
             startStream(baseURL: config.baseURL)
         } catch {
@@ -358,6 +362,9 @@ public final class AppStore {
         shell.refresh()
         dashboard.refresh()
         if selection == .activity { logs.refresh() }
+        if case .project(let id) = selection, let model = projectModels[id], model.section == .board {
+            model.board?.refresh()
+        }
         refreshPending = true
         guard refreshTask == nil, let api else { return }
         refreshTask = Task { [weak self] in
@@ -375,7 +382,7 @@ public final class AppStore {
                     if sessions != sessionSnapshot { sessions = sessionSnapshot }
                     if tabs != tabSnapshot.tabs { tabs = tabSnapshot.tabs }
                     showSelectedContext()
-                    if case .project(let id) = selection, let model = projectModels[id], model.state == "open" {
+                    if case .project(let id) = selection, let model = projectModels[id], model.section == .prs && model.state == "open" {
                         await model.refresh()
                     }
                     if !sidebarEntries.flatMap(\.descendants).contains(where: { $0.destination == selection }) { select(.overview) }
@@ -457,7 +464,7 @@ public final class AppStore {
         await shell.stop()
         await dashboard.stop()
         await logs.stop()
-        for model in projectModels.values { model.connect(nil) }
+        for model in projectModels.values { model.connect(nil); model.board?.pause() }
         await viewer.stop()
         for model in buildModels.values { model.disconnect() }
         buildModels.removeAll()

@@ -70,7 +70,13 @@ Project rows now show native Open/Merged/All PR lists and a Settings tab. **New 
 opens a native creation sheet. Settings include workspace selection, GitHub remote
 detection, Jira key/JQL, and IDE configuration. Unsaved edits survive snapshot refreshes
 and reconnects. Deleting a project requires confirmation and retains its sessions,
-workspace folders, and terminals. Jira, automation, and workflow tabs are still pending.
+workspace folders, and terminals. Jira tickets, automation, and workflows are still pending.
+
+**Sprint Board** remains web-based for now. Its focused WebKit page reuses the existing
+board's filters, moves, assignment menus, and drag implementation. Ticket links open
+native context pages; Option-click opens the browser. The board receives invalidations
+from native SSE and releases its webview when you leave the section. No full SPA or
+web terminal is loaded. Drag-gesture acceptance remains pending.
 
 **Activity** (Command-3) is native, with category/error filters, search, copy, and
 embedded PR opening. Clear Logs confirms the complete selected category, including
@@ -197,10 +203,12 @@ xcodebuildmcp macos launch --json '{"appPath":"/absolute/path/to/TaskHub.app","l
 ```
 
 The bundle script includes the official Node executable, production npm dependencies,
-server/shared code, and the standalone Rust PTY helper, then signs the local bundle
+server/shared code, focused web assets listed in `web-assets.txt`, and the standalone Rust PTY helper, then signs the local bundle
 ad hoc. It runs after Xcode builds; repeat it when rebuilding the app. It currently
 expects the arm64 sidecar from `scripts/build-sidecar.sh` (or `TASKHUB_NODE_SIDECAR`).
 Use an absolute app path. This is a development bundle, not a notarized release.
+Run `node macos/scripts/smoke-web-assets.cjs /absolute/path/TaskHub.app` from the repo
+root to check all packaged board assets using the bundled Node helper and isolated data.
 
 Distribution is a direct Mac app without App Sandbox: TaskHub orchestrates local CLIs,
 worktrees, and detached PTYs. Developer ID signing, hardened-runtime entitlements,

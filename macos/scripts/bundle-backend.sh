@@ -11,8 +11,18 @@ cargo build --locked --release --manifest-path "$ROOT/crates/taskhub-ptyd/Cargo.
 BACKEND="$APP/Contents/Resources/backend"
 mkdir -p "$BACKEND/src" "$APP/Contents/Helpers"
 cp -R "$ROOT/src/server" "$ROOT/src/shared" "$BACKEND/src/"
+while IFS= read -r asset || [[ -n "$asset" ]]; do
+  [[ -z "$asset" || "$asset" == \#* ]] && continue
+  mkdir -p "$BACKEND/src/renderer/$(dirname "$asset")"
+  cp "$ROOT/src/renderer/$asset" "$BACKEND/src/renderer/$asset"
+done < "$ROOT/macos/web-assets.txt"
 cp "$ROOT/package.json" "$ROOT/package-lock.json" "$BACKEND/"
-npm ci --omit=dev --ignore-scripts --no-audit --no-fund --prefix "$BACKEND"
+# Resolve the copied package from its own directory. npm's --prefix path can
+# otherwise mix the caller's package root with the bundle's directory name.
+(
+  cd "$BACKEND"
+  npm ci --omit=dev --ignore-scripts --no-audit --no-fund
+)
 cp "$NODE_SIDECAR" "$APP/Contents/Helpers/taskhub-node"
 cp "$ROOT/crates/taskhub-ptyd/target/release/taskhub-ptyd" "$APP/Contents/Helpers/taskhub-ptyd"
 codesign --force --sign - "$APP/Contents/Helpers/taskhub-node"

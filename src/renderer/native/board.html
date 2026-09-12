@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sprint Board</title>
+  <link rel="stylesheet" href="/css/tokens.css">
+  <link rel="stylesheet" href="/css/layout.css">
+  <link rel="stylesheet" href="/css/components.css">
+  <link rel="stylesheet" href="/css/pages.css">
+  <link rel="stylesheet" href="/native/board.css">
+  <script src="/vendor/sortable.min.js" defer></script>
+  <script type="module" src="/native/board.js"></script>
+</head>
+<body>
+  <main class="native-board">
+    <header class="native-board-controls">
+      <span id="scrumboard-filter" class="ticket-filter"></span>
+      <span id="scrumboard-query" class="ticket-filter"></span>
+      <button id="board-retry" class="btn btn-secondary btn-sm">Refresh</button>
+    </header>
+    <p id="board-error" role="alert" hidden></p>
+    <div id="scrumboard-title" class="board-subtitle"></div>
+    <section id="scrumboard-body" aria-label="Sprint board"><p class="empty">Loading sprint board…</p></section>
+  </main>
+  <div id="toast" role="status"></div>
+</body>
+</html>

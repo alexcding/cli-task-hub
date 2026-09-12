@@ -3,6 +3,9 @@
 Porting the TaskHub desktop client from a Tauri-hosted web renderer to a **native
 macOS app (SwiftUI + AppKit where needed)**, with the terminal on **libghostty**.
 Diff and code editing may remain web-based, embedded as focused `WKWebView` views.
+The sprint board also remains web-based for now (user decision, 2026-09-12), hosted
+as a focused board page inside the native project view. Native board rewriting is
+deferred; existing board filtering, drag/drop, status, and assignment behavior stays.
 The terminal is the first correctness gate, before the broader page rewrite.
 Branch: `feat/swiftui-native`. Worktree: `../cli-task-hub-swiftui`.
 
@@ -282,6 +285,25 @@ Dashboard; the remaining app pages and action parity are tracked under M4.
   cannot reinsert cleared rows. The 36-test package suite passed after page wiring;
   both new log tests and the native filter/cancel-clear/confirmed-clear UI test pass.
   Jira ticket links and the rest of the M4 action inventory remain open.
+- User scope change: the sprint board remains web-based for now. Project's Sprint
+  Board section embeds `/native/board.html`, reusing the existing board renderer,
+  Sortable drag implementation, filters, status/assignment menus, and optimistic moves.
+  The entry point does not start the full SPA, Tauri bridge, or web terminal.
+- The WebKit host accepts only bounded ticket-link messages from its exact main
+  document. Ticket links open native contexts; Option-click uses the browser. Remote
+  navigation is blocked in the privileged board host. The native SSE connection
+  forwards invalidations, and leaving the board releases its webview.
+- Verification: the 38-test package suite passed during integration; the added bridge
+  test passes with the corrected current WebKit delegate signature. Native UI testing
+  passes rejected/successful moves, assignment, ticket routing, and returning to the
+  board, including shared-SSE wiring and configured sprint columns. A visual check
+  confirms the embedded board fits the native project pane. Drag gestures still need
+  interactive acceptance; their existing implementation is reused without changes.
+- `macos/web-assets.txt` lists the focused board dependencies. The manifest test and
+  three shared route-contract tests pass. A copied development app bundles and signs
+  successfully; its own Node helper serves all 19 board/shared assets in an isolated
+  HTTP smoke test, with the full SPA absent. Bundling now runs `npm ci` inside the
+  copied package, avoiding the observed `--prefix` installation failure.
 
 Companion docs: `ARCHITECTURE.md` (layers, HTTP-vs-IPC split), `TAURI-PORT.md`
 (the previous shell port — the same boundary makes this one tractable), `CLAUDE.md`
@@ -331,10 +353,10 @@ macos/
     Viewer/       WebTab (WKWebView), ContentTabStrip (chipOrder), History, Find bar
     Documents/    DiffWebView, EditorWebView, DocumentBridge, document state
     Sidebar/      CocoaSidebar (NSOutlineView, project → session, Pinned mirrors, Tabs), native context menus
-    Pages/        Dashboard, Jira, Scrumboard, Logs, Settings, Project
+    Pages/        Dashboard, Jira tickets, Logs, Settings, Project + focused WebBoard host
     Layout/       SplitPane (paneView: off/term/diff/build) — the one place state → geometry
   Shared/         Routes.swift (GENERATED from src/shared/routes.mjs), JiraKeys, JQL
-  WebAssets/      isolated diff/editor entry points + reused renderer assets and logic
+  WebAssets/      isolated board/diff/editor entry points + reused renderer assets and logic
   scripts/        gen-routes.mjs, build-sidecar.sh (reuse), bench
 ```
 
@@ -349,6 +371,8 @@ typed document bridge for the embedded diff/editor views.
   refreshes through SSE. Opening a PR may show its remote page in the embedded viewer.
 - SwiftUI/AppKit owns the window, sidebar, session and content tabs, split geometry,
   tray, menus, dialogs, and terminal. A document webview is a child of that native layout.
+- The sprint board may remain a focused local web page inside the native project view.
+  Its small ticket-link bridge is separate from remote browser pages and file documents.
 - The sidebar specifically uses AppKit `NSOutlineView` hosted through
   `NSViewRepresentable`; do not replace it with a SwiftUI `List`/`OutlineGroup`.
 - Reuse the current web diff and Monaco editor as the initial implementation. Extract
@@ -462,7 +486,7 @@ change or protocol change re-runs the affected checks.
 | M1 | **Terminal correctness spike:** pinned Ghostty package, `PtydClient`, native surface, input, flow control, attach/restoration, parsed row access, lifecycle | The terminal acceptance gate above passes, with automated tests and recorded interactive/performance evidence. Resolve snapshot and byte-transport requirements here |
 | M2 | Native shell: AppKit `NSOutlineView` project/session sidebar, Tabs/Pinned groups, tray PR rows + usage view, theme, notifications, native menus and focus routing | Session selection uses stable PTY identities; changing views preserves terminal state; close/quit behavior matches the lifecycle contract |
 | M3 | Complete session workflow: new/restart/remove/pin, worktree + task creation, `build:` PTY and Run destinations; context webview, content-tab strip, History, find bar, page-only/session toolbar | One complete session works end to end with terminal and context page; links route correctly; GitHub/Jira login survives relaunch; build and agent terminals remain isolated |
-| M4 | Native SwiftUI app pages and actions: Dashboard (cards, grouping, CI status, filters, and actions), Jira, Scrumboard, Logs, Settings, Project; project/settings edits, Jira actions, agent hooks, workflows, git history/commit/push/discard | Dashboard renders natively and updates through snapshot API + SSE; each existing workflow has an explicit parity check; failures remain recoverable and destructive actions retain confirmation |
+| M4 | Native SwiftUI app pages and actions: Dashboard (cards, grouping, CI status, filters, and actions), Jira tickets, Logs, Settings, Project; focused web sprint board; project/settings edits, Jira actions, agent hooks, workflows, git history/commit/push/discard | Dashboard renders natively and updates through snapshot API + SSE; embedded board preserves its existing interactions; each existing workflow has an explicit parity check; failures remain recoverable and destructive actions retain confirmation |
 | M5 | Embedded diff + code editor: isolate existing web assets, typed document bridge, highlighting, diff interactions, editing/saving, dirty state, native shortcut integration | Existing diff/editor behavior works inside native panes; save errors preserve edits; dirty views cannot be silently evicted; terminal file links open the correct document |
 | M6 | Release hardening: node + daemon + Ghostty resources + document assets, Sparkle, notarisation, upgrade/rollback and data restoration; remove Tauri/full-SPA dependencies from the native build | `.dmg` installs and runs on a clean Mac; terminal acceptance checks pass in the packaged app; required web document assets remain bundled |
 | M7 (optional) | Port `src/server/` to Swift (GRDB + `Process`), drop node | API tests re-pointed and green; standalone Rust PTY daemon remains unless separately replaced |
@@ -501,6 +525,8 @@ terminal correctness work must not be traded away to meet the old estimate.
 - The native tray uses `NSStatusItem` + `NSPopover` with a SwiftUI content view;
   usage is rendered as native text/progress controls, replacing the image row.
 - Native SwiftUI Dashboard, including all cards, filters, status indicators, and actions.
+- Sprint board stays web-based for now, per user direction; native Jira tickets and
+  surrounding project/navigation UI continue. Board links open native session contexts.
 - Diff and code editing may remain web-based; initially reuse the existing diff and
   Monaco editor in focused `WKWebView` hosts. Preserve editing and saving.
 - M1 terminal correctness remains a release gate. User authorized the M2 Cocoa

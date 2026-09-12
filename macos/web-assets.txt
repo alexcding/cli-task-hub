@@ -1,0 +1,17 @@
+# Focused web surfaces and their shared renderer dependencies. No SPA or terminal bootstrap.
+native/board.html
+native/board.css
+native/board.js
+css/tokens.css
+css/layout.css
+css/components.css
+css/pages.css
+pages/scrumboard.js
+pages/jira.js
+stores/store.js
+services/api.js
+lib/util.js
+lib/avatars.js
+lib/icons.js
+components/toast.js
+vendor/sortable.min.js

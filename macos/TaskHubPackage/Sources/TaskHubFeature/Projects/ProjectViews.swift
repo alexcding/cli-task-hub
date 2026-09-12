@@ -74,12 +74,15 @@ struct NewProjectSheet: View {
 struct ProjectPageView: View {
     @Bindable var model: ProjectPageViewModel
     let actions: DashboardViewModel
+    let appearance: AppAppearance
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Picker("Project section", selection: $model.section) {
                 ForEach(ProjectSection.allCases) { Text($0.rawValue).tag($0) }
             }.pickerStyle(.segmented)
             switch model.section {
+            case .board:
+                if let board = model.board { WebBoardView(model: board, appearance: appearance) }
             case .settings: ProjectEditorView(model: model.editor)
             case .prs:
                 HStack {
