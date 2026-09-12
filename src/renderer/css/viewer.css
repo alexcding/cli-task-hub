@@ -17,9 +17,11 @@
 .bar-seg { display:flex; align-items:center; gap:4px; padding:0 12px; min-width:0; }
 .bar-wv { flex:1; }
 .bar-term { display:flex; flex:none; min-width:0; border-right:1px solid var(--border); }
-/* The IDE chip is last in the segment and pushed to its right edge — the folder + Run group stay
-   together on the left. Hidden it is display:none, so the margin costs nothing when absent. */
-#split-ide { margin-left:auto; }
+/* Segment order: folder (git client) | IDE + Run + destination … workflow group at the right edge.
+   Hidden chips are display:none, so the auto margin costs nothing when absent. The hairline between
+   the folder and IDE chips is the IDE chip's ::before, and only when the folder chip is showing —
+   a divider with nothing on its left is just a stray line. */
+#wf-group { margin-left:auto; }
 /* No terminal pane below (a page with no session, holding just the "New session" button): the
    segment's edge would be a divider over nothing — drop it, and send the segment to the END of the
    toolbar (order:2) so the button sits at the RIGHT edge. That leaves the head of the bar to
@@ -103,31 +105,36 @@ body.split-closed .bar-term { padding-right:50px; }
    (inherits .pf-btn's --text-2, → --text on hover) — not the accent. */
 .wf-btn { padding:7px 9px; }
 /* Toolbar chips at the head of the terminal segment (.bar-term): #split-folder (the current
-   folder — git client + Finder) and #split-ide (the project's IDE). Each is its own group, so
-   they read as separate controls and either can grow a second half without disturbing the other.
-   GHOST, not outlined and not filled: the chip carries no box of its own — same as the ＋ and the
-   split toggle at the other end of the bar (.split-btn/.ctab-add), so the whole toolbar is one
-   family of bare glyphs. An outline competed with the .ctab tabs an inch to the right; a filled
-   well read as pressed, since --surface-hover is what .split-btn.on uses to mean "toggled on".
-   The two halves are separated by a short hairline centered in their gap — INSET (14px, not the
-   full height) so it reads as a divider between two glyphs rather than as the leftover edge of the
-   box that used to be drawn around them.
-   Icons only: the folder NAME is not a segment (the sidebar already titles the session by its
-   worktree), and Finder lives in the right-click menu. */
-.tb-chip { flex-shrink:0; display:inline-flex; align-items:center; gap:7px; border:none; border-radius:8px; background:none;
+   folder — git client + Finder) and #split-ide (the project's IDE, Run, and Xcode's Scheme /
+   Simulator destination). They sit in ONE control, #tb-launch (.tb-group), drawn like the app's
+   segmented pickers (.seg-tabs, the project/Settings tabs): a soft filled WELL with no border, and
+   each action a pill inside it that rises as a white "thumb" (--seg-thumb + --seg-shadow) on hover
+   — the same lift the picker gives its active tab — so the group reads as one piece of hardware
+   rather than a row of boxed glyphs. No hairlines: the pills' own gaps divide the segments. The
+   well hides itself when neither chip is showing. Icons only for the launchers: the folder NAME
+   is not a segment (the sidebar already titles the session by its worktree), and Finder lives in
+   the right-click menu. */
+.tb-group { display:inline-flex; align-items:center; gap:2px; padding:3px; border-radius:16px; background:var(--surface-hover); flex-shrink:0; }
+.tb-group:not(:has(.tb-chip:not([hidden]))) { display:none; }
+.tb-chip { flex-shrink:0; display:inline-flex; align-items:center; gap:2px; border:none; background:none;
   color:var(--text-2); font:inherit; font-size:12px; font-weight:500; transition:color .28s ease; }
-.tb-chip .fc-ic + .fc-ic { position:relative; }
-.tb-chip .fc-ic + .fc-ic::before { content:""; position:absolute; left:-4px; top:50%; transform:translateY(-50%); width:1px; height:14px; background:var(--border); }
-.tb-chip .fc-ic { display:inline-flex; align-items:center; border:none; background:none; cursor:pointer; color:inherit; font:inherit; padding:7px 10px; flex-shrink:0; border-radius:6px; transition:background-color .12s ease, color .12s ease; }
-.tb-chip .fc-ic svg { flex-shrink:0; width:22px; height:22px; display:block; }
-/* When a git client is configured the glyph is that client's brand mark (an <img>). Sized 2px
+.tb-chip .fc-ic { display:inline-flex; align-items:center; height:26px; border:none; background:none; cursor:pointer; color:inherit; font:inherit; padding:0 9px; flex-shrink:0; border-radius:13px; transition:background-color .12s ease, color .12s ease, box-shadow .12s ease; }
+.tb-chip .fc-ic svg { flex-shrink:0; width:17px; height:17px; display:block; }
+/* When a git client / IDE is configured the glyph is that app's brand mark (an <img>). Sized 2px
    larger than the stroke glyphs beside it to optically match them, since brand logos bake in their
    own padding and read smaller than an edge-to-edge stroke icon at the same box size. */
-.tb-chip .fc-ic img { flex-shrink:0; width:24px; height:24px; display:block; border-radius:4px; object-fit:contain; }
-.tb-chip .fc-ic:hover { background:var(--surface-hover); color:var(--text); }
-/* The IDE chip's play half (build.js): the accent while a build is running, so the stop square
-   reads as live state rather than another launcher. */
-.tb-chip .fc-run.running { color:var(--accent); }
+.tb-chip .fc-ic img { flex-shrink:0; width:19px; height:19px; display:block; border-radius:4px; object-fit:contain; }
+.tb-chip .fc-ic:hover { background:var(--seg-thumb); box-shadow:var(--seg-shadow); color:var(--text); }
+/* The IDE chip's play half (build.js): while a build is running it stays LIFTED, in the accent —
+   the thumb is the live state, the way the picker's raised tab is the selected one. */
+.tb-chip .fc-run.running { background:var(--seg-thumb); box-shadow:var(--seg-shadow); color:var(--accent); }
+/* The run DESTINATION segments (Xcode: Scheme, Simulator), the text pills — the same 12px/500 the
+   chip family sets, clipped so a long scheme name can't push the group across the bar; the caret
+   marks each as a menu. Unset reads dimmer, as a prompt. */
+.tb-chip .fc-dest { gap:3px; max-width:180px; }
+.tb-chip .fc-dest span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.tb-chip .fc-dest svg { width:11px; height:11px; opacity:.6; }
+.tb-chip .fc-dest.unset { color:var(--text-3); }
 /* Worktree tabs: tint the stroke glyphs with the accent so it's distinguishable at a glance
    (a brand <img> can't take the tint, so a git-client mark stays neutral). */
 .tb-chip.is-worktree .fc-ic { color:var(--accent); }
@@ -450,15 +457,16 @@ html[data-theme="dark"] .wf-select {
 .wf-select:disabled { opacity:.5; cursor:default; }
 .wf-select[hidden] { display:none; }
 
-/* Run + picker as ONE outlined segmented control: the group owns the border/corners; the play
-   button and the picker sit inside it, divided by a hairline. When running, the picker is hidden
-   and the group is just the (rounded) Stop button. */
-.wf-group { display:inline-flex; align-items:center; border:1px solid var(--border); border-radius:16px; overflow:hidden; }
+/* Run + picker as ONE segmented control, drawn exactly like the launcher group at the other end
+   of the row (.tb-group): a filled well, no border, and the play button and the picker each a pill
+   inside it that lifts as a thumb (--seg-thumb + --seg-shadow) on hover. When running, the picker
+   is hidden and the well holds just the Stop pill. */
+.wf-group { display:inline-flex; align-items:center; gap:2px; padding:3px; border-radius:16px; background:var(--surface-hover); }
 .wf-group[hidden] { display:none; }
-.wf-group:hover { border-color:var(--border-focus); }
-.wf-group .wf-btn { border-radius:0; }                         /* the group provides the outline */
-.wf-group .wf-select { border:none; border-left:1px solid var(--border); border-radius:0; background-color:transparent; }
-.wf-group .wf-select:hover { border-left-color:var(--border); } /* keep the divider neutral; the group border highlights */
+.wf-group .wf-btn { height:26px; padding:0 9px; border-radius:13px; transition:background-color .12s ease, color .12s ease, box-shadow .12s ease; }
+.wf-group .wf-btn:hover { background:var(--seg-thumb); box-shadow:var(--seg-shadow); }
+.wf-group .wf-select { height:26px; padding:0 26px 0 10px; border:none; border-radius:13px; background-color:transparent; font-weight:500; transition:background-color .12s ease, color .12s ease, box-shadow .12s ease; }
+.wf-group .wf-select:hover { background-color:var(--seg-thumb); box-shadow:var(--seg-shadow); }
 /* Review actions only exist while Review is on. */
 body:not(.pane-diff) .pf-diff { display:none; }
 

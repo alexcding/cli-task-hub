@@ -1,9 +1,9 @@
 // Build / run: the play button beside the terminal toolbar's IDE chip.
 //
-// The command is a PROJECT setting (`runCmd`, project Settings → IDE card) — a shell script run in
-// the checkout, with {path} (the folder being worked on) and {target} (the resolved IDE target,
-// e.g. the .xcworkspace) substituted. There's no per-branch setting: a worktree differs only by
-// which folder the script runs in, which is exactly what {path} carries.
+// What runs is decided by the project's IDE RUNNER (lib/ides.js → ideRunner; Xcode's builds the
+// scheme and launches it on the simulator picked from the toolbar's destination segment) — there is
+// no hand-written run script. The destination is a PROJECT setting (`runScheme` / `runSim`); a
+// worktree differs only by which folder it builds in, which is what the resolved target carries.
 //
 // Output goes to a terminal, because that's the only honest surface for build output — ANSI,
 // progress, scrollback, ⌃C. NOT the session's own terminal: the agent lives there and is almost
@@ -19,15 +19,7 @@ import { api } from '../services/api.js';
 import { createTermView, disposeTerm } from './terminal.js';
 import { submitLine } from './cli-launch.js';
 import { toast, toastErr } from './toast.js';
-
-const shq = s => "'" + String(s).replace(/'/g, "'\\''") + "'"; // single-quote for the shell
-
-// {targetFlag} — the xcodebuild/xcodebuildmcp flag that {target} belongs to. Which one is right
-// depends on what the target resolved to IN THIS WORKTREE (`--workspace-path` only accepts a
-// .xcworkspace, `--project-path` only an .xcodeproj), and a repo can gain a workspace later, so
-// the script shouldn't have to hardcode it. Anything else → --project-path, which is what a bare
-// checkout of an Xcode project wants.
-const xcFlag = target => /\.xcworkspace\/?$/.test(target) ? '--workspace-path' : '--project-path';
+import { ideRunner, canRun } from '../lib/ides.js';
 
 // The build PTY's pair key — stable per context, so a reload re-adopts the same terminal.
 const buildKey = tab => `build:${tab.url}`;
@@ -44,15 +36,14 @@ export function buildTerm(tab) {
   return null;
 }
 
-// The run script for this context's project, or '' when none is configured (the toolbar decides
-// whether to show the play button from the project record directly — viewer.js runHalfHtml).
-// The project is the one behind the folder chip, like the IDE's: updateFolderChip only stamps
+// The project behind this context's folder chip, like the IDE's: updateFolderChip only stamps
 // dataset.workspace for a worktree (the right-click delete needs it), so a session sitting on the
-// main checkout is matched by the folder itself.
-function runCommandFor() {
+// main checkout is matched by the folder itself. Its IDE's runner (lib/ides.js — Xcode's scheme +
+// simulator) composes the lines Run types.
+export function runProject() {
   const el = document.getElementById('split-folder');
   const ws = el?.dataset.workspace || el?.dataset.path || '';
-  return projectByWorkspace(ws)?.runCmd || '';
+  return projectByWorkspace(ws);
 }
 
 // Is this context's build still running? The terminal's `busy` flag is NOT usable here — it's
@@ -80,15 +71,16 @@ function watchBuild(id, onState) {
   setTimeout(tick, POLL_MS);
 }
 
-// Run the project's script in this context's build terminal, creating and showing it first.
-// {target} resolves exactly like the IDE launch does (configured target → probe → the folder), so
-// `xcodebuild -workspace {target}` gets the same document the IDE button would open.
+// Run the project's destination in this context's build terminal, creating and showing it first.
+// The target resolves exactly like the IDE launch does (configured target → probe → the folder), so
+// `xcodebuild -workspace <target>` gets the same document the IDE button would open.
 export async function runBuild(tab, { setView, onState } = {}) {
   if (!tab || _starting.has(tab.id)) return;   // a second click during the start-up awaits
   if (isBuilding(tab)) { toast('A build is already running'); return; }
   const folder = document.getElementById('split-folder')?.dataset.path || '';
-  const cmd = runCommandFor();
-  if (!folder || !cmd) return;
+  const pj = runProject();
+  if (!folder || !canRun(pj)) return;
+  const runner = ideRunner(pj.ide);
   _starting.add(tab.id);
   try {
     let target = folder;
@@ -98,6 +90,17 @@ export async function runBuild(tab, { setView, onState } = {}) {
       const r = await api(`${ROUTES.LAUNCH_TARGET}?${q}`);
       if (r?.path) target = r.path;
     } catch { /* {target} falls back to the folder */ }
+    // A runner needs the build settings (where the .app lands, its bundle id) before it can type
+    // the install/launch half of the chain. ~1s of xcodebuild; a failure here is a real error
+    // (bad scheme, no such simulator), so it's surfaced rather than swallowed.
+    let lines;
+    try {
+      const el = document.getElementById('split-ide');
+      const q = `path=${encodeURIComponent(folder)}&rel=${encodeURIComponent(el?.dataset.ideRel || '')}`
+        + `&scheme=${encodeURIComponent(pj.runScheme)}&sim=${encodeURIComponent(pj.runSim)}`;
+      const settings = await api(`${ROUTES.XCODE_BUILD_SETTINGS}?${q}`);
+      lines = runner.script({ target, folder, pj, settings, simName: el?.dataset.simName || '' });
+    } catch (e) { toastErr(`Can't run ${pj.runScheme}: ${e.message}`); return; }
 
     let t = buildTerm(tab);
     if (!t) {
@@ -114,14 +117,10 @@ export async function runBuild(tab, { setView, onState } = {}) {
     // otherwise pass the guard and interleave a second run into the same shell.
     _running.add(t.id);
     onState?.();
-    const script = cmd
-      .replaceAll('{targetFlag}', xcFlag(target))
-      .replaceAll('{path}', shq(folder))
-      .replaceAll('{target}', shq(target));
     try {
-      // The script may be several lines; each is submitted in turn, so a failing `set -e` line
-      // stops the rest exactly as it would in a shell.
-      for (const line of script.split('\n').map(l => l.trim()).filter(Boolean)) await submitLine(t.id, line);
+      // The runner's lines are submitted in turn, so a failing line stops the rest exactly as it
+      // would in a shell.
+      for (const line of lines.map(l => l.trim()).filter(Boolean)) await submitLine(t.id, line);
     } catch (e) {
       _running.delete(t.id); onState?.();  // nothing is running — don't strand the stop button
       toastErr(`Couldn't start the build: ${e.message}`);

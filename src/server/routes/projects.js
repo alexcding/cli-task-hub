@@ -86,8 +86,10 @@ function projectPatch(body) {
     if (rel.split('/').includes('..')) return { error: 'IDE target must stay inside the checkout' };
     patch.ideTarget = rel;
   }
-  // The build/run script. Only the ends are trimmed — the body may legitimately be several lines.
-  if (body.runCmd !== undefined) patch.runCmd = String(body.runCmd).trim();
+  // The Xcode run destination picked from the toolbar (scheme + simulator UDID). Per project like
+  // the script it replaces: a worktree differs only by folder, and the scheme lives in the project.
+  if (body.runScheme !== undefined) patch.runScheme = String(body.runScheme).trim();
+  if (body.runSim !== undefined) patch.runSim = String(body.runSim).trim();
   if (body.repo  !== undefined) {
     const raw = String(body.repo).trim();
     if (raw === '') { patch.repo = ''; }
@@ -99,6 +101,8 @@ function projectPatch(body) {
   }
   return { patch };
 }
+
+const RUN_ONLY = new Set(['runScheme', 'runSim']);
 
 function register(app, PORT) {
   app.get(ROUTES.PROJECTS, (req, res) => res.json(db.getProjects()));
@@ -124,8 +128,11 @@ function register(app, PORT) {
     if (error) return res.status(400).json({ error });
     const project = db.updateProject(req.params.id, patch);
     if (!project) return res.status(404).json({ error: 'Not found' });
-    forwarder.sync(PORT);
     res.json(project);
+    // Picking a run destination from the toolbar is a PUT too; it changes nothing GitHub or Jira
+    // would answer differently, so it doesn't earn a full project resync.
+    if (Object.keys(patch).every(k => RUN_ONLY.has(k))) return;
+    forwarder.sync(PORT);
     kickSync(project);
   });
 

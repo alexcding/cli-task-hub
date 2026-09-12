@@ -384,7 +384,7 @@ export function loadProjectSettings(id) {
                    turns up on the terminal toolbar. Hidden for None and Custom (no brand mark). -->
               <img class="ide-mark" id="ps-ide-mark-${id}" alt="" src="${ideIcon(p.ide)}" ${ideIcon(p.ide) ? '' : 'hidden'}>
             </div>
-            <p class="form-hint">Adds an <strong>open in IDE</strong> button to the terminal toolbar's folder chip — it launches this project's worktree (or its main checkout).</p>
+            <p class="form-hint">Adds an <strong>open in IDE</strong> button to the terminal toolbar — it launches this project's worktree (or its main checkout). <strong>Xcode</strong> also adds <strong>Run</strong>: pick a scheme and a simulator on the toolbar and it builds with <code class="code-chip">xcodebuild</code> and launches on that simulator, Xcode-style.</p>
           </div>
           <div class="form-group" id="ps-ide-custom-${id}" ${p.ide === 'custom' ? '' : 'hidden'}>
             <label class="form-label" for="ps-ide-cmd-${id}">Command template</label>
@@ -398,14 +398,6 @@ export function loadProjectSettings(id) {
               <button type="button" class="btn btn-secondary btn-sm" onclick="chooseProjectIdeTarget('${id}')">Choose…</button>
             </div>
             <p class="form-hint">Pick it with <strong>Choose…</strong> or type it. Stored relative to the checkout, so it resolves inside <em>every</em> branch's worktree — an absolute path would always point at one branch. Leave blank to open the folder itself; Xcode can't do that, so with nothing set it opens the first <code class="code-chip">.xcworkspace</code>, <code class="code-chip">.xcodeproj</code> or <code class="code-chip">Package.swift</code> it finds.</p>
-          </div>
-          <!-- Build/run script — same card as the IDE, since it's the other half of "work on this
-               checkout": open it, or build it. Runs in the worktree, so it's per project, not per
-               branch. Multi-line is fine (it's a script, not one argv). -->
-          <div class="form-group" id="ps-run-row-${id}" style="margin:0" ${p.ide || p.runCmd ? '' : 'hidden'}>
-            <label class="form-label" for="ps-run-${id}">Build / run command</label>
-            <textarea id="ps-run-${id}" rows="3" spellcheck="false" placeholder="xcodebuildmcp simulator build-and-run {targetFlag} {target} --scheme MyApp --simulator-name 'iPhone 16'">${esc(p.runCmd || '')}</textarea>
-            <p class="form-hint">Run in the worktree by the toolbar's <strong>Run</strong> button. <code class="code-chip">{path}</code> is the folder and <code class="code-chip">{target}</code> the resolved file above; <code class="code-chip">{targetFlag}</code> becomes <code class="code-chip">--workspace-path</code> or <code class="code-chip">--project-path</code> to match it. Blank = no Run button.</p>
           </div>
         </div>
       </div>
@@ -484,10 +476,6 @@ export function projIdeChange(id) {
   if (row) row.hidden = !sel;
   const mark = document.getElementById(`ps-ide-mark-${id}`);
   if (mark) { const icon = ideIcon(sel); mark.src = icon; mark.hidden = !icon; }
-  // The run script is independent of the IDE, but it's the same card — reveal it with the picker
-  // rather than leaving it stranded above a "None". A script already written keeps it open.
-  const run = document.getElementById(`ps-run-row-${id}`);
-  if (run) run.hidden = !sel && !document.getElementById(`ps-run-${id}`)?.value.trim();
 }
 
 export async function saveProjectSettings(id) {
@@ -503,7 +491,6 @@ export async function saveProjectSettings(id) {
       ide,
       ideCmd:         document.getElementById(`ps-ide-cmd-${id}`)?.value.trim() || '',
       ideTarget:      document.getElementById(`ps-ide-target-${id}`)?.value.trim() || '',
-      runCmd:         document.getElementById(`ps-run-${id}`)?.value.trim() || '',
     });
     toast('Project updated');
     // The sidebar and the topbar title carry the name; the rest of the page (PRs, Jira) is

@@ -253,6 +253,7 @@ Object.assign(window, {
   openPrSplit: viewer.openPrSplit, openRepo: viewer.openRepo, openExternal: viewer.openExternal, jiraClick: viewer.jiraClick,
   openTabFolder: viewer.openTabFolder, openTabIde: viewer.openTabIde, newSession: viewer.newSession,
   runBuild: viewer.runBuildClick, stopBuild: viewer.stopBuildClick,   // the IDE chip's play/stop half
+  pickRunDest: viewer.pickRunDest,                                     // its scheme · simulator segment (Xcode)
   folderMenu: viewer.folderMenu, ideMenu: viewer.ideMenu, removeTabWorktree: viewer.removeTabWorktree,
   folderChipClick: viewer.folderChipClick,
   // viewer toolbar

@@ -95,6 +95,28 @@ async function xcodeTarget(root) {
   return '';
 }
 
+// The launch-target resolution behind GET /api/launch-target, shared with routes/xcode.js (the
+// scheme list and build settings need the same document the IDE button would open, so both
+// resolve it here rather than re-deriving it). Throws ENOENT for a missing folder.
+async function resolveLaunchTarget(dir, relQ, kindQ) {
+  const rel = String(relQ || '').trim().replace(/^\/+/, '');
+  const kind = String(kindQ || '');
+  const st = await fsp.stat(dir);
+  if (!st.isDirectory()) return { path: dir, source: 'path' };
+  // A configured target wins — but only if it's actually there. A worktree that predates the
+  // file (or a typo) falls through to the probe/folder rather than handing the IDE a bad path.
+  if (rel && !rel.split('/').includes('..')) {
+    const target = path.join(dir, rel);
+    try { await fsp.stat(target); return { path: target, source: 'configured' }; }
+    catch { /* not in this checkout — fall through */ }
+  }
+  if (kind === 'xcode') {
+    const found = await xcodeTarget(dir);
+    if (found) return { path: found, source: 'probe' };
+  }
+  return { path: dir, source: 'folder' };
+}
+
 function register(app) {
   // What a project's IDE should open for a folder. Only 'xcode' needs a probe today; every other
   // kind opens the folder, and the renderer doesn't call this for those.
@@ -102,23 +124,8 @@ function register(app) {
     if (foreignOrigin(req)) return res.status(403).json({ error: 'forbidden' });
     const dir = resolvePath(req.query.path);
     if (!dir) return res.status(400).json({ error: 'path required' });
-    const rel = String(req.query.rel || '').trim().replace(/^\/+/, '');
-    const kind = String(req.query.kind || '');
     try {
-      const st = await fsp.stat(dir);
-      if (!st.isDirectory()) return res.json({ path: dir, source: 'path' });
-      // A configured target wins — but only if it's actually there. A worktree that predates the
-      // file (or a typo) falls through to the probe/folder rather than handing the IDE a bad path.
-      if (rel && !rel.split('/').includes('..')) {
-        const target = path.join(dir, rel);
-        try { await fsp.stat(target); return res.json({ path: target, source: 'configured' }); }
-        catch { /* not in this checkout — fall through */ }
-      }
-      if (kind === 'xcode') {
-        const found = await xcodeTarget(dir);
-        if (found) return res.json({ path: found, source: 'probe' });
-      }
-      res.json({ path: dir, source: 'folder' });
+      res.json(await resolveLaunchTarget(dir, req.query.rel, req.query.kind));
     } catch (e) {
       const notFound = e.code === 'ENOENT';
       res.status(notFound ? 404 : 500).json({ error: notFound ? 'not found' : e.message });
@@ -163,4 +170,4 @@ function register(app) {
   });
 }
 
-module.exports = { register };
+module.exports = { register, resolvePath, foreignOrigin, resolveLaunchTarget };

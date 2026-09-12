@@ -59,6 +59,7 @@ require('./routes/config').register(app);
 require('./routes/projects').register(app, PORT);
 require('./routes/git').register(app);
 require('./routes/file').register(app);
+require('./routes/xcode').register(app);
 require('./routes/prs').register(app);
 require('./routes/jira').register(app);
 require('./routes/system').register(app);

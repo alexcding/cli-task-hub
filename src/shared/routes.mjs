@@ -26,6 +26,12 @@ export const ROUTES = Object.freeze({
   // Which document an IDE should actually open for a folder (GET ?path=&kind=xcode → { path }).
   // Xcode can't open a plain checkout: it needs the .xcworkspace/.xcodeproj/Package.swift inside.
   LAUNCH_TARGET: '/api/launch-target',
+  // Xcode run destinations (routes/xcode.js) — plain `xcodebuild` / `xcrun simctl`, no third-party
+  // tool. All GET; schemes/build-settings take ?path=&rel= like LAUNCH_TARGET and resolve the
+  // same document.
+  XCODE_SCHEMES: '/api/xcode/schemes',              // → { target, name, schemes, targets, configurations }
+  XCODE_SIMULATORS: '/api/xcode/simulators',        // → [{ udid, name, runtime, platform, state, lastUsedAt }]
+  XCODE_BUILD_SETTINGS: '/api/xcode/build-settings',// ?scheme=&sim=&configuration= → { appPath, bundleId, productName }
 
   // ── Projects ─────────────────────────────────────────────────────────────────
   PROJECTS: '/api/projects',

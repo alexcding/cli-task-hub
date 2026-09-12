@@ -96,9 +96,11 @@ test('projects: the per-project IDE round-trips (id, template, launch target, ru
   assert.equal(target.body.ideTarget, 'ios/App.xcworkspace');
   assert.equal((await send('PUT', `/api/projects/${p.id}`, { ideTarget: '../elsewhere' })).status, 400);
 
-  // The build/run script keeps its interior newlines (it's a script), losing only the ends.
-  const run = await send('PUT', `/api/projects/${p.id}`, { runCmd: '  set -e\nxcodebuild -workspace {target} build\n' });
-  assert.equal(run.body.runCmd, 'set -e\nxcodebuild -workspace {target} build');
+  // The Xcode run destination (toolbar picker): scheme + simulator UDID, each settable alone.
+  const run = await send('PUT', `/api/projects/${p.id}`, { runScheme: ' MyApp ', runSim: 'ADA0BBAC-F7E1-46C6-9C5B-2FCC9C150D92' });
+  assert.equal(run.body.runScheme, 'MyApp');
+  assert.equal(run.body.runSim, 'ADA0BBAC-F7E1-46C6-9C5B-2FCC9C150D92');
+  assert.equal((await send('PUT', `/api/projects/${p.id}`, { runSim: '' })).body.runScheme, 'MyApp'); // the other half keeps
 
   assert.equal((await send('PUT', `/api/projects/${p.id}`, { ide: '' })).body.ide, ''); // back to none
   await send('DELETE', `/api/projects/${p.id}`);

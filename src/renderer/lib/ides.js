@@ -42,3 +42,49 @@ export const ideLabel = id => IDES.find(i => i.id === id)?.label || 'IDE';
 // template. '' when nothing applies — the chip then shows no IDE button.
 export const resolveIdeCmd = (id, customCmd) =>
   id === 'custom' ? (customCmd || '') : (IDES.find(i => i.id === id)?.cmd || '');
+
+// ── Runners ─────────────────────────────────────────────────────────────────────────────────
+// An IDE with a `runner` is what gives the toolbar a Run button: a destination picker (scheme +
+// simulator, like Xcode's own) whose choice is stored on the project (`runScheme` / `runSim`), and
+// the command lines Run composes from it. There is no free-text run script — each supported
+// toolchain gets its own behaviour rather than a lowest-common-denominator template. Only Xcode has
+// a runner today; an IDE without one has no Run.
+const shq = s => "'" + String(s).replace(/'/g, "'\\''") + "'";   // single-quote for the shell
+
+const xcodeRunner = {
+  id: 'xcode',
+  // Both halves of the destination chosen → Run can go without a script.
+  ready: pj => !!(pj?.runScheme && pj?.runSim),
+  // The command lines Run types into the build terminal. `target` is the resolved .xcworkspace /
+  // .xcodeproj (or the folder, for a package); `settings` is GET /api/xcode/build-settings for this
+  // scheme + simulator; `simName` is only for the banner.
+  //   1. boot the simulator (a no-op when it's up) and bring Simulator.app forward, so the device is
+  //      warming while the build runs — the same overlap Xcode does.
+  //   2. build → install → launch as ONE chain: a failing build stops there. `-quiet` keeps
+  //      xcodebuild to warnings and errors (its full transcript is unreadable in a terminal).
+  //      `--console-pty` blocks with the app's stdout/stderr in the terminal, which is what makes
+  //      the toolbar's Stop (⌃C into this PTY) terminate the app, and `--terminate-running-process`
+  //      replaces the previous run instead of failing on it.
+  script: ({ target, pj, settings, simName }) => {
+    const doc = /\.xcworkspace\/?$/.test(target) ? `-workspace ${shq(target)}`
+      : /\.xcodeproj\/?$/.test(target) ? `-project ${shq(target)}` : '';
+    const cfg = settings?.configuration || 'Debug';
+    return [
+      // Bring the device's window forward. The simulator UI lives inside the selected Xcode and has
+      // moved: Simulator.app (Developer/Applications) through Xcode 26, DeviceHub.app
+      // (Contents/Applications) in Xcode 27 — try both by path, then by name, and stay quiet when
+      // none is there (the device is booted headless either way; the launch still works).
+      `echo ${shq(`▶ ${pj.runScheme} · ${simName || pj.runSim} (${cfg})`)}; xcrun simctl boot ${shq(pj.runSim)} 2>/dev/null; `
+        + `{ open "$(xcode-select -p)/Applications/Simulator.app" || open "$(xcode-select -p)/../Applications/DeviceHub.app" || open -a Simulator; } 2>/dev/null`,
+      `xcodebuild ${doc} -scheme ${shq(pj.runScheme)} -configuration ${shq(cfg)} -destination ${shq(`id=${pj.runSim}`)} -quiet build`
+        + ` && xcrun simctl install ${shq(pj.runSim)} ${shq(settings.appPath)}`
+        + ` && xcrun simctl launch --console-pty --terminate-running-process ${shq(pj.runSim)} ${shq(settings.bundleId)}`,
+    ];
+  },
+};
+
+const RUNNERS = { xcode: xcodeRunner };
+// The runner for a configured IDE id, or null (no picker, script-only Run).
+export const ideRunner = id => RUNNERS[id] || null;
+// Does Run have something to do for this project — a runner with its destination set?
+export const canRun = pj => !!ideRunner(pj?.ide)?.ready(pj);

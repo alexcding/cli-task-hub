@@ -174,16 +174,31 @@ separation everything follows:
   tells the terminals' ResizeObserver to hold its refit until the boundary lands. A context with no live terminal always shows its page, whatever
   the persisted state says (`rightPaneHidden`).
 - **The terminal toolbar's launchers are two chips, both fed by project settings.** `#split-folder`
+  leads the segment (left), a hairline divider, then `#split-ide`; the workflow Run group is pushed
+  to the segment's right edge. `#split-folder`
   opens the current folder in the app-level git client (Settings → Appearance), or reveals it in
   Finder when none is set; Reveal/Delete worktree are its right-click menu, and it shows no folder
   name (the sidebar already titles the session by its worktree). `#split-ide` is the project's own
-  pair: **open** (the IDE, wearing that editor's mark from `lib/ides.js`) and **run** (the project's
-  `runCmd` script). Either half can be absent; with both absent the chip hides. What the IDE opens
+  group: **open** (the IDE, wearing that editor's mark from `lib/ides.js`), **run**, and after it the
+  **destination** segments (Scheme, Simulator), in Xcode's order. Any part can be absent; with all absent the chip hides. What the IDE opens
   and what `{target}` means is resolved server-side by `GET /api/launch-target` — the project's
   `ideTarget` (relative to the checkout, so it lands in THIS branch's worktree), else a per-IDE
   probe (Xcode can't open a folder: `.xcworkspace` → `.xcodeproj` → `Package.swift`), else the
-  folder — and `{targetFlag}` in a run script expands to the flag that target belongs to
-  (`--workspace-path` vs `--project-path`), which differs per worktree. A run never uses the
+  folder.
+  **Run is the IDE's runner, nothing else** — there is no free-text run script (the old `runCmd`
+  column is dropped). The **runner** (`lib/ides.js → ideRunner`, per IDE by design — only Xcode has
+  one, so only Xcode projects get Run) composes the lines from a destination the user picked on the toolbar:
+  `pj.runScheme` + `pj.runSim` (a simulator UDID), columns on the project record, chosen from the
+  chip's two segments, "Scheme" and "Simulator" (`viewer.js → pickRunDest(e, kind)`, each an
+  IN-PAGE `openMenu` anchored under its segment — they drop over the terminal, not the pane, and the
+  native popup stalled here: the schemes from `GET /api/xcode/schemes` = `xcodebuild -list -json` on
+  the resolved target; the simulators from `GET /api/xcode/simulators` = `xcrun simctl list`, a
+  heading per runtime). The Xcode runner
+  asks `GET /api/xcode/build-settings` for the .app path + bundle id, then types
+  `simctl boot` → `xcodebuild -quiet build && simctl install && simctl launch --console-pty`, so the
+  app's console lands in the Build terminal and Stop (⌃C) terminates the app. Plain toolchain only
+  (`routes/xcode.js`) — no third-party build tool; a destination-only project PUT skips the
+  GitHub/Jira resync. A run never uses the
   session's own terminal (the agent lives there and is rarely at a
   prompt): `components/build.js` gives each context its own `build:<url>`-keyed PTY, shown in the
   right pane with a pinned Build chip, and polls `term.foreground` to flip the button play↔stop.

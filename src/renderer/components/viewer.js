@@ -8,7 +8,7 @@ import { esc, jiraKeyFromUrl, canSplitTerminal, isPrUrl, ghAvatarSrc, basename, 
 import { seedAvatar } from '../lib/avatars.js';
 import { ICON } from '../lib/icons.js';
 import { gitClientLabel, gitClientIcon } from '../lib/git-clients.js';
-import { ideLabel, ideIcon, resolveIdeCmd, ideProbe } from '../lib/ides.js';
+import { ideLabel, ideIcon, resolveIdeCmd, ideProbe, ideRunner, canRun } from '../lib/ides.js';
 import { toast, toastErr } from './toast.js';
 import { renderTabs } from './sidebar.js';
 import { openMenu, closeMenu, nativeMenu } from './menu.js';
@@ -19,7 +19,7 @@ import { deleteWorktreeAt, ensureWorktree } from './tasks.js';
 import { suggestSession } from './new-session-dialog.js';
 import { refreshWorkflowBtn, launchCli } from './workflow.js';
 import { hideDiffPane } from './diff.js';
-import { buildTerm, runBuild, stopBuild, isBuilding, disposeBuildTerm } from './build.js';
+import { buildTerm, runBuild, stopBuild, isBuilding, disposeBuildTerm, runProject } from './build.js';
 import { attachFind, closeFind } from './find.js';
 import { renderContentTabs, playTabIn, playTabOut, markActiveTab, defaultChipRect, flipDefaultChip, focusCtabInput, inDiff,
   nextChipIdx, initChipOrder, linkIdxAt, diffPos } from './content-tabs.js';
@@ -1295,19 +1295,101 @@ function paintIdeChip(info) {
   const openHalf = cmd
     ? `<button type="button" class="fc-ic" onclick="openTabIde()" title="${esc(`Open in ${ideLabel(pj?.ide)}`)}">${mark}</button>`
     : '';
-  el.innerHTML = openHalf + runHalfHtml(pj);
+  el.dataset.simName = _simNames.get(pj?.runSim || '') || '';
+  el.innerHTML = openHalf + runHalfHtml(pj) + destHtml(pj);   // ▶ then "Scheme · Simulator", as Xcode orders them
   el.hidden = !el.innerHTML;
+  // The chip labels the simulator by NAME but the project stores its UDID; the names come from
+  // the simulator list, fetched once and repainted into the label when it lands.
+  if (pj?.runSim && !_simNames.has(pj.runSim)) loadSimNames().then(() => syncDestChip());
 }
 
-// The play half, right of the IDE mark: runs the project's build/run script (project Settings →
-// IDE card). No script configured → no button, so the chip stays a single launcher. While the
+// ── Run destination (an IDE runner — Xcode's scheme + simulator) ───────────────────────────────
+// Simulator UDID → display name, filled from GET /api/xcode/simulators (the picker's list, and a
+// one-off load for the label). Module-local: it's view state, not data any other module reads.
+const _simNames = new Map();
+let _simList = null;
+async function loadSimNames() {
+  try {
+    _simList = await api(ROUTES.XCODE_SIMULATORS);
+    for (const d of _simList) _simNames.set(d.udid, d.name);
+  } catch { _simList = _simList || []; }
+  return _simList;
+}
+
+// The destination after play — TWO segments, "Scheme" and "Simulator", each its own menu (short
+// lists, one decision each, like Xcode's scheme ▸ destination pair). Only for an IDE with a runner.
+// In-page menus (openMenu), not native: they drop over the terminal, not the pane, and the native
+// popup built after the fetches was stalling the window.
+function destHtml(pj) {
+  if (!pj || !ideRunner(pj.ide)) return '';
+  const scheme = pj.runScheme || '', sim = pj.runSim ? (_simNames.get(pj.runSim) || '…') : '';
+  const seg = (kind, text, set) => `<button type="button" class="fc-ic fc-dest${set ? '' : ' unset'}" onclick="pickRunDest(event, '${kind}')"
+     title="${kind === 'scheme' ? 'Scheme to build' : 'Simulator to run on'}"><span>${esc(text)}</span>${ICON.caret}</button>`;
+  return seg('scheme', scheme || 'Scheme', !!scheme) + seg('sim', sim || 'Simulator', !!sim);
+}
+function syncDestChip() {
+  const el = document.getElementById('split-ide');
+  if (!el || el.hidden) return;
+  const pj = runProject();
+  el.dataset.simName = _simNames.get(pj?.runSim || '') || '';
+  const cur = el.querySelectorAll('.fc-dest');
+  if (cur.length) { cur[0].insertAdjacentHTML('beforebegin', destHtml(pj)); cur.forEach(n => n.remove()); }
+}
+
+// Click a destination segment → its list: the schemes from the checkout's own project file, or
+// the simulators grouped under a heading per runtime (a booted one says so — running on it skips
+// the boot). Picking persists that half on the project record and repaints the chip.
+export async function pickRunDest(e, kind) {
+  e?.preventDefault?.();
+  // Anchor the list under the segment that was clicked — measured NOW: after the fetch below
+  // `currentTarget` is gone and the pointer has drifted, so the menu would pop wherever it went.
+  const seg = e?.currentTarget?.closest?.('.fc-dest') || e?.target?.closest?.('.fc-dest');
+  const r = seg?.getBoundingClientRect();
+  const at = r ? { clientX: r.left, clientY: r.bottom + 4, preventDefault() {} } : e;
+  const pj = runProject();
+  const folder = document.getElementById('split-folder')?.dataset.path || '';
+  const el = document.getElementById('split-ide');
+  if (!pj || !folder || !el) return false;
+  const mark = on => (on ? '✓ ' : '');
+  const pick = async patch => {
+    try {
+      const saved = await apiJson(ROUTES.project(pj.id), 'PUT', patch);
+      Object.assign(pj, { runScheme: saved.runScheme, runSim: saved.runSim });   // same object the store holds
+      paintIdeChip({ workspace: pj.workspace });
+    } catch (err) { toastErr(err.message); }
+  };
+  let items;
+  try {
+    if (kind === 'scheme') {
+      const q = `path=${encodeURIComponent(folder)}&rel=${encodeURIComponent(el.dataset.ideRel || '')}`;
+      const info = await api(`${ROUTES.XCODE_SCHEMES}?${q}`);
+      const schemes = info?.schemes || [];
+      if (!schemes.length) { toastErr(`No schemes in ${info?.name || 'this project'}`); return false; }
+      items = schemes.map(sc => ({ label: `${mark(sc === pj.runScheme)}${sc}`, onClick: () => pick({ runScheme: sc }) }));
+    } else {
+      const sims = await loadSimNames();
+      const byRuntime = new Map();
+      for (const d of sims || []) { if (!byRuntime.has(d.runtime)) byRuntime.set(d.runtime, []); byRuntime.get(d.runtime).push(d); }
+      items = [];
+      for (const [runtime, list] of byRuntime) {
+        items.push({ separator: true }, { heading: runtime },
+          ...list.map(d => ({ label: `${mark(d.udid === pj.runSim)}${d.name}${d.state === 'Booted' ? '  (Booted)' : ''}`, onClick: () => pick({ runSim: d.udid }) })));
+      }
+      if (!items.length) items = [{ label: 'No simulators — install a runtime in Xcode', onClick: () => {} }];
+    }
+  } catch (err) { toastErr(`Couldn't load ${kind === 'scheme' ? 'schemes' : 'simulators'}: ${err.message}`); return false; }
+  return openMenu(at, items);
+}
+// The play half, right of the IDE mark: builds and runs the IDE runner's chosen destination (the
+// segment before it). No runner, or no destination yet → no button. While the
 // build is running it becomes a stop square (⌃C into the build terminal).
 function runHalfHtml(pj) {
-  if (!pj?.runCmd) return '';
+  if (!canRun(pj)) return '';
   const running = isBuilding(activeTab());
+  const what = `Build and run ${pj.runScheme}`;
   return `<button type="button" class="fc-ic fc-run${running ? ' running' : ''}"
      onclick="${running ? 'stopBuild()' : 'runBuild()'}"
-     title="${running ? 'Stop the running build (⌃C)' : esc('Run: ' + pj.runCmd.split('\n')[0])}">${running ? ICON.stop : ICON.play}</button>`;
+     title="${running ? 'Stop the running build (⌃C)' : esc(what)}">${running ? ICON.stop : ICON.play}</button>`;
 }
 
 // Toolbar play / stop. The run itself lives in build.js; setPaneView is passed in so build.js
@@ -1333,7 +1415,11 @@ function syncBuildBtn() {
   const pj = projectByWorkspace(ws);
   const cur = el.querySelector('.fc-run');
   const html = runHalfHtml(pj);
-  if (cur) cur.outerHTML = html; else if (html) el.insertAdjacentHTML('beforeend', html);
+  if (cur) cur.outerHTML = html;
+  else if (html) {   // play sits before the destination segment
+    const dest = el.querySelector('.fc-dest');
+    if (dest) dest.insertAdjacentHTML('beforebegin', html); else el.insertAdjacentHTML('beforeend', html);
+  }
 }
 
 // Folder-chip click: open the branch in the configured git client, else reveal in Finder.
@@ -1429,7 +1515,7 @@ export async function ideMenu(e) {
     hasIde && { label: `Open in ${ideLabel(ideId)}`, onClick: openTabIde },
     hasRun && (running
       ? { label: 'Stop Build', onClick: stopBuildClick }
-      : { label: 'Run Script', onClick: runBuildClick }),
+      : { label: 'Build and Run', onClick: runBuildClick }),
   ]);
 }
 

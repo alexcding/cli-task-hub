@@ -430,15 +430,17 @@
         <!-- Terminal actions live here (no bottom bar under the terminal), all filled by
              updateFolderChip / refreshWorkflowBtn and all hidden when there's no terminal beside
              the page:
-               #split-folder — the current folder (the worktree, or the project workspace before one
-                 exists): opens it in the app-level git client (Settings → Appearance); Reveal in
+               #split-folder — FIRST: the current folder (the worktree, or the project workspace
+                 before one exists) in the app-level git client (Settings → Appearance); Reveal in
                  Finder and Delete worktree are its right-click menu. Icons only, no folder name.
-               #wf-group — the Run + workflow picker as one outlined segmented control (Run executes
-                 the picker's workflow).
-               #split-ide — the project's IDE (its Settings tab), wearing that editor's own mark. A
-                 chip of its own, not a half of the folder chip, so it can hold more than one action.
-                 It sits at the segment's RIGHT edge (margin-left:auto), away from the folder/Run
-                 group: it's what leaves TaskHub, not another control over the terminal.
+               #split-ide — the project's IDE (its Settings tab), wearing that editor's own mark, then Run and
+                 the Scheme / Simulator destination segments (Xcode). A chip of its own, not a half
+                 of the folder chip, so it can hold several actions.
+               #wf-group — LAST, at the segment's RIGHT edge (margin-left:auto): the Run + workflow
+                 picker as one outlined segmented control (Run executes the picker's workflow).
+             #split-folder and #split-ide sit inside ONE control (#tb-launch, .tb-group), drawn like the
+             app's segmented pickers: a filled well, each action a pill that lifts on hover; the well
+             hides itself (:has) when both chips are hidden.
              The split toggle that shows/hides the right pane is NOT in this segment — it's pinned
              to the whole toolbar's right edge (see below). -->
         <!-- No session for this page yet: start one here (viewer.js newSession — a PR/Jira tab knows
@@ -456,7 +458,10 @@
             <path d="M19.5 2.5v6M16.5 5.5h6"/>
           </svg><span>New session</span>
         </button>
-        <div class="tb-chip pf-term" id="split-folder" hidden oncontextmenu="return folderMenu(event)"></div>
+        <div class="tb-group pf-term" id="tb-launch">
+          <div class="tb-chip" id="split-folder" hidden oncontextmenu="return folderMenu(event)"></div>
+          <div class="tb-chip" id="split-ide" hidden oncontextmenu="return ideMenu(event)"></div>
+        </div>
         <div class="wf-group pf-term" id="wf-group" hidden>
           <button class="pf-btn wf-btn" id="term-workflow" title="Run the selected workflow" onclick="toggleWorkflowRun()">
             <svg class="wf-play" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 4 13.5h7L11 22l9-11.5h-7z"/></svg>
@@ -464,7 +469,6 @@
           </button>
           <select class="wf-select" id="wf-select" title="Workflow to run"></select>
         </div>
-        <div class="tb-chip pf-term" id="split-ide" hidden oncontextmenu="return ideMenu(event)"></div>
       </div>
       <!-- Webview segment (over the PR pane — the RIGHT pane in split mode, full-width otherwise).
            Holds the "+" (add to this panel), then the Safari-compact horizontal tab bar (#ctabs)
