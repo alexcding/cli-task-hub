@@ -36,7 +36,10 @@ public final class AppStore {
     @ObservationIgnored private var started = false
 
     public init() {
-        viewer = ViewerStore(cacheURL: try? PtydConfiguration.current().directory.appendingPathComponent("page-tabs.json"))
+        viewer = ViewerStore(cacheURL: try? PtydConfiguration.current().directory.appendingPathComponent("page-tabs.json"),
+                             memoryPressure: NativeMemoryPressureMonitor())
+        viewer.setPageLimit(shell.remotePageLimit)
+        shell.remotePageLimitChanged = { [weak viewer] in viewer?.setPageLimit($0) }
         dashboard = DashboardViewModel(openPage: { [weak self] request in
             guard let self else { throw BackendError.operation("The workspace has closed.") }
             try await self.openPage(request)

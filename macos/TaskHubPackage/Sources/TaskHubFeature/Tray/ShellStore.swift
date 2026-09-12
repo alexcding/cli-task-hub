@@ -23,6 +23,8 @@ import Observation
     private(set) var gitClientCommandError: String?
     private(set) var terminalCodeFont: CodeFont
     private(set) var documentCodeFont: CodeFont
+    private(set) var remotePageLimit: Int
+    @ObservationIgnored var remotePageLimitChanged: (Int) -> Void = { _ in }
     private(set) var settingsError: String?
     private(set) var acknowledging: Set<String> = []
     @ObservationIgnored private var api: APIClient?
@@ -53,6 +55,7 @@ import Observation
                                      "\(kind.rawValue)_font_size": preferences.string(forKey: "native.\(kind.rawValue)_font_size") ?? String(kind.defaultSize)])
         }
         terminalCodeFont = savedFont(.term); documentCodeFont = savedFont(.diff)
+        remotePageLimit = RemotePageRetention.clamp(Int(preferences.string(forKey: "native.remotePageLimit") ?? "") ?? RemotePageRetention.defaultLimit)
     }
 
     var pendingReviews: [TrayPR] { prs.filter(\.pendingReview) }
@@ -200,6 +203,14 @@ import Observation
     func revertGitClientCommand() { gitClientCommandDraft = gitClientCommand; gitClientCommandError = nil }
 
     func font(_ kind: CodeFontKind) -> CodeFont { kind == .term ? terminalCodeFont : documentCodeFont }
+    func setRemotePageLimit(_ value: Int) {
+        let value = RemotePageRetention.clamp(value)
+        guard value != remotePageLimit else { return }
+        remotePageLimit = value
+        preferences.set(String(value), forKey: "native.remotePageLimit")
+        remotePageLimitChanged(value)
+        saveSetting("native.remotePageLimit", value: String(value), debounce: true)
+    }
     func setFont(_ kind: CodeFontKind, family: String? = nil, size: Int? = nil) {
         if let family, !CodeFont.validFamily(family) { settingsError = "The font family contains unsupported characters."; return }
         let previous = font(kind)
@@ -276,6 +287,11 @@ import Observation
                     if kind == .term { terminalCodeFont = value } else { documentCodeFont = value }
                     preferences.set(value.family, forKey: "native.\(familyKey)")
                     preferences.set(String(value.size), forKey: "native.\(sizeKey)")
+                }
+                if pendingSettings["native.remotePageLimit"] == nil {
+                    remotePageLimit = RemotePageRetention.clamp(Int((settings["native.remotePageLimit"] ?? nil) ?? "") ?? RemotePageRetention.defaultLimit)
+                    preferences.set(String(remotePageLimit), forKey: "native.remotePageLimit")
+                    remotePageLimitChanged(remotePageLimit)
                 }
                 preferences.set(appearance.rawValue, forKey: "native.theme")
                 preferences.set(usageAgent, forKey: "native.usageAgent")

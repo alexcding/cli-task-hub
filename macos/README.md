@@ -41,7 +41,12 @@ History, find bar, navigation, and AppKit split controls. Command-F finds in the
 Command-brackets navigate, Shift-Command-brackets cycle pages, and Option-Command
 plus/minus/zero zooms the page. Command-W closes a page while keeping its session;
 with no page it hides the window. Page state is cached locally and synced to SQLite.
-At most six remote views remain live; suspended pages reload when selected.
+Up to six remote views remain live by default; General settings changes the limit
+from one to twelve. Least-recently-used background pages suspend first and reload
+when selected. Warning/critical macOS memory pressure suspends background browser
+pages while retaining the active page. Suspended pages retain their tab identity and
+shared website storage; unsent forms and in-page navigation state may be lost.
+Editors, terminals and the Sprint board are outside this eviction policy.
 
 Run `bash macos/scripts/test-browser-ui.sh` for the isolated browser UI regression.
 Remove Session previews affected sessions and asks separately before discarding
@@ -122,7 +127,10 @@ code/diff sizes (9–24 points). Preferences share the existing backend keys, re
 unavailable saved families, and apply immediately to mounted views. Terminal changes
 preserve the native surface and shell; editor changes preserve unsaved text and undo
 state. Saves coalesce rapid size changes and retain pending values while offline.
-Process/resource usage and native memory-budget policy remain open.
+The native browser policy uses a page count and OS memory-pressure events, with a
+manual **Suspend Background Pages** action. It uses no private per-webview PID/RSS
+API, does not claim a byte-level cap, and leaves the web app’s `webviewBudgetMb`
+setting untouched. Process/resource usage remains open.
 
 ## Native tray and appearance (M2)
 

@@ -249,6 +249,36 @@ final class TaskHubUITests: XCTestCase {
     }
 
     @MainActor
+    func testNativeBrowserMemoryControlsSuspendAndRestorePages() throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard let base = environment["TASKHUB_UI_BACKEND_URL"],
+              let path = environment["TASKHUB_UI_DATA_DIR"], let socket = environment["TASKHUB_UI_PTY_SOCKET"] else {
+            throw XCTSkip("Run macos/scripts/test-browser-ui.sh to provide the isolated fixture.")
+        }
+        let app = XCUIApplication()
+        app.launchArguments = ["--backend-url", base, "--data-dir", path, "--pty-socket", socket]
+        app.launch()
+        let first = app.outlines["workspace-sidebar"].staticTexts["sidebar-1"].firstMatch
+        XCTAssertTrue(first.waitForExistence(timeout: 10)); first.click()
+        XCTAssertTrue(app.webViews.staticTexts["Native browser fixture"].waitForExistence(timeout: 5))
+        app.outlines["workspace-sidebar"].staticTexts["Next page"].firstMatch.click()
+        XCTAssertTrue(app.webViews.staticTexts["Next page"].waitForExistence(timeout: 5))
+        app.typeKey(",", modifierFlags: .command)
+        app.radioButtons["General"].click()
+        XCTAssertTrue(app.descendants(matching: .any)["settings-remote-page-limit"].firstMatch.waitForExistence(timeout: 5))
+        let suspend = app.buttons["Suspend Background Pages"]
+        XCTAssertTrue(suspend.isEnabled)
+        suspend.click()
+        let counts = app.staticTexts["settings-remote-page-counts"]
+        XCTAssertEqual(counts.value as? String, "Loaded: 0 · Suspended: 2")
+        XCTAssertFalse(suspend.isEnabled)
+        first.click()
+        XCTAssertTrue(app.webViews.firstMatch.waitForExistence(timeout: 5))
+        app.typeKey(",", modifierFlags: .command)
+        XCTAssertEqual(counts.value as? String, "Loaded: 1 · Suspended: 1")
+    }
+
+    @MainActor
     func testQuietStartupLoadsTrayAndOpensNativeWindow() throws {
         let environment = ProcessInfo.processInfo.environment
         guard let base = environment["TASKHUB_UI_BACKEND_URL"],

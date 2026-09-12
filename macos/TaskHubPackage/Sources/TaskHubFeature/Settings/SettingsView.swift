@@ -3,6 +3,7 @@ import SwiftUI
 struct SettingsView: View {
     @Bindable var model: SettingsViewModel
     let shell: ShellStore
+    let viewer: ViewerStore
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Picker("Settings section", selection: $model.section) {
@@ -48,6 +49,18 @@ struct SettingsView: View {
                         }
                     }
                     FontSettingsView(model: model.fonts, shell: shell)
+                    Section("Browser memory") {
+                        Stepper("Retain up to \(shell.remotePageLimit) browser pages",
+                            value: Binding(get: { shell.remotePageLimit }, set: shell.setRemotePageLimit), in: RemotePageRetention.range)
+                            .accessibilityIdentifier("settings-remote-page-limit")
+                        Text("Loaded: \(viewer.livePageCount) · Suspended: \(viewer.suspendedPageCount)")
+                            .accessibilityIdentifier("settings-remote-page-counts")
+                        Text("Older background pages reload when selected; unsent web forms may be lost. macOS memory pressure also suspends background pages. Editors, terminals and the Sprint board are kept.")
+                            .font(.caption).foregroundStyle(.secondary)
+                        Text("This is a page-count limit, not a memory limit in MB. The web app’s separate memory budget is unchanged.")
+                            .font(.caption).foregroundStyle(.secondary)
+                        Button("Suspend Background Pages", action: viewer.suspendBackgroundPages).disabled(viewer.backgroundPageCount == 0)
+                    }
                 }.formStyle(.grouped)
                 if let error = shell.settingsError { Text(error).foregroundStyle(.orange) }
             case .connections:

@@ -251,14 +251,18 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
     @ObservationIgnored private var restoring = false
     @ObservationIgnored private var restoreGeneration = UUID()
     @ObservationIgnored private var lru: [String] = []
-    private let limit: Int
+    private(set) var pageLimit: Int
+    private(set) var pressureCleanupCount = 0
+    @ObservationIgnored private let memoryPressure: (any MemoryPressureMonitoring)?
     private let cacheURL: URL?
     private struct Cache: Codable { let snapshots: [String: ContextSnapshot]; let pending: Set<String> }
-    init(limit: Int = 6, cacheURL: URL? = nil) {
-        self.limit = max(1, limit); self.cacheURL = cacheURL
+    init(limit: Int = RemotePageRetention.defaultLimit, cacheURL: URL? = nil, memoryPressure: (any MemoryPressureMonitoring)? = nil) {
+        pageLimit = RemotePageRetention.clamp(limit); self.cacheURL = cacheURL
+        self.memoryPressure = memoryPressure
         if let cacheURL, let data = try? Data(contentsOf: cacheURL), let cache = try? JSONDecoder().decode(Cache.self, from: data) {
             saved = cache.snapshots; dirty = cache.pending; edited = cache.pending
         }
+        memoryPressure?.start { [weak self] in self?.handleMemoryPressure() }
     }
     var active: WorkspaceContext? { activeContextID.flatMap { contexts[$0] } }
     func configure(_ document: EditorDocumentViewModel) {
@@ -297,8 +301,23 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
         }
     }
     var livePageCount: Int { contexts.values.flatMap(\.pages).filter { $0.webView != nil }.count }
+    var suspendedPageCount: Int { contexts.values.flatMap(\.pages).filter { $0.webView == nil }.count }
+    var backgroundPageCount: Int { livePageCount - (active?.activePage?.webView == nil ? 0 : 1) }
+
+    func setPageLimit(_ value: Int) {
+        pageLimit = RemotePageRetention.clamp(value)
+        trimPages(maximum: pageLimit)
+    }
+
+    func suspendBackgroundPages() { trimPages(maximum: active?.activePage?.webView == nil ? 0 : 1) }
+
+    private func handleMemoryPressure() {
+        pressureCleanupCount += 1
+        suspendBackgroundPages()
+    }
 
     func connect(_ api: APIClient) {
+        memoryPressure?.start { [weak self] in self?.handleMemoryPressure() }
         self.api = api
         contexts.values.flatMap(\.documents).forEach(configure)
         loading?.cancel()
@@ -361,10 +380,15 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
     private func activate(_ page: BrowserPage) {
         page.materialize()
         lru.removeAll { $0 == page.id }; lru.append(page.id)
+        trimPages(maximum: pageLimit)
+    }
+    private func trimPages(maximum: Int) {
         let all = contexts.values.flatMap(\.pages)
         lru.removeAll { id in !all.contains { $0.id == id && $0.webView != nil } }
-        while lru.count > limit {
-            let id = lru.removeFirst()
+        let protectedID = active?.activePage?.id
+        while lru.count > maximum {
+            guard let index = lru.firstIndex(where: { $0 != protectedID }) else { break }
+            let id = lru.remove(at: index)
             all.first { $0.id == id }?.evict()
         }
     }
@@ -397,6 +421,7 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
         } catch { active?.error = "Could not save page tabs locally: \(error.localizedDescription)" }
     }
     func stop() async {
+        memoryPressure?.stop()
         loading?.cancel(); await loading?.value; loading = nil
         for task in writes.values { await task.value }
         writes.removeAll(); api = nil

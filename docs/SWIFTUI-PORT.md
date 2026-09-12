@@ -1059,6 +1059,29 @@ does not).
   acceptance, M2–M6 gates and the final coordinator/VM/DI refactor remain open.
   The Sprint board remains web-based.
 
+### Native browser retention policy — 2026-09-12
+
+- Decision: keep public WebKit APIs and use an explicit page-count fallback instead
+  of private per-webview PID/RSS accounting. `native.remotePageLimit` is independent
+  of the legacy `webviewBudgetMb` value; no MB-to-page conversion is implied.
+  General settings supports 1–12 retained remote pages (default six), immediately
+  applying reductions and persisting offline edits through the settings queue.
+- The LRU policy protects the active page. Public Dispatch warning/critical memory
+  pressure events and a manual Settings action suspend background remote pages;
+  their identities, saved URLs and persistent website storage survive. Reopening
+  materializes a new view. Unsent web forms/in-page navigation may be lost, which
+  the control explains. Editors (including dirty buffers), terminals, local diffs,
+  and the Sprint board are not eviction candidates.
+- The injected pressure monitor cancels at shutdown, restarts on backend reconnect,
+  and rejects queued callbacks from a stopped generation. There is no memory polling
+  timer or private WebKit API.
+- Package verification covers limit shrink/growth, active surface preservation,
+  pressure cleanup and rehydration, hidden dirty-editor retention, monitor lifetime,
+  and offline/backend preference persistence. Native UI suspension/reopening passes;
+  an initial fixture assertion incorrectly assumed a bare session had a browser
+  page, and was corrected to open two real fixture pages. Resource accounting and the terminal
+  performance benchmark remain separate work; this is not a measured memory cap.
+
 ## Why now, and why native
 
 The Tauri shell works, but roughly half of `src-tauri/` exists to work around what a DOM

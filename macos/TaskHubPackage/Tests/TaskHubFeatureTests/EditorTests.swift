@@ -52,6 +52,25 @@ private actor FileFixture: FileDocumentService {
     func dispose() { disposed = true }
 }
 
+@MainActor @Test func nativeMemoryPressurePreservesHiddenDirtyEditor() async throws {
+    let pressure = FixtureMemoryPressureMonitor()
+    let viewer = ViewerStore(memoryPressure: pressure)
+    let context = viewer.select(id: "files", url: "session:files", title: "Files")
+    let model = try #require(context.openFile("/tmp/unsaved.swift"))
+    let surface = BufferFixture()
+    model.connect(service: FileFixture(), makeSurface: { surface })
+    model.show(appearance: .system); await model.waitForLoad()
+    surface.edit("unsaved work")
+    viewer.deactivate()
+    viewer.setPageLimit(1)
+    pressure.emit()
+    viewer.suspendBackgroundPages()
+    #expect(context.documents.first === model && model.loaded && model.dirty)
+    #expect(surface.content == "unsaved work" && !surface.disposed && !surface.frozen)
+    await viewer.stop()
+    model.dispose()
+}
+
 @MainActor @Test func nativeEditorSaveCoalescesAndAcknowledgesOnlySubmittedBuffer() async throws {
     let service = FileFixture(), surface = BufferFixture()
     let model = EditorDocumentViewModel(record: .init(path: "/tmp/test.swift"), service: service, makeSurface: { surface })

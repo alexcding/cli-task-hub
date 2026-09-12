@@ -77,7 +77,7 @@ public struct ContentView: View {
         case .activity:
             LogsView(model: store.logs)
         case .settings:
-            SettingsView(model: store.settings, shell: store.shell)
+            SettingsView(model: store.settings, shell: store.shell, viewer: store.viewer)
         case .terminal:
             VStack(alignment: .leading, spacing: 16) {
                 Text("Open an interactive shell.").foregroundStyle(.secondary)
