@@ -99,8 +99,20 @@ if (process.env.TASKHUB_DIFF_FIXTURE === '1') {
   fs.writeFileSync(path.join(worktree, 'Untracked.txt'), 'Untracked editor fixture\n');
 
   const github = require('../../src/server/repositories/github');
-  let reads = 0;
+  let reads = 0, committed = false, pushed = false, commitCalls = 0, pushCalls = 0;
+  github.gitCommit = async (_dir, message, includeUntracked) => {
+    if (++commitCalls > 1) return { error: 'Duplicate commit request' };
+    if (message !== 'Native commit fixture' || includeUntracked !== false) return { error: 'Unexpected commit draft' };
+    committed = true;
+    return { ok: true, hash: 'abc1234' };
+  };
+  github.gitPush = async () => {
+    if (++pushCalls === 1) return { error: 'Fixture push rejected' };
+    pushed = true;
+    return { ok: true };
+  };
   github.gitDiff = async () => {
+    if (committed) return { branch: 'fixture-changes', diff: '', untracked: [], ahead: pushed ? 0 : 1, behind: 0 };
     if (++reads === 2) return { error: 'Fixture diff unavailable' };
     return { branch: 'fixture-changes', untracked: ['Untracked.txt'],
       diff: 'diff --git a/Sources/Fixture.swift b/Sources/Fixture.swift\n--- a/Sources/Fixture.swift\n+++ b/Sources/Fixture.swift\n@@ -1 +1 @@\n-let message = "Before"\n+let message = "Native diff ready"\n' };

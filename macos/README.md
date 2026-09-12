@@ -329,3 +329,11 @@ standalone terminal supports the same split context pane as session terminals.
 Line/column locations survive document loading. Diff paths stay within the
 canonical worktree; terminal relative links use the current working directory.
 Plain printed file-path detection and Option-click external routing remain open.
+
+
+Changes → **Commit and Push…** opens native commit controls. Commit stages all
+tracked changes, optionally includes untracked files, and uses the existing Git
+signing/hooks. A failed push preserves the successful local commit and offers
+Push without repeating Commit. Failed commit drafts survive; failed refreshes
+disable actions until disk state is loaded again. Quit waits for running Git
+operations. The focused web diff itself continues to render the patch.

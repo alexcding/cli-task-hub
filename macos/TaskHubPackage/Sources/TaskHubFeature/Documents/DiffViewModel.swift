@@ -6,6 +6,8 @@ struct DiffSnapshot: Codable, Equatable, Sendable {
     let diff: String
     let untracked: [String]
     let branch: String?
+    var ahead: Int? = nil
+    var behind: Int? = nil
 }
 
 protocol DiffService: Sendable {
@@ -19,12 +21,14 @@ struct APIDiffService: DiffService {
             let diff: String?
             let untracked: [String]?
             let branch: String?
+            let ahead: Int?
+            let behind: Int?
             let error: String?
         }
         let result: Response = try await api.get(APIClient.query(Routes.DIFF, ["path": worktree]), timeout: 30)
         if let error = result.error { throw BackendError.operation(error) }
         guard let diff = result.diff else { throw BackendError.operation("The backend returned no diff.") }
-        return .init(diff: diff, untracked: result.untracked ?? [], branch: result.branch)
+        return .init(diff: diff, untracked: result.untracked ?? [], branch: result.branch, ahead: result.ahead, behind: result.behind)
     }
 }
 
@@ -35,6 +39,8 @@ struct APIDiffService: DiffService {
     private var loadError: String?
     private var documentError: String?
     var error: String? { documentError ?? loadError }
+    var showsActions = false
+    private(set) var actions: GitChangesActions?
     private(set) var webView: WKWebView?
     private var baseURL: URL
     @ObservationIgnored private var service: (any DiffService)?
@@ -48,10 +54,17 @@ struct APIDiffService: DiffService {
     @ObservationIgnored private let openFile: (DocumentLocation) -> Void
 
     init(worktree: String, baseURL: URL, service: (any DiffService)? = nil,
+         actionsService: (any GitChangesService)? = nil,
          openFile: @escaping (DocumentLocation) -> Void = { _ in }) {
         self.openFile = openFile
         self.worktree = worktree; self.baseURL = baseURL; self.service = service
         super.init()
+        if let actionsService {
+            actions = GitChangesActions(worktree: worktree, service: actionsService, didChange: { [weak self] in
+                guard let self, active else { return }
+                task?.cancel(); task = nil; generation = UUID(); refresh()
+            })
+        }
     }
     var pageURL: URL { baseURL.appendingPathComponent("native/diff.html") }
     func connect(baseURL: URL, service: any DiffService) {
@@ -130,7 +143,7 @@ struct APIDiffService: DiffService {
         snapshot = nil; documentScript = nil
         documentError = nil; loadError = nil
     }
-    func disconnect() { hide(); service = nil }
+    func disconnect() { hide(); service = nil; showsActions = false }
     func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction,
                  decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void) {
         decisionHandler(action.targetFrame?.isMainFrame == true && action.request.url == pageURL ? .allow : .cancel)

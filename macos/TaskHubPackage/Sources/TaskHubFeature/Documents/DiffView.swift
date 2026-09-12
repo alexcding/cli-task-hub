@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct DiffView: View {
-    let model: DiffViewModel
+    @Bindable var model: DiffViewModel
     let appearance: AppAppearance
     let active: Bool
 
@@ -11,6 +11,9 @@ struct DiffView: View {
                 Label("Changes", systemImage: "arrow.triangle.branch").font(.headline).lineLimit(1)
                 if let branch = model.snapshot?.branch { Text(branch).foregroundStyle(.secondary).lineLimit(1) }
                 Spacer()
+                if model.actions != nil {
+                    Button("Commit and Push…", systemImage: "arrow.up.circle") { model.showsActions = true }
+                }
                 if model.loading { ProgressView().controlSize(.small) }
                 Button("Refresh Changes", systemImage: "arrow.clockwise", action: model.refresh)
                     .labelStyle(.iconOnly).disabled(model.loading)
@@ -25,6 +28,9 @@ struct DiffView: View {
             Divider()
             if let view = model.webView { BrowserSurface(webView: view) }
             else { ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity) }
+        }
+        .sheet(isPresented: $model.showsActions) {
+            if let actions = model.actions { GitChangesSheet(model: actions) }
         }
         .onAppear { if active { model.show(appearance: appearance) } }
         .onChange(of: active) { _, value in if value { model.show(appearance: appearance) } else { model.hide() } }

@@ -3,6 +3,36 @@ import XCTest
 final class TaskHubUITests: XCTestCase {
 
     @MainActor
+    func testNativeCommitAndPushKeepsSuccessfulCommitOnPushFailure() throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard let base = environment["TASKHUB_UI_BACKEND_URL"],
+              let path = environment["TASKHUB_UI_DATA_DIR"], let socket = environment["TASKHUB_UI_PTY_SOCKET"] else {
+            throw XCTSkip("Run macos/scripts/test-browser-ui.sh to provide the isolated fixture.")
+        }
+        let app = XCUIApplication()
+        app.launchArguments = ["--backend-url", base, "--data-dir", path, "--pty-socket", socket]
+        app.launch()
+        let row = app.outlines["workspace-sidebar"].staticTexts["sidebar-2"].firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 10)); row.click()
+        app.buttons["Show Changes"].click()
+        XCTAssertTrue(app.webViews.buttons["Open Sources/Fixture.swift"].waitForExistence(timeout: 10))
+        app.buttons["Commit and Push…"].click()
+        XCTAssertTrue(app.sheets.staticTexts["Fixture diff unavailable"].waitForExistence(timeout: 5))
+        app.sheets.buttons["Refresh"].click()
+        let message = app.sheets.textFields.firstMatch
+        XCTAssertTrue(message.waitForExistence(timeout: 5))
+        message.click(); message.typeText("Native commit fixture")
+        app.sheets.checkBoxes["Include untracked files"].click()
+        app.sheets.buttons["Commit and Push"].click()
+        XCTAssertTrue(app.sheets.staticTexts["Commit abc1234 is saved locally. Fixture push rejected"].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.sheets.buttons["Commit and Push"].exists)
+        app.sheets.buttons["Push"].click()
+        XCTAssertTrue(app.sheets.staticTexts["Committed abc1234 and pushed."].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.sheets.buttons["Push"].isEnabled)
+        app.sheets.buttons["Close"].click()
+    }
+
+    @MainActor
     func testNativeEditorSaveCancelDiscardAndHistory() throws {
         let environment = ProcessInfo.processInfo.environment
         guard let base = environment["TASKHUB_UI_BACKEND_URL"],

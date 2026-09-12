@@ -82,7 +82,7 @@ public final class AppStore {
         if diffModels[context.id] == nil {
             guard let api else { context.error = "Connect to the backend to load changes."; return }
             diffModels[context.id] = DiffViewModel(worktree: session.worktree, baseURL: api.baseURL,
-                                                   service: APIDiffService(api: api), openFile: { [weak context] location in
+                                                   service: APIDiffService(api: api), actionsService: APIGitChangesService(api: api), openFile: { [weak context] location in
                 context?.openFile(location.path, line: location.line, column: location.column)
             })
         }
@@ -305,6 +305,12 @@ public final class AppStore {
         changingSessions.formUnion(ids)
         removalLocks[operationID] = ids
         let worktrees = sessions.filter { ids.contains($0.id) }.map(\.worktree)
+        guard !diffModels.values.contains(where: { model in
+            worktrees.contains(model.worktree) && model.actions?.busy == true
+        }) else {
+            changingSessions.subtract(ids); removalLocks.removeValue(forKey: operationID)
+            throw BackendError.operation("Wait for the Git operation to finish before removing this worktree.")
+        }
         guard await viewer.closeDocuments(contextIDs: Set(ids.map { "task:\($0)" }), worktrees: worktrees) else {
             changingSessions.subtract(ids); removalLocks.removeValue(forKey: operationID)
             throw CancellationError()
@@ -410,6 +416,9 @@ public final class AppStore {
     }
 
     public func quit() async throws {
+        let actions = diffModels.values.compactMap(\.actions)
+        for action in actions { await action.suspendAndWait() }
+        defer { actions.forEach { $0.resume() } }
         guard await viewer.closeDocuments() else { throw CancellationError() }
         for terminal in terminals.values { await terminal.stopConnecting() }
         let host = PtydHost(configuration: try PtydConfiguration.current())
@@ -434,7 +443,7 @@ public final class AppStore {
                 model.tickets?.connect(APIJiraService(api: api))
             } }
             if let api { logs.connect(APILogService(api: api)) }
-            if let api { for model in diffModels.values { model.connect(baseURL: api.baseURL, service: APIDiffService(api: api)) } }
+            if let api { for model in diffModels.values { model.connect(baseURL: api.baseURL, service: APIDiffService(api: api)); model.actions?.connect(APIGitChangesService(api: api)) } }
             if let api {
                 settings.connect(APISettingsService(api: api))
                 settings.clis.connect(APICLISettingsService(api: api))
@@ -550,6 +559,7 @@ public final class AppStore {
 
     public func stop() async {
         started = false
+        for model in diffModels.values { await model.actions?.suspendAndWait() }
         streamTask?.cancel()
         refreshTask?.cancel()
         await streamTask?.value

@@ -500,6 +500,31 @@ does not).
   handling activated links does not establish plain-path detection parity. Remaining
   M1/M3/M4/M6 gates and the final elevate-ios architecture pass continue to apply.
 
+### M5 native commit and push — 2026-09-12
+
+- Changes now offers a native Commit and Push sheet with branch/divergence, a
+  retained message draft, an explicit include-untracked choice, Commit, Commit and
+  Push, and Push. It states that tracked changes on disk are committed and unsaved
+  editor buffers must first be saved. Blank messages use “Update working changes”.
+  Existing local Git endpoints continue to honor the user's signing and hooks.
+- An injected service and observable view model own every operation. Duplicate
+  clicks coalesce, draft options are captured once, failed commits retain the draft,
+  and all outcomes refresh disk state (a failed hook can still stage or edit files).
+  A successful commit followed by a failed push displays its local hash and allows
+  Push without resubmitting Commit. A failed reconciliation disables mutations until
+  a successful refresh. No force push or automatic retry is introduced.
+- In-flight operations survive a hidden sheet/context. Quit and backend shutdown
+  wait for them, preventing backend teardown during an authorized commit/push.
+  Worktree removal refuses while an operation for that worktree is active.
+- Verification: 61 native tests pass, including duplicate actions, failed signing,
+  partial commit/push success, failed refresh recovery, and shutdown waiting. The
+  native UI regression passes initial-load failure/retry, message and untracked
+  selection, successful commit with rejected push, and Push-only recovery. It uses
+  isolated backend fixtures; no project branch was pushed during verification.
+- Diff block discard, Git history, other M4 workflow parity and remaining terminal/
+  release gates are still open. The final elevate-ios coordinator/VM/DI pass remains
+  required after migration.
+
 ## Why now, and why native
 
 The Tauri shell works, but roughly half of `src-tauri/` exists to work around what a DOM
