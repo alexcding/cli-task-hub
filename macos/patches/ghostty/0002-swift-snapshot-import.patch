@@ -1,0 +1,25 @@
+--- a/Sources/GhosttyTerminal/InMemory/InMemoryTerminalSession.swift
++++ b/Sources/GhosttyTerminal/InMemory/InMemoryTerminalSession.swift
+@@ -91,6 +91,22 @@
+ 
+     var currentSurface: ghostty_surface_t? {
+         surfaceAccess.currentSurface
++    }
++
++    /// Imports initial state into a fresh surface with matching grid dimensions.
++    /// Call before exposing the surface to user input or sending live output.
++    /// Invalid snapshots and non-fresh surfaces are left unchanged.
++    @MainActor
++    @discardableResult
++    public func restoreSnapshot(_ snapshot: Data) -> Bool {
++        guard !snapshot.isEmpty, snapshot.count <= 32 * 1024 * 1024 else { return false }
++        surfaceAccess.waitForPendingOutput()
++        return surfaceAccess.withCurrentSurface { surface in
++            snapshot.withUnsafeBytes { bytes in
++                guard let pointer = bytes.baseAddress?.assumingMemoryBound(to: UInt8.self) else { return false }
++                return ghostty_surface_restore_snapshot(surface, pointer, UInt(bytes.count))
++            }
++        } ?? false
+     }
+ 
+     // MARK: - Viewport Read

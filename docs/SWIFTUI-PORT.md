@@ -680,6 +680,32 @@ does not).
   ownership, Kitty image omissions and the terminal performance benchmark remain
   open. This phase does not claim the full restoration gate is complete.
 
+### M1 native snapshot import bridge — 2026-09-12 (app wiring pending)
+
+- Maintained patches add complete snapshot import to the pinned Ghostty native
+  embedding API and Swift wrapper. Import requires a fresh host-managed surface
+  and matching grid; invalid input preserves the original state. The read-only
+  standard handler reconstructs continuation once, then transfers its owned
+  parser/builders to the normal native handler for subsequent output and input.
+- `build-ghostty-native.py` prepares pinned source and wrapper checkouts, applies
+  both patch stacks, compiles Metal/native code and generates a local arm64 Swift
+  package. Source fingerprints keep this separate from normal dependency
+  checkouts. See `macos/patches/ghostty/README.md` for the build and test commands.
+- The separate `GhosttySnapshotTests` package tests the real native surface,
+  including large history, both screens, saved cursor, unfinished parser input,
+  rejected imports and future terminal replies. A Rust fixture generator creates
+  snapshots using the same runtime as the daemon.
+- Validation: the native library builds from fresh pinned checkouts and rebuilds
+  incrementally; both integration tests pass against the generated package.
+  They cover large scrollback, UTF-8/SGR/OSC/DCS/APC continuation, preserved
+  application-cursor and bracketed-paste modes, exact future cursor replies, and
+  recovery after rejected imports. The scrollback assertion waits for Ghostty's
+  asynchronous viewport binding before reading its rows.
+- The production app has not switched to this extension yet. Connecting the
+  download/import lifecycle, ordered live resizes, automatic reconnect, response
+  ownership, restored title/pwd publication, image/glyph omissions and performance
+  acceptance remains required.
+
 ## Why now, and why native
 
 The Tauri shell works, but roughly half of `src-tauri/` exists to work around what a DOM

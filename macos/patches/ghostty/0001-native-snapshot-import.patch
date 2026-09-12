@@ -1,0 +1,168 @@
+--- a/include/ghostty.h
++++ b/include/ghostty.h
+@@ -1194,6 +1194,8 @@
+ GHOSTTY_API bool ghostty_surface_process_exited(ghostty_surface_t);
+ GHOSTTY_API void ghostty_surface_write_buffer(ghostty_surface_t, const uint8_t*, uintptr_t);
+ GHOSTTY_API void ghostty_surface_write_buffer_replay(ghostty_surface_t, const uint8_t*, uintptr_t);
++// TaskHub: fresh surface, UI thread, matching pinned revision and terminal grid.
++GHOSTTY_API bool ghostty_surface_restore_snapshot(ghostty_surface_t, const uint8_t*, uintptr_t);
+ GHOSTTY_API void ghostty_surface_process_exit(ghostty_surface_t, uint32_t, uint64_t);
+ GHOSTTY_API void ghostty_surface_refresh(ghostty_surface_t);
+ GHOSTTY_API void ghostty_surface_draw(ghostty_surface_t);
+--- a/src/apprt/embedded.zig
++++ b/src/apprt/embedded.zig
+@@ -1517,7 +1517,9 @@
+     }
+ } else struct {
+     surface: *Surface = undefined,
+-    pub fn init(_: *Surface) !@This() { return .{}; }
++    pub fn init(_: *Surface) !@This() {
++        return .{};
++    }
+     pub fn deinit(_: *@This()) void {}
+ };
+ 
+@@ -1934,6 +1936,23 @@
+     ) void {
+         if (len == 0) return;
+         surface.core_surface.io.processOutputSuppressingResponses(ptr[0..len]);
++    }
++
++    /// TaskHub snapshot extension. Call on the UI thread on a fresh surface,
++    /// before exposing it to input. A grid mismatch or invalid payload returns
++    /// false and preserves the original terminal. Revisions must match exactly.
++    export fn ghostty_surface_restore_snapshot(
++        surface: *Surface,
++        ptr: [*]const u8,
++        len: usize,
++    ) bool {
++        const core = &surface.core_surface;
++        if (core.search != null or core.mouse.selection_gesture.left_click_pin != null) return false;
++        core.io.restoreSnapshot(ptr[0..len]) catch |err| {
++            log.warn("snapshot import rejected err={}", .{err});
++            return false;
++        };
++        return true;
+     }
+ 
+     export fn ghostty_surface_process_exit(
+--- a/src/termio/Termio.zig
++++ b/src/termio/Termio.zig
+@@ -64,6 +64,9 @@
+ /// The stream parser. This parses the stream of escape codes and so on
+ /// from the child process and calls callbacks in the stream handler.
+ terminal_stream: StreamHandler.Stream,
++
++/// A snapshot is an initial state, never a replacement for a live parser.
++host_output_received: bool = false,
+ 
+ /// Last time the cursor was reset. This is used to prevent message
+ /// flooding with cursor resets.
+@@ -695,8 +698,107 @@
+     self.processOutputLocked(buf);
+ }
+ 
++/// Import into a newly-created host-managed surface before host output or user
++/// interaction. The caller serializes this with surface input on the UI thread.
++/// Failed validation preserves the original terminal and parser.
++pub fn restoreSnapshot(self: *Termio, bytes: []const u8) !void {
++    if (bytes.len == 0 or bytes.len > 32 * 1024 * 1024) return error.InvalidSnapshotSize;
++    var source: std.Io.Reader = .fixed(bytes);
++    var decoded = try terminalpkg.snapshot.decodeExact(self.alloc, global.io(), &source, .{
++        .max_continuation_bytes = 1024 * 1024,
++    });
++    defer decoded.deinit(self.alloc);
++    const continuation: []const u8 = switch (decoded.continuation) {
++        .ground => &.{},
++        .bytes => |value| value,
++    };
++    const verification = try self.alloc.alloc(u8, continuation.len);
++    defer self.alloc.free(verification);
++
++    self.renderer_state.mutex.lockUncancelable(global.io());
++    defer self.renderer_state.mutex.unlock(global.io());
++    if (self.backend != .host_managed or self.host_output_received) return error.SurfaceNotFresh;
++    if (self.terminal.screens.active.selection != null or self.renderer_state.preedit != null)
++        return error.SurfaceNotFresh;
++    if (decoded.terminal.?.cols != self.terminal.cols or decoded.terminal.?.rows != self.terminal.rows)
++        return error.SnapshotGridMismatch;
++
++    // Preserve the host's visual defaults while retaining explicit program colors.
++    try decoded.terminal.?.colors.palette.changeDefault(self.alloc, self.config.palette);
++    decoded.terminal.?.colors.background.default = self.terminal.colors.background.default;
++    decoded.terminal.?.colors.foreground.default = self.terminal.colors.foreground.default;
++    decoded.terminal.?.colors.cursor.default = self.terminal.colors.cursor.default;
++    decoded.terminal.?.width_px = self.terminal.width_px;
++    decoded.terminal.?.height_px = self.terminal.height_px;
++
++    var previous = self.terminal;
++    self.terminal = decoded.toOwned();
++    errdefer {
++        self.terminal.deinit(self.alloc);
++        self.terminal = previous;
++    }
++    // Canonical continuation is reconstructed by the upstream supported readonly
++    // handler at the terminal's final address. It cannot replay bells, clipboard
++    // operations, protocol responses, or already-committed terminal changes.
++    var restored = terminalpkg.TerminalStream.init(.{
++        .allocator = self.alloc,
++        .handler = .{ .terminal = &self.terminal },
++        .continuation_max_bytes = 1024 * 1024,
++    });
++    errdefer restored.deinit();
++    restored.nextSlice(continuation);
++    var writer: std.Io.Writer = .fixed(verification);
++    try restored.writeContinuation(&writer);
++    if (!std.mem.eql(u8, continuation, writer.buffered()) or restored.handler.semantic_failure)
++        return error.InvalidContinuation;
++
++    // Both handlers use the same Parser, UTF8Decoder, APC and DCS types. Move
++    // their owned unfinished builders, not a second replay through a side-effect
++    // capable handler. From here normal live output uses the embedding handler.
++    const handler: StreamHandler = .{
++        .alloc = self.alloc,
++        .size = &self.size,
++        .terminal = &self.terminal,
++        .termio_mailbox = &self.mailbox,
++        .surface_mailbox = self.surface_mailbox,
++        .renderer_state = self.renderer_state,
++        .renderer_wakeup = self.renderer_wakeup,
++        .renderer_mailbox = self.renderer_mailbox,
++        .enquiry_response = self.config.enquiry_response,
++        .osc_color_report_format = self.config.osc_color_report_format,
++        .clipboard_write = self.config.clipboard_write,
++        .clipboard_write_limit = self.config.clipboard_write_limit,
++        .apc = restored.handler.apc_handler,
++        .dcs = restored.handler.dcs_handler,
++        .kitty_clipboard_write = restored.handler.kitty_clipboard_write,
++        .kitty_clipboard_grants = restored.handler.kitty_clipboard_grants,
++        .seen_title = self.terminal.getTitle() != null,
++    };
++    self.terminal_stream.deinit();
++    self.terminal_stream = .{
++        .handler = handler,
++        .parser = restored.parser,
++        .utf8decoder = restored.utf8decoder,
++        .continuation = null,
++    };
++    // All other owned stream state moved above. The native stream does not
++    // export snapshots; only the daemon tracks subsequent continuation bytes.
++    if (restored.continuation) |*tracker| tracker.deinit();
++    previous.deinit(self.alloc);
++    self.host_output_received = true;
++    self.terminal.flags.dirty = .{
++        .palette = true,
++        .reverse_colors = true,
++        .clear = true,
++        .preedit = true,
++        .glyph_glossary = true,
++    };
++    self.renderer_wakeup.notify() catch {};
++}
++
+ /// Process output from readdata but the lock is already held.
+ fn processOutputLocked(self: *Termio, buf: []const u8) void {
++    if (buf.len > 0) self.host_output_received = true;
+     // Schedule a render. We can call this first because we have the lock.
+     self.terminal_stream.handler.queueRender() catch unreachable;
+ 
