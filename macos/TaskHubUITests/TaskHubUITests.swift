@@ -221,6 +221,32 @@ final class TaskHubUITests: XCTestCase {
     }
 
     @MainActor
+    func testNativeDiagnosticsInspectSnapshotsAndNavigateBack() throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard let base = environment["TASKHUB_UI_BACKEND_URL"],
+              let path = environment["TASKHUB_UI_DATA_DIR"], let socket = environment["TASKHUB_UI_PTY_SOCKET"] else {
+            throw XCTSkip("Run macos/scripts/test-browser-ui.sh to provide the isolated fixture.")
+        }
+        let app = XCUIApplication()
+        app.launchArguments = ["--backend-url", base, "--data-dir", path, "--pty-socket", socket]
+        app.launch()
+        XCTAssertTrue(app.outlines["workspace-sidebar"].waitForExistence(timeout: 10))
+        app.typeKey(",", modifierFlags: .command)
+        app.radioButtons["Diagnostics"].click()
+        XCTAssertTrue(app.staticTexts["PR–Jira links: 0"].waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(app.staticTexts["GitHub CLI · since backend startup"].exists)
+        XCTAssertTrue(app.staticTexts["Jira tickets"].exists)
+        XCTAssertTrue(app.staticTexts["Sprint board"].exists)
+        XCTAssertTrue(app.staticTexts["3 tickets"].firstMatch.exists)
+        XCTAssertFalse(app.webViews.firstMatch.exists)
+        app.buttons["Refresh Diagnostics"].click()
+        app.radioButtons["Connections"].click()
+        XCTAssertTrue(app.textFields["settings-poll-interval"].waitForExistence(timeout: 5))
+        app.radioButtons["Diagnostics"].click()
+        XCTAssertTrue(app.staticTexts["3 tickets"].firstMatch.waitForExistence(timeout: 5))
+    }
+
+    @MainActor
     func testNativeSettingsSaveRevertAndMenuNavigation() throws {
         let environment = ProcessInfo.processInfo.environment
         guard let base = environment["TASKHUB_UI_BACKEND_URL"],

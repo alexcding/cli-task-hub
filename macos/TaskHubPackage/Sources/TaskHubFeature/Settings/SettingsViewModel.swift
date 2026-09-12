@@ -4,6 +4,7 @@ import Observation
 @MainActor @Observable final class SettingsViewModel {
     var section = SettingsSection.general
     let clis: CLISettingsViewModel
+    let diagnostics: DiagnosticsViewModel
     var draft = AppConfigDraft()
     private(set) var loaded = false
     private(set) var saving = false
@@ -18,7 +19,9 @@ import Observation
     @ObservationIgnored private var connection = UUID()
     @ObservationIgnored private let didSave: ([String: String]) async -> Void
 
-    init(clis: CLISettingsViewModel, didSave: @escaping ([String: String]) async -> Void) { self.clis = clis; self.didSave = didSave }
+    init(clis: CLISettingsViewModel, diagnostics: DiagnosticsViewModel, didSave: @escaping ([String: String]) async -> Void) {
+        self.clis = clis; self.diagnostics = diagnostics; self.didSave = didSave
+    }
     var dirty: Bool { draft != baseline }
     var canSave: Bool { loaded && dirty && !saving && service != nil && draft.validationError == nil }
     func connect(_ service: any SettingsService) { self.service = service }
@@ -61,5 +64,8 @@ import Observation
         } catch { if connection == requestConnection { self.error = error.localizedDescription } }
     }
     func revert() { draft = baseline; saved = false; error = nil }
-    func stop() async { connection = UUID(); task?.cancel(); await task?.value; await clis.stop(); service = nil }
+    func stop() async {
+        connection = UUID(); task?.cancel(); diagnostics.stop()
+        await task?.value; await clis.stop(); service = nil
+    }
 }

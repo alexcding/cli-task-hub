@@ -10,6 +10,7 @@ struct SettingsView: View {
             }.pickerStyle(.segmented)
             switch model.section {
             case .clis: CLISettingsView(model: model.clis)
+            case .diagnostics: DiagnosticsView(model: model.diagnostics)
             case .general:
                 Form {
                     Section("Appearance") {

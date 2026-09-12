@@ -371,6 +371,23 @@ Dashboard; the remaining app pages and action parity are tracked under M4.
   native installation/rejection/removal UI flow pass. Node tests exercise real file
   installation/removal in an isolated directory and stdin forwarding through a fake
   curl command; native UI uses synthetic hook state. No daily agent config was edited.
+- Native Settings now includes a Diagnostics inspector with database counts, separate
+  GitHub/Jira/Sprint board snapshots, merge-transition configuration, sync timestamps
+  and failures, and GitHub CLI latency/coalescing counters. The event count explicitly
+  reflects the endpoint's 1,000-event limit; CLI counters are scoped to backend uptime.
+  Reads reuse `/api/db` without invoking CLIs. The native decoder ignores the legacy
+  endpoint's configuration/token dictionary and command text.
+- An injected service and view model own reads, presentation rows, retained data on
+  failure, and generation checks across navigation/reconnection/shutdown. Visible SSE
+  invalidations coalesce with one trailing refresh; hiding the inspector cancels its
+  request, and there is no background diagnostics timer. New connections clear data
+  from the previous backend. Views render the state and forward user/lifecycle events.
+- Diagnostics verification: both new Swift lifecycle/recovery tests and the existing
+  Settings tests pass. The app and UI test target build; the native inspector refresh
+  and section-navigation UI test passes against the isolated real API fixture. Its
+  first sandboxed run timed out while enabling macOS automation before test execution;
+  the outside-sandbox retry passed. Native process/resource usage, login items, fonts,
+  git-client actions, and the memory policy remain open.
 
 Companion docs: `ARCHITECTURE.md` (layers, HTTP-vs-IPC split), `TAURI-PORT.md`
 (the previous shell port — the same boundary makes this one tractable), `CLAUDE.md`

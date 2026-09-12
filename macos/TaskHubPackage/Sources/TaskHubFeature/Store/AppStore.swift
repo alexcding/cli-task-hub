@@ -50,7 +50,7 @@ public final class AppStore {
         })
         settings = SettingsViewModel(clis: CLISettingsViewModel(copy: {
             NSPasteboard.general.clearContents(); NSPasteboard.general.setString($0, forType: .string)
-        }, openBrowser: { NSWorkspace.shared.open($0) }), didSave: { [weak self] patch in
+        }, openBrowser: { NSWorkspace.shared.open($0) }), diagnostics: DiagnosticsViewModel(), didSave: { [weak self] patch in
             guard let self else { return }
             if patch["jira_base_url"] != nil || patch["jira_api_token"] != nil {
                 for model in projectModels.values { await model.tickets?.invalidateSite() }
@@ -469,6 +469,7 @@ public final class AppStore {
             if let api {
                 settings.connect(APISettingsService(api: api))
                 settings.clis.connect(APICLISettingsService(api: api))
+                settings.diagnostics.connect(APIDiagnosticsService(api: api))
                 if selection == .settings { settings.refresh() }
                 if selection == .settings && settings.section == .clis { settings.clis.refresh() }
             }
@@ -552,6 +553,7 @@ public final class AppStore {
         guard started else { return }
         connection = "Connected"
         refresh() // SSE has no replay IDs: refresh the snapshot on every reconnect.
+        settings.diagnostics.invalidate()
     }
 
     private func received(_ event: ServerEvent) {
@@ -575,6 +577,7 @@ public final class AppStore {
         }
         if event.type == "settings" { shell.loadSettings() }
         if event.type == "config" { settings.refresh() }
+        if ["sync", "jira-sync", "activity", "config", "reload"].contains(event.type) { settings.diagnostics.invalidate() }
         if event.type == "reviews" { shell.refresh() }
         if ["sync", "jira-sync", "tabs", "tasks", "reload"].contains(event.type) { refresh() }
     }

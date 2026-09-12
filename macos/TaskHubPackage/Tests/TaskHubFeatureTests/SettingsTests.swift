@@ -24,7 +24,7 @@ private actor SettingsFixture: SettingsService {
 @MainActor @Test(.timeLimit(.minutes(1))) func settingsPreserveDraftsSaveOnlyChangedFieldsAndRecoverAfterFailure() async throws {
     let service = SettingsFixture()
     var callbacks: [[String: String]] = []
-    let model = SettingsViewModel(clis: CLISettingsViewModel(copy: { _ in }, openBrowser: { _ in true }), didSave: { callbacks.append($0) })
+    let model = SettingsViewModel(clis: CLISettingsViewModel(copy: { _ in }, openBrowser: { _ in true }), diagnostics: DiagnosticsViewModel(), didSave: { callbacks.append($0) })
     model.connect(service); model.refresh()
     while model.loading { try await Task.sleep(for: .milliseconds(10)) }
     #expect(model.loaded && model.draft.jiraBaseURL == "https://jira.test")
