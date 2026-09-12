@@ -39,7 +39,8 @@ private actor FileFixture: FileDocumentService {
     func acknowledge(version: Int) async throws -> Bool { saved = version; return self.version != saved }
     func unfreeze() async throws { frozen = false }
     func setAppearance(_ value: AppAppearance) {}
-    func focus(line: Int) {}
+    var location: (Int, Int)?
+    func focus(line: Int, column: Int) { location = (line, column) }
     func find() {}
     func dispose() { disposed = true }
 }
@@ -187,4 +188,17 @@ private actor FileFixture: FileDocumentService {
     #expect(try await surface.snapshot(freeze: false).content == "my unsaved content")
     #expect(try String(contentsOf: file, encoding: .utf8) == "external change")
     #expect(model.error != nil)
+}
+
+
+@MainActor @Test func editorLocationSurvivesLoadingAndReopeningExistingDocument() async {
+    let surface = BufferFixture()
+    let model = EditorDocumentViewModel(record: .init(path: "/tmp/location.swift"), service: FileFixture(), makeSurface: { surface })
+    model.focus(line: 20, column: 7)
+    model.show(appearance: .system)
+    await model.waitForLoad()
+    #expect(surface.location?.0 == 20 && surface.location?.1 == 7)
+    model.focus(line: 30, column: 2)
+    #expect(surface.location?.0 == 30 && surface.location?.1 == 2)
+    model.dispose()
 }

@@ -41,9 +41,9 @@ window.nativeEditor = Object.freeze({
   unfreeze() { frozen = false; editor.updateOptions({ readOnly }); },
   setTheme(value) { appearance = value; theme(); },
   find() { editor.getAction('actions.find').run(); },
-  focus(line = 0) {
+  focus(line = 0, column = 1) {
     if (frozen) return;
-    if (line > 0) { editor.revealLineInCenter(line); editor.setPosition({ lineNumber: line, column: 1 }); }
+    if (line > 0) { editor.revealLineInCenter(line); editor.setPosition({ lineNumber: Math.min(line, model.getLineCount()), column }); }
     editor.focus();
   },
 });

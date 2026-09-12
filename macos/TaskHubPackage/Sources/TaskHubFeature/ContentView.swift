@@ -21,16 +21,6 @@ public struct ContentView: View {
                 ZStack(alignment: .topLeading) {
                     // Keep every opened emulator mounted. Selection changes only
                     // visibility, never the PTY identity or parser state.
-                    ForEach(store.terminals.keys.filter { $0 == "scratch" }.sorted(), id: \.self) { key in
-                        if let terminal = store.terminals[key] {
-                            let active = key == store.activeTerminalKey
-                            TerminalPane(session: terminal, reconnect: store.reattachTerminal, active: active)
-                                .id(terminal.id)
-                                .opacity(active ? 1 : 0)
-                                .allowsHitTesting(active)
-                                .accessibilityHidden(!active)
-                        }
-                    }
                     ForEach(store.viewer.contexts.keys.sorted(), id: \.self) { id in
                         if let context = store.viewer.contexts[id] {
                             let active = store.viewer.activeContextID == id

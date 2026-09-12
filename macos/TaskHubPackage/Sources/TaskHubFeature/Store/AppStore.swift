@@ -82,7 +82,9 @@ public final class AppStore {
         if diffModels[context.id] == nil {
             guard let api else { context.error = "Connect to the backend to load changes."; return }
             diffModels[context.id] = DiffViewModel(worktree: session.worktree, baseURL: api.baseURL,
-                                                   service: APIDiffService(api: api))
+                                                   service: APIDiffService(api: api), openFile: { [weak context] location in
+                context?.openFile(location.path, line: location.line, column: location.column)
+            })
         }
     }
 
@@ -235,6 +237,8 @@ public final class AppStore {
             if let session = sessions.first(where: { $0.id == id }) {
                 viewer.select(id: "task:\(id)", url: session.url, title: session.title, legacy: tabs.first { $0.url == session.url })
             }
+        case .terminal:
+            viewer.select(id: "scratch", url: "", title: "Terminal")
         case .tab(let url):
             viewer.select(id: "tab:\(url)", url: url, title: tabs.first { $0.url == url }?.title ?? url, legacy: tabs.first { $0.url == url })
         default: viewer.deactivate()
@@ -246,7 +250,11 @@ public final class AppStore {
         if case .session(let id) = selection, let record = sessions.first(where: { $0.id == id }) {
             guard !changingSessions.contains(id) else { return }
             terminals[key] = makeTerminal(record)
-        } else if selection == .terminal { terminals[key] = TerminalSession() }
+        } else if selection == .terminal {
+            let terminal = TerminalSession()
+            wireLinks(terminal, contextID: "scratch")
+            terminals[key] = terminal
+        }
     }
 
     func removalModel(for record: WorkspaceSession) -> SessionRemovalViewModel? {
@@ -283,6 +291,7 @@ public final class AppStore {
             let key = "build:\(record.url)"
             if let terminal = terminals[key] { return terminal }
             let terminal = TerminalSession(pairKey: key, cwd: record.worktree, paired: true)
+            wireLinks(terminal, contextID: context.id)
             terminals[key] = terminal
             return terminal
         }, reveal: { [weak context] in context?.setPane(.build) })
@@ -310,6 +319,7 @@ public final class AppStore {
 
     private func makeTerminal(_ record: WorkspaceSession, fresh: Bool = false) -> TerminalSession {
         let terminal = TerminalSession(pairKey: record.id, cwd: record.worktree, paired: true)
+        wireLinks(terminal, contextID: "task:\(record.id)")
         terminal.onCreated = { [weak self] terminal in
             guard let self else { return }
             let latest = self.sessions.first { $0.id == record.id } ?? record
@@ -326,6 +336,23 @@ public final class AppStore {
             if let command = agent.command(sessionID: id, fresh: firstLaunch) { try await terminal.submit(command) }
         }
         return terminal
+    }
+
+    private func wireLinks(_ terminal: TerminalSession, contextID: String) {
+        terminal.openLink = { [weak self] raw, directory in
+            guard let self, let context = viewer.contexts[contextID] else { return }
+            guard let link = WorkspaceLink.parse(raw, directory: directory, home: NSHomeDirectory()) else {
+                context.error = "This terminal link is not a supported web or local file address."
+                return
+            }
+            if contextID == "scratch" { select(.terminal) }
+            else if let record = sessions.first(where: { "task:\($0.id)" == contextID }) { select(.session(record.id)) }
+            context.error = nil
+            switch link {
+            case .web(let url): context.open(url.absoluteString)
+            case .file(let location): context.openFile(location.path, line: location.line, column: location.column)
+            }
+        }
     }
 
     func createdSession(_ session: WorkspaceSession) {
@@ -361,7 +388,11 @@ public final class AppStore {
             await previous.stopConnecting()
             if terminals[key] === previous {
                 if let record = sessions.first(where: { $0.id == previous.pairKey }) { terminals[key] = makeTerminal(record) }
-                else { terminals[key] = TerminalSession(pairKey: previous.pairKey, cwd: previous.cwd, paired: previous.paired) }
+                else {
+                    let replacement = TerminalSession(pairKey: previous.pairKey, cwd: previous.cwd, paired: previous.paired)
+                    replacement.openLink = previous.openLink
+                    terminals[key] = replacement
+                }
             }
         }
     }

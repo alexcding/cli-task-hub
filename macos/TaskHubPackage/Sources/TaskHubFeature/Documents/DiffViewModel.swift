@@ -45,7 +45,11 @@ struct APIDiffService: DiffService {
     @ObservationIgnored private var active = false
     @ObservationIgnored private var appearance = AppAppearance.system
 
-    init(worktree: String, baseURL: URL, service: (any DiffService)? = nil) {
+    @ObservationIgnored private let openFile: (DocumentLocation) -> Void
+
+    init(worktree: String, baseURL: URL, service: (any DiffService)? = nil,
+         openFile: @escaping (DocumentLocation) -> Void = { _ in }) {
+        self.openFile = openFile
         self.worktree = worktree; self.baseURL = baseURL; self.service = service
         super.init()
     }
@@ -137,11 +141,23 @@ struct APIDiffService: DiffService {
     }
     fileprivate func receive(_ message: WKScriptMessage) {
         guard message.webView === webView, message.frameInfo.isMainFrame, message.frameInfo.request.url == pageURL,
-              let body = message.body as? [String: String], body.count <= 2 else { return }
-        if body["type"] == "ready" {
+              let body = message.body as? [String: Any], body.count <= 3 else { return }
+        if body["type"] as? String == "ready" {
             loaded = true; documentError = nil; setAppearance(appearance); render()
-        } else if body["type"] == "error", let text = body["message"], text.utf8.count <= 4096 {
+        } else if body["type"] as? String == "error", let text = body["message"] as? String, text.utf8.count <= 4096 {
             documentError = "Could not load changes: \(text)"
+        } else if body["type"] as? String == "open", let path = body["path"] as? String,
+                  let line = body["line"] as? Int, active, loaded {
+            let generation = generation, root = worktree
+            Task {
+                do {
+                    let location = try await Task.detached(priority: .userInitiated) {
+                        try WorkingFileLocation.resolve(path, line: line, root: root)
+                    }.value
+                    guard self.generation == generation, active else { return }
+                    openFile(location)
+                } catch { if self.generation == generation { loadError = error.localizedDescription } }
+            }
         }
     }
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) { failed(error) }

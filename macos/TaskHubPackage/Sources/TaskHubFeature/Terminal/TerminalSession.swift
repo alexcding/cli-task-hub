@@ -24,6 +24,7 @@ final class TerminalSession: Identifiable {
     @ObservationIgnored private var started = false
     @ObservationIgnored private var startTask: Task<Void, Never>?
     @ObservationIgnored private var launchTask: Task<Void, Never>?
+    @ObservationIgnored var openLink: (String, String) -> Void = { _, _ in }
     @ObservationIgnored var onCreated: ((TerminalSession) async throws -> Void)?
 
     init(pairKey: String = "native-terminal-spike", cwd: String = FileManager.default.homeDirectoryForCurrentUser.path, paired: Bool = false) {
@@ -33,6 +34,14 @@ final class TerminalSession: Identifiable {
         pipe = TerminalPipe(onError: { [weak self] text in Task { @MainActor in self?.setError(text) } },
                             onExit: { [weak self] code in Task { @MainActor in self?.status = "Exited (\(code))"; self?.ready = false } })
         surface.configuration = .init(backend: .inMemory(pipe.memory), fontSize: 13, resizeThrottleMilliseconds: 80)
+        surface.makePlatformView = { [weak self] in
+            let view = WorkspaceTerminalView(frame: .zero)
+            view.openLink = { [weak self] raw, directory in
+                guard let self else { return }
+                self.openLink(raw, directory ?? self.cwd)
+            }
+            return view
+        }
         surface.onClose = { [weak self] _ in self?.status = "Exited"; self?.ready = false }
     }
 

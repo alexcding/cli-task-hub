@@ -108,8 +108,8 @@ const msg = (text) => `<div class="diff-empty">${text}</div>`;
 // section — for reuse outside the working-changes pane (e.g. the inline commit history). Same
 // markup, so it inherits the diff styles and the --diff-font / --diff-font-size tokens; only a
 // container that sets that font (the caller's) and a collapse click handler are needed.
-export function renderReadOnly(files) {
-  return files.length ? render(files, [], false) : msg('No changes');
+export function renderReadOnly(files, { fileLinks = false } = {}) {
+  return files.length ? render(files, [], false, fileLinks) : msg('No changes');
 }
 
 // Attach file collapse/expand (header click) to a container holding a renderReadOnly() diff.
@@ -119,12 +119,13 @@ export function wireDiffCollapse(el) {
   if (!el || el._collapseWired) return;
   el._collapseWired = true;
   el.addEventListener('click', e => {
+    if (e.target.closest('button, a')) return;
     const head = e.target.closest('.diff-file-head');
     if (head && !head.classList.contains('diff-untracked-head')) head.parentElement.classList.toggle('collapsed');
   });
 }
 
-function render(files, untracked, discardable = true) {
+function render(files, untracked, discardable = true, fileLinks = false) {
   if (!files.length && !untracked.length) return msg('No uncommitted changes');
   const parts = [];
   // Per-file cap alone still allows 100 × 2000 rows in one innerHTML parse; a whole-pane
@@ -132,7 +133,7 @@ function render(files, untracked, discardable = true) {
   let budget = MAX_TOTAL_LINES;
   files.slice(0, MAX_FILES).forEach((f, i) => {
     const lines = f.hunks.reduce((n, h) => n + h.lines.length, 0);
-    parts.push(renderFile(f, i, budget > 0, discardable));
+    parts.push(renderFile(f, i, budget > 0, discardable, fileLinks));
     budget -= lines;
   });
   if (files.length > MAX_FILES) parts.push(msg(`… and ${files.length - MAX_FILES} more files — diff truncated`));
@@ -145,12 +146,14 @@ function render(files, untracked, discardable = true) {
 
 const CHEVRON = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>';
 
-function renderFile(f, fi, allow = true, discardable = true) {
+function renderFile(f, fi, allow = true, discardable = true, fileLinks = false) {
+  const canOpen = fileLinks && f.status !== 'deleted' && !f.binary && f.newPath;
+  const open = (label, line, aria) => `<button class="diff-open-file" data-open-path="${esc(f.newPath)}" data-open-line="${line}" aria-label="${esc(aria)}">${label}</button>`;
   const badge = { added: 'A', deleted: 'D', renamed: 'R' }[f.status] || '';
   const counts = `<span class="diff-counts">${f.adds ? `<span class="dc-add">+${f.adds}</span>` : ''}${f.dels ? `<span class="dc-del">−${f.dels}</span>` : ''}</span>`;
   const head = `<div class="diff-file-head"><span class="diff-chev">${CHEVRON}</span>` +
     (badge ? `<span class="diff-badge diff-badge-${f.status}">${badge}</span>` : '') +
-    `<span class="diff-fpath">${esc(diffPath(f))}</span>${counts}</div>`;
+    `<span class="diff-fpath">${esc(diffPath(f))}</span>${counts}${canOpen ? open('Open File', 1, `Open ${f.newPath}`) : ''}</div>`;
 
   let body;
   const total = f.hunks.reduce((n, h) => n + h.lines.length, 0);
@@ -166,7 +169,7 @@ function renderFile(f, fi, allow = true, discardable = true) {
     const lang = langForPath(diffPath(f));
     const row = l => {
       const cls = l.t === '+' ? 'add' : l.t === '-' ? 'del' : 'ctx';
-      return `<tr class="diff-line ${cls}"><td class="dg">${l.oldNo || ''}</td><td class="dg">${l.newNo || ''}</td>` +
+      return `<tr class="diff-line ${cls}"><td class="dg">${l.oldNo || ''}</td><td class="dg">${canOpen && l.newNo ? open(l.newNo, l.newNo, `Open ${f.newPath} at line ${l.newNo}`) : l.newNo || ''}</td>` +
              `<td class="dx"><span class="dm">${l.t === ' ' ? '&nbsp;' : l.t}</span>${highlightLine(l.text, lang)}</td></tr>`;
     };
     const groups = f.hunks.map((h, hi) => {

@@ -6,6 +6,14 @@ import { esc } from '../lib/util.js';
 
 const pane = document.getElementById('native-diff');
 wireDiffCollapse(pane);
+pane.addEventListener('click', event => {
+  const button = event.target.closest('[data-open-path]');
+  if (!button) return;
+  const line = Number(button.dataset.openLine);
+  if (Number.isSafeInteger(line) && line > 0 && line <= 1_000_000) {
+    window.webkit?.messageHandlers.diff?.postMessage({ type: 'open', path: button.dataset.openPath, line });
+  }
+});
 let previous = null;
 let currentTheme = 'system';
 const media = matchMedia('(prefers-color-scheme: dark)');
@@ -15,11 +23,11 @@ window.nativeDiff = {
     const key = JSON.stringify(snapshot);
     if (key === previous) return true;
     const files = parseDiff(snapshot.diff);
-    pane.innerHTML = files.length || !snapshot.untracked.length ? renderReadOnly(files) : '';
+    pane.innerHTML = files.length || !snapshot.untracked.length ? renderReadOnly(files, { fileLinks: true }) : '';
     if (snapshot.untracked.length) {
       const visible = snapshot.untracked.slice(0, 200);
       const remainder = snapshot.untracked.length - visible.length;
-      pane.insertAdjacentHTML('beforeend', `<section class="diff-root"><div class="diff-file"><div class="diff-file-head diff-untracked-head">Untracked files</div><div class="diff-body">${visible.map(path => `<div class="diff-untracked">${esc(path)}</div>`).join('')}${remainder ? `<div class="diff-stub">… and ${remainder} more untracked files</div>` : ''}</div></div></section>`);
+      pane.insertAdjacentHTML('beforeend', `<section class="diff-root"><div class="diff-file"><div class="diff-file-head diff-untracked-head">Untracked files</div><div class="diff-body">${visible.map(path => `<div class="diff-untracked"><button class="diff-open-file" data-open-path="${esc(path)}" data-open-line="1">${esc(path)}</button></div>`).join('')}${remainder ? `<div class="diff-stub">… and ${remainder} more untracked files</div>` : ''}</div></div></section>`);
     }
     previous = key;
     return true;

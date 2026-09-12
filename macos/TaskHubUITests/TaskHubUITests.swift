@@ -71,9 +71,20 @@ final class TaskHubUITests: XCTestCase {
         app.buttons["Refresh Changes"].click()
         let recovered = expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: app.staticTexts["Fixture diff unavailable"])
         wait(for: [recovered], timeout: 5)
-        XCTAssertTrue(app.webViews.staticTexts["Untracked.txt"].exists)
-        app.buttons["Hide Changes"].click()
-        XCTAssertFalse(app.webViews.firstMatch.exists)
+        XCTAssertTrue(app.webViews.buttons["Untracked.txt"].exists)
+        app.webViews.buttons["Open Sources/Fixture.swift at line 1"].click()
+        let editor = app.webViews.textViews.firstMatch
+        XCTAssertTrue(editor.waitForExistence(timeout: 15))
+        editor.click()
+        XCTAssertEqual(editor.value as? String, "let message = \"Native diff ready\"\n")
+        app.typeKey("w", modifierFlags: .command)
+        app.buttons["Show Changes"].click()
+        XCTAssertTrue(app.webViews.buttons["Untracked.txt"].waitForExistence(timeout: 10))
+        app.webViews.buttons["Untracked.txt"].click()
+        XCTAssertTrue(editor.waitForExistence(timeout: 15))
+        editor.click()
+        XCTAssertEqual(editor.value as? String, "Untracked editor fixture\n")
+        app.typeKey("w", modifierFlags: .command)
     }
 
     @MainActor

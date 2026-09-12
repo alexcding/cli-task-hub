@@ -66,9 +66,9 @@ struct SessionWorkspaceView: View {
     private var session: WorkspaceSession? { store.sessions.first { "task:\($0.id)" == context.id } }
     private var terminal: TerminalSession? { store.terminals[context.id] }
     private var showsBuild: Bool { session != nil && context.pane == .build }
-    private var showsTerminal: Bool { session != nil }
+    private var showsTerminal: Bool { session != nil || context.id == "scratch" }
     private var showsChanges: Bool { session != nil && context.pane == .diff }
-    private var showsPage: Bool { session == nil || showsChanges || (!showsBuild && context.pane == .term && context.activeID != nil) }
+    private var showsPage: Bool { !showsTerminal || showsChanges || (!showsBuild && context.pane == .term && context.activeID != nil) }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -79,6 +79,8 @@ struct SessionWorkspaceView: View {
                     Button("Reveal Worktree", systemImage: "folder") {
                         NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: session.worktree)])
                     }.labelStyle(.iconOnly)
+                } else if context.id == "scratch" {
+                    Text("Terminal").font(.headline)
                 } else {
                     Text(context.activeDocument?.title ?? context.activePage?.title ?? "Workspace").font(.headline).lineLimit(1)
                     Button("Create Session", systemImage: "terminal.badge.plus") { store.creatingSession = true }
@@ -119,6 +121,8 @@ struct SessionWorkspaceView: View {
                     if terminal?.agentBusy == true { ProgressView().controlSize(.small).help("Agent working") }
                     Button("Restart Session", systemImage: "arrow.counterclockwise") { restarting = true }
                         .disabled(session.map { store.changingSessions.contains($0.id) } ?? true)
+                }
+                if showsTerminal {
                     Button(showsPage ? "Hide Context Pane" : "Show Context Pane", systemImage: "rectangle.righthalf.inset.filled") {
                         context.setPane(context.pane == .term ? .off : .term)
                     }.disabled(context.activeID == nil)
@@ -144,14 +148,14 @@ struct SessionWorkspaceView: View {
             if let error = context.error { Text(error).font(.caption).foregroundStyle(.orange).padding(8) }
             Divider()
             WorkspaceSplit(showsLeft: showsTerminal, showsRight: showsPage, showsBuild: showsBuild) {
-                if session != nil {
+                if showsTerminal {
                     ZStack {
                         if let terminal {
                             TerminalPane(session: terminal, reconnect: store.reattachTerminal, active: active && showsTerminal)
                                 .id(terminal.id)
                         } else {
                             VStack(spacing: 12) {
-                                Text("Open this session’s shell in its worktree.").foregroundStyle(.secondary)
+                                Text(context.id == "scratch" ? "Open an interactive shell." : "Open this session’s shell in its worktree.").foregroundStyle(.secondary)
                                 Button("Open Terminal", systemImage: "terminal", action: store.openTerminal).buttonStyle(.borderedProminent)
                             }.frame(maxWidth: .infinity, maxHeight: .infinity)
                         }

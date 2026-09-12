@@ -137,13 +137,13 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
         let index = tabOrder.firstIndex(of: activeID ?? "") ?? 0
         if let tab = tab(tabOrder[(index + direction + tabOrder.count) % tabOrder.count]) { select(tab) }
     }
-    @discardableResult func openFile(_ path: String) -> EditorDocumentViewModel? {
+    @discardableResult func openFile(_ path: String, line: Int = 1, column: Int = 1) -> EditorDocumentViewModel? {
         guard path.hasPrefix("/"), !path.contains("\0") else { error = "Choose an absolute file path."; return nil }
         let path = (path as NSString).standardizingPath
-        if let file = documents.first(where: { $0.record.path == path }) { select(.file(file)); return file }
+        if let file = documents.first(where: { $0.record.path == path }) { select(.file(file)); file.focus(line: line, column: column); return file }
         let file = EditorDocumentViewModel(record: .init(path: path))
         documents.append(file); wire(file); insert(file.id); noteHistory(file.record)
-        select(.file(file)); return file
+        select(.file(file)); file.focus(line: line, column: column); return file
     }
     private func insert(_ id: String) {
         let index = tabOrder.firstIndex(of: activeID ?? "").map { $0 + 1 } ?? tabOrder.endIndex

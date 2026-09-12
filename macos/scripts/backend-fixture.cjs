@@ -93,6 +93,11 @@ if (process.env.TASKHUB_EDITOR_FIXTURE === '1') {
   fs.writeFileSync(path.join(process.env.TASKHUB_DATA_DIR, 'Editable.swift'), 'let original = true\n');
 }
 if (process.env.TASKHUB_DIFF_FIXTURE === '1') {
+  const worktree = path.join(process.env.TASKHUB_DATA_DIR, 'sidebar-2');
+  fs.mkdirSync(path.join(worktree, 'Sources'), { recursive: true });
+  fs.writeFileSync(path.join(worktree, 'Sources/Fixture.swift'), 'let message = "Native diff ready"\n');
+  fs.writeFileSync(path.join(worktree, 'Untracked.txt'), 'Untracked editor fixture\n');
+
   const github = require('../../src/server/repositories/github');
   let reads = 0;
   github.gitDiff = async () => {

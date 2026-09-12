@@ -466,6 +466,40 @@ does not).
   M1 fidelity/performance, remaining M3/M4/M6 gates, and the final coordinator/VM/DI
   alignment with elevate-ios remain open.
 
+### M5 document locations — 2026-09-12
+
+- Focused diffs expose Open File and current-file line buttons; deleted lines and
+  binary/deleted files do not offer a misleading current-file location. Untracked
+  files open through the same native document lifecycle. The scoped main-document
+  message resolves paths under the canonical worktree and rejects traversal and
+  symlink escapes. Resolution runs off the main actor and stale replies are ignored.
+- Terminal links activated by Ghostty route into their owning session's native
+  web/file tabs, including the independent build terminal. The standalone terminal
+  now has a workspace context and split pane, retaining its mounted emulator.
+  Reattachment preserves the link destination. Local file URLs, percent-encoded
+  names, line/column suffixes and L/C fragments are supported; relative locations
+  use the last valid terminal working directory, falling back to the session cwd.
+  Unsupported schemes are refused without invoking Ghostty's external-open fallback.
+- A platform-view factory adapter forwards all callbacks used by TerminalViewState,
+  including lifecycle, input-related requests, clipboard confirmation and working
+  directory. The pinned package exposes the URL delegate but its SwiftUI state
+  does not adopt it. No dependency checkout changes or replacement input path.
+- Editor locations survive asynchronous loading and select an existing file tab
+  without creating a duplicate. Web surfaces remain renderers; native owners choose
+  paths and perform file I/O.
+- Verification: 58 native tests pass. The real Metal-backed Ghostty regression now
+  uses the host adapter and verifies an OSC 8 link through actual mouse hit testing
+  and the native callback, alongside hidden Unicode/alternate-screen parsing, key
+  encoding, bracketed paste and attach deduplication. Path tests cover URI refusal,
+  encoded filenames, invalid positions and canonical worktree containment. The diff
+  UI regression passes collapse, failed-refresh recovery, opening a changed-file
+  line into Monaco, and opening an untracked file.
+- Still open: automatic detection of plain printed file paths, Option-click external
+  browser routing, broader terminal link/focus/IME acceptance, and diff mutations.
+  Ghostty's documented custom link-regex configuration is not currently settable;
+  handling activated links does not establish plain-path detection parity. Remaining
+  M1/M3/M4/M6 gates and the final elevate-ios architecture pass continue to apply.
+
 ## Why now, and why native
 
 The Tauri shell works, but roughly half of `src-tauri/` exists to work around what a DOM

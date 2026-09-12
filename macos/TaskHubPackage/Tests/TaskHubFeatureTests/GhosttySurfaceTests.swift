@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import GhosttyTerminal
+import GhosttyKit
 import Testing
 @testable import TaskHubFeature
 
@@ -25,7 +26,7 @@ private final class PipeEvents: @unchecked Sendable {
     let client = PtydClient(onEvent: { _ in })
     pipe.bind(client: client, id: "attach-test")
     let state = TerminalViewState()
-    let view = AppTerminalView(frame: NSRect(x: 0, y: 0, width: 640, height: 320))
+    let view = WorkspaceTerminalView(frame: NSRect(x: 0, y: 0, width: 640, height: 320))
     view.delegate = state
     view.controller = state.controller
     view.configuration = .init(backend: .inMemory(pipe.memory), fontSize: 13)
@@ -72,7 +73,7 @@ private final class PipeEvents: @unchecked Sendable {
     let input = InputBytes()
     let memory = InMemoryTerminalSession(write: { input.append($0) }, resize: { _ in })
     let state = TerminalViewState()
-    let view = AppTerminalView(frame: NSRect(x: 0, y: 0, width: 640, height: 320))
+    let view = WorkspaceTerminalView(frame: NSRect(x: 0, y: 0, width: 640, height: 320))
     view.delegate = state
     view.controller = state.controller
     view.configuration = .init(backend: .inMemory(memory), fontSize: 13)
@@ -121,4 +122,21 @@ private final class PipeEvents: @unchecked Sendable {
     #expect(pasted.hasPrefix("\u{1b}[200~"))
     #expect(pasted.hasSuffix("\u{1b}[201~"))
     #expect(pasted.contains("one") && pasted.contains("two"))
+
+    // Exercise Ghostty's real OSC 8 hit testing and native action callback,
+    // rather than calling the host delegate directly.
+    var opened: String?
+    view.openLink = { raw, _ in opened = raw }
+    memory.receive("\u{1b}[2J\u{1b}[H\u{1b}]8;;file:///tmp/fixture.swift#L5C2\u{1b}\\OPEN_FILE\u{1b}]8;;\u{1b}\\")
+    memory.waitForPendingOutput()
+    let surface = try #require(state.surface)
+    surface.sendMousePos(x: 10, y: 10, modifiers: .super_)
+    surface.sendMouseButton(state: GHOSTTY_MOUSE_PRESS, button: GHOSTTY_MOUSE_LEFT, modifiers: .super_)
+    surface.sendMouseButton(state: GHOSTTY_MOUSE_RELEASE, button: GHOSTTY_MOUSE_LEFT, modifiers: .super_)
+    for _ in 0..<30 {
+        if opened != nil { break }
+        try await Task.sleep(for: .milliseconds(20))
+    }
+    #expect(opened == "file:///tmp/fixture.swift#L5C2")
+
 }

@@ -259,7 +259,7 @@ Unsaved text is not persisted for crash recovery. Files must be UTF-8 text, at m
 The focused editor has no HTTP file API or remote navigation. Its scoped bridge
 exchanges only the current document buffer and editor events. `web-assets.txt`
 includes the shared Monaco loader, same-origin worker bootstrap, and vendored assets.
-The sprint board remains web based; native diff actions and terminal file links are
+The sprint board remains web based; native diff actions and full terminal link parity are
 still in progress.
 
 ## Local bundle smoke test
@@ -321,3 +321,11 @@ UTF-8 decoder so invalid input cannot stall later output, and allows the standal
 helper to detach when Foundation launches it as a process-group leader. Protocol 2
 remains compatible. Screen restoration and the remaining fidelity/performance checks
 must pass before we call the native terminal ready.
+
+
+Diff Open File and current-file line buttons now open native editor tabs, as do
+Ghostty-activated local-file links. Web links open in the owning workspace, and the
+standalone terminal supports the same split context pane as session terminals.
+Line/column locations survive document loading. Diff paths stay within the
+canonical worktree; terminal relative links use the current working directory.
+Plain printed file-path detection and Option-click external routing remain open.
