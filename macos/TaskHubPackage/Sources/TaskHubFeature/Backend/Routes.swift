@@ -12,6 +12,10 @@ public enum Routes {
     public static let SOUNDS = "/api/sounds"
     public static let TABS = "/api/tabs"
     public static let TASKS = "/api/tasks"
+    public static let TASK_PIN = "/api/tasks/:id/pin"
+    public static func taskPin(_ value: String) -> String {
+        "/api/tasks/\(encodeComponent(value))/pin"
+    }
     public static let FILE = "/api/file"
     public static let LAUNCH_TARGET = "/api/launch-target"
     public static let XCODE_SCHEMES = "/api/xcode/schemes"

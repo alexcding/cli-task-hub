@@ -5,8 +5,29 @@ Apple silicon is the initial build target. Open `TaskHub.xcworkspace` in Xcode.
 
 The app target owns AppKit lifecycle and hosts SwiftUI. `TaskHubPackage` holds the
 API client, SSE parser/client, backend owner, observable store, and views. The current
-screen is a connection/project-list foundation with an optional native terminal
-spike. The Dashboard is still pending. See [the port plan](../docs/SWIFTUI-PORT.md).
+screen has a Cocoa sidebar with project/session selection, Pinned mirrors, saved
+Tabs, and native terminal panes. The Dashboard is still pending.
+See [the port plan](../docs/SWIFTUI-PORT.md).
+
+## Cocoa sidebar (M2)
+
+The sidebar is an AppKit `NSOutlineView`, hosted through `NSViewRepresentable`.
+It supports native disclosure/keyboard selection, retained expansion and selection,
+and context menus for pin/unpin, Finder reveal, and copying paths/links. Projects,
+sessions, and tabs come from the existing backend snapshots and refresh via SSE.
+Pinning requires the updated backend's `PATCH /api/tasks/:id/pin` endpoint.
+
+Selecting a session shows its saved worktree and branch. **Open Terminal** opens or
+reattaches its shell; switching sidebar rows preserves the mounted emulator and
+hidden parsing. Pinned rows are additional entries for the same session. Browser
+tabs currently offer external opening; the embedded viewer and agent launch/resume
+workflows follow in M3. Sidebar implementation is authorized ahead of the remaining
+M1 terminal acceptance checks, which are still open.
+
+For an isolated sample hierarchy, run `macos/scripts/backend-fixture.cjs` with
+`TASKHUB_SIDEBAR_FIXTURE=1`, an isolated `TASKHUB_DATA_DIR`, and an unused `PORT`,
+then launch the app with `--backend-url` pointing to it. The fixture starts no
+pollers or agent hooks and uses no daily app data.
 
 ## Build and run
 

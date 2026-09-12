@@ -4,6 +4,7 @@ import GhosttyTerminal
 struct TerminalPane: View {
     let session: TerminalSession
     let reconnect: () -> Void
+    var active = true
     @State private var visible = true
 
     var body: some View {
@@ -30,14 +31,25 @@ struct TerminalPane: View {
         }
         .background(.background)
         .onChange(of: visible) { _, shown in
-            session.surface.isSurfaceVisible = shown
-            if shown { session.surface.requestFocus() }
+            updateVisibility()
+            if shown && active { session.surface.requestFocus() }
         }
+        .onChange(of: active) { _, _ in updateVisibility() }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didChangeOcclusionStateNotification)) { notification in
             guard let window = notification.object as? NSWindow,
                   window === session.surface.attachedPlatformView?.window else { return }
-            session.surface.isSurfaceVisible = visible && window.occlusionState.contains(.visible)
+            session.surface.isSurfaceVisible = active && visible && window.occlusionState.contains(.visible)
         }
-        .task { await session.start() }
+        .task { updateVisibility(); await session.start() }
+    }
+
+    private func updateVisibility() {
+        session.isActive = active
+        let view = session.surface.attachedPlatformView
+        let window = view?.window
+        session.surface.isSurfaceVisible = active && visible && (window?.occlusionState.contains(.visible) ?? true)
+        if (!active || !visible), let view, window?.firstResponder === view {
+            window?.makeFirstResponder(nil)
+        }
     }
 }

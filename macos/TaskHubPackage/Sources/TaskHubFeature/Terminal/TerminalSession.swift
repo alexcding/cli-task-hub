@@ -5,6 +5,10 @@ import GhosttyTerminal
 @MainActor @Observable
 final class TerminalSession: Identifiable {
     let id = UUID()
+    let pairKey: String
+    let cwd: String
+    let paired: Bool
+    @ObservationIgnored var isActive = true
     let surface = TerminalViewState()
     private(set) var status = "Connecting"
     private(set) var error: String?
@@ -17,7 +21,10 @@ final class TerminalSession: Identifiable {
     @ObservationIgnored private var started = false
     @ObservationIgnored private var startTask: Task<Void, Never>?
 
-    init() {
+    init(pairKey: String = "native-terminal-spike", cwd: String = FileManager.default.homeDirectoryForCurrentUser.path, paired: Bool = false) {
+        self.pairKey = pairKey
+        self.cwd = cwd
+        self.paired = paired
         pipe = TerminalPipe(onError: { [weak self] text in Task { @MainActor in self?.setError(text) } },
                             onExit: { [weak self] code in Task { @MainActor in self?.status = "Exited (\(code))"; self?.ready = false } })
         surface.configuration = .init(backend: .inMemory(pipe.memory), fontSize: 13, resizeThrottleMilliseconds: 80)
@@ -53,12 +60,11 @@ final class TerminalSession: Identifiable {
             try Task.checkCancellation()
             let terminals: [PtyInfo] = try await client.request(.init(op: "list"))
             let info: PtyInfo
-            if let existing = terminals.first(where: { $0.pairKey == "native-terminal-spike" }) {
+            if let existing = terminals.first(where: { $0.pairKey == pairKey && $0.paired == paired }) {
                 info = existing
             } else {
                 info = try await client.request(.init(op: "create", opts: .init(
-                    cwd: FileManager.default.homeDirectoryForCurrentUser.path,
-                    pairKey: "native-terminal-spike")))
+                    cwd: cwd, paired: paired, pairKey: pairKey)))
             }
             shellPID = info.pid
             pipe.bind(client: client, id: info.id)
@@ -69,7 +75,7 @@ final class TerminalSession: Identifiable {
                     guard let self, self.error == nil else { return }
                     self.status = "Connected"
                     self.ready = true
-                    self.surface.requestFocus()
+                    if self.isActive { self.surface.requestFocus() }
                 }
             }
         } catch { setError(error.localizedDescription) }

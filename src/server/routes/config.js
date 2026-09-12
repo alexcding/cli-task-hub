@@ -58,9 +58,20 @@ function register(app) {
   app.get(ROUTES.TASKS, wrap((req, res) => res.json(configdb.getTasks())));
   app.post(ROUTES.TASKS, wrap((req, res) => {
     if (!configdb.upsertTask(req.body || {})) return res.status(400).json({ error: 'id, projectId, workspace, worktree required' });
+    sse.broadcast({ type: 'tasks' });
     res.json({ ok: true });
   }));
-  app.delete(ROUTES.TASKS, wrap((req, res) => { if (req.query.id) configdb.removeTask(String(req.query.id)); res.json({ ok: true }); }));
+  app.delete(ROUTES.TASKS, wrap((req, res) => {
+    if (req.query.id) configdb.removeTask(String(req.query.id));
+    sse.broadcast({ type: 'tasks' });
+    res.json({ ok: true });
+  }));
+  app.patch(ROUTES.TASK_PIN, wrap((req, res) => {
+    if (typeof req.body?.pinned !== 'boolean') return res.status(400).json({ error: 'pinned must be a boolean' });
+    if (!configdb.setTaskPinned(req.params.id, req.body.pinned)) return res.status(404).json({ error: 'Session not found' });
+    sse.broadcast({ type: 'tasks' });
+    res.json({ ok: true });
+  }));
 }
 
 module.exports = { register };

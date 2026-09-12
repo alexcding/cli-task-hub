@@ -206,6 +206,12 @@ test('tasks: upsert, list, and delete through /api/tasks (keyed by id)', async (
   t = body.find(x => x.id === id);
   assert.equal(t.title, 'Renamed');
   assert.equal(t.sessionId, '0b1e6e2a-1111-4222-8333-444455556666');
+  const beforePin = { ...t };
+  assert.equal((await send('PATCH', `/api/tasks/${id}/pin`, { pinned: true })).status, 200);
+  t = (await get('/api/tasks')).body.find(x => x.id === id);
+  assert.deepEqual(t, { ...beforePin, pinned: true }, 'pin changes only the pin column');
+  assert.equal((await send('PATCH', `/api/tasks/${id}/pin`, { pinned: 'false' })).status, 400);
+  assert.equal((await send('PATCH', '/api/tasks/missing/pin', { pinned: false })).status, 404);
   // Pinned round-trips as a boolean (the sidebar sorts pinned sessions above the rest), and
   // created_at is immutable — an upsert must never restamp it.
   const firstCreatedAt = t.createdAt;

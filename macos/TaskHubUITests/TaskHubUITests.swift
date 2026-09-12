@@ -23,6 +23,8 @@ final class TaskHubUITests: XCTestCase {
         app.launch()
 
         // Use XCTAssert and related functions to verify your tests produce the correct results.
+        XCTAssertTrue(app.outlines["workspace-sidebar"].waitForExistence(timeout: 5))
+        app.outlines["workspace-sidebar"].staticTexts["Overview"].click()
         XCTAssertTrue(app.staticTexts["Native foundation"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["Reconnect"].waitForExistence(timeout: 15))
     }

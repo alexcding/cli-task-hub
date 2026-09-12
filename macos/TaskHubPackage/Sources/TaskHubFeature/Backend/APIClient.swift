@@ -69,6 +69,17 @@ public actor APIClient {
         return value
     }
 
+    func setPinned(_ pinned: Bool, for sessionID: String) async throws {
+        struct Payload: Encodable { let pinned: Bool }
+        var request = URLRequest(url: try url(Routes.taskPin(sessionID)))
+        request.httpMethod = "PATCH"
+        request.timeoutInterval = 10
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder().encode(Payload(pinned: pinned))
+        let (_, response) = try await session.data(for: request)
+        try Self.validate(response)
+    }
+
     func url(_ path: String) throws -> URL {
         guard path.hasPrefix("/"), !path.hasPrefix("//"),
               let url = URL(string: baseURL.absoluteString.trimmingCharacters(in: CharacterSet(charactersIn: "/")) + path)

@@ -343,6 +343,7 @@ function upsertTask(t = {}) {
   return true;
 }
 const removeTask = id => db.prepare('DELETE FROM tasks WHERE id = ?').run(id);
+const setTaskPinned = (id, pinned) => db.prepare('UPDATE tasks SET pinned = ? WHERE id = ?').run(pinned ? 1 : 0, id).changes > 0;
 
 // ── Review state (per-PR review-request tracking — see the review_state table) ────
 const getReviewState = key => db.prepare('SELECT requested_at, viewed_at FROM review_state WHERE key = ?').get(key) || null;
@@ -379,7 +380,7 @@ module.exports = {
   getLinks, getLinksByPR, addLink, removeLink,
   addEvent, getEvents,
   getTabs, setTabs,
-  getTasks, upsertTask, removeTask,
+  getTasks, upsertTask, removeTask, setTaskPinned,
   getReviewState, setReviewRequestedAt, setReviewViewed, pruneReviewStateForRepo,
   getSetting, setSetting, getAllSettings,
 };

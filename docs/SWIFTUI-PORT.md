@@ -8,7 +8,8 @@ Branch: `feat/swiftui-native`. Worktree: `../cli-task-hub-swiftui`.
 
 ## Implementation status
 
-M0 foundation is committed as `bf0c7a6`; M1 is in progress in `macos/`
+M0 foundation is committed as `bf0c7a6`; the M1 terminal spike is committed as
+`c05a57a`; M2 sidebar implementation has started in `macos/`
 (see `macos/README.md` for commands).
 The checked-in Xcode workspace uses a local Swift package, Swift 6, macOS 14 minimum,
 and direct distribution without App Sandbox. The current screen is the native
@@ -67,7 +68,35 @@ connection/project-list foundation; it is not the completed Dashboard.
   coverage, IME/mouse/selection/scrollback/display
   testing, file/URL routing and workflow hooks, sustained flood/isolation tests, and
   the ten-minute one-active/nine-hidden benchmark with recorded hardware and metrics.
-  Do not start broad page rewrites on the strength of this initial spike.
+  The user has authorized starting M2 with the Cocoa sidebar while these M1
+  acceptance items remain open; this does not mark the terminal gate complete.
+
+### M2 sidebar — AppKit/Cocoa (in progress)
+
+- User decision: implement the sidebar with `NSOutlineView`, using AppKit's native
+  row reuse, disclosure controls, keyboard selection, and context menus. SwiftUI
+  hosts the outline through `NSViewRepresentable` and continues to own app pages.
+- Reads projects, durable task sessions, and saved tabs through snapshot APIs.
+  Sessions remain ordered oldest first; Pinned adds mirrors without moving the
+  original row; task-owned URLs are excluded from Tabs; orphan sessions stay visible.
+- Stable outline nodes retain selection, scroll position, and expansion across
+  refreshes. Selection and collapsed groups persist across app launches.
+- Pin/unpin uses a scoped `PATCH /api/tasks/:id/pin` so other session columns cannot
+  be overwritten. Task mutations publish an SSE invalidation; no CLI is called.
+  Native context menus also expose Reveal in Finder, Copy Path/Link, and browser opening.
+- Opened session terminals are cached by task identity and remain mounted when
+  switching rows. Hidden surfaces stop drawing and continue parsing; pinned and
+  original rows select the same emulator. Opening a terminal starts a shell in the
+  saved worktree, without automatically launching an agent or changing its resume ID.
+- Verified: native app build, 15 Swift tests, 32 Node contract/API tests, and one
+  native UI test pass. A running sample-data app verified the Cocoa context menu,
+  pin/unpin mirrors, same shell PID/output across project/pinned selection, and
+  output produced while its terminal was hidden. This is functional evidence;
+  the sustained terminal performance benchmark remains open.
+- This increment does not complete M2: tray PR/usage views, theme/notifications,
+  full focus/menu parity, and the remaining M1 gates still need implementation and
+  validation. Remote tab selection currently offers browser opening; embedded
+  context pages and session creation/restart/removal remain M3.
 
 Companion docs: `ARCHITECTURE.md` (layers, HTTP-vs-IPC split), `TAURI-PORT.md`
 (the previous shell port — the same boundary makes this one tractable), `CLAUDE.md`
@@ -116,7 +145,7 @@ macos/
                   link/path detection, flow control
     Viewer/       WebTab (WKWebView), ContentTabStrip (chipOrder), History, Find bar
     Documents/    DiffWebView, EditorWebView, DocumentBridge, document state
-    Sidebar/      ProjectOutline (project → session, Pinned mirror, Tabs group), context menus
+    Sidebar/      CocoaSidebar (NSOutlineView, project → session, Pinned mirrors, Tabs), native context menus
     Pages/        Dashboard, Jira, Scrumboard, Logs, Settings, Project
     Layout/       SplitPane (paneView: off/term/diff/build) — the one place state → geometry
   Shared/         Routes.swift (GENERATED from src/shared/routes.mjs), JiraKeys, JQL
@@ -135,6 +164,8 @@ typed document bridge for the embedded diff/editor views.
   refreshes through SSE. Opening a PR may show its remote page in the embedded viewer.
 - SwiftUI/AppKit owns the window, sidebar, session and content tabs, split geometry,
   tray, menus, dialogs, and terminal. A document webview is a child of that native layout.
+- The sidebar specifically uses AppKit `NSOutlineView` hosted through
+  `NSViewRepresentable`; do not replace it with a SwiftUI `List`/`OutlineGroup`.
 - Reuse the current web diff and Monaco editor as the initial implementation. Extract
   their entry points from the full SPA; preserve highlighting, diff interactions,
   editing, saving, and keyboard behavior. A native replacement is optional later.
@@ -207,7 +238,9 @@ not proof that our protocol or performance requirements are met.
 
 ### Terminal acceptance gate (M1)
 
-No broad page rewrite starts until the terminal spike passes these checks. Record the
+The original plan held M2 until this gate passed. The user explicitly authorized the
+M2 Cocoa sidebar ahead of gate completion; all terminal acceptance requirements
+remain outstanding where not evidenced above. Record the
 package revision, Mac model, macOS version, workloads, and results with the milestone.
 
 | Area | Required evidence |
@@ -242,7 +275,7 @@ change or protocol change re-runs the affected checks.
 |---|------|----------------|
 | M0 | Foundation: choose minimum macOS version, project tooling, and distribution model; `BackendProcess`, generated routes, `APIClient`, `SSEClient`; extract daemon crate; minimal native window and tray; bundle smoke test | App loads projects and receives sync; route builders/encoding and representative JSON contracts tested; SSE reconnect refreshes snapshots; correct data directory and explicit backend ownership; bundled helpers launch outside the development tree |
 | M1 | **Terminal correctness spike:** pinned Ghostty package, `PtydClient`, native surface, input, flow control, attach/restoration, parsed row access, lifecycle | The terminal acceptance gate above passes, with automated tests and recorded interactive/performance evidence. Resolve snapshot and byte-transport requirements here |
-| M2 | Native shell: project/session sidebar, Tabs/Pinned groups, tray PR rows + usage view, theme, notifications, native menus and focus routing | Session selection uses stable PTY identities; changing views preserves terminal state; close/quit behavior matches the lifecycle contract |
+| M2 | Native shell: AppKit `NSOutlineView` project/session sidebar, Tabs/Pinned groups, tray PR rows + usage view, theme, notifications, native menus and focus routing | Session selection uses stable PTY identities; changing views preserves terminal state; close/quit behavior matches the lifecycle contract |
 | M3 | Complete session workflow: new/restart/remove/pin, worktree + task creation, `build:` PTY and Run destinations; context webview, content-tab strip, History, find bar, page-only/session toolbar | One complete session works end to end with terminal and context page; links route correctly; GitHub/Jira login survives relaunch; build and agent terminals remain isolated |
 | M4 | Native SwiftUI app pages and actions: Dashboard (cards, grouping, CI status, filters, and actions), Jira, Scrumboard, Logs, Settings, Project; project/settings edits, Jira actions, agent hooks, workflows, git history/commit/push/discard | Dashboard renders natively and updates through snapshot API + SSE; each existing workflow has an explicit parity check; failures remain recoverable and destructive actions retain confirmation |
 | M5 | Embedded diff + code editor: isolate existing web assets, typed document bridge, highlighting, diff interactions, editing/saving, dirty state, native shortcut integration | Existing diff/editor behavior works inside native panes; save errors preserve edits; dirty views cannot be silently evicted; terminal file links open the correct document |
@@ -279,10 +312,12 @@ terminal correctness work must not be traded away to meet the old estimate.
 ## Recorded decisions
 
 - Native SwiftUI/AppKit shell and native libghostty terminal.
+- Sidebar is Cocoa/AppKit `NSOutlineView` inside a SwiftUI host, per user direction.
 - Native SwiftUI Dashboard, including all cards, filters, status indicators, and actions.
 - Diff and code editing may remain web-based; initially reuse the existing diff and
   Monaco editor in focused `WKWebView` hosts. Preserve editing and saving.
-- Prove terminal correctness in M1 before rewriting the remaining pages.
+- M1 terminal correctness remains a release gate. User authorized the M2 Cocoa
+  sidebar to proceed while the remaining terminal checks are tracked explicitly.
 - Preserve explicit tray Quit teardown; crashes/rebuilds retain shells.
 
 ## Open questions
