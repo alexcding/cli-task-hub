@@ -13,6 +13,7 @@ pub struct Capture {
     pub state_seq: u64,
     pub cols: u16,
     pub rows: u16,
+    pub geometry: Option<crate::TerminalGeometry>,
 }
 
 struct Transfer {
@@ -41,12 +42,15 @@ impl Transfers {
             .generation
             .checked_add(1)
             .ok_or("snapshot token exhausted")?;
-        let header = json!({
+        let mut header = json!({
             "token": self.generation, "size": capture.bytes.len(), "chunkBytes": CHUNK_BYTES,
             "seq": capture.seq, "stateSeq": capture.state_seq,
             "cols": capture.cols, "rows": capture.rows,
             "revision": taskhub_vt::GHOSTTY_REVISION,
         });
+        if let Some(geometry) = capture.geometry {
+            header["geometry"] = json!(geometry);
+        }
         self.current = Some(Transfer {
             token: self.generation,
             capture,
@@ -99,6 +103,7 @@ mod tests {
             state_seq: 45,
             cols: 90,
             rows: 30,
+            geometry: None,
         }
     }
 

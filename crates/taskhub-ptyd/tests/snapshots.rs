@@ -137,6 +137,136 @@ impl Drop for Fixture {
 }
 
 #[test]
+fn geometry_matches_kernel_winsize_without_views_and_across_ordered_resizes() {
+    let fixture = Fixture::start();
+    let script = fixture.root.join("geometry.py");
+    std::fs::write(&script, br#"#!/usr/bin/python3
+import fcntl, json, os, pathlib, select, struct, termios, time, tty
+tty.setraw(0)
+root = pathlib.Path.cwd()
+for stage in range(6):
+    while not (root / ('go' + str(stage))).exists():
+        time.sleep(0.01)
+    if stage == 4:
+        os.write(1, b'\x1b[?2048l')
+    os.write(1, b'\x1b[14t\x1b[16t\x1b[18t')
+    if stage == 0:
+        os.write(1, b'\x1b[?2048h')
+    result = b''
+    deadline = time.monotonic() + 0.3
+    while time.monotonic() < deadline:
+        if select.select([0], [], [], max(0, deadline - time.monotonic()))[0]:
+            result += os.read(0, 65536)
+    size = struct.unpack('HHHH', fcntl.ioctl(0, termios.TIOCGWINSZ, b'\0' * 8))
+    pending = root / 'pending'
+    pending.write_text(json.dumps({'reply': result.hex(), 'size': size}))
+    pending.rename(root / ('result' + str(stage)))
+while True:
+    time.sleep(1)
+"#).unwrap();
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o700)).unwrap();
+    // Identity copying is separately tested with the actual bundled entry by
+    // the native app suite. This program does not interpret terminfo contents.
+    let terminfo = fixture.root.join("source-terminfo");
+    std::fs::create_dir_all(terminfo.join("78")).unwrap();
+    std::fs::write(terminfo.join("78/xterm-ghostty"), [0x1a, 0x01, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).unwrap();
+    let geometry = |cols, rows, width, height| json!({"cols":cols,"rows":rows,
+        "cellWidthPixels":width,"cellHeightPixels":height});
+    let initial = geometry(80, 24, 9, 18);
+    let mut connection = Connection::connect(&fixture.socket);
+    let hello = connection.request(json!({"op":"hello"})).unwrap();
+    assert_eq!(hello["geometryResponseOwner"], taskhub_vt::GEOMETRY_RESPONSE_OWNER);
+    let mut opts = json!({"cwd":fixture.root,"shell":script,
+        "stateResponseOwner":taskhub_vt::IDENTITY_RESPONSE_OWNER,
+        "terminalProfile":{"version":"test","terminfoDirectory":terminfo},
+        "geometryResponseOwner":taskhub_vt::GEOMETRY_RESPONSE_OWNER,"geometry":initial});
+    for (field, value) in [
+        ("geometryResponseOwner", json!("future-owner")),
+        ("geometryResponseOwner", Value::Null),
+        ("stateResponseOwner", json!(taskhub_vt::STATE_RESPONSE_OWNER)),
+        ("geometry", Value::Null),
+        ("geometry", geometry(80, 24, 0, 18)),
+        ("geometry", geometry(80, 24, u32::MAX, 18)),
+        ("geometry", geometry(80, 24, 9, 65536)),
+    ] {
+        let original = opts[field].clone();
+        opts[field] = value;
+        assert!(connection.request(json!({"op":"create","opts":opts})).is_err());
+        opts[field] = original;
+    }
+    assert_eq!(connection.request(json!({"op":"list"})).unwrap(), json!([]));
+    let term = connection.request(json!({"op":"create","opts":opts})).unwrap();
+    let id = term["id"].as_str().unwrap();
+    assert_eq!(term["geometryResponseOwner"], taskhub_vt::GEOMETRY_RESPONSE_OWNER);
+    drop(connection);
+    let stage = |index: usize, cols, rows, width, height, before: &str, after: &str| {
+        std::fs::write(fixture.root.join(format!("go{index}")), b"go").unwrap();
+        let path = fixture.root.join(format!("result{index}"));
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while !path.exists() {
+            assert!(Instant::now() < deadline, "geometry program did not finish stage {index}");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        let result: Value = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+        let expected = format!("{before}\x1b[4;{};{}t\x1b[6;{height};{width}t\x1b[8;{rows};{cols}t{after}", rows * height, cols * width);
+        let expected: String = expected.bytes().map(|byte| format!("{byte:02x}")).collect();
+        assert_eq!(result["reply"], expected, "reply at stage {index}");
+        assert_eq!(result["size"], json!([rows, cols, cols * width, rows * height]), "kernel at stage {index}");
+    };
+    stage(0, 80, 24, 9, 18, "", "\x1b[48;24;80;432;720t");
+    let mut first = Connection::connect(&fixture.socket);
+    let mut second = Connection::connect(&fixture.socket);
+    first.hello(); second.hello();
+    let (_, bytes) = first.snapshot(id);
+    let mut restored = taskhub_vt::Terminal::restore(&bytes).unwrap();
+    assert_eq!(restored.geometry().unwrap(), taskhub_vt::Geometry { cols:80, rows:24, cell_width:9, cell_height:18 });
+    assert!(restored.mode(2048, false).unwrap());
+    let resize = |connection: &mut Connection, size: &Value| {
+        connection.request(json!({"op":"resize","term":id,"cols":size["cols"],"rows":size["rows"],"geometry":size})).unwrap();
+    };
+    let retina = geometry(80, 24, 18, 36);
+    // Reject partial, inconsistent, and overflowing updates before kernel/state mutation.
+    let (before, _) = second.snapshot(id);
+    for request in [
+        json!({"op":"resize","term":id,"cols":80,"rows":24}),
+        json!({"op":"resize","term":id,"cols":81,"rows":24,"geometry":retina}),
+        json!({"op":"resize","term":id,"cols":80,"rows":24,"geometry":geometry(80,24,819,2731)}),
+    ] {
+        assert!(first.request(request).is_err());
+    }
+    let (unchanged, _) = second.snapshot(id);
+    assert_eq!(before["stateSeq"], unchanged["stateSeq"]);
+    resize(&mut first, &retina);
+    let (header, bytes) = second.snapshot(id);
+    assert_eq!(header["geometry"], retina);
+    assert_eq!(header["stateSeq"].as_u64().unwrap(), before["stateSeq"].as_u64().unwrap() + 1);
+    let event = loop { let event = first.event(); if event["ev"] == "resize" { break event; } };
+    assert_eq!(event["geometry"], retina);
+    assert_eq!(event["stateSeq"], header["stateSeq"]);
+    restored = taskhub_vt::Terminal::restore(&bytes).unwrap();
+    assert_eq!(restored.geometry().unwrap().cell_width, 18);
+    stage(1, 80, 24, 18, 36, "\x1b[48;24;80;864;1440t", "");
+    let bigger = geometry(100, 30, 18, 36);
+    resize(&mut first, &bigger);
+    drop(first); drop(second);
+    stage(2, 100, 30, 18, 36, "\x1b[48;30;100;1080;1800t", "");
+    let mut connection = Connection::connect(&fixture.socket);
+    connection.hello();
+    let (before, _) = connection.snapshot(id);
+    resize(&mut connection, &bigger);
+    let (same, _) = connection.snapshot(id);
+    assert_eq!(before["stateSeq"], same["stateSeq"], "identical resize has no ordered event");
+    stage(3, 100, 30, 18, 36, "", "");
+    stage(4, 100, 30, 18, 36, "", "");
+    resize(&mut connection, &initial);
+    stage(5, 80, 24, 9, 18, "", "");
+    let list = connection.request(json!({"op":"list"})).unwrap();
+    assert_eq!(list[0]["pid"], term["pid"]);
+    assert_eq!(list[0]["hasContext"], false);
+    assert_eq!(list[0]["geometryResponseOwner"], taskhub_vt::GEOMETRY_RESPONSE_OWNER);
+}
+
+#[test]
 fn real_shell_snapshot_survives_tail_truncation_resize_and_client_reconnect() {
     let fixture = Fixture::start();
     let script = fixture.root.join("shell.sh");

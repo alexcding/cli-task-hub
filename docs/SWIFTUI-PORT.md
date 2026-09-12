@@ -902,6 +902,30 @@ does not).
   lands. Remaining migration acceptance and the final coordinator/VM/DI pass are
   open; the Sprint board remains web-based.
 
+### M1 daemon pixel geometry — 2026-09-12 (native wiring pending)
+
+- Feature helpers now advertise optional `daemon-geometry-v1` ownership. It
+  requires the native identity profile and complete cell/grid measurements from
+  creation. The parser and kernel PTY start at those dimensions before the child
+  can query them. Existing shells retain their original response path.
+- Kernel pixel dimensions are checked against unsigned 16-bit winsize bounds;
+  partial, zero, overflowing and inconsistent dimensions are rejected. Ordered
+  resizes carry complete geometry into the parser, resize event and snapshot
+  header. Pixel-only changes advance state; equal measurements do not.
+- Size queries and mode 2048 notifications use the runtime's single effect path
+  and bounded protocol input queue. Notifications do not set user context.
+  Invalid parser state cannot acknowledge another resize as successful.
+- A real raw PTY test checks TIOCGWINSZ against exact query/notification bytes,
+  initially without clients, with two observers, and after disconnection. It
+  verifies grid/pixel-only/no-op changes, mode disable, snapshot metrics, invalid
+  request rejection, same PID and unchanged context. All 18 feature-enabled
+  daemon tests and 13 feature-free tests pass.
+- Native creation must next wait for measured cells, negotiate the capability,
+  send geometry with resizes and suppress matching native reports after import.
+  The production app still creates identity-owned shells. Terminal acceptance,
+  remaining migration gates and the final coordinator/VM/DI pass remain open.
+  The Sprint board stays web-based.
+
 ## Why now, and why native
 
 The Tauri shell works, but roughly half of `src-tauri/` exists to work around what a DOM

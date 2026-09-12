@@ -74,8 +74,8 @@ parser patch enables ANSI DECRQM and rejects nonzero/multiple DA request paramet
 preventing echoed DA2 replies from triggering a feedback loop. Device attributes
 and version/terminfo stay native for these older shells; new shells can use the
 identity contract below. Clipboard (including mode 5522), colors, title,
-visibility/focus, geometry and graphics still need an explicit offline policy and
-configuration mediation.
+visibility/focus and graphics still need an explicit offline policy and
+configuration mediation. Geometry has its own optional contract below.
 
 Replies are generated before snapshot capture can observe the advanced state and
 queued by the same PTY I/O worker. They share the bounded input queue and preserve
@@ -128,6 +128,45 @@ source bundle after creation, checks exact identity replies with no native view
 and with two live native surfaces, and verifies same-PID snapshot reattachment and
 copy removal after reaping. Runtime/native regressions cover ANSI mode queries,
 echoed DA replies, split XTGETTCAP, terminal reset and invalid clipboard policy.
+
+## Pixel geometry ownership (native wiring pending)
+
+Feature helpers advertise `hello.geometryResponseOwner:"daemon-geometry-v1"`.
+Creation can opt in with `opts.geometryResponseOwner` set to that exact string,
+alongside `stateResponseOwner:"daemon-identity-v1"`, its identity profile, and
+`geometry:{cols,rows,cellWidthPixels,cellHeightPixels}`. This adds CSI 14/16/18 t
+and mode 2048 replies to the identity/state set. Missing geometry, unsupported
+ownership or geometry without ownership fails before shell creation. The native
+app has not opted in yet; it must supply actual measured cells and suppress the
+matching responses before rendering these sessions.
+
+The parser and kernel PTY receive the initial geometry before the child starts,
+so the first query and TIOCGWINSZ agree. Cell pixels must be nonzero. Each grid
+axis/product must satisfy the existing parser bounds, and each pixel dimension
+must fit the kernel's unsigned 16-bit winsize fields. Overflow is rejected;
+metrics are never truncated or rounded to fit.
+
+Owned sessions require the same complete `geometry` object on every resize,
+with the existing top-level `cols`/`rows` matching its values. Legacy/state-only/
+identity-only sessions reject added geometry, preserving ownership from birth.
+The I/O worker applies kernel and parser geometry between output batches. A
+pixel-only change advances `stateSeq` and emits a resize event; equal geometry
+does neither. Geometry-bearing events and snapshot headers include the complete
+`geometry` object. Older sessions omit that field.
+
+Queries read the authoritative parser's current metrics. Enabling mode 2048
+produces its initial report; subsequent grid or cell-pixel changes produce one
+report through Ghostty's resize effect. These bytes use the existing bounded
+protocol input queue without setting `hasContext`. Disable stops notifications.
+Observers and reconnects do not generate reports or change ownership. Native
+surfaces must suppress matching size-query/mode-enable/resize replies after
+import while retaining title reports and unrelated native effects.
+
+A real raw PTY program verifies initial and changed TIOCGWINSZ pixels, exact
+reply bytes with no clients and two snapshot observers, pixel-only and grid
+resizes, unchanged-size deduplication, mode disable, snapshot metrics, same PID
+and unchanged `hasContext`. Invalid/partial/mismatched sizes do not advance state.
+Native multi-surface suppression/creation wiring remains the next step.
 
 ## Shell integration resources
 

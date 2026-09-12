@@ -50,6 +50,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 mod utf8;
 mod shell_integration;
+mod geometry;
+pub use geometry::TerminalGeometry;
 #[cfg(feature = "terminal-snapshots")]
 mod snapshot;
 
@@ -124,6 +126,7 @@ struct Ring {
   state_seq: u64,
   cols: u16,
   rows: u16,
+  geometry: Option<TerminalGeometry>,
   #[cfg(feature = "terminal-snapshots")]
   terminal: Result<taskhub_vt::Terminal, String>,
   state_response_owner: bool,
@@ -132,13 +135,21 @@ struct Ring {
 }
 
 impl Ring {
-  fn new() -> Result<Self, String> {
+  fn new(geometry: Option<TerminalGeometry>) -> Result<Self, String> {
+    if let Some(size) = geometry { size.pty_size()?; }
+    let (cols, rows) = geometry.map_or((80, 24), |size| (size.cols, size.rows));
+    #[cfg(feature = "terminal-snapshots")]
+    let terminal = {
+      let mut terminal = taskhub_vt::Terminal::new(cols, rows).map_err(|e| e.to_string())?;
+      if let Some(size) = geometry { terminal.resize_geometry(size.runtime()).map_err(|e| e.to_string())?; }
+      terminal
+    };
     Ok(Self {
       chunks: VecDeque::new(), len: 0, seq: 0, truncated: false,
-      state_seq: 0, cols: 80, rows: 24,
+      state_seq: 0, cols, rows, geometry,
       state_response_owner: false, identity_version: None, responses: Ok(Vec::new()),
       #[cfg(feature = "terminal-snapshots")]
-      terminal: Ok(taskhub_vt::Terminal::new(80, 24).map_err(|e| e.to_string())?),
+      terminal: Ok(terminal),
     })
   }
 
@@ -146,21 +157,25 @@ impl Ring {
   fn capture(&mut self) -> Result<snapshot::Capture, String> {
     let terminal = self.terminal.as_mut().map_err(|e| e.clone())?;
     let bytes = terminal.snapshot().map_err(|e| e.to_string())?;
-    Ok(snapshot::Capture { bytes, seq: self.seq, state_seq: self.state_seq, cols: self.cols, rows: self.rows })
+    Ok(snapshot::Capture { bytes, seq: self.seq, state_seq: self.state_seq, cols: self.cols, rows: self.rows, geometry: self.geometry })
   }
 
-  fn resized(&mut self, cols: u16, rows: u16) -> Result<u64, String> {
+  fn resized(&mut self, cols: u16, rows: u16, geometry: Option<TerminalGeometry>) -> Result<u64, String> {
     self.cols = cols;
     self.rows = rows;
+    self.geometry = geometry;
     self.state_seq += 1;
     #[cfg(feature = "terminal-snapshots")]
     {
-      let result = self.terminal.as_mut().map_err(|e| e.clone())?
-        .resize(cols, rows).map_err(|e| e.to_string());
-      if let Err(error) = result {
+      let terminal = self.terminal.as_mut().map_err(|e| e.clone())?;
+      self.responses = match geometry {
+        Some(geometry) => terminal.resize_geometry(geometry.runtime()),
+        None => terminal.resize(cols, rows).map(|_| Vec::new()),
+      }.map_err(|e| e.to_string());
+      if let Err(error) = &self.responses {
         // The kernel size already changed. Never serve stale VT state as valid.
         self.terminal = Err(error.clone());
-        return Err(error);
+        return Err(error.clone());
       }
     }
     Ok(self.state_seq)
@@ -171,6 +186,7 @@ impl Ring {
     if let Ok(terminal) = &mut self.terminal {
       if self.state_response_owner {
         self.responses = match self.identity_version.as_deref() {
+          Some(version) if self.geometry.is_some() => terminal.feed_geometry_responses(&bytes, version),
           Some(version) => terminal.feed_identity_responses(&bytes, version),
           None => terminal.feed_state_responses(&bytes),
         }.map_err(|e| e.to_string());
@@ -200,7 +216,7 @@ mod ring_tests {
 
   #[test]
   fn truncation_is_reported_at_the_atomic_sequence_boundary() {
-    let mut ring = Ring::new().unwrap();
+    let mut ring = Ring::new(None).unwrap();
     assert_eq!(ring.push(vec![b'a'; RING_MAX / 2], "a".repeat(RING_MAX / 2)), 1);
     assert_eq!(ring.push(vec![b'b'; RING_MAX / 2], "b".repeat(RING_MAX / 2)), 2);
     assert!(!ring.truncated); // exactly full still contains the entire history
@@ -214,7 +230,7 @@ mod ring_tests {
 
   #[test]
   fn invalid_utf8_expansion_cannot_exceed_the_ring_budget() {
-    let mut ring = Ring::new().unwrap();
+    let mut ring = Ring::new(None).unwrap();
     ring.push(vec![0xff; RING_MAX / 2], "\u{fffd}".repeat(RING_MAX / 2));
     assert!(ring.truncated);
     assert_eq!(ring.seq, 1);
@@ -236,6 +252,7 @@ struct Input {
 struct ResizeRequest {
   cols: u16,
   rows: u16,
+  geometry: Option<TerminalGeometry>,
   reply: mpsc::SyncSender<Result<(), String>>,
 }
 
@@ -275,6 +292,8 @@ pub struct TermInfo {
   pub state_response_owner: Option<String>,
   #[serde(default, skip_serializing_if = "Option::is_none")]
   pub terminal_profile: Option<TerminalProfile>,
+  #[serde(default, skip_serializing_if = "Option::is_none")]
+  pub geometry_response_owner: Option<String>,
 }
 
 #[derive(Deserialize, Default)]
@@ -288,6 +307,8 @@ pub struct CreateOpts {
   pub pair_key: String,
   pub state_response_owner: Option<String>,
   pub terminal_profile: Option<TerminalProfile>,
+  pub geometry_response_owner: Option<String>,
+  pub geometry: Option<TerminalGeometry>,
 }
 
 /// Identity is fixed at shell creation. The returned profile records the
@@ -593,6 +614,20 @@ impl Daemon {
     if identity_owned != opts.terminal_profile.is_some() {
       return Err("native terminal identity ownership requires its creation profile".into());
     }
+    if let Some(owner) = opts.geometry_response_owner.as_deref() {
+      #[cfg(feature = "terminal-snapshots")]
+      let supported = owner == taskhub_vt::GEOMETRY_RESPONSE_OWNER;
+      #[cfg(not(feature = "terminal-snapshots"))]
+      let supported = { let _ = owner; false };
+      if !supported || !identity_owned {
+        return Err("terminal geometry ownership requires supported native identity ownership".into());
+      }
+    }
+    if opts.geometry_response_owner.is_some() != opts.geometry.is_some() {
+      return Err("terminal geometry ownership requires complete initial geometry".into());
+    }
+    let initial_size = opts.geometry.map(TerminalGeometry::pty_size).transpose()?
+      .unwrap_or(PtySize { rows: 24, cols: 80, pixel_width: 0, pixel_height: 0 });
     let n = self.seq.fetch_add(1, Ordering::SeqCst) + 1;
     // Unique across daemon restarts so a stale id persisted by the renderer never collides.
     let id = format!("pty{}-{n}", self.boot);
@@ -611,13 +646,13 @@ impl Daemon {
 
     // Allocate the parser before spawning a shell, so a parser failure cannot
     // orphan a child. It sees every raw output batch, even without a viewer.
-    let mut state = Ring::new()?;
+    let mut state = Ring::new(opts.geometry)?;
     state.state_response_owner = opts.state_response_owner.is_some();
     let prepared_profile = opts.terminal_profile.as_ref().map(|profile| profile.prepare(&self.dir, &id)).transpose()?;
     state.identity_version = prepared_profile.as_ref().map(|value| format!("ghostty {}", value.profile.version));
     let ring = Arc::new(Mutex::new(state));
     let pair = native_pty_system()
-      .openpty(PtySize { rows: 24, cols: 80, pixel_width: 0, pixel_height: 0 })
+      .openpty(initial_size)
       .map_err(|e| e.to_string())?;
 
     // Login + interactive shell so it sources dotfiles and gets the full environment
@@ -672,6 +707,7 @@ impl Daemon {
       created: now_ms(),
       state_response_owner: opts.state_response_owner,
       terminal_profile: prepared_profile.as_ref().map(|value| value.profile.clone()),
+      geometry_response_owner: opts.geometry_response_owner,
     };
     let master = Arc::new(Mutex::new(pair.master));
     let resizes = Arc::new(Mutex::new(VecDeque::<ResizeRequest>::new()));
@@ -714,14 +750,32 @@ impl Daemon {
         // on the same I/O thread, before reading any output at the new grid size.
         while let Some(request) = { resizes.lock().unwrap().pop_front() } {
           let mut state = ring.lock().unwrap();
-          let result = master.lock().unwrap().resize(PtySize {
-            rows: request.rows, cols: request.cols, pixel_width: 0, pixel_height: 0,
-          }).map_err(|e| e.to_string()).and_then(|_| state.resized(request.cols, request.rows));
-          if result.is_ok() {
-            me.broadcast(&json!({ "ev": "resize", "id": id, "cols": state.cols,
-              "rows": state.rows, "seq": state.seq, "stateSeq": state.state_seq }));
+          #[cfg(feature = "terminal-snapshots")]
+          if let Err(error) = &state.terminal {
+            let _ = request.reply.send(Err(error.clone()));
+            continue;
           }
-          let _ = request.reply.send(result.map(|_| ()));
+          if request.geometry.is_some() && request.geometry == state.geometry {
+            let _ = request.reply.send(Ok(()));
+            continue;
+          }
+          let size = request.geometry.map(TerminalGeometry::pty_size).transpose()
+            .map(|size| size.unwrap_or(PtySize { rows: request.rows, cols: request.cols, pixel_width: 0, pixel_height: 0 }));
+          let result = size.and_then(|size| master.lock().unwrap().resize(size).map_err(|e| e.to_string()))
+            .and_then(|_| state.resized(request.cols, request.rows, request.geometry));
+          if result.is_ok() {
+            let mut event = json!({ "ev": "resize", "id": id, "cols": state.cols,
+              "rows": state.rows, "seq": state.seq, "stateSeq": state.state_seq });
+            if let Some(geometry) = state.geometry { event["geometry"] = json!(geometry); }
+            me.broadcast(&event);
+          }
+          let responses = std::mem::replace(&mut state.responses, Ok(Vec::new()));
+          drop(state);
+          let delivery = queue_responses(&mut input.lock().unwrap(), responses);
+          if let Err(message) = &delivery {
+            me.broadcast(&json!({ "ev": "inputError", "id": id, "message": message }));
+          }
+          let _ = request.reply.send(result.map(|_| ()).and(delivery));
         }
         // Interest: reads unless paused (renderer flow or client backlog); writes while queued.
         let owed = me.max_owed();
@@ -865,18 +919,22 @@ impl Daemon {
     Ok(())
   }
 
-  fn resize(&self, id: &str, cols: u16, rows: u16) -> Result<(), String> {
-    if cols == 0 || rows == 0 { return Err("terminal dimensions must be nonzero".into()); }
-    if cols > 4096 || rows > 4096 || u32::from(cols) * u32::from(rows) > 1024 * 1024 {
-      return Err("terminal dimensions exceed the grid limit".into());
+  fn resize(&self, id: &str, cols: u16, rows: u16, geometry: Option<TerminalGeometry>) -> Result<(), String> {
+    geometry::validate_grid(cols, rows)?;
+    if let Some(size) = geometry {
+      size.pty_size()?;
+      if size.cols != cols || size.rows != rows { return Err("inconsistent terminal resize geometry".into()); }
     }
     let (tx, rx) = mpsc::sync_channel(1);
     {
       let terms = self.terms.lock().unwrap();
       let term = terms.get(id).ok_or("terminal no longer exists")?;
+      if term.info.geometry_response_owner.is_some() != geometry.is_some() {
+        return Err("resize geometry must match the terminal's response ownership".into());
+      }
       let mut queue = term.resizes.lock().unwrap();
       if queue.len() >= 64 { return Err("too many pending terminal resizes".into()); }
-      queue.push_back(ResizeRequest { cols, rows, reply: tx });
+      queue.push_back(ResizeRequest { cols, rows, geometry, reply: tx });
       poke(term.wake_w);
     }
     rx.recv().map_err(|_| "terminal exited before resizing".to_string())?
@@ -1001,6 +1059,7 @@ impl Daemon {
           hello["snapshotRevision"] = json!(taskhub_vt::GHOSTTY_REVISION);
           hello["stateResponseOwner"] = json!(taskhub_vt::STATE_RESPONSE_OWNER);
           hello["identityResponseOwner"] = json!(taskhub_vt::IDENTITY_RESPONSE_OWNER);
+          hello["geometryResponseOwner"] = json!(taskhub_vt::GEOMETRY_RESPONSE_OWNER);
           hello["shellIntegration"] = json!(true);
           if let Some(revision) = req.get("snapshotRevision") {
             if !client.byte_transport || revision.as_str() != Some(taskhub_vt::GHOSTTY_REVISION) {
@@ -1036,7 +1095,9 @@ impl Daemon {
               .ok_or_else(|| format!("invalid terminal {key}")),
           }
         };
-        self.resize(&sid(), dimension("cols", 80)?, dimension("rows", 24)?)?;
+        let geometry: Option<TerminalGeometry> = req.get("geometry").cloned()
+          .map(serde_json::from_value).transpose().map_err(|e| e.to_string())?;
+        self.resize(&sid(), dimension("cols", 80)?, dimension("rows", 24)?, geometry)?;
         Ok(Value::Null)
       }
       "flow" => {

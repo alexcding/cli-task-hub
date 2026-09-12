@@ -67,10 +67,12 @@ is a no-op; changes to cell pixels alone still update the parser and report once
 snapshots. `feed_geometry_responses` adds CSI 14/16/18 t and mode 2048 replies to
 the identity/state set, with the same bounded collector and callback cleanup.
 It requires initialized pixel geometry; title, clipboard, colors and other host
-effects remain excluded. These APIs prepare `daemon-geometry-v1`; the daemon
-handshake, kernel winsize and native renderer have not opted into it yet, so
-production sessions retain their existing response ownership until that wiring
-is implemented together.
+effects remain excluded. The daemon exposes these APIs through the optional
+`daemon-geometry-v1` creation contract, including initial kernel winsize, ordered
+resize and snapshot metadata. Native renderer negotiation/suppression is still
+pending; production app sessions retain their existing response ownership until
+that wiring is implemented. See the daemon protocol for the narrower kernel
+pixel bounds and required creation/resize fields.
 
 Both native and headless builds apply
 `macos/patches/ghostty/0003-terminal-query-validation.patch`. It rejects echoed DA2

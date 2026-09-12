@@ -76,12 +76,23 @@ fn native_bytes_and_legacy_text_coexist_on_the_same_terminal() {
     // Identity probes must not reset an established byte connection.
     assert_eq!(native.request(json!({"op":"hello"}))["ok"]["dataEncoding"], "base64");
     assert!(native.request(json!({"op":"hello","dataEncoding":"unsupported"}))["err"].is_string());
+    #[cfg(not(feature = "terminal-snapshots"))]
+    {
+        assert!(native.request(json!({"op":"hello"}))["ok"]["geometryResponseOwner"].is_null());
+        assert!(native.request(json!({"op":"create","opts":{
+            "geometryResponseOwner":"daemon-geometry-v1",
+            "geometry":{"cols":80,"rows":24,"cellWidthPixels":9,"cellHeightPixels":18}
+        }}))["err"].is_string());
+    }
     let created = native.request(json!({"op":"create","opts":{"cwd":fixture.directory,"shell":shell}}));
     let id = created["ok"]["id"].as_str().unwrap();
     assert_eq!(native.data()["bytes"], BASE64.encode(b"READY"));
     assert_eq!(legacy.data()["chunk"], "READY");
     assert!(native.request(json!({"op":"resize","term":id,"cols":90,"rows":30}))["ok"].is_null());
     assert!(native.request(json!({"op":"resize","term":id,"cols":0,"rows":30}))["err"].is_string());
+    assert!(native.request(json!({"op":"resize","term":id,"cols":90,"rows":30,
+        "geometry":{"cols":90,"rows":30,"cellWidthPixels":9,"cellHeightPixels":18}
+    }))["err"].is_string());
     assert!(native.request(json!({"op":"write","term":id,"bytes":"?invalid"}))["err"].is_string());
     assert!(native.request(json!({"op":"write","term":id,"bytes":"QQ==","data":"B"}))["err"].is_string());
     let first = b"A\xff\xf0\x9f";
@@ -99,6 +110,7 @@ fn native_bytes_and_legacy_text_coexist_on_the_same_terminal() {
     assert_eq!(resized["cols"], 90);
     assert_eq!(resized["rows"], 30);
     assert_eq!(resized["stateSeq"], 2);
+    assert!(resized.get("geometry").is_none());
     // The native attachment includes the incomplete UTF-8 suffix atomically;
     // the legacy decoder holds that suffix until a later read completes it.
     let attached = native.request(json!({"op":"attach","term":id}));
