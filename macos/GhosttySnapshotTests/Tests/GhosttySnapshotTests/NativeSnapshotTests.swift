@@ -61,6 +61,35 @@ private final class SurfaceHarness {
 @Suite(.serialized)
 @MainActor
 struct NativeSnapshotTests {
+    @Test func viewResizeWaitsForTheOrderedHostGridEventBeforeReflowingOutput() async throws {
+        let harness = SurfaceHarness()
+        defer { harness.close() }
+        try await Task.sleep(for: .milliseconds(50))
+        let surface = try #require(harness.coordinator.surface)
+        let original = try #require(surface.size())
+        let snapshot = try harness.snapshot(Data(repeating: 120, count: Int(original.columns) + 5))
+        try #require(harness.session.restoreSnapshot(snapshot))
+        surface.setSize(width: original.widthPixels + original.cellWidthPixels * 10, height: original.heightPixels)
+        try await Task.sleep(for: .milliseconds(50))
+        let changed = try #require(surface.size())
+        #expect(changed.columns >= original.columns + 5)
+        harness.feed(Data("\u{1B}[6n".utf8))
+        let before = Data("\u{1B}[2;6R".utf8)
+        for _ in 0..<100 {
+            if harness.writes.bytes.count >= before.count { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(harness.writes.bytes == before)
+        try #require(harness.session.applyHostGridSize(columns: changed.columns, rows: changed.rows))
+        harness.feed(Data("\u{1B}[6n".utf8))
+        let after = before + Data("\u{1B}[1;\(Int(original.columns) + 6)R".utf8)
+        for _ in 0..<100 {
+            if harness.writes.bytes.count >= after.count { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(harness.writes.bytes == after)
+    }
+
     @Test func importsHistoryBothScreensSavedCursorAndFutureOutputWithoutHistoricalReplies() async throws {
         let harness = SurfaceHarness()
         defer { harness.close() }

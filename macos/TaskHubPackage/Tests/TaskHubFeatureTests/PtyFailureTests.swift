@@ -160,3 +160,39 @@ private final class FailureMessages: @unchecked Sendable {
         Issue.record("Malformed peer response accepted")
     } catch { #expect(!(error is CancellationError)) }
 }
+
+@Test(.timeLimit(.minutes(1))) func snapshotDownloaderValidatesChunksAndReleasesEveryCapture() async throws {
+    for mode in ["snapshot-valid", "snapshot-oversize", "snapshot-token", "snapshot-offset", "snapshot-short", "snapshot-early", "snapshot-cancel"] {
+        let fixture = try await ProtocolFixture.start(mode: mode)
+        defer { fixture.stop() }
+        let client = PtydClient(onEvent: { _ in })
+        defer { client.close() }
+        _ = try await client.connect(path: fixture.socket)
+        let download = Task { try await PtySnapshotDownloader(client: client).fetch(term: "fixture") }
+        if mode == "snapshot-cancel" {
+            for _ in 0..<100 {
+                if FileManager.default.fileExists(atPath: fixture.directory.appendingPathComponent("ready.reads").path) { break }
+                try await Task.sleep(for: .milliseconds(5))
+            }
+            download.cancel()
+        }
+        do {
+            let result = try await download.value
+            #expect(mode == "snapshot-valid")
+            #expect(result.bytes == Data(repeating: 120, count: 131075))
+            #expect(result.header.seq == 7 && result.header.stateSeq == 9)
+        } catch {
+            #expect(mode != "snapshot-valid")
+            if mode == "snapshot-cancel" { #expect(error is CancellationError) }
+        }
+        let released = try String(contentsOf: fixture.directory.appendingPathComponent("ready.released"), encoding: .utf8)
+        #expect(released == "1\n")
+        if mode == "snapshot-oversize" {
+            #expect(!FileManager.default.fileExists(atPath: fixture.directory.appendingPathComponent("ready.reads").path))
+        }
+        if mode == "snapshot-valid" {
+            let reads = try String(contentsOf: fixture.directory.appendingPathComponent("ready.reads"), encoding: .utf8)
+            #expect(reads == "0\n131072\n")
+        }
+    }
+}

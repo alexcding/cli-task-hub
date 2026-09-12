@@ -1,11 +1,12 @@
 --- a/include/ghostty.h
 +++ b/include/ghostty.h
-@@ -1194,6 +1194,8 @@
+@@ -1194,6 +1194,9 @@
  GHOSTTY_API bool ghostty_surface_process_exited(ghostty_surface_t);
  GHOSTTY_API void ghostty_surface_write_buffer(ghostty_surface_t, const uint8_t*, uintptr_t);
  GHOSTTY_API void ghostty_surface_write_buffer_replay(ghostty_surface_t, const uint8_t*, uintptr_t);
 +// TaskHub: fresh surface, UI thread, matching pinned revision and terminal grid.
 +GHOSTTY_API bool ghostty_surface_restore_snapshot(ghostty_surface_t, const uint8_t*, uintptr_t);
++GHOSTTY_API bool ghostty_surface_apply_host_grid_size(ghostty_surface_t, uint16_t, uint16_t);
  GHOSTTY_API void ghostty_surface_process_exit(ghostty_surface_t, uint32_t, uint64_t);
  GHOSTTY_API void ghostty_surface_refresh(ghostty_surface_t);
  GHOSTTY_API void ghostty_surface_draw(ghostty_surface_t);
@@ -22,7 +23,7 @@
      pub fn deinit(_: *@This()) void {}
  };
  
-@@ -1934,6 +1936,23 @@
+@@ -1934,6 +1936,33 @@
      ) void {
          if (len == 0) return;
          surface.core_surface.io.processOutputSuppressingResponses(ptr[0..len]);
@@ -43,22 +44,96 @@
 +            return false;
 +        };
 +        return true;
++    }
++
++    /// Thread-safe when serialized with host output. Does not request another
++    /// backend resize; this acknowledges the daemon's already-applied grid.
++    export fn ghostty_surface_apply_host_grid_size(surface: *Surface, cols: u16, rows: u16) bool {
++        surface.core_surface.io.applyHostGridSize(cols, rows) catch |err| {
++            log.warn("host grid resize rejected err={}", .{err});
++            return false;
++        };
++        return true;
      }
  
      export fn ghostty_surface_process_exit(
 --- a/src/termio/Termio.zig
 +++ b/src/termio/Termio.zig
-@@ -64,6 +64,9 @@
+@@ -64,6 +64,12 @@
  /// The stream parser. This parses the stream of escape codes and so on
  /// from the child process and calls callbacks in the stream handler.
  terminal_stream: StreamHandler.Stream,
 +
 +/// A snapshot is an initial state, never a replacement for a live parser.
 +host_output_received: bool = false,
++
++// Imported terminals follow the host output/resize event order.
++host_ordered_grid: bool = false,
  
  /// Last time the cursor was reset. This is used to prevent message
  /// flooding with cursor resets.
-@@ -695,8 +698,107 @@
+@@ -498,7 +504,6 @@
+     td: *ThreadData,
+     size: renderer.Size,
+ ) !void {
+-    self.size = size;
+     const grid_size = size.grid();
+ 
+     // Update the size of our pty.
+@@ -509,22 +514,26 @@
+         self.renderer_state.mutex.lockUncancelable(global.io());
+         defer self.renderer_state.mutex.unlock(global.io());
+ 
+-        // Update the size of our terminal state
+-        try self.terminal.resize(
+-            self.alloc,
+-            .{
+-                .cols = grid_size.columns,
+-                .rows = grid_size.rows,
+-                .cell_size_px = .{
+-                    .width = self.size.cell.width,
+-                    .height = self.size.cell.height,
++        self.size = size;
++        // Imported host state is resized only by its ordered daemon event.
++        if (!self.host_ordered_grid) {
++            // Update the size of our terminal state
++            try self.terminal.resize(
++                self.alloc,
++                .{
++                    .cols = grid_size.columns,
++                    .rows = grid_size.rows,
++                    .cell_size_px = .{
++                        .width = self.size.cell.width,
++                        .height = self.size.cell.height,
++                    },
+                 },
+-            },
+-        );
+-
+-        // If we have size reporting enabled we need to send a report.
+-        if (self.terminal.modes.get(.in_band_size_reports)) {
+-            try self.sizeReportLocked(td, .mode_2048);
++            );
++
++            // If we have size reporting enabled we need to send a report.
++            if (self.terminal.modes.get(.in_band_size_reports)) {
++                try self.sizeReportLocked(td, .mode_2048);
++            }
+         }
+     }
+ 
+@@ -543,8 +552,8 @@
+ fn sizeReportLocked(self: *Termio, td: *ThreadData, style: termio.Message.SizeReport) !void {
+     const grid_size = self.size.grid();
+     const report_size: terminalpkg.size_report.Size = .{
+-        .rows = grid_size.rows,
+-        .columns = grid_size.columns,
++        .rows = if (self.host_ordered_grid) self.terminal.rows else grid_size.rows,
++        .columns = if (self.host_ordered_grid) self.terminal.cols else grid_size.columns,
+         .cell_width = self.size.cell.width,
+         .cell_height = self.size.cell.height,
+     };
+@@ -695,8 +704,137 @@
      self.processOutputLocked(buf);
  }
  
@@ -150,6 +225,7 @@
 +    if (restored.continuation) |*tracker| tracker.deinit();
 +    previous.deinit(self.alloc);
 +    self.host_output_received = true;
++    self.host_ordered_grid = true;
 +    self.terminal.flags.dirty = .{
 +        .palette = true,
 +        .reverse_colors = true,
@@ -157,6 +233,35 @@
 +        .preedit = true,
 +        .glyph_glossary = true,
 +    };
++    self.renderer_wakeup.notify() catch {};
++}
++
++/// Apply a daemon resize at its position in the output sequence. The host
++/// serializes this with its writes, while view/pixel resizes only request a new
++/// daemon size. This avoids reflowing output that predates the resize event.
++pub fn applyHostGridSize(self: *Termio, cols: u16, rows: u16) !void {
++    if (cols == 0 or rows == 0 or cols > 4096 or rows > 4096 or
++        @as(u32, cols) * @as(u32, rows) > 1024 * 1024) return error.InvalidGrid;
++    self.renderer_state.mutex.lockUncancelable(global.io());
++    defer self.renderer_state.mutex.unlock(global.io());
++    if (!self.host_ordered_grid or self.backend != .host_managed) return error.NoImportedState;
++    try self.terminal.resize(self.alloc, .{
++        .cols = cols,
++        .rows = rows,
++        .cell_size_px = .{ .width = self.size.cell.width, .height = self.size.cell.height },
++    });
++    if (self.terminal.modes.get(.in_band_size_reports)) {
++        var buf: [1024]u8 = undefined;
++        var writer: std.Io.Writer = .fixed(&buf);
++        try terminalpkg.size_report.encode(&writer, .mode_2048, .{
++            .rows = rows,
++            .columns = cols,
++            .cell_width = self.size.cell.width,
++            .cell_height = self.size.cell.height,
++        });
++        self.mailbox.send(try termio.Message.writeReq(self.alloc, writer.buffered()), self.renderer_state.mutex);
++        self.mailbox.notify();
++    }
 +    self.renderer_wakeup.notify() catch {};
 +}
 +

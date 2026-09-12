@@ -63,11 +63,22 @@ def main():
                ZIG_GLOBAL_CACHE_DIR=str(global_cache), ZIG_LOCAL_CACHE_DIR=str(cache / "native"),
                CLANG_MODULE_CACHE_PATH=str(cache / "clang"))
     prepared = root / "prepared.json"
+    needs_preparation = not prepared.exists()
     if prepared.exists():
         state = json.loads(prepared.read_text())
-        if state != {"inputs": fingerprint, "source": changes(source), "package": changes(package)}:
-            parser.error("Prepared source or patch inputs changed; select a fresh --build-root.")
-    else:
+        if state.get("format") != 2:
+            parser.error("This build predates complete patch tracking; select a fresh --build-root.")
+        if state.get("source") != changes(source) or state.get("package") != changes(package):
+            parser.error("Prepared source was edited outside the build script; select a fresh --build-root.")
+        if state.get("inputs") != fingerprint:
+            # Only undo the exact generated changes whose hashes were recorded.
+            # Unexpected user edits above stop the build instead of being erased.
+            for directory in [source, package]:
+                diff = output("git", "diff", "--binary", "HEAD", "--", cwd=directory)
+                if diff:
+                    subprocess.run(["git", "apply", "--reverse"], input=diff, cwd=directory, check=True)
+            needs_preparation = True
+    if needs_preparation:
         run("git", "diff", "--exit-code", "HEAD", "--", cwd=source)
         run("git", "diff", "--exit-code", "HEAD", "--", cwd=package)
         run("zsh", package / "Script" / "apply-patches.sh", source, cwd=package, env=env)
@@ -75,7 +86,11 @@ def main():
             run("git", "apply", "--check", patch, cwd=directory)
             run("git", "apply", patch, cwd=directory)
         shutil.copy2(package / "Package.local.swift", package / "Package.swift")
-        prepared.write_text(json.dumps({"inputs": fingerprint, "source": changes(source),
+        # Upstream patches create new files. Stage generated changes in these
+        # private checkouts so fingerprints and reversal include those files too.
+        for directory in [source, package]:
+            run("git", "add", "--all", cwd=directory)
+        prepared.write_text(json.dumps({"format": 2, "inputs": fingerprint, "source": changes(source),
                                         "package": changes(package)}, indent=2) + "\n")
     run(zig, "build", "-Doptimize=ReleaseFast", "-Dapp-runtime=none", "-Demit-exe=false",
         "-Demit-xcframework=false", "-Demit-macos-app=false", "-Demit-docs=false",

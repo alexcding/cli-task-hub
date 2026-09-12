@@ -30,6 +30,13 @@ struct PtyHello: Decodable, Sendable {
     let pid: Int32
     let dataEncoding: String?
     let acknowledgedInput: Bool?
+    var snapshotRevision: String? = nil
+
+    func validateSnapshots() throws {
+        guard snapshotRevision == PtySnapshot.revision else {
+            throw PtyError.connection("This PTY helper cannot provide compatible terminal snapshots. Save your work, quit TaskHub explicitly, rebuild the helper, and reopen. Existing shells have been preserved.")
+        }
+    }
 
     func validateInputAcknowledgements() throws {
         guard acknowledgedInput == true else {
@@ -91,6 +98,9 @@ struct PtyRequest: Encodable, Sendable {
     var rows: UInt16?
     var pause: Bool?
     var opts: Options?
+    var snapshotRevision: String?
+    var token: UInt64?
+    var offset: Int?
 }
 
 // Stream framing is independent of socket reads. Decode only complete UTF-8 JSON

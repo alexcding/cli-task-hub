@@ -706,6 +706,25 @@ does not).
   ownership, restored title/pwd publication, image/glyph omissions and performance
   acceptance remains required.
 
+### M1 ordered native grid and snapshot downloads — 2026-09-12
+
+- Imported native surfaces now defer logical reflow until the daemon's ordered
+  resize event. Physical view size changes still update rendering and request the
+  new PTY dimensions. The Swift bridge drains earlier output before applying each
+  host grid event, so buffered output retains its original wrapping and cursor.
+- The typed snapshot downloader bounds allocations, validates revision/dimensions,
+  sequence metadata and every chunk's token, offset, length and final marker. It
+  releases captures after success, rejection and cancellation. These transport
+  pieces are prepared for app integration; the normal app still uses legacy attach.
+- Verification: all three real native-surface tests pass, including cursor replies
+  before and after ordered reflow. Socket fixture checks pass for multi-chunk
+  downloads, oversized headers, wrong tokens/offsets, short or early-final chunks,
+  and cancellation. The source builder successfully reapplies changed patches,
+  tracking newly created upstream files as well as modifications.
+- App attachment/reconnect integration and the previously listed response,
+  metadata, fidelity and performance gates remain open. The Sprint board remains
+  web-based as requested; it is not a pending native rewrite.
+
 ## Why now, and why native
 
 The Tauri shell works, but roughly half of `src-tauri/` exists to work around what a DOM

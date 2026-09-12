@@ -22,6 +22,12 @@ output, key encoding, paste framing and terminal replies use normal native paths
 Host visual defaults remain configured while explicit terminal color overrides
 and snapshot contents survive.
 
+After import, physical view resizes request a host resize without reflowing the
+logical terminal. Apply each daemon resize event with
+`InMemoryTerminalSession.applyHostGridSize(columns:rows:)` in the same serial
+queue as output. The wrapper drains preceding bytes before changing the grid;
+later output then uses that grid. Input stays gated until attachment completes.
+
 This is a TaskHub extension, not an upstream snapshot compatibility promise. The
 normal app still uses its released Swift dependency until the daemon download,
 native import, ordered live resizes and surface lifecycle are connected together.
@@ -39,8 +45,10 @@ xcodebuildmcp swift-package test --package-path "$PWD/macos/GhosttySnapshotTests
 
 The native build requires Apple's Metal compiler component. It uses a local,
 single-slice arm64 XCFramework and the wrapper's local package manifest. A build
-input fingerprint and source-diff hashes reject unexpected generated-source edits;
-use a fresh `--build-root` after changing the patches. `--zig` selects the pinned
+input fingerprint and source-diff hashes reject unexpected generated-source edits.
+Changed patches are reapplied after reversing the previously recorded generated
+changes, including newly added files. Older build directories without complete
+patch tracking require a fresh `--build-root`. `--zig` selects the pinned
 toolchain explicitly, and `--global-cache` permits reuse of its dependency cache.
 With another build root, set `TASKHUB_GHOSTTY_PACKAGE` to its `package` directory
 when running the integration suite. The Rust example accepts VT bytes on stdin

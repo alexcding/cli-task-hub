@@ -1,6 +1,6 @@
 --- a/Sources/GhosttyTerminal/InMemory/InMemoryTerminalSession.swift
 +++ b/Sources/GhosttyTerminal/InMemory/InMemoryTerminalSession.swift
-@@ -91,6 +91,22 @@
+@@ -91,6 +91,31 @@
  
      var currentSurface: ghostty_surface_t? {
          surfaceAccess.currentSurface
@@ -19,6 +19,15 @@
 +                guard let pointer = bytes.baseAddress?.assumingMemoryBound(to: UInt8.self) else { return false }
 +                return ghostty_surface_restore_snapshot(surface, pointer, UInt(bytes.count))
 +            }
++        } ?? false
++    }
++
++    /// Apply a daemon-ordered grid change after prior host output has drained.
++    /// The caller serializes this method with receive calls for the same session.
++    public func applyHostGridSize(columns: UInt16, rows: UInt16) -> Bool {
++        surfaceAccess.waitForPendingOutput()
++        return surfaceAccess.withCurrentSurface { surface in
++            ghostty_surface_apply_host_grid_size(surface, columns, rows)
 +        } ?? false
      }
  
