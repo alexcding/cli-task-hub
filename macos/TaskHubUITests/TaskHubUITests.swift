@@ -3,6 +3,41 @@ import XCTest
 final class TaskHubUITests: XCTestCase {
 
     @MainActor
+    func testFocusedWorkingDiffCollapseRefreshAndRecovery() throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard let base = environment["TASKHUB_UI_BACKEND_URL"],
+              let path = environment["TASKHUB_UI_DATA_DIR"], let socket = environment["TASKHUB_UI_PTY_SOCKET"] else {
+            throw XCTSkip("Run macos/scripts/test-browser-ui.sh to provide the isolated fixture.")
+        }
+        let app = XCUIApplication()
+        app.launchArguments = ["--backend-url", base, "--data-dir", path, "--pty-socket", socket]
+        app.launch()
+        let row = app.outlines["workspace-sidebar"].staticTexts["sidebar-2"].firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 10), app.debugDescription)
+        row.click()
+        app.buttons["Show Changes"].click()
+        let file = app.webViews.staticTexts["Sources/Fixture.swift"]
+        let renderError = app.staticTexts.matching(NSPredicate(format: "value BEGINSWITH 'Could not'")).firstMatch
+        XCTAssertTrue(file.waitForExistence(timeout: 10), "\(renderError.value ?? app.debugDescription)")
+        let code = app.webViews.staticTexts.matching(NSPredicate(format: "value CONTAINS 'Native diff ready'")).firstMatch
+        XCTAssertTrue(code.exists, app.debugDescription)
+        file.click()
+        let collapsed = expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: code)
+        wait(for: [collapsed], timeout: 5)
+        file.click()
+        XCTAssertTrue(code.waitForExistence(timeout: 5))
+        app.buttons["Refresh Changes"].click()
+        XCTAssertTrue(app.staticTexts["Fixture diff unavailable"].waitForExistence(timeout: 5))
+        XCTAssertTrue(code.exists) // A failed refresh preserves the last good diff.
+        app.buttons["Refresh Changes"].click()
+        let recovered = expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: app.staticTexts["Fixture diff unavailable"])
+        wait(for: [recovered], timeout: 5)
+        XCTAssertTrue(app.webViews.staticTexts["Untracked.txt"].exists)
+        app.buttons["Hide Changes"].click()
+        XCTAssertFalse(app.webViews.firstMatch.exists)
+    }
+
+    @MainActor
     func testNativeCLIStatusAndHookInstallationRecovery() throws {
         let environment = ProcessInfo.processInfo.environment
         guard let base = environment["TASKHUB_UI_BACKEND_URL"],

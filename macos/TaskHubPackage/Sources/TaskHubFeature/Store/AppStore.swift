@@ -23,6 +23,7 @@ public final class AppStore {
     private(set) var projectModels: [String: ProjectPageViewModel] = [:]
     private(set) var changingSessions: Set<String> = []
     private(set) var buildModels: [String: BuildWorkspaceViewModel] = [:]
+    private(set) var diffModels: [String: DiffViewModel] = [:]
     @ObservationIgnored private var pendingPins: Set<String> = []
     @ObservationIgnored private var removalLocks: [UUID: Set<String>] = [:]
     @ObservationIgnored private var owner: BackendProcess?
@@ -70,6 +71,20 @@ public final class AppStore {
     public var hasOpenWork: Bool { !sessions.isEmpty || !tabs.isEmpty }
     public var hasActivePage: Bool { viewer.active?.activePage != nil }
     var sessionOperations: SessionOperations? { api.map { SessionOperations(api: $0) } }
+
+    func showChanges(for session: WorkspaceSession, context: WorkspaceContext) {
+        if context.pane == .diff { context.setPane(.term); return }
+        prepareChanges(for: session, context: context)
+        if diffModels[context.id] != nil { context.setPane(.diff) }
+    }
+
+    func prepareChanges(for session: WorkspaceSession, context: WorkspaceContext) {
+        if diffModels[context.id] == nil {
+            guard let api else { context.error = "Connect to the backend to load changes."; return }
+            diffModels[context.id] = DiffViewModel(worktree: session.worktree, baseURL: api.baseURL,
+                                                   service: APIDiffService(api: api))
+        }
+    }
 
     func projectEditor(for project: Project? = nil) -> ProjectEditorViewModel? {
         guard let api else { return nil }
@@ -240,6 +255,7 @@ public final class AppStore {
                 for record in removed {
                     let key = "task:\(record.id)"
                     buildModels.removeValue(forKey: key)?.disconnect()
+                    diffModels.removeValue(forKey: key)?.disconnect()
                     terminals.removeValue(forKey: "build:\(record.url)")?.disconnect()
                     terminals.removeValue(forKey: key)?.disconnect()
                     await viewer.remove(id: key)
@@ -374,6 +390,7 @@ public final class AppStore {
                 model.tickets?.connect(APIJiraService(api: api))
             } }
             if let api { logs.connect(APILogService(api: api)) }
+            if let api { for model in diffModels.values { model.connect(baseURL: api.baseURL, service: APIDiffService(api: api)) } }
             if let api {
                 settings.connect(APISettingsService(api: api))
                 settings.clis.connect(APICLISettingsService(api: api))
@@ -503,6 +520,8 @@ public final class AppStore {
         await viewer.stop()
         for model in buildModels.values { model.disconnect() }
         buildModels.removeAll()
+        for model in diffModels.values { model.disconnect() }
+        diffModels.removeAll()
         await owner?.stop()
         api = nil
     }

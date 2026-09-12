@@ -1,0 +1,4 @@
+html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); color: var(--text); }
+* { box-sizing: border-box; }
+#native-diff { height: 100%; overflow: auto; font: var(--diff-font-size, 12px)/1.55 var(--diff-font, "SF Mono", Menlo, monospace); }
+#native-diff .diff-untracked { overflow-wrap: anywhere; }

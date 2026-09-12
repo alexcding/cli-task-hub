@@ -89,6 +89,15 @@ if (process.env.TASKHUB_SIDEBAR_FIXTURE === '1') {
   configdb.setTabs([{ kind: 'web', title: 'Review context', url: 'https://example.com/review' },
                    { kind: 'web', title: 'Documentation', url: 'https://example.com/docs' }]);
 }
+if (process.env.TASKHUB_DIFF_FIXTURE === '1') {
+  const github = require('../../src/server/repositories/github');
+  let reads = 0;
+  github.gitDiff = async () => {
+    if (++reads === 2) return { error: 'Fixture diff unavailable' };
+    return { branch: 'fixture-changes', untracked: ['Untracked.txt'],
+      diff: 'diff --git a/Sources/Fixture.swift b/Sources/Fixture.swift\n--- a/Sources/Fixture.swift\n+++ b/Sources/Fixture.swift\n@@ -1 +1 @@\n-let message = "Before"\n+let message = "Native diff ready"\n' };
+  };
+}
 if (process.env.TASKHUB_TRAY_FIXTURE === '1') {
   const configdb = require('../../src/server/database/configdb');
   const project = db.getProjects()[0];

@@ -67,7 +67,8 @@ struct SessionWorkspaceView: View {
     private var terminal: TerminalSession? { store.terminals[context.id] }
     private var showsBuild: Bool { session != nil && context.pane == .build }
     private var showsTerminal: Bool { session != nil }
-    private var showsPage: Bool { session == nil || (!showsBuild && context.pane == .term && context.activePage != nil) }
+    private var showsChanges: Bool { session != nil && context.pane == .diff }
+    private var showsPage: Bool { session == nil || showsChanges || (!showsBuild && context.pane == .term && context.activePage != nil) }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -92,6 +93,9 @@ struct SessionWorkspaceView: View {
                 }
                 Button("Add Page", systemImage: "plus") { addingPage = true }
                 if session != nil {
+                    Button(showsChanges ? "Hide Changes" : "Show Changes", systemImage: "arrow.triangle.branch") {
+                        if let session { store.showChanges(for: session, context: context) }
+                    }.disabled(store.connection != "Connected")
                     if let session, store.projects.first(where: { $0.id == session.projectId })?.ide == "xcode" {
                         if let model = store.buildModels[context.id], model.running {
                             Button("Stop Build", systemImage: "stop.fill") { Task { await model.stop() } }
@@ -155,7 +159,9 @@ struct SessionWorkspaceView: View {
                 }
             } right: {
                 ZStack {
-                    if let page = context.activePage { BrowserPane(page: page, context: context).id(page.id) }
+                    if showsChanges, let model = store.diffModels[context.id] {
+                        DiffView(model: model, appearance: store.shell.appearance, active: active)
+                    } else if let page = context.activePage { BrowserPane(page: page, context: context).id(page.id) }
                     else if session == nil {
                         ContentUnavailableView("No open pages", systemImage: "globe", description: Text("Add a page or reopen one from History."))
                     }
@@ -168,6 +174,10 @@ struct SessionWorkspaceView: View {
                 }
             }.frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .onAppear { prepareChanges() }
+        .onChange(of: context.pane) { _, _ in prepareChanges() }
+        .onChange(of: store.connection) { _, _ in prepareChanges() }
+        .onChange(of: active) { _, _ in prepareChanges() }
         .sheet(isPresented: $addingPage) {
             VStack(alignment: .leading, spacing: 16) {
                 Text("Add Page").font(.headline)
@@ -192,5 +202,9 @@ struct SessionWorkspaceView: View {
         .sheet(isPresented: Binding(get: { destination != nil }, set: { if !$0 { destination = nil } })) {
             if let destination { BuildDestinationView(model: destination) }
         }
+    }
+
+    private func prepareChanges() {
+        if active, showsChanges, let session { store.prepareChanges(for: session, context: context) }
     }
 }

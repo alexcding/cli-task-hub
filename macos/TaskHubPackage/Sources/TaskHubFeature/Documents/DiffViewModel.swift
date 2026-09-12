@@ -1,0 +1,163 @@
+import Foundation
+import Observation
+import WebKit
+
+struct DiffSnapshot: Codable, Equatable, Sendable {
+    let diff: String
+    let untracked: [String]
+    let branch: String?
+}
+
+protocol DiffService: Sendable {
+    func load(worktree: String) async throws -> DiffSnapshot
+}
+
+struct APIDiffService: DiffService {
+    let api: APIClient
+    func load(worktree: String) async throws -> DiffSnapshot {
+        struct Response: Decodable, Sendable {
+            let diff: String?
+            let untracked: [String]?
+            let branch: String?
+            let error: String?
+        }
+        let result: Response = try await api.get(APIClient.query(Routes.DIFF, ["path": worktree]), timeout: 30)
+        if let error = result.error { throw BackendError.operation(error) }
+        guard let diff = result.diff else { throw BackendError.operation("The backend returned no diff.") }
+        return .init(diff: diff, untracked: result.untracked ?? [], branch: result.branch)
+    }
+}
+
+@MainActor @Observable final class DiffViewModel: NSObject, WKNavigationDelegate {
+    let worktree: String
+    private(set) var snapshot: DiffSnapshot?
+    private(set) var loading = false
+    private var loadError: String?
+    private var documentError: String?
+    var error: String? { documentError ?? loadError }
+    private(set) var webView: WKWebView?
+    private var baseURL: URL
+    @ObservationIgnored private var service: (any DiffService)?
+    @ObservationIgnored private var task: Task<Void, Never>?
+    @ObservationIgnored private var generation = UUID()
+    @ObservationIgnored private var documentScript: String?
+    @ObservationIgnored private var loaded = false
+    @ObservationIgnored private var active = false
+    @ObservationIgnored private var appearance = AppAppearance.system
+
+    init(worktree: String, baseURL: URL, service: (any DiffService)? = nil) {
+        self.worktree = worktree; self.baseURL = baseURL; self.service = service
+        super.init()
+    }
+    var pageURL: URL { baseURL.appendingPathComponent("native/diff.html") }
+    func connect(baseURL: URL, service: any DiffService) {
+        task?.cancel(); task = nil; generation = UUID(); loading = false
+        self.service = service
+        if self.baseURL != baseURL {
+            self.baseURL = baseURL; loaded = false
+            webView?.load(URLRequest(url: pageURL))
+        }
+        if active { refresh() }
+    }
+    func show(appearance: AppAppearance) {
+        active = true; self.appearance = appearance
+        if webView == nil {
+            let config = WKWebViewConfiguration()
+            config.websiteDataStore = .nonPersistent()
+            config.userContentController.add(DiffMessageReceiver(owner: self), name: "diff")
+            config.userContentController.addUserScript(WKUserScript(source: #"window.addEventListener('error', e => window.webkit.messageHandlers.diff.postMessage({type:'error', message:e.message || 'A changes-view asset failed to load.'}), true);"#,
+                injectionTime: .atDocumentStart, forMainFrameOnly: true))
+            let view = WKWebView(frame: .zero, configuration: config)
+            view.navigationDelegate = self
+            view.setAccessibilityIdentifier("working-diff-webview")
+            webView = view
+            view.load(URLRequest(url: pageURL))
+        }
+        refresh()
+    }
+    func refresh() {
+        guard task == nil else { return }
+        guard let service else { loadError = "Connect to the backend to load changes."; return }
+        loading = true; loadError = nil
+        let generation = generation
+        task = Task {
+            defer { if self.generation == generation { loading = false; task = nil } }
+            do {
+                let value = try await service.load(worktree: worktree)
+                try Task.checkCancellation()
+                // A large patch is encoded once on a worker, never per frame or
+                // on appearance changes. The reused renderer also caps its rows.
+                let script = try await Task.detached(priority: .userInitiated) {
+                    guard value.diff.utf8.count <= 8 * 1024 * 1024,
+                          value.untracked.count <= 100_000 else {
+                        throw BackendError.operation("Diff too large to display.")
+                    }
+                    let data = try JSONEncoder().encode(value)
+                    guard data.count <= 16 * 1024 * 1024 else { throw BackendError.operation("Diff too large to display.") }
+                    return "window.nativeDiff.render(\(String(decoding: data, as: UTF8.self)))"
+                }.value
+                try Task.checkCancellation()
+                guard self.generation == generation else { return }
+                if snapshot != value { snapshot = value; documentScript = script; render() }
+            } catch { if !Task.isCancelled, self.generation == generation { self.loadError = error.localizedDescription } }
+        }
+    }
+    func waitForRefresh() async { await task?.value }
+    func setAppearance(_ value: AppAppearance) {
+        appearance = value
+        if loaded { webView?.evaluateJavaScript("window.nativeDiff.setTheme('\(value.rawValue)')", completionHandler: nil) }
+    }
+    func reload() { documentError = nil; loadError = nil; loaded = false; webView?.reload(); refresh() }
+    private func render() {
+        guard loaded, let documentScript else { return }
+        let generation = generation
+        webView?.evaluateJavaScript(documentScript) { [weak self] _, error in
+            guard let self, self.generation == generation, let error else { return }
+            let details = (error as NSError).userInfo["WKJavaScriptExceptionMessage"] as? String ?? error.localizedDescription
+            self.documentError = "Could not render changes: \(details)"
+        }
+    }
+    func hide() {
+        active = false; loaded = false
+        task?.cancel(); task = nil; generation = UUID(); loading = false
+        webView?.stopLoading(); webView?.navigationDelegate = nil
+        webView?.configuration.userContentController.removeScriptMessageHandler(forName: "diff")
+        webView?.removeFromSuperview(); webView = nil
+        snapshot = nil; documentScript = nil
+        documentError = nil; loadError = nil
+    }
+    func disconnect() { hide(); service = nil }
+    func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction,
+                 decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void) {
+        decisionHandler(action.targetFrame?.isMainFrame == true && action.request.url == pageURL ? .allow : .cancel)
+    }
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        // A document navigation finishing is not the renderer's readiness signal.
+        // The module posts ready after its imports and event wiring complete.
+    }
+    fileprivate func receive(_ message: WKScriptMessage) {
+        guard message.webView === webView, message.frameInfo.isMainFrame, message.frameInfo.request.url == pageURL,
+              let body = message.body as? [String: String], body.count <= 2 else { return }
+        if body["type"] == "ready" {
+            loaded = true; documentError = nil; setAppearance(appearance); render()
+        } else if body["type"] == "error", let text = body["message"], text.utf8.count <= 4096 {
+            documentError = "Could not load changes: \(text)"
+        }
+    }
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) { failed(error) }
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { failed(error) }
+    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        loaded = false; documentError = "The changes view stopped. Reload to restore it."
+    }
+    private func failed(_ error: Error) {
+        if (error as NSError).code != NSURLErrorCancelled { documentError = error.localizedDescription }
+    }
+}
+
+@MainActor private final class DiffMessageReceiver: NSObject, WKScriptMessageHandler {
+    weak var owner: DiffViewModel?
+    init(owner: DiffViewModel) { self.owner = owner }
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        owner?.receive(message)
+    }
+}

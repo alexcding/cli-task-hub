@@ -186,6 +186,24 @@ and the native spike's PTYs/daemon, then exits. This also works after relaunch b
 opening a terminal pane. Quit waits for PTY teardown; a failure keeps the app open
 with an error so teardown can be retried.
 
+## Focused working diff (M5, in progress)
+
+Select a session and choose **Show Changes**. The existing web diff renderer runs
+inside the native split with syntax highlighting, file collapse, and untracked-file
+listing. Native controls own refresh and error recovery; failed reads preserve the
+last displayed patch. Hiding the pane or switching sessions releases its webview and
+patch storage while retaining the session's terminal.
+
+The focused page receives its snapshot from `DiffViewModel` through an injected
+`DiffService`. It cannot fetch APIs or navigate remotely. Its only message handler
+reports ready/error from that exact local main frame, and Swift waits for ready
+before supplying the patch. `macos/web-assets.txt` includes the reused renderer,
+parser/highlighter, styles, and shared dependencies for bundling.
+
+This first diff increment is read-only. Monaco editing, save/conflict recovery,
+dirty-close protection, file-tab migration, terminal file links, discard/commit,
+and document shortcuts remain part of M5.
+
 ## Native terminal spike (M1, in progress)
 
 Build the standalone helper with `cargo build --manifest-path crates/taskhub-ptyd/Cargo.toml`.

@@ -1,0 +1,34 @@
+import SwiftUI
+
+struct DiffView: View {
+    let model: DiffViewModel
+    let appearance: AppAppearance
+    let active: Bool
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Label("Changes", systemImage: "arrow.triangle.branch").font(.headline).lineLimit(1)
+                if let branch = model.snapshot?.branch { Text(branch).foregroundStyle(.secondary).lineLimit(1) }
+                Spacer()
+                if model.loading { ProgressView().controlSize(.small) }
+                Button("Refresh Changes", systemImage: "arrow.clockwise", action: model.refresh)
+                    .labelStyle(.iconOnly).disabled(model.loading)
+            }.padding(10)
+            if let error = model.error {
+                HStack {
+                    Text(error).font(.callout).foregroundStyle(.orange)
+                    Spacer()
+                    Button("Reload Changes", action: model.reload)
+                }.padding(10)
+            }
+            Divider()
+            if let view = model.webView { BrowserSurface(webView: view) }
+            else { ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity) }
+        }
+        .onAppear { if active { model.show(appearance: appearance) } }
+        .onChange(of: active) { _, value in if value { model.show(appearance: appearance) } else { model.hide() } }
+        .onChange(of: appearance) { _, value in model.setAppearance(value) }
+        .onDisappear { model.hide() }
+    }
+}

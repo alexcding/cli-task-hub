@@ -377,6 +377,30 @@ Companion docs: `ARCHITECTURE.md` (layers, HTTP-vs-IPC split), `TAURI-PORT.md`
 (renderer conventions; the product rules there survive the port even though the code
 does not).
 
+### M5 focused documents — working diff started (2026-09-12)
+
+- Session **Show Changes** opens the existing highlighted diff renderer inside the
+  native split. Swift owns the worktree identity, snapshot load, refresh, errors,
+  appearance, and webview lifetime through an injected `DiffService` and view model.
+  This increment is read-only; editor/save/discard actions remain below.
+- The focused `/native/diff.html` receives data from Swift. Its CSP forbids network
+  requests, and it has no file/terminal bridge. A narrowly scoped, main-frame status
+  bridge reports renderer readiness/errors; remote navigation is refused. Native
+  rendering waits for module readiness, not just WebKit navigation completion.
+- Coalesced refreshes retain the last successful diff on error and reject stale
+  responses after hiding or reconnecting. Hidden/inactive diff panes release their
+  webview and patch storage; terminal emulators remain mounted independently.
+  Existing file/line render caps are preserved, and untracked rows are capped at 200.
+- Verification: all 49 Swift tests and 17 diff parser/highlighter tests pass. Native
+  UI covers highlighted content, collapse/expand, failed/successful refresh, and
+  hiding the surface; the existing browser find/navigation/close/session flow also
+  passes with the shared split. The bundled backend serves all 26 board/diff dependencies and
+  rejects the full SPA entry point. The bundle is still a development smoke artifact.
+- Remaining M5: Monaco editor, document identity/order/history migration, typed
+  editing/save bridge, save failure/conflict and dirty close/eviction protection,
+  terminal file links, discard/commit actions, and document find/save shortcuts.
+  Full M1 restoration and the remaining M3/M4/M6 gates continue to apply.
+
 ## Why now, and why native
 
 The Tauri shell works, but roughly half of `src-tauri/` exists to work around what a DOM
