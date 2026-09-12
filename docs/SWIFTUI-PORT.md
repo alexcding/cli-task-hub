@@ -2,7 +2,31 @@
 
 Porting the TaskHub desktop client from a Tauri-hosted web renderer to a **native
 macOS app (SwiftUI + AppKit where needed)**, with the terminal on **libghostty**.
+Diff and code editing may remain web-based, embedded as focused `WKWebView` views.
+The terminal is the first correctness gate, before the broader page rewrite.
 Branch: `feat/swiftui-native`. Worktree: `../cli-task-hub-swiftui`.
+
+## Implementation status
+
+M0 implementation has started in `macos/` (see `macos/README.md` for commands).
+The checked-in Xcode workspace uses a local Swift package, Swift 6, macOS 14 minimum,
+and direct distribution without App Sandbox. The current screen is the native
+connection/project-list foundation; it is not the completed Dashboard.
+
+- Implemented: generated Swift routes with drift check, typed project API, backend
+  identity/readiness endpoint, external/owned backend modes, bounded SSE parsing,
+  snapshot refresh on reconnect, and a native window/menu-bar lifecycle.
+- Extracted: `crates/taskhub-ptyd` is the shared daemon implementation for Tauri and
+  the standalone helper. Protocol and terminal behavior remain unchanged.
+- Added: isolated backend integration tests and daemon protocol/reconnect test;
+  local bundling script for Node, production dependencies, and the daemon.
+- Verified: native arm64 build, 6 Swift tests (including real API/SSE and ownership),
+  32 Node API/contract tests, 1 isolated daemon protocol test, 1 native UI launch test,
+  and the bundled app visibly connected to its own backend on an isolated port/data
+  directory. The existing Tauri host still passes `cargo check` (existing vendor warnings).
+- Next: M1 native Ghostty integration and the terminal acceptance gate. Ghostty is
+  not integrated yet. M0 data migration/rollback beyond preserving the existing
+  data-directory convention remains unverified; release signing/notarization is M6.
 
 Companion docs: `ARCHITECTURE.md` (layers, HTTP-vs-IPC split), `TAURI-PORT.md`
 (the previous shell port — the same boundary makes this one tractable), `CLAUDE.md`
@@ -22,7 +46,9 @@ UI cannot do on WKWebView:
 - glass/vibrancy, Dock toggling and zoom animation are objc2 glue (`glass.rs`).
 
 In a native app a `WKWebView` is a view, a menu is an `NSMenu`, the tray item can host a
-SwiftUI view, and the split pane is `NSSplitView`. Those modules are deleted, not ported.
+SwiftUI view, and the split pane is `NSSplitView`. Replace the shell glue while preserving
+its behavior. Native code owns layout, focus, navigation, menus, and lifecycle; embedded
+web views own only their document content.
 
 ## What stays, what goes
 
@@ -30,8 +56,8 @@ SwiftUI view, and the split pane is `NSSplitView`. Those modules are deleted, no
 |---|---|---|---|
 | `src/server/` | Express + `node:sqlite` + `gh`/`acli`/`git`/`xcodebuild` | ~4,450 | **Keep** as the backend. Runs as a sidecar exactly as under Tauri (`start_backend` logic moves to Swift). Port to Swift is an optional later phase. |
 | `src/shared/` | `ROUTES`, `jira-keys`, `jql`, constants | ~220 | Keep; **generate** a Swift mirror of `ROUTES` and port the pure modules 1:1 with their tests. |
-| `src/renderer/` | vanilla ESM, xterm.js, Monaco, hand-rolled diff | ~12,600 | **Rewrite** in SwiftUI. Nothing is reused except the pure `.mjs` logic. |
-| `src-tauri/src/ptyd.rs` | detached PTY daemon, Unix socket, JSON protocol | 776 | **Keep unchanged.** Becomes a standalone binary the app spawns; Swift gets a client. |
+| `src/renderer/` | vanilla ESM, xterm.js, Monaco, hand-rolled diff | ~12,600 | **Rewrite the shell and app pages** in SwiftUI. Extract and reuse the diff/editor views, their assets, and pure logic where useful. |
+| `src-tauri/src/ptyd.rs` | detached PTY daemon, Unix socket, JSON protocol | 776 | **Keep and extract** as a standalone binary; Swift gets a client. Preserve the protocol initially; correctness fixes discovered by terminal tests are in scope. |
 | `src-tauri/src/terminals.rs` | Rust client of the daemon | 358 | Rewrite as a Swift client (`PtydClient`). |
 | `src-tauri/src/{tray,notify,menu,glass,avatars,usage_image,viewer,webview_menu,commands,lib}.rs` + `bridge.js` | shell glue | ~2,700 + 556 | **Delete**; each becomes ordinary AppKit/SwiftUI. |
 
@@ -39,7 +65,7 @@ SwiftUI view, and the split pane is `NSSplitView`. Those modules are deleted, no
 
 ```
 macos/
-  TaskHub.xcodeproj            (or Package.swift + xcodegen; decide in M0)
+  TaskHub.xcworkspace          (checked-in app project + local TaskHubPackage)
   TaskHub/
     App/          TaskHubApp.swift, AppDelegate (tray, quit-only, Dock), Sparkle
     Backend/      BackendProcess (spawn node sidecar, TCP wait), APIClient (URLSession over
@@ -48,43 +74,112 @@ macos/
     Terminal/     PtydClient (Unix socket, JSON), GhosttySurfaceView, TerminalPane,
                   link/path detection, flow control
     Viewer/       WebTab (WKWebView), ContentTabStrip (chipOrder), History, Find bar
-    Diff/         DiffParser (port of diff-parse.mjs), DiffView
+    Documents/    DiffWebView, EditorWebView, DocumentBridge, document state
     Sidebar/      ProjectOutline (project → session, Pinned mirror, Tabs group), context menus
     Pages/        Dashboard, Jira, Scrumboard, Logs, Settings, Project
     Layout/       SplitPane (paneView: off/term/diff/build) — the one place state → geometry
   Shared/         Routes.swift (GENERATED from src/shared/routes.mjs), JiraKeys, JQL
+  WebAssets/      isolated diff/editor entry points + reused renderer assets and logic
   scripts/        gen-routes.mjs, build-sidecar.sh (reuse), bench
 ```
 
-Transport is unchanged: **HTTP + SSE to `localhost:3000`**. The `window.taskhub.*` bridge
-disappears; its jobs are in-process Swift calls.
+Transport remains **HTTP + SSE to the loopback backend**, default `127.0.0.1:3000`.
+Replace the broad `window.taskhub.*` bridge with in-process Swift calls and a small,
+typed document bridge for the embedded diff/editor views.
+
+## Native and web view boundary
+
+- The Dashboard is native SwiftUI, including PR cards, Mine/Review grouping, CI status,
+  filters, loading/error states, and actions. It reads the existing snapshot API and
+  refreshes through SSE. Opening a PR may show its remote page in the embedded viewer.
+- SwiftUI/AppKit owns the window, sidebar, session and content tabs, split geometry,
+  tray, menus, dialogs, and terminal. A document webview is a child of that native layout.
+- Reuse the current web diff and Monaco editor as the initial implementation. Extract
+  their entry points from the full SPA; preserve highlighting, diff interactions,
+  editing, saving, and keyboard behavior. A native replacement is optional later.
+- Swift owns document identity, active tab, file path, and save/close lifecycle. The
+  editor owns its text buffer and undo state and reports dirty/save/error events.
+  Dirty documents cannot be evicted or closed silently; save/discard/cancel must work.
+- Local document views receive only their document data and scoped actions through
+  the bridge. Remote GitHub/Jira/web tabs never receive file or terminal capabilities.
+  Share the existing website data store among remote tabs for login persistence.
+- Test keyboard focus and shortcuts across terminal, editor, and browser. Keep native
+  menus and split controls usable over every embedded view.
 
 ## Terminal design (the part that decides success)
 
-Decision: **libghostty via `libghostty-spm`**, not SwiftTerm, not xterm-in-WKWebView.
-Reference implementation: unpeel (`github.com/unpeel-com/unpeel`), which embeds the same
-package in a SwiftUI client over a `portable-pty` daemon — the same shape as ours.
+Decision: **native libghostty rendering with a host-managed connection to our daemon**.
+Initial candidate: [Lakr233/libghostty-spm](https://github.com/Lakr233/libghostty-spm),
+whose `GhosttyTerminal` product provides `InMemoryTerminalSession` for host-managed
+I/O. Pin an exact tested release/revision in M1; the package name alone is insufficient.
+Its host-managed backend is a fork addition, so validate the actual shipped API and
+resources. [Unpeel](https://github.com/unpeel-com/unpeel) is an architectural reference,
+not proof that our protocol or performance requirements are met.
 
 - **Daemon stays Rust.** `ptyd.rs` already gives us detached shells that survive
   reload/rebuild/crash, `TASKHUB_RUN_ID` for agent hooks, and `foreground` detection for
   the Run chip. Build it as its own crate (`crates/taskhub-ptyd`) with the existing
   protocol; the app bundles it next to the node sidecar.
-- **Swift client** replaces `terminals.rs`: connect to `/tmp/taskhub-ptyd-<uid>.sock`,
-  `create/write/resize/flow/kill/list/attach/foreground`, fan out `data` broadcasts to the
-  surface that owns the terminal id. Keep the `FLOW_HIGH`/`FLOW_LOW` pause/resume policy
-  from `terminal.js`.
+- **Swift client** replaces `terminals.rs`: mirror `ptyd::sock_path()` and socket-owner
+  checks, including `TASKHUB_PTYD_SOCK`, private `$TMPDIR`, and the private
+  `/tmp/taskhub-<uid>/` fallback. Perform `hello` and check the protocol (currently 2)
+  before operations. Support `create/write/resize/flow/kill/killAll/list/attach/foreground`,
+  request IDs, bounded framing, timeouts, disconnects, and `data`/`exit` events.
+  Connection generations must prevent stale replies from affecting a replacement connection.
+- **Ownership**: one terminal session and emulator per PTY identity, independent of
+  SwiftUI view reconstruction. Closing/hiding a pane must not create or kill a shell.
+  Decode and route socket traffic off the main thread; obey the terminal package's
+  thread requirements for surface access. Deliver input, output, and resize in order.
 - **Rendering**: `GhosttySurfaceView` wraps a libghostty Metal surface. Coalesce resizes
-  (unpeel uses 80 ms) so a split-pane tween does not storm the PTY with SIGWINCH — this
-  replaces `body.pr-tweening` + the ResizeObserver hold.
+  during split changes and always apply the final nonzero grid size. Verify Retina
+  scale changes, font changes, and moving between displays. Hidden/occluded surfaces
+  stop drawing but continue consuming output and updating their terminal state.
+- **Flow control**: bound queues by bytes, including output queued during attachment.
+  Start from the existing 1 MiB high / 256 KiB low watermarks and tune against measured
+  consumption. Prove when the chosen Ghostty API has consumed output; enqueueing is
+  not a drain acknowledgement. Unfocus must not indefinitely pause a process. Test
+  disconnect while paused and multiple clients; change daemon pause ownership/recovery
+  if needed so a crashed viewer cannot leave a PTY permanently paused.
 - **Links**: file paths → editor tab, `http(s)` → content tab beside the terminal,
   ⌥-click → real browser. Same rules as `wireTermLinks`; implemented on the Ghostty
   selection/URL hooks.
-- **Reattach**: phase 1 replays the daemon's buffer as today. Phase 2 candidate: host-side
-  VT snapshot (one emulator in the daemon, re-emit the grid on attach) as unpeel does —
-  it removes the per-tab replay cost `fe58735` had to parallelise.
-- **Known risk**: unpeel's only open issue is ~85 % GPU with a busy TUI agent visible.
-  Budget a spike (M2) to measure with Claude Code running; mitigations are frame-rate
-  capping when the surface is not focused and pausing render for occluded panes.
+- **Reattach**: subscribe to data and exit before requesting attachment; replay the
+  returned buffer through its sequence watermark, then apply queued events newer than
+  that watermark exactly once. Handle exit during attach and reconnect without spawning
+  a replacement shell. Historical replay must suppress terminal replies/side effects
+  so old device queries cannot inject responses into the live shell.
+- **Screen restoration**: the current 256 KiB output ring is a tail, not a complete VT
+  snapshot. Test reattach after truncation, alternate-screen use, and resize. If the
+  retained tail cannot restore the correct screen, add a daemon VT snapshot with an
+  atomic sequence boundary before accepting M1; this is a correctness decision, not
+  merely a future replay optimisation.
+- **Input and text**: use Ghostty's encoded keyboard input for keystrokes and its paste
+  path for clipboard content. Test IME composition, Option/Control keys, Shift-Return,
+  bracketed paste, Unicode, selection, mouse reporting, and scrollback. Audit the
+  daemon's UTF-8 framing with split codepoints and invalid bytes: the current valid-prefix
+  decoder can retain an invalid prefix and stall later output. Fix it with regression
+  coverage; version the protocol if raw-byte transport is required.
+- **Workflow integration**: preserve `TASKHUB_RUN_ID`, agent resume IDs, hook-driven
+  busy/idle state, foreground detection, and a bounded read of parsed terminal rows for
+  `terminal-tail`/workflow analysis, including while the surface is hidden. Build output
+  uses its own PTY and cannot write into the agent terminal.
+
+### Terminal acceptance gate (M1)
+
+No broad page rewrite starts until the terminal spike passes these checks. Record the
+package revision, Mac model, macOS version, workloads, and results with the milestone.
+
+| Area | Required evidence |
+|---|---|
+| Protocol and bytes | Automated socket/PTY tests for fragmented and coalesced frames, split UTF-8, invalid bytes, request timeout, protocol mismatch, final output before exit, and stale callbacks. |
+| Attach and lifecycle | Output generated during attach has no gaps/duplicates; exit during attach is handled; crash/rebuild reconnects to the same shell PID; window close hides; explicit tray Quit stops all PTYs and daemon. |
+| Terminal fidelity | Interactive shell, Claude Code, Codex, and a full-screen TUI pass keyboard/IME/paste, mouse, Unicode, selection, scrollback, resize, and alternate-screen checks. Restored screen matches the live state after ring truncation. |
+| Flow and isolation | A sustained output flood and a slow/disconnected client keep queues bounded; another session remains usable; disconnect while paused recovers; hidden terminals continue progressing. |
+| Performance | Benchmark one active terminal with nine hidden sessions for at least 10 minutes. Initial targets: p95 key-to-display latency below 50 ms in the interactive workload, no continuously growing output queue, and no steady-state draw work for hidden surfaces. Record CPU/GPU/RSS versus the existing app on the same Mac; regressions need mitigation before the gate passes. |
+| Product integration | File/URL links target the owning session, Option-click opens the browser, focus survives tab/split changes, hooks update activity, and workflow tail reads reflect hidden-terminal output. Link destination completion is rechecked in M3/M5. |
+
+The terminal implementation remains unverified until these checks run. Any dependency
+change or protocol change re-runs the affected checks.
 
 ## Product rules that must survive (from `CLAUDE.md`)
 
@@ -96,41 +191,66 @@ package in a SwiftUI client over a `portable-pty` daemon — the same shape as o
 - Nothing is pinned to the content strip by default; ＋ fills it; new chips go after
   the active chip; `chipOrder` is **one ordered list**, never per-chip indices.
 - Mine vs Review uses `prGroup`, never raw `category`; tray/sound stay on `category`.
-- Quit only from the tray; the PTY daemon outlives the app.
+- Quit only from the tray; explicit Quit stops terminals and the daemon. Window close
+  hides the app; crash/rebuild preserves shells for reattachment.
 - Restrained slate + single accent, flat, SF Symbols / SVG, no emoji.
 
 ## Milestones
 
 | # | Goal | Exit criterion |
 |---|------|----------------|
-| M0 | Project skeleton: Xcode project, `BackendProcess` spawns the existing node server, `Routes.swift` generated from `routes.mjs`, `APIClient` + `SSEClient`, contract test that every `ROUTES` key has a Swift case | App launches, hits `/api/projects`, receives a `sync` SSE event |
-| M1 | Shell + read-only pages: window, sidebar outline (projects → sessions, Tabs, Pinned), tray with PR rows + usage view, notifications, Dashboard / Jira / Logs / Settings / Project pages, theme | Feature parity with the web pages minus terminal/viewer; quit-only-from-tray works |
-| M2 | Terminal spike: `PtydClient` + `GhosttySurfaceView` against the existing daemon; measure GPU with Claude Code running; links; flow control | A session opens in a pane, survives app relaunch, GPU acceptable or mitigated |
-| M3 | Sessions: New-session dialog, worktree + task creation, restart, remove (confirm dialog), pin, context menus, `build:` PTY + Run chip (scheme/simulator pickers from `/api/xcode/*`) | Full session lifecycle from the sidebar |
-| M4 | Viewer: `WKWebView` tabs sharing one website data store (GitHub/Jira login), content-tab strip with `chipOrder`, History submenu, page-only vs session toolbar, find bar, memory budget via `WKWebView` process accounting | PR/Jira tabs behave as today; no shim, no bounds loop |
-| M5 | Diff + File tabs: `DiffParser` (port `diff-parse.mjs` with its tests), `DiffView` with highlighting, File tab (decide: `CodeEditSourceEditor` vs Monaco in a WKWebView vs drop) | Diff parity; file tab decision recorded here |
-| M6 | Packaging: bundle node sidecar + `taskhub-ptyd`, Sparkle updates, notarisation; remove `src-tauri/` and `src/renderer/` from the build | `.dmg` installs and runs on a clean Mac |
-| M7 (optional) | Port `src/server/` to Swift (GRDB + `Process`), drop node | Single binary; API tests re-pointed and green |
+| M0 | Foundation: choose minimum macOS version, project tooling, and distribution model; `BackendProcess`, generated routes, `APIClient`, `SSEClient`; extract daemon crate; minimal native window and tray; bundle smoke test | App loads projects and receives sync; route builders/encoding and representative JSON contracts tested; SSE reconnect refreshes snapshots; correct data directory and explicit backend ownership; bundled helpers launch outside the development tree |
+| M1 | **Terminal correctness spike:** pinned Ghostty package, `PtydClient`, native surface, input, flow control, attach/restoration, parsed row access, lifecycle | The terminal acceptance gate above passes, with automated tests and recorded interactive/performance evidence. Resolve snapshot and byte-transport requirements here |
+| M2 | Native shell: project/session sidebar, Tabs/Pinned groups, tray PR rows + usage view, theme, notifications, native menus and focus routing | Session selection uses stable PTY identities; changing views preserves terminal state; close/quit behavior matches the lifecycle contract |
+| M3 | Complete session workflow: new/restart/remove/pin, worktree + task creation, `build:` PTY and Run destinations; context webview, content-tab strip, History, find bar, page-only/session toolbar | One complete session works end to end with terminal and context page; links route correctly; GitHub/Jira login survives relaunch; build and agent terminals remain isolated |
+| M4 | Native SwiftUI app pages and actions: Dashboard (cards, grouping, CI status, filters, and actions), Jira, Scrumboard, Logs, Settings, Project; project/settings edits, Jira actions, agent hooks, workflows, git history/commit/push/discard | Dashboard renders natively and updates through snapshot API + SSE; each existing workflow has an explicit parity check; failures remain recoverable and destructive actions retain confirmation |
+| M5 | Embedded diff + code editor: isolate existing web assets, typed document bridge, highlighting, diff interactions, editing/saving, dirty state, native shortcut integration | Existing diff/editor behavior works inside native panes; save errors preserve edits; dirty views cannot be silently evicted; terminal file links open the correct document |
+| M6 | Release hardening: node + daemon + Ghostty resources + document assets, Sparkle, notarisation, upgrade/rollback and data restoration; remove Tauri/full-SPA dependencies from the native build | `.dmg` installs and runs on a clean Mac; terminal acceptance checks pass in the packaged app; required web document assets remain bundled |
+| M7 (optional) | Port `src/server/` to Swift (GRDB + `Process`), drop node | API tests re-pointed and green; standalone Rust PTY daemon remains unless separately replaced |
 
-Estimate: M0–M6 ≈ 10–12 weeks solo; M7 ≈ 3–4 more.
+Previous estimate: M0–M6 ≈ 10–12 weeks solo; M7 ≈ 3–4 more. Re-estimate after
+M1 and the feature inventory. Reusing web document views reduces rewrite scope, but
+terminal correctness work must not be traded away to meet the old estimate.
 
 ## Development approach
 
 - **Two UIs, one backend.** Run `node src/server/app.js` and point both the Tauri app and
-  the native app at it during the transition. Nothing in `src/server/` changes for the
-  port; if a native page needs data the API lacks, add a route to `routes.mjs` and both
-  clients get it.
-- **Port pure logic first, with tests.** `diff-parse`, `jira-keys`, `jql`,
-  `terminal-tail` each get a Swift file and a translated test before any view uses them.
+  the native app at it during the transition. Explicitly select external-server mode
+  or app-owned mode; never terminate a server owned by the other client. Verify backend
+  identity/readiness instead of accepting any listener on port 3000. Keep the snapshot
+  architecture; add compatible API routes only when needed.
+- **Preserve durable state.** Use the actual current launcher default,
+  `~/Library/Application Support/TaskHub`, honoring `TASKHUB_DATA_DIR`. Test with an
+  isolated copy of existing data. Inventory DB-backed state and localStorage-only
+  preferences; record migration or reset behavior and protect rollback compatibility.
+- **Share pure logic where it stays web-based.** Keep `diff-parse` and its existing tests
+  with the embedded diff view. Port `jira-keys`, `jql`, and `terminal-tail` only where
+  Swift consumes them, with translated tests before use.
+- **Webview lifetime.** Add bounded remote-view retention in M3 and document-specific
+  retention in M5. Current per-webview RSS accounting uses private WebKit API; record
+  an explicit decision and fallback before claiming equivalent memory-budget behavior.
 - **One decision per ADR line here**, not in commit messages: package manager
-  (xcodegen vs `.xcodeproj` checked in), editor choice, snapshot-vs-replay reattach.
+  (xcodegen vs `.xcodeproj` checked in), pinned Ghostty revision, snapshot-vs-replay
+  reattach, and document bridge contract.
 - Commit straight to `main` once a milestone is usable; this branch is for the
   skeleton and spikes.
 
+## Recorded decisions
+
+- Native SwiftUI/AppKit shell and native libghostty terminal.
+- Native SwiftUI Dashboard, including all cards, filters, status indicators, and actions.
+- Diff and code editing may remain web-based; initially reuse the existing diff and
+  Monaco editor in focused `WKWebView` hosts. Preserve editing and saving.
+- Prove terminal correctness in M1 before rewriting the remaining pages.
+- Preserve explicit tray Quit teardown; crashes/rebuilds retain shells.
+
 ## Open questions
 
-- Editor tab: is Monaco parity required, or is a read-only native source view enough?
-- iOS/remote client later? If yes, the host-side VT snapshot (M2 phase 2) becomes a
-  requirement, not an optimisation.
+- M0 decisions: macOS 14 minimum, checked-in Xcode workspace/project plus local Swift
+  package; direct distribution, initially ad-hoc signed for development.
+- Exact Ghostty package revision and whether correct restoration requires a daemon VT
+  snapshot or protocol extension (M1).
+- iOS/remote client later? Keep it out of the initial Mac scope; assess its additional
+  transport and session requirements separately.
 - Does the tray need the full PR list, or does a native `MenuBarExtra` with a SwiftUI
   popover replace both the tray menu and the usage bitmap?

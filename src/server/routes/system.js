@@ -13,6 +13,15 @@ const sse = require('./sse');
 const { ROUTES } = require('../../shared/routes.mjs');
 
 function register(app) {
+  // Identifies the process for native clients without triggering a CLI or DB read.
+  // instanceId lets a launcher distinguish its child from another server on the port.
+  app.get(ROUTES.BACKEND_HEALTH, (req, res) => {
+    res.set('Cache-Control', 'no-store').json({
+      service: 'taskhub', protocol: 1, pid: process.pid,
+      instanceId: process.env.TASKHUB_INSTANCE_ID || null,
+    });
+  });
+
   // ── Links ───────────────────────────────────────────────────────────────────────
   app.get(ROUTES.LINKS, (req, res) => res.json(db.getLinks(req.query.project)));
   app.post(ROUTES.LINKS, (req, res) => {

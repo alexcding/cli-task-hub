@@ -14,6 +14,7 @@
 //     builder for the client, e.g. ROUTES.SETTINGS_KEY ('/api/settings/:key') + ROUTES.settingsKey(key).
 
 export const ROUTES = Object.freeze({
+  BACKEND_HEALTH: '/api/backend/health',
   // ── Config / settings / tabs ────────────────────────────────────────────────
   CONFIG: '/api/config',
   SETTINGS: '/api/settings',

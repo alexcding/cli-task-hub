@@ -74,7 +74,7 @@ sse.register(app);
 // the packaged app (files live inside app.asar, which isn't watchable/editable), and only
 // armed when app.js is the entry point (standalone / dev / forked server) — NOT when this
 // module is merely require()d (e.g. by tests), so it never leaks unclosed FSWatcher handles.
-const isPackaged = __dirname.includes('app.asar');
+const isPackaged = process.env.TASKHUB_PACKAGED === '1' || __dirname.includes('app.asar');
 if (!isPackaged && require.main === module) {
   try {
     let t = null;

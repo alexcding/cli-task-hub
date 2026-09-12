@@ -10,6 +10,8 @@
     "node": ">=22.12"
   },
   "scripts": {
+    "gen:swift-routes": "node scripts/gen-swift-routes.mjs",
+    "check:swift-routes": "node scripts/gen-swift-routes.mjs --check",
     "start": "node src/server/app.js",
     "test": "node --test --test-force-exit 'test/**/*.test.js'",
     "dev": "./dev.sh",

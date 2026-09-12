@@ -40,6 +40,15 @@ before(async () => {
 
 after(() => server && server.close());
 
+test('backend health identifies TaskHub without a CLI read', async () => {
+  const { status, body } = await get('/api/backend/health');
+  assert.equal(status, 200);
+  assert.equal(body.service, 'taskhub');
+  assert.equal(body.protocol, 1);
+  assert.equal(body.pid, process.pid);
+  assert.equal(body.instanceId, process.env.TASKHUB_INSTANCE_ID || null);
+});
+
 test('config round-trips through /api/config', async () => {
   const set = await send('POST', '/api/config', { poll_interval: '90' });
   assert.equal(set.status, 200);

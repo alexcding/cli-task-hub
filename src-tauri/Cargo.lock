@@ -4052,6 +4052,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sysinfo",
+ "taskhub-ptyd",
  "tauri",
  "tauri-build",
  "tauri-plugin-autostart",
@@ -4064,6 +4065,17 @@ dependencies = [
  "tauri-plugin-updater",
  "tokio",
  "window-vibrancy",
+]
+
+[[package]]
+name = "taskhub-ptyd"
+version = "1.0.0"
+dependencies = [
+ "chrono",
+ "libc",
+ "portable-pty",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

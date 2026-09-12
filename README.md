@@ -62,6 +62,10 @@ npm run dev
 
 ## Desktop App
 
+The native SwiftUI Mac port is in progress under [`macos/`](macos/README.md).
+Its current foundation builds separately; the terminal correctness milestone comes
+next. See [the migration plan](docs/SWIFTUI-PORT.md) for scope and status.
+
 The desktop shell is a [Tauri](https://tauri.app) (Rust) app. Run it in development:
 
 ```bash
