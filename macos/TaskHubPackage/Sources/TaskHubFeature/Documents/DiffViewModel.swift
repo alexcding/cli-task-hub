@@ -6,6 +6,7 @@ struct DiffSnapshot: Codable, Equatable, Sendable {
     let diff: String
     let untracked: [String]
     let branch: String?
+    var fileLinks = true
     var revision: String? = nil
     var ahead: Int? = nil
     var behind: Int? = nil
@@ -53,12 +54,14 @@ struct APIDiffService: DiffService {
     @ObservationIgnored private var active = false
     @ObservationIgnored private var appearance = AppAppearance.system
 
+    @ObservationIgnored private let allowsFileOpening: Bool
     @ObservationIgnored private let openFile: (DocumentLocation) -> Void
 
     init(worktree: String, baseURL: URL, service: (any DiffService)? = nil,
          actionsService: (any GitChangesService)? = nil,
+         allowsFileOpening: Bool = true,
          openFile: @escaping (DocumentLocation) -> Void = { _ in }) {
-        self.openFile = openFile
+        self.openFile = openFile; self.allowsFileOpening = allowsFileOpening
         self.worktree = worktree; self.baseURL = baseURL; self.service = service
         super.init()
         if let actionsService {
@@ -169,7 +172,7 @@ struct APIDiffService: DiffService {
                 await actions.prepareDiscard(revision: request.revision, selection: request.selection)
             }
         } else if body["type"] as? String == "open", let path = body["path"] as? String,
-                  let line = body["line"] as? Int, active, loaded {
+                  let line = body["line"] as? Int, active, loaded, allowsFileOpening {
             let generation = generation, root = worktree
             Task {
                 do {

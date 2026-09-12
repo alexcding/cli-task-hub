@@ -23,6 +23,7 @@ public final class AppStore {
     private(set) var projectModels: [String: ProjectPageViewModel] = [:]
     private(set) var changingSessions: Set<String> = []
     private(set) var buildModels: [String: BuildWorkspaceViewModel] = [:]
+    private(set) var historyModels: [String: GitHistoryViewModel] = [:]
     private(set) var diffModels: [String: DiffViewModel] = [:]
     @ObservationIgnored private var pendingPins: Set<String> = []
     @ObservationIgnored private var removalLocks: [UUID: Set<String>] = [:]
@@ -79,6 +80,16 @@ public final class AppStore {
     }
 
     func prepareChanges(for session: WorkspaceSession, context: WorkspaceContext) {
+        if context.reviewSection == .history, let api {
+            let base = dashboard.projects.flatMap(\.prs).first(where: { $0.url == session.url })?.baseRefName
+            if let history = historyModels[context.id] { if let base { history.updateBase(base) } }
+            else {
+                historyModels[context.id] = GitHistoryViewModel(worktree: session.worktree, baseURL: api.baseURL, base: base ?? "",
+                    service: APIGitHistoryService(api: api), copy: {
+                        NSPasteboard.general.clearContents(); NSPasteboard.general.setString($0, forType: .string)
+                    })
+            }
+        }
         if diffModels[context.id] == nil {
             guard let api else { context.error = "Connect to the backend to load changes."; return }
             diffModels[context.id] = DiffViewModel(worktree: session.worktree, baseURL: api.baseURL,
@@ -271,6 +282,7 @@ public final class AppStore {
                     let key = "task:\(record.id)"
                     buildModels.removeValue(forKey: key)?.disconnect()
                     diffModels.removeValue(forKey: key)?.disconnect()
+                    historyModels.removeValue(forKey: key)?.hide()
                     terminals.removeValue(forKey: "build:\(record.url)")?.disconnect()
                     terminals.removeValue(forKey: key)?.disconnect()
                     await viewer.remove(id: key)
@@ -443,6 +455,7 @@ public final class AppStore {
                 model.tickets?.connect(APIJiraService(api: api))
             } }
             if let api { logs.connect(APILogService(api: api)) }
+            if let api { for model in historyModels.values { model.connect(baseURL: api.baseURL, service: APIGitHistoryService(api: api)) } }
             if let api { for model in diffModels.values { model.connect(baseURL: api.baseURL, service: APIDiffService(api: api)); model.actions?.connect(APIGitChangesService(api: api)) } }
             if let api {
                 settings.connect(APISettingsService(api: api))
@@ -576,6 +589,8 @@ public final class AppStore {
         buildModels.removeAll()
         for model in diffModels.values { model.disconnect() }
         diffModels.removeAll()
+        for model in historyModels.values { model.hide() }
+        historyModels.removeAll()
         await owner?.stop()
         api = nil
     }

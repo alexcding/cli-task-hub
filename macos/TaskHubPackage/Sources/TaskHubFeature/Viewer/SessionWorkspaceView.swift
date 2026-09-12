@@ -167,8 +167,17 @@ struct SessionWorkspaceView: View {
                 }
             } right: {
                 ZStack {
-                    if showsChanges, let model = store.diffModels[context.id] {
-                        DiffView(model: model, appearance: store.shell.appearance, active: active)
+                    if showsChanges {
+                        VStack(spacing: 0) {
+                            Picker("Review section", selection: Binding(get: { context.reviewSection }, set: context.setReviewSection)) {
+                                ForEach(ReviewSection.allCases) { Text($0.rawValue).tag($0) }
+                            }.pickerStyle(.segmented).labelsHidden().padding(8)
+                            if context.reviewSection == .history, let model = store.historyModels[context.id] {
+                                GitHistoryView(model: model, appearance: store.shell.appearance, active: active)
+                            } else if context.reviewSection == .changes, let model = store.diffModels[context.id] {
+                                DiffView(model: model, appearance: store.shell.appearance, active: active)
+                            }
+                        }
                     } else if let document = context.activeDocument {
                         EditorDocumentView(model: document, appearance: store.shell.appearance, active: active && showsPage && !context.restoring).id(document.id)
                     } else if let page = context.activePage { BrowserPane(page: page, context: context).id(page.id) }
@@ -185,6 +194,8 @@ struct SessionWorkspaceView: View {
             }.frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .onAppear { prepareChanges() }
+        .onChange(of: context.reviewSection) { _, _ in prepareChanges() }
+        .onChange(of: store.dashboard.projects) { _, _ in prepareChanges() }
         .onChange(of: context.pane) { _, _ in prepareChanges() }
         .onChange(of: store.connection) { _, _ in prepareChanges() }
         .onChange(of: active) { _, _ in prepareChanges() }

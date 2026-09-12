@@ -3,6 +3,11 @@ import Foundation
 import Observation
 import WebKit
 
+enum ReviewSection: String, Codable, CaseIterable, Identifiable {
+    case changes = "Changes", history = "History"
+    var id: String { rawValue }
+}
+
 enum WorkspacePane: String, Codable, CaseIterable { case off, term, diff, build }
 
 struct ContextSnapshot: Codable, Equatable, Sendable {
@@ -10,6 +15,7 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
     var activeID: String?
     var history: [WebPageRecord] = []
     var pane = "term"
+    var reviewSection: ReviewSection? = nil
     var documents: [FileDocumentRecord]? = nil
     var tabOrder: [String]? = nil
     var fileHistory: [FileDocumentRecord]? = nil
@@ -19,6 +25,7 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
 
     static func importing(_ tab: SavedTab) -> Self {
         var result = Self()
+        result.reviewSection = tab.reviewView == "history" ? .history : .changes
         result.documents = []; result.tabOrder = []; result.fileHistory = []; result.historyOrder = []
         result.pane = tab.paneView == "off" ? "off" : "term"
         if tab.pageClosed != true, safeWebURL(tab.url) != nil {
@@ -68,6 +75,7 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
     private(set) var activeID: String?
     private(set) var history: [WebPageRecord] = []
     private(set) var pane: WorkspacePane = .term
+    private(set) var reviewSection: ReviewSection = .changes
     var restoring = false
     var findVisible = false
     var findText = ""
@@ -97,6 +105,7 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
             historyOrder = Self.order(snapshot.historyOrder, ids: history.map(\.id) + fileHistory.map(\.id))
             activeID = tabOrder.contains(snapshot.activeID ?? "") ? snapshot.activeID : tabOrder.first
             pane = WorkspacePane(rawValue: snapshot.pane) ?? .term
+            reviewSection = snapshot.reviewSection ?? .changes
             if pane == .build { pane = .term }
         } else if safeWebURL(sourceURL) != nil {
             let page = BrowserPage(.init(url: sourceURL, title: title))
@@ -123,9 +132,10 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
     var activePage: BrowserPage? { pages.first { $0.id == activeID } }
     var snapshot: ContextSnapshot {
         .init(pages: pages.map(\.record), activeID: activeID, history: history, pane: pane == .build ? "term" : pane.rawValue,
-              documents: documents.map(\.record), tabOrder: tabOrder, fileHistory: fileHistory, historyOrder: historyOrder,
+              reviewSection: reviewSection, documents: documents.map(\.record), tabOrder: tabOrder, fileHistory: fileHistory, historyOrder: historyOrder,
               legacyDocuments: legacyDocuments, legacyFileHistory: legacyFileHistory)
     }
+    func setReviewSection(_ value: ReviewSection) { reviewSection = value; changed() }
     func setPane(_ value: WorkspacePane) { pane = value; changed() }
     func select(_ page: BrowserPage) { activeID = page.id; pane = .term; activatePage(page); changed() }
     func select(_ tab: WorkspaceTab) {
@@ -193,6 +203,7 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
         pages.forEach { $0.evict() }; documents.forEach { $0.dispose() }
         let restored = WorkspaceContext(id: id, sourceURL: sourceURL, title: "", snapshot: snapshot)
         pages = restored.pages; activeID = restored.activeID; history = restored.history; pane = restored.pane
+        reviewSection = restored.reviewSection
         documents = restored.documents; tabOrder = restored.tabOrder; fileHistory = restored.fileHistory; historyOrder = restored.historyOrder
         documents.forEach(wire)
         legacyDocuments = restored.legacyDocuments; legacyFileHistory = restored.legacyFileHistory

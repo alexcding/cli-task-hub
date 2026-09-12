@@ -3,6 +3,50 @@ import XCTest
 final class TaskHubUITests: XCTestCase {
 
     @MainActor
+    func testNativeHistoryLoadsOlderCommitsAndKeepsPatchesReadOnly() throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard let base = environment["TASKHUB_UI_BACKEND_URL"],
+              let path = environment["TASKHUB_UI_DATA_DIR"], let socket = environment["TASKHUB_UI_PTY_SOCKET"] else {
+            throw XCTSkip("Run macos/scripts/test-browser-ui.sh to provide the isolated fixture.")
+        }
+        let app = XCUIApplication()
+        app.launchArguments = ["--backend-url", base, "--data-dir", path, "--pty-socket", socket]
+        app.launch()
+        let row = app.outlines["workspace-sidebar"].staticTexts["sidebar-2"].firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 10)); row.click()
+        app.buttons["Show Changes"].click()
+        app.radioButtons["History"].click()
+        XCTAssertTrue(app.staticTexts["Fixture history unavailable"].waitForExistence(timeout: 10))
+        app.buttons["Refresh History"].click()
+        XCTAssertTrue(app.staticTexts["Commits ahead of release/next"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["Fixture commit unavailable"].waitForExistence(timeout: 5))
+        app.buttons["Retry Commit"].click()
+        XCTAssertTrue(app.webViews.staticTexts["History.swift"].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.webViews.buttons["Discard"].exists)
+        XCTAssertFalse(app.webViews.buttons["Open History.swift"].exists)
+        let search = app.textFields["Search loaded commits"]
+        search.click(); search.typeText("Oldest fixture commit")
+        XCTAssertTrue(app.staticTexts["No loaded commits match this search."].waitForExistence(timeout: 5))
+        app.buttons["Load Older Commits"].click()
+        let oldest = app.staticTexts["Oldest fixture commit"].firstMatch
+        XCTAssertTrue(oldest.waitForExistence(timeout: 5)); oldest.click()
+        XCTAssertTrue(app.buttons["Copy Commit SHA"].waitForExistence(timeout: 5))
+        app.radioButtons["Changes"].click()
+        app.radioButtons["History"].click()
+        XCTAssertTrue(app.textFields["Search loaded commits"].exists)
+        XCTAssertTrue(app.staticTexts["Oldest fixture commit"].firstMatch.waitForExistence(timeout: 5))
+        search.click(); app.typeKey("a", modifierFlags: .command); app.typeKey(.delete, modifierFlags: [])
+        XCTAssertTrue(app.webViews.staticTexts["History.swift"].waitForExistence(timeout: 10))
+        let screenshot = app.screenshot()
+        let screenshotURL = FileManager.default.temporaryDirectory.appendingPathComponent("taskhub-history.png")
+        try screenshot.pngRepresentation.write(to: screenshotURL)
+        print("History screenshot: " + screenshotURL.path)
+        let attachment = XCTAttachment(screenshot: screenshot)
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
+    @MainActor
     func testNativeDiscardCancelFailureAndRecovery() throws {
         let environment = ProcessInfo.processInfo.environment
         guard let base = environment["TASKHUB_UI_BACKEND_URL"],

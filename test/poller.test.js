@@ -68,7 +68,7 @@ test('syncProject coalesces concurrent syncs of one project, then runs fresh aft
 test('an open PR older than the whole merged window still lands in the snapshot', async (t) => {
   const db = require('../src/server/database/db');
   const oldOpen = { number: 525, title: 'UX Request: secondary button style', url: 'u/525',
-    state: 'OPEN', headRefName: 'cding/fix/social', author: { login: 'alexcding' }, category: 'mine' };
+    state: 'OPEN', headRefName: 'cding/fix/social', baseRefName: 'release/next', author: { login: 'alexcding' }, category: 'mine' };
   // 30 newer merged PRs — under the old single-window fetch these consumed the whole limit.
   const merged = Array.from({ length: 30 }, (_, i) => ({
     number: 609 - i, title: `merged ${609 - i}`, url: `u/${609 - i}`, state: 'MERGED' }));
@@ -88,6 +88,7 @@ test('an open PR older than the whole merged window still lands in the snapshot'
   assert.deepStrictEqual(prs.map(p => p.number), [525],
     'the snapshot holds the open PR and only the open PR (merged ones never render)');
   assert.strictEqual(prs[0].repo, 'octo/window-repo', 'lean() stamps the repo onto the snapshot row');
+  assert.strictEqual(prs[0].baseRefName, 'release/next', 'history keeps the actual PR target through lean()');
 });
 
 // Guards the merge automation against a body it could not actually read. prJiraKeys falls back

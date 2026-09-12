@@ -2,6 +2,7 @@ const { execFile } = require('child_process');
 const { promisify } = require('util');
 const fsp = require('fs/promises');
 const path = require('path');
+const { createHash } = require('node:crypto');
 const execFileAsync = promisify(execFile);
 const { PR_CATEGORY } = require('../../shared/constants.mjs');
 const { prJiraKeys } = require('../../shared/jira-keys.mjs'); // Jira-key scraping policy (pure, shared)
@@ -609,21 +610,28 @@ async function gitLog(dir, { limit = 100, skip = 0, ref = '', aheadOnly = false,
     const args = ['log', '--no-color', `--max-count=${maxCount}`];
     if (skp > 0) args.push(`--skip=${skp}`);
     args.push(`--pretty=format:${LOG_FMT}`);
-    // Trailing `--` disambiguates the ref as a revision, not a pathspec (`git log main` alone
-    // is "ambiguous" when a file named main could exist).
-    if (revision) args.push(revision, '--');
+    // Resolve moving refs once, then log immutable object IDs. Pagination compares
+    // this identity so a rebase or a moving base cannot silently skip old commits.
+    const resolved = (await gitRun(dir, ['rev-parse', '--revs-only', '--end-of-options', revision || 'HEAD'])).stdout.trim().split(/\s+/);
+    if (!resolved[0]) {
+      try { await gitRun(dir, ['rev-parse', '--verify', 'HEAD']); }
+      catch { return { commits: [], ...meta, viewing: viewing || meta.branch, defaultBranch, base: baseUsed, historyRevision: null }; }
+    }
+    if (!resolved.length || !resolved.every(value => /^\^?[a-f0-9]{40,64}$/.test(value))) throw new Error('Could not resolve commit history');
+    const historyRevision = createHash('sha256').update(resolved.join('\n')).digest('hex');
+    args.push(...resolved, '--');
     const [{ stdout }, remotes] = await Promise.all([gitRun(dir, args), gitRemotes(dir)]);
     const commits = stdout.split('\x1e').map(rec => rec.replace(/^\n/, '')).filter(Boolean).map(rec => {
-      const [sha, short, parents, author, email, date, refs, subject] = rec.split('\x1f');
+      const [sha, short, parents, author, email, date, refs, ...subjectParts] = rec.split('\x1f');
       return {
         sha, short,
         parents: parents ? parents.split(' ').filter(Boolean) : [],
-        author, email, date, subject,
+        author, email, date, subject: subjectParts.join('\x1f'),
         refs: parseRefs(refs, remotes),
       };
     });
     // `branch` is the checked-out HEAD; `viewing` is the branch this log actually shows.
-    return { commits, ...meta, viewing: viewing || meta.branch, defaultBranch, base: baseUsed };
+    return { commits, ...meta, viewing: viewing || meta.branch, defaultBranch, base: baseUsed, historyRevision };
   } catch (err) {
     // Unborn HEAD (no commits yet) is not an error for this view — show an empty history.
     if (/does not have any commits|unknown revision|bad default revision/i.test(String(err.stderr || ''))) {
@@ -671,20 +679,20 @@ function parseRefs(d, remotes = []) {
 // for a merge), while leaving non-merge commits unchanged. Never throws.
 async function gitShow(dir, sha) {
   if (!dir || !sha) return { error: 'path and sha required' };
-  if (!/^[0-9a-fA-F]{4,40}$/.test(sha)) return { error: 'invalid sha' };
+  if (!/^[0-9a-fA-F]{4,64}$/.test(sha)) return { error: 'invalid sha' };
   const SHOW_FMT = '%H%x1f%h%x1f%P%x1f%an%x1f%ae%x1f%aI%x1f%cn%x1f%ce%x1f%cI%x1f%B';
   try {
     const [info, patch] = await Promise.all([
       gitRun(dir, ['show', '-s', `--pretty=format:${SHOW_FMT}`, sha]),
       gitRun(dir, ['show', sha, '-m', '--first-parent', '--no-color', '--no-ext-diff', '--format=']),
     ]);
-    const [full, short, parents, an, ae, ad, cn, ce, cd, body] = info.stdout.split('\x1f');
+    const [full, short, parents, an, ae, ad, cn, ce, cd, ...bodyParts] = info.stdout.split('\x1f');
     return {
       meta: {
         sha: full, short, parents: parents ? parents.split(' ').filter(Boolean) : [],
         author: an, authorEmail: ae, authorDate: ad,
         committer: cn, committerEmail: ce, commitDate: cd,
-        message: (body || '').trim(),
+        message: bodyParts.join('\x1f').trim(),
       },
       diff: patch.stdout.replace(/^\n+/, ''),
     };

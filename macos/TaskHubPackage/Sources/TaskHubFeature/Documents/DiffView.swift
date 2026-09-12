@@ -4,11 +4,12 @@ struct DiffView: View {
     @Bindable var model: DiffViewModel
     let appearance: AppAppearance
     let active: Bool
+    var title = "Changes"
 
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                Label("Changes", systemImage: "arrow.triangle.branch").font(.headline).lineLimit(1)
+                Label(title, systemImage: "arrow.triangle.branch").font(.headline).lineLimit(1)
                 if let branch = model.snapshot?.branch { Text(branch).foregroundStyle(.secondary).lineLimit(1) }
                 Spacer()
                 if model.actions != nil {

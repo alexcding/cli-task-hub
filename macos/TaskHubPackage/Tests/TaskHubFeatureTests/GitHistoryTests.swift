@@ -1,0 +1,121 @@
+import AppKit
+import SwiftUI
+import Foundation
+import Testing
+@testable import TaskHubFeature
+
+private func historyCommit(_ digit: String) -> GitCommit {
+    .init(sha: String(repeating: digit, count: 40), short: String(repeating: digit, count: 7), parents: [],
+          author: "History Author", email: "history@example.invalid", date: "2026-01-01T00:00:00Z", subject: "Commit \(digit)", refs: [])
+}
+private actor HistoryFixture: GitHistoryService {
+    var failList = false, failDetail = false
+    var revision = "original"
+    var calls: [(GitHistoryQuery, Int)] = []
+    func failList(_ value: Bool) { failList = value }
+    func failDetail(_ value: Bool) { failDetail = value }
+    func changeRevision() { revision = "changed" }
+    func log(worktree: String, query: GitHistoryQuery, skip: Int, limit: Int) async throws -> GitHistoryPage {
+        calls.append((query, skip))
+        try? await Task.sleep(for: .milliseconds(query.aheadOnly ? 50 : 10))
+        if failList { throw BackendError.operation("History unavailable") }
+        let commits = (query.aheadOnly ? ["a", "b", "c"] : ["d", "e"]).map(historyCommit)
+        return .init(commits: Array(commits.dropFirst(skip).prefix(limit)), branch: "feature", viewing: "feature",
+                     base: query.aheadOnly ? query.base : nil, historyRevision: revision)
+    }
+    func detail(worktree: String, sha: String) async throws -> GitCommitDetail {
+        try? await Task.sleep(for: .milliseconds(sha.hasPrefix("a") ? 80 : 10))
+        if failDetail { throw BackendError.operation("Commit unavailable") }
+        return .init(meta: .init(sha: sha, short: String(sha.prefix(7)), parents: [], author: "Author", authorEmail: "a@b",
+                                authorDate: "", committer: "Committer", committerEmail: "c@d", commitDate: "", message: "Detail \(sha.first!)"),
+                     diff: "immutable patch")
+    }
+}
+@MainActor @Test func nativeHistoryPaginatesPreservesSelectionAndRejectsChangedHistory() async {
+    let service = HistoryFixture()
+    let model = GitHistoryViewModel(worktree: "/fixture", baseURL: URL(string: "http://127.0.0.1:3000")!, base: "release/next", service: service, pageSize: 2)
+    model.show(); await model.waitForList()
+    #expect(model.commits.map(\.subject) == ["Commit a", "Commit b"] && model.hasMore)
+    #expect(await service.calls.first?.0.base == "release/next")
+    model.select(historyCommit("b").sha); await model.waitForDetail()
+    #expect(model.detail?.meta.message == "Detail b")
+    model.loadMore(); model.loadMore(); await model.waitForList()
+    #expect(model.commits.count == 3 && !model.hasMore)
+    #expect(model.selectedSHA == historyCommit("b").sha)
+    #expect(await service.calls.map(\.1) == [0, 2])
+    model.select(historyCommit("c").sha); model.setSearch("Commit c")
+    model.hide(); model.show(); await model.waitForList(); await model.waitForDetail()
+    #expect(model.commits.count == 3 && model.selectedSHA == historyCommit("c").sha && model.rows.count == 1)
+    model.setSearch("")
+    model.refresh(); await model.waitForList()
+    await service.changeRevision()
+    model.loadMore(); await model.waitForList()
+    #expect(model.commits.count == 2 && model.error?.contains("History changed") == true)
+    #expect(!model.hasMore)
+    model.hide()
+}
+@MainActor @Test func historyRejectsLateScopeAndDetailRepliesAndRecoversFromFailures() async {
+    let service = HistoryFixture()
+    let model = GitHistoryViewModel(worktree: "/fixture", baseURL: URL(string: "http://127.0.0.1:3000")!, service: service, pageSize: 2)
+    model.show(); await model.waitForList()
+    model.select(historyCommit("a").sha)
+    model.select(historyCommit("b").sha)
+    await model.waitForDetail()
+    try? await Task.sleep(for: .milliseconds(100))
+    #expect(model.detail?.meta.sha == historyCommit("b").sha && model.patch?.actions == nil)
+    let patch = try? await HistoricalPatchService(diff: "patch").load(worktree: "/fixture")
+    #expect(patch?.fileLinks == false && patch?.revision == nil)
+    await service.failList(true)
+    model.refresh(); await model.waitForList()
+    #expect(model.commits.count == 2 && model.error == "History unavailable")
+    await service.failList(false)
+    model.refresh(); model.setScope(.currentBranch); await model.waitForList()
+    try? await Task.sleep(for: .milliseconds(70))
+    #expect(model.commits.map(\.subject) == ["Commit d", "Commit e"])
+    await service.failDetail(true)
+    model.select(historyCommit("e").sha); await model.waitForDetail()
+    #expect(model.detailError == "Commit unavailable")
+    await service.failDetail(false)
+    model.retryDetail(); await model.waitForDetail()
+    #expect(model.detail?.meta.message == "Detail e")
+    model.select(historyCommit("d").sha); model.hide()
+    try? await Task.sleep(for: .milliseconds(50))
+    #expect(model.detail == nil && model.patch == nil && !model.loadingDetail)
+}
+@MainActor @Test func reviewHistoryChoiceRestoresIndependentlyPerContext() throws {
+    let tab = SavedTab(kind: "web", title: "Review", url: "https://example.com", reviewView: "history")
+    let context = WorkspaceContext(id: "review", sourceURL: tab.url, title: "", snapshot: ContextSnapshot.importing(tab))
+    #expect(context.reviewSection == .history)
+    context.setPane(.diff)
+    let encoded = try JSONEncoder().encode(context.snapshot)
+    let restored = WorkspaceContext(id: "review", sourceURL: tab.url, title: "", snapshot: try JSONDecoder().decode(ContextSnapshot.self, from: encoded))
+    #expect(restored.reviewSection == .history && restored.pane == .diff)
+    let other = WorkspaceContext(id: "other", sourceURL: "", title: "")
+    #expect(other.reviewSection == .changes)
+}
+
+
+@MainActor @Test func workspaceSplitOpensBalancedAndRestoresUserDividerWidth() async throws {
+    _ = NSApplication.shared
+    let controller = WorkspaceSplit<Text, Text, Text>.Controller(left: Text("Shell"), right: Text("History"), build: Text("Build"))
+    let window = NSWindow(contentRect: .init(x: 0, y: 0, width: 800, height: 600), styleMask: [.borderless], backing: .buffered, defer: false)
+    window.isReleasedWhenClosed = false
+    window.contentViewController = controller
+    window.setContentSize(.init(width: 800, height: 600))
+    defer { window.contentViewController = nil; window.close() }
+    controller.show(left: true, right: false, build: false)
+    controller.view.layoutSubtreeIfNeeded()
+    controller.show(left: true, right: true, build: false)
+    controller.view.layoutSubtreeIfNeeded()
+    try await Task.sleep(for: .milliseconds(30))
+    #expect(abs(controller.leftHost.view.frame.width - controller.rightHost.view.frame.width) < 5)
+    controller.splitView.setPosition(500, ofDividerAt: 0)
+    controller.view.layoutSubtreeIfNeeded()
+    let width = controller.leftHost.view.frame.width
+    controller.show(left: true, right: false, build: false)
+    controller.view.layoutSubtreeIfNeeded()
+    controller.show(left: true, right: true, build: false)
+    controller.view.layoutSubtreeIfNeeded()
+    try await Task.sleep(for: .milliseconds(30))
+    #expect(abs(controller.leftHost.view.frame.width - width) < 5)
+}

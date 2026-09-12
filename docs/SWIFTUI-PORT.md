@@ -555,6 +555,33 @@ does not).
 - Git history and wider document/terminal acceptance remain open, together with the
   remaining M1/M3/M4/M6 requirements and the final elevate-ios architecture pass.
 
+### M4/M5 native Git history — 2026-09-12
+
+- The native review pane now switches between Changes and History, restoring that
+  choice per workspace and importing the legacy history selection. History offers
+  branch changes against the PR base from the existing dashboard snapshot, or the
+  current branch's complete history. No request-time GitHub CLI call was added.
+- An injected history service and observable view model own pagination, filtering,
+  selection, loading, errors and cancellation. Returning to unchanged history keeps
+  loaded older pages and selection. Explicit refresh starts again at the first page.
+  Local Git resolves moving refs to immutable IDs; pagination rejects a changed
+  history identity instead of silently skipping commits after a rebase or new commit.
+- Native rows and metadata expose author, date, subject, refs, full message and Copy
+  Commit SHA. Only the selected immutable patch uses the focused web diff renderer;
+  historical patches expose neither working-file navigation nor discard controls.
+  Initials are used for authors; the cached avatar pipeline is still a follow-up.
+- The Cocoa workspace split opens with balanced panes and retains a user's divider
+  width when hiding/reopening its right pane. Compact history controls fit the pane.
+- Verification: 68 native tests pass, including older-page restoration, stale list
+  and detail replies, failure recovery, independent context restoration and split
+  geometry. Real-Git coverage includes unborn/root/merge commits, a non-default PR
+  base, stable pagination and changed-head detection. The isolated native UI flow
+  exercises list/detail retries, loading/searching older commits, switching review
+  sections and the absence of historical mutation controls.
+- The sprint board remains web based. Avatar parity, wider shortcut/focus acceptance,
+  remaining M1/M3/M4/M6 gates and the final elevate-ios coordinator/VM/DI pass remain
+  open; this increment does not complete the migration.
+
 ## Why now, and why native
 
 The Tauri shell works, but roughly half of `src-tauri/` exists to work around what a DOM

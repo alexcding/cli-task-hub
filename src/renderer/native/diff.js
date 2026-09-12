@@ -29,7 +29,7 @@ window.nativeDiff = {
     const key = JSON.stringify(snapshot);
     if (key === previous) return true;
     const files = parseDiff(snapshot.diff);
-    pane.innerHTML = files.length || !snapshot.untracked.length ? renderReadOnly(files, { fileLinks: true, discardable: Boolean(snapshot.revision) }) : '';
+    pane.innerHTML = files.length || !snapshot.untracked.length ? renderReadOnly(files, { fileLinks: snapshot.fileLinks !== false, discardable: Boolean(snapshot.revision) }) : '';
     if (snapshot.untracked.length) {
       const visible = snapshot.untracked.slice(0, 200);
       const remainder = snapshot.untracked.length - visible.length;

@@ -15,6 +15,9 @@ struct WorkspaceSplit<Left: View, Right: View, Build: View>: NSViewControllerRep
         let leftHost: NSHostingController<Left>
         let rightHost: NSHostingController<Right>
         let buildHost: NSHostingController<Build>
+        private var presentation: [Bool]?
+        private var leftFraction: CGFloat = 0.5
+        private var needsBalance = false
         init(left: Left, right: Right, build: Build) {
             leftHost = NSHostingController(rootView: left)
             rightHost = NSHostingController(rootView: right)
@@ -30,12 +33,29 @@ struct WorkspaceSplit<Left: View, Right: View, Build: View>: NSViewControllerRep
             for host in [leftHost as NSViewController, rightHost, buildHost] {
                 let item = NSSplitViewItem(viewController: host)
                 item.canCollapse = true
+                item.collapseBehavior = .preferResizingSiblingsWithFixedSplitView
                 item.minimumThickness = 180
                 addSplitViewItem(item)
             }
         }
+        override func viewDidLayout() {
+            super.viewDidLayout()
+            guard needsBalance, splitView.bounds.width > 361 else { return }
+            needsBalance = false
+            let width = splitView.bounds.width - splitView.dividerThickness
+            // Honor both pane minima so setPosition cannot collapse a pane.
+            splitView.setPosition(min(max(width * leftFraction, 180), width - 180), ofDividerAt: 0)
+        }
         func show(left: Bool, right: Bool, build: Bool) {
             _ = view
+            let next = [left, right, build]
+            guard next != presentation else { return }
+            if let previous = presentation, previous[0], previous[1] || previous[2],
+               splitView.bounds.width > 361 {
+                leftFraction = leftHost.view.frame.width / (splitView.bounds.width - splitView.dividerThickness)
+            }
+            presentation = next
+            needsBalance = left && (right || build)
             // Expand the destination first, so the split never has zero visible panes.
             if left, splitViewItems[0].isCollapsed { splitViewItems[0].isCollapsed = false }
             if right, splitViewItems[1].isCollapsed { splitViewItems[1].isCollapsed = false }
@@ -43,6 +63,7 @@ struct WorkspaceSplit<Left: View, Right: View, Build: View>: NSViewControllerRep
             if !left, !splitViewItems[0].isCollapsed { splitViewItems[0].isCollapsed = true }
             if !right, !splitViewItems[1].isCollapsed { splitViewItems[1].isCollapsed = true }
             if !build, !splitViewItems[2].isCollapsed { splitViewItems[2].isCollapsed = true }
+            view.needsLayout = true
         }
     }
     func makeNSViewController(context: Context) -> Controller {

@@ -13,6 +13,7 @@ struct DashboardPR: Decodable, Equatable, Sendable {
     let isDraft: Bool?
     let reviewDecision: String?
     let headRefName: String?
+    var baseRefName: String? = nil
     let author: Author?
     let createdAt: String?
     let labels: [Tag]?

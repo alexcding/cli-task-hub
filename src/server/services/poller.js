@@ -74,6 +74,7 @@ function lean(pr, repo) {
     state: pr.state,
     repo,
     headRefName: pr.headRefName,
+    baseRefName: pr.baseRefName,
     author: pr.author ? { login: pr.author.login, name: pr.author.name } : null,
     createdAt: pr.createdAt,
     isDraft: pr.isDraft,

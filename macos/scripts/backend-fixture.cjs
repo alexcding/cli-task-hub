@@ -126,6 +126,30 @@ if (process.env.TASKHUB_DIFF_FIXTURE === '1') {
       diff: 'diff --git a/Sources/Fixture.swift b/Sources/Fixture.swift\n--- a/Sources/Fixture.swift\n+++ b/Sources/Fixture.swift\n@@ -1 +1 @@\n-let message = "Before"\n+let message = "Native diff ready"\n' };
   };
 }
+if (process.env.TASKHUB_HISTORY_FIXTURE === '1') {
+  const github = require('../../src/server/repositories/github');
+  const commits = Array.from({ length: 205 }, (_, i) => ({
+    sha: (205 - i).toString(16).padStart(40, '0'), short: (205 - i).toString(16).padStart(7, '0'),
+    parents: [], author: 'History Author', email: 'history@example.invalid', date: '2026-01-01T00:00:00Z',
+    subject: i === 204 ? 'Oldest fixture commit' : 'History commit ' + (205 - i),
+    refs: i === 0 ? [{ type: 'head', name: 'fixture-history' }] : [],
+  }));
+  let reads = 0, details = 0;
+  github.gitLog = async (_dir, { limit = 200, skip = 0, aheadOnly = false } = {}) => {
+    if (++reads === 1) return { error: 'Fixture history unavailable' };
+    return { commits: commits.slice(skip, skip + limit), branch: 'fixture-history', viewing: 'fixture-history',
+      base: aheadOnly ? 'release/next' : null, historyRevision: 'fixture-history-revision' };
+  };
+  github.gitShow = async (_dir, sha) => {
+    if (++details === 1) return { error: 'Fixture commit unavailable' };
+    const commit = commits.find(value => value.sha === sha);
+    if (!commit) return { error: 'Fixture commit missing' };
+    return { meta: { sha, short: commit.short, parents: [], author: commit.author, authorEmail: commit.email,
+      authorDate: commit.date, committer: commit.author, committerEmail: commit.email, commitDate: commit.date,
+      message: commit.subject + '\n\nHistory detail body' },
+      diff: 'diff --git a/History.swift b/History.swift\n--- a/History.swift\n+++ b/History.swift\n@@ -1 +1 @@\n-let history = false\n+let history = true\n' };
+  };
+}
 if (process.env.TASKHUB_TRAY_FIXTURE === '1') {
   const configdb = require('../../src/server/database/configdb');
   const project = db.getProjects()[0];

@@ -45,6 +45,7 @@ struct SavedTab: Codable, Identifiable, Equatable, Sendable {
     var category: String? = nil
     var cur: String? = nil
     var paneView: String? = nil
+    var reviewView: String? = nil
     var pageClosed: Bool? = nil
     var links: [SavedTabContent]? = nil
     var history: [SavedTabContent]? = nil
