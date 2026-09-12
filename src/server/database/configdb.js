@@ -321,6 +321,23 @@ function setTabs(tabs = [], active = null) {
   } catch (err) { db.exec('ROLLBACK'); throw err; }
 }
 
+// Native navigation opens one tab without replacing a stale client-side tab set.
+// Existing document state and ordering are preserved, including unknown fields.
+function openTab(tab) {
+  db.exec('BEGIN');
+  try {
+    const existing = db.prepare('SELECT url FROM tabs WHERE url = ?').get(tab.url);
+    if (!existing) {
+      const position = db.prepare('SELECT COALESCE(MAX(position), -1) + 1 AS next FROM tabs').get().next;
+      _insertTab.run(tab.url, tab.kind, tab.title || tab.url, '', tab.repo || '', tab.branch || '',
+        'term', 0, 0, 0, tab.category || '', tab.login || '', '', '[]', '[]', position, 0);
+    }
+    db.prepare('UPDATE tabs SET active = CASE WHEN url = ? THEN 1 ELSE 0 END').run(tab.url);
+    db.exec('COMMIT');
+  } catch (err) { db.exec('ROLLBACK'); throw err; }
+  return getTabs();
+}
+
 // ── Tasks (see the table comment; renderer: services/tasks.js) ─────────────────────────────
 function getTasks() {
   return db.prepare('SELECT * FROM tasks ORDER BY created_at ASC').all().map(r => ({
@@ -386,7 +403,7 @@ module.exports = {
   getProjects, getProject, addProject, updateProject, deleteProject, projectForRepo, getForwardedRepos,
   getLinks, getLinksByPR, addLink, removeLink,
   addEvent, getEvents,
-  getTabs, setTabs,
+  getTabs, setTabs, openTab,
   getTasks, upsertTask, removeTask, setTaskPinned, patchTask,
   getReviewState, setReviewRequestedAt, setReviewViewed, pruneReviewStateForRepo,
   getSetting, setSetting, getAllSettings,

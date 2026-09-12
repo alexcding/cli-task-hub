@@ -23,8 +23,8 @@ as `5cf368a`; native menus/notifications are committed as `9d34f2b`.
 Session workspace and terminal acceptance work continue in `macos/`
 (see `macos/README.md` for commands).
 The checked-in Xcode workspace uses a local Swift package, Swift 6, macOS 14 minimum,
-and direct distribution without App Sandbox. The current screen is the native
-connection/project-list foundation; it is not the completed Dashboard.
+and direct distribution without App Sandbox. Overview now renders the native
+Dashboard; the remaining app pages and action parity are tracked under M4.
 
 - Implemented: generated Swift routes with drift check, typed project API, backend
   identity/readiness endpoint, external/owned backend modes, bounded SSE parsing,
@@ -238,6 +238,27 @@ connection/project-list foundation; it is not the completed Dashboard.
   PR creation, Jira worktree reuse, legacy tab import, and the native creation sheet.
 - Still open: terminal link routing, legacy file-tab presentation, full login/popup acceptance,
   and the complete end-to-end session acceptance gate. M1/M2 acceptance gaps remain.
+
+### M4 native app pages — in progress
+
+- Native Dashboard replaces the foundation placeholder with PR rows, CI/review
+  states, label/ticket metadata, search, project filtering, and Mine/Review/Failing
+  CI/Drafts filters. Review grouping uses `awaitingMyReview` with legacy fallback;
+  tray notification semantics remain unchanged. An injected service and view model
+  own loading, filtering, actions, errors, and retained stale snapshots.
+- Snapshot reads refresh through SSE with coalesced requests. Usage loads independently
+  and uses a shared native panel with one-minute visible-page refresh. Failed reads
+  retain prior results and expose retry. No new CLI call is added to a read handler.
+- Opening a PR selects its session or persists a page-only tab. A new scoped
+  `POST /api/tabs` transaction preserves all existing tab/document metadata and ordering
+  instead of replacing the tab set from a partial native model. Existing tabs are
+  activated without overwriting their saved editor state. Browser/copy actions are native.
+- Verification: 33 package tests and 29 backend API tests pass, including review orbit,
+  queued CI, filters, failure recovery, and preserving file tabs during page opening.
+  All five native UI tests pass, including dashboard search/open and the existing
+  browser/menu/offline/tray flows. Xcode still reports its internal runner QoS warning.
+- Still open: remaining project/Jira/board/settings/logs/automation/workflow/git actions,
+  dashboard Jira-link/session actions, and complete parity acceptance. M1–M3 gates remain.
 
 Companion docs: `ARCHITECTURE.md` (layers, HTTP-vs-IPC split), `TAURI-PORT.md`
 (the previous shell port — the same boundary makes this one tractable), `CLAUDE.md`

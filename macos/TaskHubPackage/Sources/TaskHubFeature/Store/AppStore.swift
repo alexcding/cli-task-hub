@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Observation
 
@@ -5,6 +6,7 @@ import Observation
 public final class AppStore {
     public let shell = ShellStore()
     let viewer: ViewerStore
+    private(set) var dashboard: DashboardViewModel!
     public private(set) var projects: [Project] = []
     public private(set) var connection = "Connecting"
     public private(set) var error: String?
@@ -28,6 +30,12 @@ public final class AppStore {
 
     public init() {
         viewer = ViewerStore(cacheURL: try? PtydConfiguration.current().directory.appendingPathComponent("page-tabs.json"))
+        dashboard = DashboardViewModel(openPage: { [weak self] request in
+            guard let self else { throw BackendError.operation("The workspace has closed.") }
+            try await self.openPage(request)
+        }, openBrowser: { NSWorkspace.shared.open($0) }, copy: {
+            NSPasteboard.general.clearContents(); NSPasteboard.general.setString($0, forType: .string)
+        })
         if let data = UserDefaults.standard.data(forKey: "sidebar.selection"),
            let saved = try? JSONDecoder().decode(SidebarDestination.self, from: data) { selection = saved }
     }
@@ -104,6 +112,20 @@ public final class AppStore {
     func selectTrayTab(_ tab: SavedTab) {
         if let session = sessions.first(where: { $0.url == tab.url }) { select(.session(session.id)) }
         else { select(.tab(tab.url)) }
+    }
+
+    func openPage(_ request: OpenPageRequest) async throws {
+        guard safeWebURL(request.url) != nil else { throw BackendError.operation("Invalid page address.") }
+        if let session = sessions.first(where: { $0.url == request.url }) {
+            select(.session(session.id))
+            viewer.active?.open(request.url, title: request.title)
+            return
+        }
+        guard let api else { throw BackendError.operation("Connect before opening a page.") }
+        let saved: SavedTabs = try await api.request(Routes.TABS, method: "POST", body: request)
+        tabs = saved.tabs
+        select(.tab(request.url))
+        viewer.active?.open(request.url, title: request.title)
     }
 
     public func trayWillOpen() {
@@ -280,7 +302,7 @@ public final class AppStore {
             owner = process
             api = try await process.start()
             guard started else { await process.stop(); return }
-            if let api { shell.connect(api); viewer.connect(api) }
+            if let api { shell.connect(api); viewer.connect(api); dashboard.connect(APIDashboardService(api: api)); shell.refreshUsage() }
             startStream(baseURL: config.baseURL)
         } catch {
             connection = "Disconnected"
@@ -291,6 +313,7 @@ public final class AppStore {
 
     public func refresh() {
         shell.refresh()
+        dashboard.refresh()
         refreshPending = true
         guard refreshTask == nil, let api else { return }
         refreshTask = Task { [weak self] in
@@ -384,6 +407,7 @@ public final class AppStore {
         streamTask = nil
         refreshTask = nil
         await shell.stop()
+        await dashboard.stop()
         await viewer.stop()
         for model in buildModels.values { model.disconnect() }
         buildModels.removeAll()

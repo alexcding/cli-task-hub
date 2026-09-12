@@ -3,6 +3,33 @@ import XCTest
 final class TaskHubUITests: XCTestCase {
 
     @MainActor
+    func testNativeDashboardFiltersAndOpensContextPage() throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard let base = environment["TASKHUB_UI_BACKEND_URL"],
+              let path = environment["TASKHUB_UI_DATA_DIR"], let socket = environment["TASKHUB_UI_PTY_SOCKET"] else {
+            throw XCTSkip("Run macos/scripts/test-browser-ui.sh to provide the isolated dashboard fixture.")
+        }
+        let app = XCUIApplication()
+        app.launchArguments = ["--backend-url", base, "--data-dir", path, "--pty-socket", socket]
+        app.launch()
+        XCTAssertTrue(app.outlines["workspace-sidebar"].waitForExistence(timeout: 10))
+        app.outlines["workspace-sidebar"].staticTexts["Overview"].click()
+        let search = app.textFields["dashboard-search"]
+        XCTAssertTrue(search.waitForExistence(timeout: 10))
+        search.click()
+        app.typeText("Previously reviewed")
+        let reviewed = app.buttons["dashboard-pr-2"]
+        XCTAssertTrue(reviewed.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertFalse(app.buttons["dashboard-pr-1"].exists)
+        XCTAssertFalse(app.buttons["dashboard-pr-3"].exists)
+        reviewed.click()
+        XCTAssertTrue(app.webViews.staticTexts["Native browser fixture"].waitForExistence(timeout: 10))
+        app.typeKey("1", modifierFlags: .command)
+        XCTAssertTrue(search.waitForExistence(timeout: 5))
+        XCTAssertEqual(search.value as? String, "Previously reviewed")
+    }
+
+    @MainActor
     func testContextPageFindNavigationCloseAndNewSessionSheet() throws {
         let environment = ProcessInfo.processInfo.environment
         guard let base = environment["TASKHUB_UI_BACKEND_URL"],
@@ -67,7 +94,7 @@ final class TaskHubUITests: XCTestCase {
         // Use XCTAssert and related functions to verify your tests produce the correct results.
         XCTAssertTrue(app.outlines["workspace-sidebar"].waitForExistence(timeout: 5))
         app.outlines["workspace-sidebar"].staticTexts["Overview"].click()
-        XCTAssertTrue(app.staticTexts["Native foundation"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Pull requests"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["Reconnect"].waitForExistence(timeout: 15))
     }
 
@@ -95,13 +122,13 @@ final class TaskHubUITests: XCTestCase {
         XCTAssertTrue(app.outlines["workspace-sidebar"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.menuBars.menuBarItems["Edit"].waitForExistence(timeout: 5), app.debugDescription)
         app.typeKey("1", modifierFlags: .command)
-        XCTAssertTrue(app.staticTexts["Native foundation"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Pull requests"].waitForExistence(timeout: 5))
         app.typeKey("q", modifierFlags: .command)
         XCTAssertNotEqual(app.state, .notRunning)
         app.activate()
         app.menuBars.menuBarItems["Go"].click()
         app.menuItems["Overview"].click()
         XCTAssertTrue(app.outlines["workspace-sidebar"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["Native foundation"].exists)
+        XCTAssertTrue(app.staticTexts["Pull requests"].exists)
     }
 }

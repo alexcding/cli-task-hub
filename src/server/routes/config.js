@@ -47,6 +47,20 @@ function register(app) {
   // Rows, not a blob: see src/server/database/configdb.js. The renderer PUTs its full
   // ordered set on every change; reads it back on launch to rehydrate the sidebar.
   app.get(ROUTES.TABS, wrap((req, res) => res.json(configdb.getTabs())));
+  app.post(ROUTES.TABS, wrap((req, res) => {
+    const tab = req.body || {};
+    let url;
+    try { url = new URL(tab.url); } catch { /* invalid below */ }
+    const fields = new Set(['url', 'kind', 'title', 'repo', 'branch', 'category', 'login']);
+    if (!url || !['http:', 'https:'].includes(url.protocol) || url.username || url.password ||
+        !['github', 'jira', 'web'].includes(tab.kind) ||
+        Object.entries(tab).some(([key, value]) => !fields.has(key) || typeof value !== 'string')) {
+      return res.status(400).json({ error: 'A web URL, tab kind, and string metadata are required' });
+    }
+    const saved = configdb.openTab(tab);
+    sse.publishTabs();
+    res.json(saved);
+  }));
   app.put(ROUTES.TABS, wrap((req, res) => {
     configdb.setTabs(Array.isArray(req.body.tabs) ? req.body.tabs : [], req.body.active ?? null);
     sse.publishTabs(); // notify subscribers (renderer sidebar + tray menu) the tab set changed

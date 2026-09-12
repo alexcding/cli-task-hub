@@ -98,6 +98,14 @@ import Observation
         }
     }
 
+    // The view task supplies visibility/cancellation; scheduling stays in the model.
+    func watchUsage() async {
+        while !Task.isCancelled {
+            refreshUsage()
+            do { try await Task.sleep(for: .seconds(60)) } catch { return }
+        }
+    }
+
     func acknowledge(_ pr: TrayPR) {
         guard pr.pendingReview else { return }
         acknowledgeReview(repo: pr.repo, number: pr.number)

@@ -11,7 +11,7 @@ cleanup() {
   echo "Browser fixture diagnostics: $QA_DIR"
 }
 trap cleanup EXIT
-TASKHUB_DATA_DIR="$QA_DIR" TASKHUB_READY_FILE="$QA_DIR/ready" TASKHUB_SIDEBAR_FIXTURE=1 TASKHUB_BROWSER_FIXTURE=1 PORT=0 \
+TASKHUB_DATA_DIR="$QA_DIR" TASKHUB_READY_FILE="$QA_DIR/ready" TASKHUB_SIDEBAR_FIXTURE=1 TASKHUB_BROWSER_FIXTURE=1 TASKHUB_TRAY_FIXTURE=1 PORT=0 \
   node "$ROOT/macos/scripts/backend-fixture.cjs" >"$QA_DIR/backend.log" 2>&1 &
 BACKEND_PID=$!
 for _ in {1..100}; do
@@ -24,4 +24,4 @@ QA_SOCKET="${TMPDIR:-/tmp/}taskhub-bui-$$.sock"
 ARGS="$(node -e 'const fs=require("fs"); const dir=process.argv[1]; console.log(JSON.stringify({testRunnerEnv:{TASKHUB_UI_BACKEND_URL:fs.readFileSync(dir+"/ready","utf8"),TASKHUB_UI_DATA_DIR:dir,TASKHUB_UI_PTY_SOCKET:process.argv[2]}}))' "$QA_DIR" "$QA_SOCKET")"
 xcodebuildmcp macos test --workspace-path "$ROOT/macos/TaskHub.xcworkspace" --scheme TaskHub \
   --configuration Debug --derived-data-path "$ROOT/macos/.build/ui-tests" --json "$ARGS" \
-  --extra-args '-only-testing:TaskHubUITests/TaskHubUITests/testContextPageFindNavigationCloseAndNewSessionSheet'
+  --extra-args '-only-testing:TaskHubUITests'

@@ -64,6 +64,10 @@ const server = app.listen(Number(process.env.PORT || 0), '127.0.0.1', error => {
     const url = `${baseURL}/fixture/page`;
     configdb.patchTask('sidebar-1', { url });
     configdb.setTabs([{ kind: 'web', title: 'Browser fixture', url }, { kind: 'web', title: 'Next page', url: `${baseURL}/fixture/next` }]);
+    const project = db.getProjects()[0];
+    const snapshot = db.getSnapshot(project.id);
+    if (snapshot) db.setSnapshot(project.id, { ...snapshot,
+      prs: snapshot.prs.map(pr => ({ ...pr, url: `${url}?pr=${pr.number}` })) });
   }
   if (process.env.TASKHUB_READY_FILE) fs.writeFileSync(process.env.TASKHUB_READY_FILE, baseURL);
   console.log(baseURL);

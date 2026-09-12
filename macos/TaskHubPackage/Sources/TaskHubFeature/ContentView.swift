@@ -64,7 +64,7 @@ public struct ContentView: View {
 
     private var title: String {
         switch store.selection {
-        case .overview: "TaskHub Native"
+        case .overview: "Overview"
         case .terminal: "Terminal"
         case .project(let id): store.projects.first { $0.id == id }?.name ?? "Project"
         case .session(let id): store.sessions.first { $0.id == id }?.label ?? "Session"
@@ -75,24 +75,7 @@ public struct ContentView: View {
     @ViewBuilder private var selectedContent: some View {
         switch store.selection {
         case .overview:
-            VStack(alignment: .leading, spacing: 20) {
-                Text("Native foundation").font(.title3).foregroundStyle(.secondary)
-                GroupBox {
-                    VStack(alignment: .leading, spacing: 12) {
-                        LabeledContent("Backend", value: store.connection)
-                        LabeledContent("Projects", value: String(store.projects.count))
-                        LabeledContent("Sessions", value: String(store.sessions.count))
-                        if let date = store.lastUpdate {
-                            LabeledContent("Last update", value: date.formatted(date: .omitted, time: .standard))
-                        }
-                    }.padding(8)
-                }
-                Text("Choose a project or session in the sidebar.").foregroundStyle(.secondary)
-                Button("Open native terminal", systemImage: "terminal") {
-                    store.select(.terminal)
-                    store.openTerminal()
-                }.buttonStyle(.borderedProminent)
-            }
+            DashboardView(model: store.dashboard, shell: store.shell)
         case .terminal:
             VStack(alignment: .leading, spacing: 16) {
                 Text("Open an interactive shell.").foregroundStyle(.secondary)

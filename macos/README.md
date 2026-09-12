@@ -6,7 +6,7 @@ Apple silicon is the initial build target. Open `TaskHub.xcworkspace` in Xcode.
 The app target owns AppKit lifecycle and hosts SwiftUI. `TaskHubPackage` holds the
 API client, SSE parser/client, backend owner, observable store, and views. The current
 screen has a Cocoa sidebar with project/session selection, Pinned mirrors, saved
-Tabs, and native terminal panes. The Dashboard is still pending.
+Tabs, native terminal panes, and a native SwiftUI Dashboard.
 See [the port plan](../docs/SWIFTUI-PORT.md).
 
 ## Cocoa sidebar (M2)
@@ -47,8 +47,24 @@ Run `bash macos/scripts/test-browser-ui.sh` for the isolated browser UI regressi
 Remove Session previews affected sessions and asks separately before discarding
 uncommitted/untracked work. Orphan folders are retained. Xcode-configured projects
 offer Run Destination and a separate Build pane; Stop interrupts its build PTY.
-Terminal links, PR/Jira-aware creation, and old tab-state import remain under
-implementation; this does not close the M1 terminal acceptance gate.
+PR/Jira URLs resolve branches and existing ticket worktrees in the creation sheet.
+Existing saved web tabs and history seed native contexts; legacy file entries are
+retained for the M5 document host. Terminal links and full session acceptance remain
+under implementation; this does not close the M1 terminal acceptance gate.
+
+## Native Dashboard (M4, in progress)
+
+Overview renders native PR rows, CI/review states, labels, search, project filters,
+and Mine/Review/Failing CI/Drafts filters. The review section retains open PRs already
+commented on or approved, using `awaitingMyReview`; tray notifications keep the
+strict requested-review classification. Snapshot reads and SSE drive updates; a
+failed read retains the previous data and exposes Retry.
+
+Opening a PR selects its existing session or creates a page-only context through
+`POST /api/tabs`, which preserves other tabs and all existing editor state. The
+context menu also opens the browser or copies the link. Agent usage uses the shared
+native panel and refreshes once per minute while Overview is visible.
+Project/Jira/board/settings/logs/workflow/git-action parity remains M4 work.
 
 ## Native tray and appearance (M2)
 

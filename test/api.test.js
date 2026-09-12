@@ -186,6 +186,27 @@ test('tabs round-trip through /api/tabs', async () => {
   assert.equal(body.active, tabs[0].url);
 });
 
+test('opening one native tab preserves existing documents, metadata, and ordering', async () => {
+  const url = 'https://github.com/o/r/pull/1';
+  const legacy = { kind: 'github', url, title: 'Saved title', repo: 'o/r', branch: 'fix',
+    paneView: 'diff', diffOpen: true, diffIdx: 4, pageClosed: true, login: 'octocat', avatar: 'cached',
+    links: [{ kind: 'file', path: '/tmp/changed.swift', active: true }], history: [{ kind: 'file', path: '/tmp/older.swift' }] };
+  await send('PUT', '/api/tabs', { tabs: [legacy], active: url });
+  const before = (await get('/api/tabs')).body.tabs[0];
+  const added = await send('POST', '/api/tabs', { url: 'https://example.test/new', kind: 'web', title: 'New page' });
+  assert.equal(added.status, 200);
+  assert.equal(added.body.tabs.length, 2);
+  assert.deepEqual(added.body.tabs[0], before);
+  const reopened = await send('POST', '/api/tabs', { url, kind: 'github', title: 'New title' });
+  assert.equal(reopened.body.active, url);
+  assert.equal(reopened.body.tabs.length, 2);
+  assert.deepEqual(reopened.body.tabs[0], before);
+  for (const invalid of ['file:///tmp/local', 'javascript:alert(1)', 'https://user:secret@example.test']) {
+    assert.equal((await send('POST', '/api/tabs', { url: invalid, kind: 'web' })).status, 400);
+  }
+  assert.equal((await send('POST', '/api/tabs', { url, kind: 'github', links: [] })).status, 400);
+});
+
 test('tasks: upsert, list, and delete through /api/tasks (keyed by id)', async () => {
   const id = 'task-test-0001';
   const rec = { id, projectId: 'p1', workspace: '/ws/repo', worktree: '/ws/repo.worktrees/REC-42-thing', branch: 'REC-42-thing',
