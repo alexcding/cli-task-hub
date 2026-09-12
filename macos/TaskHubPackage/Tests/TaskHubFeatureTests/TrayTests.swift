@@ -17,6 +17,11 @@ import Testing
     #expect(backendTimestamp("2026-09-12T00:00:00Z") != nil)
     let limit = UsageSnapshot.Window(usedPct: 120, resetsAt: nil, label: nil)
     #expect(limit.remaining == 0)
+    let now = try #require(backendTimestamp("2026-09-12T00:00:00Z"))
+    let half = UsageSnapshot.Window(usedPct: 30, resetsAt: "2026-09-12T02:30:00Z", label: nil)
+    #expect(half.paceRemaining(duration: 5 * 3600, now: now) == 50)
+    #expect(half.paceRemaining(duration: 5 * 3600, now: now.addingTimeInterval(86400)) == 0)
+    #expect(limit.paceRemaining(duration: 5 * 3600, now: now) == nil)
 }
 
 @MainActor @Test(.timeLimit(.minutes(1))) func trayLoadsIndependentlyPreservesUsageAndPersistsPreferences() async throws {
@@ -53,6 +58,8 @@ import Testing
     let api = try APIClient(baseURL: base)
     let shell = ShellStore(preferences: preferences)
     shell.setAppearance(.dark) // Offline edit must survive the first server snapshot.
+    shell.setActivityNotify(false)
+    shell.setReviewSound("off")
     shell.connect(api)
     shell.refreshUsage()
     for _ in 0..<100 {
@@ -62,6 +69,7 @@ import Testing
     #expect(shell.prs.count == 3)
     #expect(shell.pendingReviewCount == 1)
     #expect(shell.appearance == .dark)
+    #expect(!shell.activityNotify && shell.reviewSound == "off")
     #expect(shell.usageLoading && shell.usage == nil) // A blocked usage source cannot block reviews.
     try Data().write(to: directory.appendingPathComponent("release-usage"))
     for _ in 0..<100 {
@@ -79,7 +87,10 @@ import Testing
     #expect(shell.usage == previousUsage)
 
     let review = try #require(shell.pendingReviews.first)
-    shell.acknowledge(review)
+    await shell.stop()
+    // A notification body click may precede backend readiness after launch.
+    shell.acknowledgeReview(repo: review.repo, number: review.number)
+    shell.connect(api)
     for _ in 0..<100 {
         if shell.pendingReviewCount == 0 { break }
         try await Task.sleep(for: .milliseconds(20))
@@ -96,6 +107,8 @@ import Testing
     let settings: [String: String] = try await api.get(Routes.SETTINGS)
     #expect(settings["theme"] == "auto")
     #expect(settings["usageAgent"] == "codex")
+    #expect(settings["activityNotify"] == "off" && settings["reviewSound"] == "off")
     let reopened = ShellStore(preferences: preferences)
     #expect(reopened.appearance == .system && reopened.usageAgent == "codex")
+    #expect(!reopened.activityNotify && reopened.reviewSound == "off")
 }

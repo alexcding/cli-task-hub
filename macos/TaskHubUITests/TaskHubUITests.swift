@@ -44,4 +44,22 @@ final class TaskHubUITests: XCTestCase {
         wait(for: [dismissed], timeout: 5)
         XCTAssertTrue(app.buttons["Reviews & Usage"].exists)
     }
+
+    @MainActor
+    func testNativeMenusNavigateAndCommandQHidesWithoutQuitting() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--backend-url", "http://127.0.0.1:1"]
+        app.launch()
+        XCTAssertTrue(app.outlines["workspace-sidebar"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.menuBars.menuBarItems["Edit"].waitForExistence(timeout: 5), app.debugDescription)
+        app.typeKey("1", modifierFlags: .command)
+        XCTAssertTrue(app.staticTexts["Native foundation"].waitForExistence(timeout: 5))
+        app.typeKey("q", modifierFlags: .command)
+        XCTAssertNotEqual(app.state, .notRunning)
+        app.activate()
+        app.menuBars.menuBarItems["Go"].click()
+        app.menuItems["Overview"].click()
+        XCTAssertTrue(app.outlines["workspace-sidebar"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Native foundation"].exists)
+    }
 }

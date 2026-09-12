@@ -47,7 +47,41 @@ For sample PRs/usage, add `TASKHUB_TRAY_FIXTURE=1` to the isolated fixture comma
 This replaces usage reads with synthetic data; no credentials or usage CLIs are
 accessed. Automated tests can hold usage with `TASKHUB_HOLD_USAGE=1` until the
 fixture data directory contains `release-usage`, or create `fail-usage` to test
-retention on failure. Notifications/sounds and usage pace indicators remain pending.
+retention on failure. Usage includes reserve/over-pace indicators using the existing
+five-hour session and seven-day weekly windows.
+
+Native File/Edit/View/Go/Window menus are owned by AppKit. Copy/paste/undo follow
+the focused responder. Command-1 opens Overview, Command-2 focuses the terminal,
+Control-Command-S focuses the sidebar, and Control-Command-T reveals/focuses the
+current terminal. Command-Q hides the window; only tray Quit tears down the app.
+Terminal font zoom uses Command-plus/minus/zero without recreating its emulator.
+
+## Notifications (M2)
+
+The tray's **Notifications** section offers **Enable Notifications**, activity alerts,
+and the review sound choice. Permission is requested only when you click Enable;
+macOS notification denial and delivery errors are shown in the panel. System sound
+authorization is respected. The default review chime is Glass; None disables it,
+and an existing custom sound from backend settings is retained.
+
+The first successful review snapshot seeds silently. New request timestamps trigger
+one notification per PR and one sound per batch. Reviews already opened or merely
+in the broader review group do not alert. Backend reconnects retain the seed.
+
+Activity arriving over SSE appears as a native toast while the main window is focused,
+otherwise as a macOS notification. Recent activity stays in the tray (latest 20 during
+this app session), including when activity alerts are switched off. Clicking a PR
+notification opens its validated URL in the browser and marks a review opened only
+after browser acceptance. Other activity opens the native tray. Embedded navigation
+and the complete Activity page are still pending.
+
+Automated notification tests use an injected recorder: no real permission prompts,
+notifications, or sounds. Real Notification Center permission/banner/click acceptance
+remains an interactive check on the bundled app. Permission and the foreground
+activity toast have been verified; automated OS banner inspection timed out.
+For isolated manual checks, add `TASKHUB_NOTIFICATION_FIXTURE=1`, then write
+`{"type":"activity"}` or `{"type":"review"}` to `notification-command.json` in the
+fixture data directory. The fixture consumes that file and emits synthetic events.
 
 ## Build and run
 
@@ -146,6 +180,8 @@ Terminal tests use isolated sockets and temporary shell scripts; they never conn
 to daily TaskHub sessions. Native surface tests create an unshown Metal-backed
 AppKit window and verify Unicode, alternate-screen restoration, hidden parsing,
 Enter encoding, and bracketed paste without touching the system clipboard.
+The native pipeline test also races output against an attachment snapshot, rejects
+duplicate sequences, and checks final parsed output before exit while hidden.
 Additional regressions cover stale replies after timeouts, incompatible/malformed
 peers, disconnects, multi-client pause ownership, real PTY history truncation, and
 explicit Quit with no existing connection. `pty-protocol-fixture.cjs` provides a

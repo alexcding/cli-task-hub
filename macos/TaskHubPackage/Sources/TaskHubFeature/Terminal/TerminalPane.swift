@@ -5,7 +5,7 @@ struct TerminalPane: View {
     let session: TerminalSession
     let reconnect: () -> Void
     var active = true
-    @State private var visible = true
+    private var visible: Bool { session.showsSurface }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -14,7 +14,7 @@ struct TerminalPane: View {
                 Text(session.status).foregroundStyle(.secondary)
                 if let pid = session.shellPID { Text("PID \(pid)").monospacedDigit().foregroundStyle(.secondary) }
                 Spacer()
-                Toggle("Show terminal", isOn: $visible).toggleStyle(.switch)
+                Toggle("Show terminal", isOn: Binding(get: { visible }, set: { session.showsSurface = $0 })).toggleStyle(.switch)
                 Button("Reattach", action: reconnect)
             }.font(.callout).padding(12)
             Divider()

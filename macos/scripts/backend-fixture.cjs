@@ -57,5 +57,25 @@ const server = app.listen(Number(process.env.PORT || 0), '127.0.0.1', () => {
   console.log(baseURL);
 });
 server.on('error', error => { console.error(error.message); process.exit(1); });
-const timer = setInterval(() => sse.publishSync('fixture'), 100);
+const timer = setInterval(() => {
+  // Opt-in, local-file controls for exercising the actual notification UI.
+  // No test routes are added to the production HTTP API.
+  const commandFile = path.join(process.env.TASKHUB_DATA_DIR, 'notification-command.json');
+  if (process.env.TASKHUB_NOTIFICATION_FIXTURE === '1' && fs.existsSync(commandFile)) {
+    try {
+      const command = JSON.parse(fs.readFileSync(commandFile, 'utf8'));
+      fs.unlinkSync(commandFile);
+      if (command.type === 'activity') {
+        sse.publishActivity({ type: 'sync_failed', payload: { repo: 'fixture/taskhub', error: 'Sample notification acceptance check' },
+          created_at: new Date().toISOString() });
+      } else if (command.type === 'review') {
+        const project = db.getProjects()[0];
+        const snapshot = db.getSnapshot(project.id);
+        const prs = snapshot.prs.map(pr => pr.number === 1 ? { ...pr, requestedAt: new Date().toISOString() } : pr);
+        db.setSnapshot(project.id, { ...snapshot, prs, lastSynced: new Date().toISOString() });
+      }
+    } catch (error) { console.error('Notification fixture:', error.message); }
+  }
+  sse.publishSync('fixture');
+}, 100);
 process.on('SIGTERM', () => { clearInterval(timer); server.closeAllConnections(); server.close(); process.exit(0); });

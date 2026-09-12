@@ -10,6 +10,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var statusItem: NSStatusItem?
     private let popover = NSPopover()
     private var quitting = false
+    private var menus: NativeMenus?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         store.shell.applyAppearance()
@@ -23,6 +24,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         window.setFrameAutosaveName("TaskHubNativeMain")
         window.center()
         self.window = window
+        store.shell.notifications.isMainWindowFocused = { [weak self] in self?.window?.isKeyWindow == true }
+        store.shell.notifications.configureNativeDelivery(openURL: { [weak self] url, repo, number in
+            guard NSWorkspace.shared.open(url) else { return }
+            if let repo, let number { self?.store.shell.acknowledgeReview(repo: repo, number: number) }
+        }, openActivity: { [weak self] in
+            self?.showWindow()
+            self?.toggleTray()
+        })
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         item.button?.image = NSImage(systemSymbolName: "square.stack.3d.up", accessibilityDescription: "TaskHub Native")
         item.button?.image?.isTemplate = true
@@ -37,7 +46,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             dismiss: { [weak self] in self?.popover.performClose(nil) },
             quit: { [weak self] in self?.quitFromTray() }))
         observeStatus()
+        menus = NativeMenus(perform: { [weak self] command in self?.perform(command) },
+                            enabled: { [weak self] command in self?.store.canPerform(command) == true })
+        menus?.install()
         showWindow()
+    }
+
+    private func perform(_ command: ShellCommand) {
+        switch command {
+        case .hide: window?.orderOut(nil)
+        case .tray: toggleTray()
+        case .sidebar:
+            showWindow()
+            func findOutline(_ view: NSView) -> NSView? {
+                if view.identifier?.rawValue == "workspace-sidebar" { return view }
+                return view.subviews.lazy.compactMap(findOutline).first
+            }
+            if let root = window?.contentView, let outline = findOutline(root) { window?.makeFirstResponder(outline) }
+        default:
+            showWindow()
+            store.perform(command)
+        }
     }
 
     @objc private func toggleTray() {

@@ -4,6 +4,9 @@ import Observation
 
 // Independent tasks keep a slow usage source out of the PR/sidebar refresh path.
 @MainActor @Observable public final class ShellStore {
+    public let notifications = NotificationStore()
+    private(set) var activityNotify: Bool
+    private(set) var reviewSound: String
     private(set) var prs: [TrayPR] = []
     private(set) var trayError: String?
     private(set) var trayLoading = false
@@ -25,12 +28,15 @@ import Observation
     @ObservationIgnored private var generation = 0
     @ObservationIgnored private let preferences: UserDefaults
     @ObservationIgnored private var pendingSettings: [String: String]
+    @ObservationIgnored private var pendingReviewOpens: [String: (repo: String, number: Int)] = [:]
 
     public init(preferences: UserDefaults = .standard) {
         self.preferences = preferences
         pendingSettings = preferences.dictionary(forKey: "native.pendingSettings") as? [String: String] ?? [:]
         appearance = AppAppearance(rawValue: preferences.string(forKey: "native.theme") ?? "auto") ?? .system
         usageAgent = preferences.string(forKey: "native.usageAgent") == "codex" ? "codex" : "claude"
+        activityNotify = preferences.string(forKey: "native.activityNotify") != "off"
+        reviewSound = preferences.string(forKey: "native.reviewSound") ?? "system"
     }
 
     var pendingReviews: [TrayPR] { prs.filter(\.pendingReview) }
@@ -47,6 +53,9 @@ import Observation
     func connect(_ api: APIClient) {
         generation += 1
         self.api = api
+        let opened = pendingReviewOpens.values
+        pendingReviewOpens.removeAll()
+        for review in opened { acknowledgeReview(repo: review.repo, number: review.number) }
         for key in pendingSettings.keys.sorted() {
             if let value = pendingSettings[key] { saveSetting(key, value: value) }
         }
@@ -67,6 +76,7 @@ import Observation
                     try Task.checkCancellation()
                     var seen: Set<String> = []
                     prs = result.filter { seen.insert($0.id).inserted }
+                    notifications.receiveReviews(prs, sound: reviewSound)
                     trayError = nil
                     trayUpdated = Date()
                 } catch { if !Task.isCancelled { trayError = error.localizedDescription } }
@@ -89,17 +99,41 @@ import Observation
     }
 
     func acknowledge(_ pr: TrayPR) {
-        guard pr.pendingReview, let api, acknowledging.insert(pr.id).inserted else { return }
+        guard pr.pendingReview else { return }
+        acknowledgeReview(repo: pr.repo, number: pr.number)
+    }
+
+    public func acknowledgeReview(repo: String, number: Int) {
+        let id = "\(repo)#\(number)"
+        guard let api else {
+            // A notification click can launch the app before backend readiness.
+            pendingReviewOpens[id] = (repo, number)
+            return
+        }
+        guard acknowledging.insert(id).inserted else { return }
         let currentGeneration = generation
         Task {
-            defer { if generation == currentGeneration { acknowledging.remove(pr.id) } }
+            defer { if generation == currentGeneration { acknowledging.remove(id) } }
             do {
-                try await api.acknowledgeReview(repo: pr.repo, number: pr.number)
+                try await api.acknowledgeReview(repo: repo, number: number)
                 guard generation == currentGeneration else { return }
-                if let index = prs.firstIndex(where: { $0.id == pr.id }) { prs[index].reviewPending = false }
+                if let index = prs.firstIndex(where: { $0.id == id }) { prs[index].reviewPending = false }
                 refresh()
             } catch { if generation == currentGeneration { trayError = "Could not mark review opened: \(error.localizedDescription)" } }
         }
+    }
+
+    func setActivityNotify(_ enabled: Bool) {
+        activityNotify = enabled
+        let value = enabled ? "on" : "off"
+        preferences.set(value, forKey: "native.activityNotify")
+        saveSetting("activityNotify", value: value)
+    }
+
+    func setReviewSound(_ value: String) {
+        reviewSound = value
+        preferences.set(value, forKey: "native.reviewSound")
+        saveSetting("reviewSound", value: value)
     }
 
     public func setAppearance(_ value: AppAppearance) {
@@ -155,8 +189,12 @@ import Observation
                 if pendingSettings["usageAgent"] == nil {
                     usageAgent = (settings["usageAgent"] ?? nil) == "codex" ? "codex" : "claude"
                 }
+                if pendingSettings["activityNotify"] == nil { activityNotify = (settings["activityNotify"] ?? nil) != "off" }
+                if pendingSettings["reviewSound"] == nil { reviewSound = (settings["reviewSound"] ?? nil) ?? "system" }
                 preferences.set(appearance.rawValue, forKey: "native.theme")
                 preferences.set(usageAgent, forKey: "native.usageAgent")
+                preferences.set(activityNotify ? "on" : "off", forKey: "native.activityNotify")
+                preferences.set(reviewSound, forKey: "native.reviewSound")
                 applyAppearance()
                 if pendingSettings.isEmpty { settingsError = nil }
             } catch { if !Task.isCancelled { settingsError = error.localizedDescription } }
@@ -169,6 +207,7 @@ import Observation
         trayTask?.cancel(); usageTask?.cancel(); settingsTask?.cancel()
         await trayTask?.value; await usageTask?.value; await settingsTask?.value
         await settingsWrite?.value
+        await notifications.stop()
         trayTask = nil; usageTask = nil; settingsTask = nil; settingsWrite = nil
         api = nil
     }

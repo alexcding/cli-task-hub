@@ -4,6 +4,7 @@ public struct ServerEvent: Decodable, Sendable, Equatable {
     public let type: String
     public let projectId: String?
     public let id: String?
+    public var event: ActivityEvent? = nil
 }
 
 // Byte framing preserves empty lines, CRLF and UTF-8 split between network reads.

@@ -14,6 +14,7 @@ struct CocoaSidebar: NSViewRepresentable {
 
     func makeNSView(context: Context) -> NSScrollView {
         let outline = SidebarOutlineView()
+        outline.identifier = .init("workspace-sidebar")
         outline.setAccessibilityIdentifier("workspace-sidebar")
         outline.setAccessibilityLabel("Workspace sidebar")
         let column = NSTableColumn(identifier: .init("name"))

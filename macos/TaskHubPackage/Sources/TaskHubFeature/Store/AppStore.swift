@@ -37,12 +37,37 @@ public final class AppStore {
     var terminal: TerminalSession? { activeTerminalKey.flatMap { terminals[$0] } }
     public var hasOpenWork: Bool { !sessions.isEmpty || !tabs.isEmpty }
 
+    public func canPerform(_ command: ShellCommand) -> Bool {
+        switch command {
+        case .biggerFont, .smallerFont, .resetFont: terminal?.ready == true
+        case .refresh: connection == "Connected"
+        default: true
+        }
+    }
+
+    public func perform(_ command: ShellCommand) {
+        switch command {
+        case .overview: select(.overview)
+        case .terminal:
+            if activeTerminalKey == nil { select(.terminal) }
+            openTerminal()
+            terminal?.showsSurface = true
+            terminal?.surface.requestFocus()
+        case .refresh: refresh()
+        case .biggerFont: _ = terminal?.surface.performBindingAction("increase_font_size:1")
+        case .smallerFont: _ = terminal?.surface.performBindingAction("decrease_font_size:1")
+        case .resetFont: _ = terminal?.surface.performBindingAction("reset_font_size")
+        default: break
+        }
+    }
+
     func selectTrayTab(_ tab: SavedTab) {
         if let session = sessions.first(where: { $0.url == tab.url }) { select(.session(session.id)) }
         else { select(.tab(tab.url)) }
     }
 
     public func trayWillOpen() {
+        shell.notifications.refreshAuthorization()
         refresh()
         shell.refreshUsage()
         shell.loadSettings()
@@ -172,6 +197,9 @@ public final class AppStore {
     }
 
     private func received(_ event: ServerEvent) {
+        if event.type == "activity", let activity = event.event {
+            shell.notifications.receiveActivity(activity, enabled: shell.activityNotify)
+        }
         if event.type == "settings" { shell.loadSettings() }
         if event.type == "reviews" { shell.refresh() }
         if ["sync", "jira-sync", "tabs", "tasks", "reload"].contains(event.type) { refresh() }

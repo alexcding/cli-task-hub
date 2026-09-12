@@ -25,6 +25,7 @@ public struct NativeTrayView: View {
                 VStack(alignment: .leading, spacing: 18) {
                     reviews
                     openTabs
+                    RecentActivityView(notifications: store.shell.notifications)
                     Divider()
                     usage
                     Divider()
@@ -32,6 +33,8 @@ public struct NativeTrayView: View {
                         ForEach(AppAppearance.allCases) { Text($0.title).tag($0) }
                     }.pickerStyle(.segmented)
                     if let error = store.shell.settingsError { Text(error).font(.caption).foregroundStyle(.orange) }
+                    Divider()
+                    NotificationPreferencesView(shell: store.shell)
                 }.padding(16)
             }
             Divider()
@@ -119,11 +122,11 @@ public struct NativeTrayView: View {
                 Text("Today: \(agent.tokens.formatted(.number.precision(.fractionLength(0)))) tokens · \(agent.cost.formatted(.currency(code: "USD")))")
                     .font(.callout).monospacedDigit()
             }
-            if let session = limits?.session { usageWindow("Session", window: session) }
-            if let weekly = limits?.weekly { usageWindow("Weekly", window: weekly) }
+            if let session = limits?.session { usageWindow("Session", window: session, duration: 5 * 3600) }
+            if let weekly = limits?.weekly { usageWindow("Weekly", window: weekly, duration: 7 * 86400) }
             if let scoped = limits?.scoped {
                 ForEach(Array(scoped.enumerated()), id: \.offset) { _, window in
-                    usageWindow("\(window.label ?? "Model") · Weekly", window: window)
+                    usageWindow("\(window.label ?? "Model") · Weekly", window: window, duration: 7 * 86400)
                 }
             }
             if agent == nil && limits == nil && !store.shell.usageLoading {
@@ -135,7 +138,8 @@ public struct NativeTrayView: View {
         }
     }
 
-    private func usageWindow(_ title: String, window: UsageSnapshot.Window) -> some View {
+    private func usageWindow(_ title: String, window: UsageSnapshot.Window, duration: TimeInterval) -> some View {
+        TimelineView(.periodic(from: .now, by: 60)) { context in
         VStack(alignment: .leading, spacing: 4) {
             HStack {
                 Text(title)
@@ -145,9 +149,15 @@ public struct NativeTrayView: View {
             ProgressView(value: window.remaining, total: 100)
                 .tint(window.remaining < 20 ? .orange : .accentColor)
                 .accessibilityLabel("\(title) remaining")
+            if let pace = window.paceRemaining(duration: duration, now: context.date) {
+                let reserve = Int((window.remaining - pace).rounded())
+                Text(reserve >= 0 ? "\(reserve)% in reserve" : "\(-reserve)% over pace")
+                    .font(.caption2).foregroundStyle(reserve < 0 ? .orange : .secondary)
+            }
             if let reset = window.resetsAt, let date = backendTimestamp(reset) {
                 Text("Resets \(date.formatted(date: .abbreviated, time: .shortened))").font(.caption2).foregroundStyle(.secondary)
             }
+        }
         }
     }
 

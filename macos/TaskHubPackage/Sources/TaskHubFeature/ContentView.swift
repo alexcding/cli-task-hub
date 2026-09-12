@@ -45,6 +45,10 @@ public struct ContentView: View {
             }
         }
         .frame(minWidth: 760, minHeight: 480)
+        .overlay(alignment: .topTrailing) {
+            ActivityToastView(notifications: store.shell.notifications)
+                .frame(maxWidth: 420).padding(16)
+        }
         .task { await store.start() }
     }
 

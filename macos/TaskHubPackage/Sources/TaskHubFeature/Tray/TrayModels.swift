@@ -13,6 +13,7 @@ struct TrayPR: Decodable, Identifiable, Equatable, Sendable {
     let category: String
     let awaitingMyReview: Bool?
     var reviewPending: Bool?
+    var requestedAt: String? = nil
     let projectName: String?
     let ci: CI?
     var id: String { "\(repo)#\(number)" }
@@ -76,6 +77,10 @@ struct UsageSnapshot: Decodable, Equatable, Sendable {
         let resetsAt: String?
         let label: String?
         var remaining: Double { max(0, min(100, 100 - usedPct)) }
+        func paceRemaining(duration: TimeInterval, now: Date) -> Double? {
+            guard duration > 0, let resetsAt, let reset = backendTimestamp(resetsAt) else { return nil }
+            return max(0, min(100, reset.timeIntervalSince(now) / duration * 100))
+        }
     }
     struct Limits: Decodable, Equatable, Sendable {
         let session: Window?

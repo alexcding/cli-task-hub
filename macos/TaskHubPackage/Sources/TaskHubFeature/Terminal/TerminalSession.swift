@@ -9,6 +9,7 @@ final class TerminalSession: Identifiable {
     let cwd: String
     let paired: Bool
     @ObservationIgnored var isActive = true
+    var showsSurface = true
     let surface = TerminalViewState()
     private(set) var status = "Connecting"
     private(set) var error: String?

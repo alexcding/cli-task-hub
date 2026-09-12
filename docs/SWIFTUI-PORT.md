@@ -10,7 +10,7 @@ Branch: `feat/swiftui-native`. Worktree: `../cli-task-hub-swiftui`.
 
 M0 foundation is committed as `bf0c7a6`; the M1 terminal spike is committed as
 `c05a57a`; the M2 Cocoa sidebar is committed as `609d889` and native tray/appearance
-work continues in `macos/`
+as `5cf368a`. Native notifications and terminal acceptance work continue in `macos/`
 (see `macos/README.md` for commands).
 The checked-in Xcode workspace uses a local Swift package, Swift 6, macOS 14 minimum,
 and direct distribution without App Sandbox. The current screen is the native
@@ -64,6 +64,10 @@ connection/project-list foundation; it is not the completed Dashboard.
   with a live shell. Five Rust tests pass; existing Tauri `cargo check`
   passes with its existing vendor warnings. These are functional checks, not a
   performance result.
+- Added a real Ghostty/TerminalPipe regression for output buffered during attach:
+  replay includes sequence 1, sequence 2 races the reply, a duplicate is discarded,
+  and final output is parsed before the exit callback. The test runs with the native
+  surface hidden. It covers the Swift pipeline boundary, not all daemon exit races.
 - Still open: complete VT restoration after ring truncation (the 256 KiB tail is not
   sufficient), byte transport decision, automatic reconnect and full lifecycle/race
   coverage, IME/mouse/selection/scrollback/display
@@ -72,7 +76,7 @@ connection/project-list foundation; it is not the completed Dashboard.
   The user has authorized starting M2 with the Cocoa sidebar while these M1
   acceptance items remain open; this does not mark the terminal gate complete.
 
-### M2 native shell — AppKit/Cocoa (in progress)
+### M2 native shell — AppKit/Cocoa (implemented; OS notification acceptance open)
 
 - User decision: implement the sidebar with `NSOutlineView`, using AppKit's native
   row reuse, disclosure controls, keyboard selection, and context menus. SwiftUI
@@ -113,10 +117,47 @@ connection/project-list foundation; it is not the completed Dashboard.
   tests block usage while PRs load, retain usage on failure, acknowledge a review,
   and persist rapid/offline preference changes. The latest app built and ran with
   the native PR/usage popover visibly populated by isolated sample data.
-- This increment does not complete M2: notifications/sounds, full focus/menu parity,
-  usage pace indicators, and the remaining M1 gates still need implementation and
-  validation. Remote tab selection currently offers browser opening; embedded
-  context pages and session creation/restart/removal remain M3.
+- Added native notifications through `UNUserNotificationCenter`. First successful
+  PR snapshot seeds silently; later strict review requests alert once per request
+  timestamp. Failed reads do not reset the seed; reconnect retains it. One selected
+  review sound plays per batch, respecting OS sound authorization and the None setting.
+  Existing custom `reviewSound` paths are retained; the native picker currently offers
+  default Glass/None plus the existing custom selection.
+- Typed SSE activity events route to an eight-second native toast when the main
+  window is key, or an OS notification otherwise. The delegate rechecks focus before
+  foreground presentation. Identical timestamped events are deduplicated in a bounded
+  cache; the tray retains the latest 20 activity entries for the current app session.
+  The existing `activityNotify` preference controls alerts, not recent-history capture.
+- Notification permission is requested only through **Enable Notifications** in the
+  tray. Denial and delivery errors are visible. Activity/review-sound preferences use
+  the same offline-safe settings persistence as appearance. Notification clicks open
+  validated HTTP(S) URLs; review clicks acknowledge after browser acceptance, while
+  a click received before backend readiness queues its acknowledgement. Non-URL
+  activity opens the native tray. Embedded routing/full Activity page remain
+  later milestones. Real OS permission/banner/click behavior still needs an interactive
+  acceptance pass; automated delivery tests use a recorder and never prompt or chime.
+- Verification: native arm64 build and both native UI tests pass. The Swift package
+  suite now passes 23 tests, including review seeding/re-request/deduplication, permission
+  denial, one sound per batch, OS sound disablement, delivery errors, activity focus
+  routing, bounded recent events, safe URLs, offline notification preferences, and
+  the native terminal attach/exit parser test described above.
+- AppKit now owns the application entry point and lifecycle directly. The former
+  dummy SwiftUI Settings scene replaced native menus after launch; removing it fixes
+  that ownership conflict. SwiftUI continues to render hosted app pages. Native File,
+  Edit, View, Go, and Window menus route editing through the responder chain; focus,
+  overview/terminal navigation, refresh, font zoom, and hide/reopen have native shortcuts.
+- Usage includes the existing five-hour/session and seven-day/weekly pace calculation,
+  updated once a minute while the view is active. Explicit terminal focus reveals a
+  hidden surface without starting a replacement shell.
+- Shell acceptance: all 23 package tests and three native UI tests pass. The new UI
+  test verifies menu presence/navigation and Command-Q hide without process termination.
+  The latest app visibly shows the full AppKit menu bar and usage pace values. macOS
+  notification permission was granted and the native foreground activity toast was
+  verified with synthetic SSE data. Automated access to the transient OS notification
+  banner timed out; background banner/click and audible sound acceptance remain open.
+- Remaining M1 terminal gates continue to apply. Browser/document-specific shortcuts
+  join the native menus with their M3/M5 surfaces; native Settings replaces the tray
+  preferences shortcut in M4. Embedded context pages and session lifecycle are M3.
 
 Companion docs: `ARCHITECTURE.md` (layers, HTTP-vs-IPC split), `TAURI-PORT.md`
 (the previous shell port — the same boundary makes this one tractable), `CLAUDE.md`

@@ -2,12 +2,65 @@ import AppKit
 import Foundation
 import GhosttyTerminal
 import Testing
+@testable import TaskHubFeature
 
 private final class InputBytes: @unchecked Sendable {
     private let lock = NSLock()
     private var bytes = Data()
     func append(_ data: Data) { lock.lock(); bytes.append(data); lock.unlock() }
     func take() -> Data { lock.lock(); defer { lock.unlock() }; let result = bytes; bytes.removeAll(); return result }
+}
+
+private final class PipeEvents: @unchecked Sendable {
+    private let lock = NSLock()
+    private var values: [String] = []
+    func append(_ value: String) { lock.lock(); values.append(value); lock.unlock() }
+    var all: [String] { lock.lock(); defer { lock.unlock() }; return values }
+}
+
+@MainActor @Test(.timeLimit(.minutes(1))) func terminalAttachDeduplicatesBufferedOutputAndDrainsBeforeExit() async throws {
+    _ = NSApplication.shared
+    let events = PipeEvents()
+    let pipe = TerminalPipe(onError: { events.append("error: \($0)") }, onExit: { events.append("exit: \($0)") })
+    let client = PtydClient(onEvent: { _ in })
+    pipe.bind(client: client, id: "attach-test")
+    let state = TerminalViewState()
+    let view = AppTerminalView(frame: NSRect(x: 0, y: 0, width: 640, height: 320))
+    view.delegate = state
+    view.controller = state.controller
+    view.configuration = .init(backend: .inMemory(pipe.memory), fontSize: 13)
+    let window = NSWindow(contentRect: view.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+    window.isReleasedWhenClosed = false
+    window.contentView = view
+    defer { pipe.close(); window.contentView = nil; window.close() }
+    view.layoutSubtreeIfNeeded()
+    for _ in 0..<30 {
+        if state.surface != nil { break }
+        try await Task.sleep(for: .milliseconds(50))
+    }
+    #expect(state.surface != nil)
+    view.setSurfaceVisible(false)
+    func output(_ sequence: UInt64, _ text: String) -> PtyEvent {
+        PtyEvent(ev: "data", id: "attach-test", chunk: text, seq: sequence, exitCode: nil, signal: nil)
+    }
+    // Output races the attach reply: seq 1 is included in the atomic snapshot;
+    // seq 2 arrives after its boundary. Both are buffered before attaching.
+    pipe.receive(output(1, "SNAPSHOT\r\n"))
+    pipe.receive(output(2, "DURING_ATTACH_日本語\r\n"))
+    pipe.attach(PtyAttachment(buf: "SNAPSHOT\r\n", seq: 1, live: true, truncated: false)) { events.append("ready") }
+    pipe.receive(output(2, "DUPLICATE_MUST_NOT_RENDER\r\n"))
+    pipe.receive(output(3, "FINAL_BEFORE_EXIT\r\n"))
+    pipe.receive(PtyEvent(ev: "exit", id: "attach-test", chunk: nil, seq: nil, exitCode: 7, signal: nil))
+    for _ in 0..<100 {
+        if events.all.contains("exit: 7") { break }
+        try await Task.sleep(for: .milliseconds(20))
+    }
+    #expect(events.all == ["ready", "exit: 7"])
+    let screen = try #require(pipe.memory.readViewportText())
+    #expect(screen.components(separatedBy: "SNAPSHOT").count == 2)
+    #expect(screen.contains("DURING_ATTACH_日本語"))
+    #expect(screen.contains("FINAL_BEFORE_EXIT"))
+    #expect(!screen.contains("DUPLICATE_MUST_NOT_RENDER"))
 }
 
 // A real Metal-backed terminal in an unshown window. No simulated text renderer and
