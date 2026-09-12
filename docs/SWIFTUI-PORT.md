@@ -630,6 +630,34 @@ does not).
   Automatic reconnect, full VT restoration and the hardware performance acceptance
   gate remain open.
 
+### M1 binary snapshot runtime — 2026-09-12 (integration in progress)
+
+- Source verification found that Ghostty revision
+  `82938b633ba646db38591d969c3c526332bd7e65`, already used by the pinned Swift
+  package, includes a binary terminal snapshot codec. The Swift embedding API
+  still does not expose surface import. This changes the implementation path:
+  use the matching headless Ghostty state in the daemon and add a native surface
+  import bridge, rather than treating the output tail as a complete state.
+- Added the standalone taskhub-vt Rust owner and a small C boundary against the
+  exact upstream headers. A pinned build script checks source revision and Zig
+  version, verifies the downloaded toolchain checksum and builds in macos/.build.
+  The linked test binary has only system-library dependencies; a unique archive
+  name prevents Apple ld from selecting a same-named development dylib.
+- Real-library tests pass for output beyond 256 KiB, retained old history, primary
+  and alternate screens, saved cursor, modes, styles, hyperlinks and subsequent
+  resize/mutation. Tests also restore unfinished CSI/OSC/DCS and split UTF-8,
+  checkpoint an already-restored parser again, and reject truncated, corrupted
+  and trailing snapshot data. Pending continuation is capped at 1 MiB, source
+  scrollback at 8 MiB (with upstream page granularity), and encoded output at
+  32 MiB. Diagnostic VT formatting is used for assertions, never restoration.
+- This is a verified runtime foundation, not an enabled restore path: daemon
+  ownership, atomic snapshot transport and native Metal-surface import are next.
+  Snapshot v1 has no cross-version compatibility guarantee. Upstream explicitly
+  omits Kitty image payloads/placements and glyph registrations; those remain
+  fidelity gaps, together with the rest of the M1 acceptance gate. See the
+  [pinned format](https://github.com/ghostty-org/ghostty/blob/82938b633ba646db38591d969c3c526332bd7e65/src/terminal/snapshot/terminal.zig)
+  and [snapshot API](https://github.com/ghostty-org/ghostty/blob/82938b633ba646db38591d969c3c526332bd7e65/include/ghostty/vt/snapshot.h).
+
 ## Why now, and why native
 
 The Tauri shell works, but roughly half of `src-tauri/` exists to work around what a DOM
