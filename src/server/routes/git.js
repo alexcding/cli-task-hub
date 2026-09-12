@@ -2,6 +2,7 @@
 // history/refs. All on-demand local exec (same class as /api/detect-repo), except
 // commit-avatars which is `gh`-backed and cached.
 const github = require('../repositories/github');
+const { revisionFor, discardBlock } = require('../services/git-discard');
 const { ROUTES } = require('../../shared/routes.mjs');
 
 function register(app) {
@@ -62,7 +63,8 @@ function register(app) {
   app.get(ROUTES.DIFF, async (req, res) => {
     const dir = req.query.path;
     if (!dir) return res.status(400).json({ error: 'path required' });
-    res.json(await github.gitDiff(String(dir)));
+    const snapshot = await github.gitDiff(String(dir));
+    res.json(typeof snapshot.diff === 'string' ? { ...snapshot, revision: revisionFor(snapshot.diff) } : snapshot);
   });
 
   // Commit/push the worktree's changes (the diff pane's commit popover). The renderer
@@ -116,6 +118,14 @@ function register(app) {
   // rebuilt from its parsed diff — see hunkPatch in src/renderer/lib/diff-parse.mjs).
   app.post(ROUTES.GIT_DISCARD, async (req, res) => {
     const { path: dir, patch } = req.body || {};
+    if (req.body?.selection !== undefined) {
+      if (!dir) return res.status(400).json({ error: 'path required' });
+      try {
+        return res.json(await discardBlock(String(dir), req.body, {
+          load: dir => github.gitDiff(dir), apply: (dir, patch) => github.gitDiscard(dir, patch),
+        }));
+      } catch (error) { return res.status(409).json({ error: error.message }); }
+    }
     if (!dir || !patch) return res.status(400).json({ error: 'path and patch required' });
     res.json(await github.gitDiscard(String(dir), String(patch)));
   });

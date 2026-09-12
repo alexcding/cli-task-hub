@@ -3,6 +3,39 @@ import XCTest
 final class TaskHubUITests: XCTestCase {
 
     @MainActor
+    func testNativeDiscardCancelFailureAndRecovery() throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard let base = environment["TASKHUB_UI_BACKEND_URL"],
+              let path = environment["TASKHUB_UI_DATA_DIR"], let socket = environment["TASKHUB_UI_PTY_SOCKET"] else {
+            throw XCTSkip("Run macos/scripts/test-browser-ui.sh to provide the isolated fixture.")
+        }
+        let app = XCUIApplication()
+        app.launchArguments = ["--backend-url", base, "--data-dir", path, "--pty-socket", socket]
+        app.launch()
+        let row = app.outlines["workspace-sidebar"].staticTexts["sidebar-2"].firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 10)); row.click()
+        app.buttons["Show Changes"].click()
+        let discard = app.webViews.buttons["Discard"].firstMatch
+        XCTAssertTrue(discard.waitForExistence(timeout: 10))
+        discard.click()
+        XCTAssertTrue(app.staticTexts["Fixture diff unavailable"].waitForExistence(timeout: 5))
+        app.buttons["Refresh Changes"].click()
+        discard.click()
+        XCTAssertTrue(app.sheets.staticTexts["Discard this change block?"].waitForExistence(timeout: 5))
+        app.sheets.buttons["Cancel"].click()
+        XCTAssertTrue(discard.exists)
+        discard.click()
+        XCTAssertTrue(app.sheets.buttons["Discard Block"].waitForExistence(timeout: 5))
+        app.sheets.buttons["Discard Block"].click()
+        XCTAssertTrue(app.sheets.staticTexts["Fixture discard rejected"].waitForExistence(timeout: 5))
+        app.sheets.buttons["Discard Block"].click()
+        let closed = expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: app.sheets.firstMatch)
+        wait(for: [closed], timeout: 8)
+        XCTAssertTrue(app.webViews.staticTexts["No changes"].waitForExistence(timeout: 5) || app.webViews.buttons["Untracked.txt"].exists)
+        XCTAssertFalse(discard.exists)
+    }
+
+    @MainActor
     func testNativeCommitAndPushKeepsSuccessfulCommitOnPushFailure() throws {
         let environment = ProcessInfo.processInfo.environment
         guard let base = environment["TASKHUB_UI_BACKEND_URL"],

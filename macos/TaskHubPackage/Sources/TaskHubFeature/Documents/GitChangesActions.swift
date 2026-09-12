@@ -5,6 +5,8 @@ protocol GitChangesService: Sendable {
     func load(worktree: String) async throws -> DiffSnapshot
     func commit(worktree: String, message: String, includeUntracked: Bool) async throws -> String
     func push(worktree: String) async throws
+    func previewDiscard(worktree: String, revision: String, selection: [Int]) async throws -> DiscardProposal
+    func discard(worktree: String, proposal: DiscardProposal) async throws
 }
 
 struct APIGitChangesService: GitChangesService {
@@ -26,6 +28,47 @@ struct APIGitChangesService: GitChangesService {
     }
 }
 
+struct DiscardSelectionMessage: Decodable {
+    let type: String
+    let selection: [Int]
+    let revision: String
+    static func decode(_ body: [String: Any], revision: String?) -> Self? {
+        guard body.count == 3, let data = try? JSONSerialization.data(withJSONObject: body),
+              let value = try? JSONDecoder().decode(Self.self, from: data), value.type == "discard",
+              value.revision == revision, value.selection.count == 3,
+              value.selection.allSatisfy({ (0...1_000_000).contains($0) }) else { return nil }
+        return value
+    }
+}
+
+struct DiscardProposal: Decodable, Identifiable, Equatable, Sendable {
+    let path: String
+    let patch: String
+    let revision: String
+    let selection: [Int]
+    var id: String { revision + ":" + selection.map(String.init).joined(separator: ":") }
+}
+
+extension APIGitChangesService {
+    private struct DiscardRequest: Encodable, Sendable {
+        let path: String; let revision: String; let selection: [Int]; let mode: String
+    }
+    func previewDiscard(worktree: String, revision: String, selection: [Int]) async throws -> DiscardProposal {
+        let value: DiscardProposal = try await api.request(Routes.GIT_DISCARD, method: "POST",
+            body: DiscardRequest(path: worktree, revision: revision, selection: selection, mode: "preview"))
+        guard value.revision == revision, value.selection == selection, value.patch.utf8.count <= 1024 * 1024,
+              !value.patch.isEmpty, !value.path.isEmpty, value.path.utf8.count <= 4096 else {
+            throw BackendError.operation("The discard preview is invalid. Refresh changes.")
+        }
+        return value
+    }
+    func discard(worktree: String, proposal: DiscardProposal) async throws {
+        let value: OperationOK = try await api.request(Routes.GIT_DISCARD, method: "POST",
+            body: DiscardRequest(path: worktree, revision: proposal.revision, selection: proposal.selection, mode: "apply"))
+        guard value.ok == true else { throw BackendError.operation("The backend did not confirm the discard. Refresh changes.") }
+    }
+}
+
 @MainActor @Observable final class GitChangesActions {
     enum Action { case commit, commitAndPush, push }
     let worktree: String
@@ -37,6 +80,8 @@ struct APIGitChangesService: GitChangesService {
     private(set) var error: String?
     private(set) var status: String?
     private(set) var committedHash: String?
+    private(set) var discardProposal: DiscardProposal?
+    private var discardGeneration = UUID()
     @ObservationIgnored private var service: any GitChangesService
     @ObservationIgnored private let didChange: () -> Void
     @ObservationIgnored private var generation = UUID()
@@ -49,10 +94,10 @@ struct APIGitChangesService: GitChangesService {
     }
     var trackedChanges: Bool { snapshot?.diff.isEmpty == false }
     var canCommit: Bool {
-        fresh && !suspended && !loading && !busy && committedHash == nil
+        fresh && !suspended && discardProposal == nil && !loading && !busy && committedHash == nil
             && (trackedChanges || (includeUntracked && snapshot?.untracked.isEmpty == false))
     }
-    var canPush: Bool { fresh && !suspended && !loading && !busy && (snapshot?.ahead == nil || (snapshot?.ahead ?? 0) > 0) }
+    var canPush: Bool { fresh && !suspended && discardProposal == nil && !loading && !busy && (snapshot?.ahead == nil || (snapshot?.ahead ?? 0) > 0) }
     var summary: String {
         guard let snapshot else { return "Loading working changes…" }
         let tracked = trackedChanges ? "Tracked changes" : "No tracked changes"
@@ -60,6 +105,7 @@ struct APIGitChangesService: GitChangesService {
     }
     func connect(_ service: any GitChangesService) {
         self.service = service; generation = UUID(); loading = false; fresh = false
+        discardGeneration = UUID(); if !busy { discardProposal = nil }
     }
     func load() async {
         guard !busy else { return }
@@ -104,9 +150,38 @@ struct APIGitChangesService: GitChangesService {
             if generation == reconciliation { snapshot = value; fresh = true }
         }
         catch { self.error = [self.error, "Could not refresh changes: \(error.localizedDescription)"].compactMap { $0 }.joined(separator: "\n") }
-        busy = false; didChange()
+        finishOperation(); didChange()
+    }
+    func prepareDiscard(revision: String, selection: [Int]) async {
+        guard !busy, !suspended, discardProposal == nil, selection.count == 3,
+              selection.allSatisfy({ (0...1_000_000).contains($0) }) else { return }
+        busy = true; error = nil
+        let request = UUID(); discardGeneration = request
+        defer { finishOperation() }
+        do {
+            let proposal = try await service.previewDiscard(worktree: worktree, revision: revision, selection: selection)
+            guard discardGeneration == request else { return }
+            discardProposal = proposal
+        } catch { if discardGeneration == request { self.error = error.localizedDescription } }
+    }
+    func cancelDiscard() {
+        discardGeneration = UUID()
+        if !busy { discardProposal = nil }
+    }
+    func confirmDiscard() async {
+        guard !busy, !suspended, let proposal = discardProposal else { return }
+        busy = true; error = nil; fresh = false
+        defer { finishOperation(); didChange() }
+        do {
+            try await service.discard(worktree: worktree, proposal: proposal)
+            discardProposal = nil; status = "Discarded changes in \(proposal.path)."
+        } catch { self.error = error.localizedDescription }
+    }
+    private func finishOperation() {
+        busy = false
         let pending = waiters; waiters.removeAll(); pending.forEach { $0.resume() }
     }
+
     func suspendAndWait() async {
         suspended = true
         if busy { await withCheckedContinuation { waiters.append($0) } }

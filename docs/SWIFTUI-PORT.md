@@ -525,6 +525,36 @@ does not).
   release gates are still open. The final elevate-ios coordinator/VM/DI pass remains
   required after migration.
 
+### M5 native block discard — 2026-09-12
+
+- Working diff blocks now offer Discard through a native confirmation sheet. The
+  sheet displays the exact patch and requires explicit Discard Block; Cancel performs
+  no write. Failed applies retain the proposal/error, and completion refreshes the
+  visible diff. Preview and apply share the commit/push operation gate and shutdown
+  waiting. Late previews cannot reopen a hidden changes view.
+- The web surface sends only block indices plus its rendered diff revision. Swift
+  rejects malformed indices and stale renderer messages. The backend constructs a
+  read-only preview from a fresh Git diff, and reconstructs it again at confirmation.
+  A changed revision rejects the operation; Git's context checks guard drift after
+  that read. This is not an OS transaction with external editors. The scoped
+  path check rejects traversal, symlink paths and targets outside the worktree.
+- The pure diff parser now lives in src/shared, with the existing renderer import
+  retained as a compatibility entry point. Patch headers use Git C quoting for
+  special filenames; rename metadata preserves real leading a/ and b/ directories.
+  Added/deleted files and rename-content discard retain their existing behavior.
+  Legacy web raw-patch requests remain compatible. Temporary apply patches use
+  private, unique directories and are cleaned after both success and failure.
+- Verification: 64 native tests pass, covering preview/cancel, duplicate confirmation,
+  failed apply, late preview and strict revision/index messages. 46 API/Git/parser
+  tests pass, including real repositories, native preview/apply routes, stale
+  confirmation, neighboring-block preservation, rename/added/deleted files, missing
+  final newline, Unicode/space/tab/newline/quote/backslash filenames and Git rejection
+  of drift after revision validation. Native discard and commit/push UI regressions
+  both pass against isolated fixtures. A development bundle serves all 126 focused
+  assets, including the shared parser, and rejects the full SPA.
+- Git history and wider document/terminal acceptance remain open, together with the
+  remaining M1/M3/M4/M6 requirements and the final elevate-ios architecture pass.
+
 ## Why now, and why native
 
 The Tauri shell works, but roughly half of `src-tauri/` exists to work around what a DOM

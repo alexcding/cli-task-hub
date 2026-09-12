@@ -29,13 +29,14 @@ async function main() {
       });
     });
     const assets = fs.readFileSync(path.join(__dirname, '../web-assets.txt'), 'utf8').split(/\r?\n/).filter(line => line && !line.startsWith('#'));
-    for (const asset of [...assets, 'shared/routes.mjs', 'shared/constants.mjs', 'shared/jql.mjs']) {
+    const servedAssets = [...assets, 'shared/routes.mjs', 'shared/constants.mjs', 'shared/jql.mjs', 'shared/diff-parse.mjs'];
+    for (const asset of servedAssets) {
       const response = await fetch(`${origin}/${asset}`, { signal: AbortSignal.timeout(5000) });
       assert.equal(response.status, 200, `${asset}: ${response.status}`);
       assert.ok((await response.text()).length > 0, `${asset} is empty`);
     }
     assert.equal((await fetch(`${origin}/app.js`)).status, 404, 'Full SPA must not be in the native bundle');
-    console.log(`Packaged backend served ${assets.length + 3} focused web assets; full SPA absent.`);
+    console.log(`Packaged backend served ${servedAssets.length} focused web assets; full SPA absent.`);
   } finally {
     if (child.pid && child.exitCode == null && child.signalCode == null) {
       const exited = once(child, 'exit'); child.kill('SIGTERM'); await exited;

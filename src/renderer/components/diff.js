@@ -108,8 +108,8 @@ const msg = (text) => `<div class="diff-empty">${text}</div>`;
 // section — for reuse outside the working-changes pane (e.g. the inline commit history). Same
 // markup, so it inherits the diff styles and the --diff-font / --diff-font-size tokens; only a
 // container that sets that font (the caller's) and a collapse click handler are needed.
-export function renderReadOnly(files, { fileLinks = false } = {}) {
-  return files.length ? render(files, [], false, fileLinks) : msg('No changes');
+export function renderReadOnly(files, { fileLinks = false, discardable = false } = {}) {
+  return files.length ? render(files, [], discardable, fileLinks) : msg('No changes');
 }
 
 // Attach file collapse/expand (header click) to a container holding a renderReadOnly() diff.

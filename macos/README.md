@@ -337,3 +337,10 @@ signing/hooks. A failed push preserves the successful local commit and offers
 Push without repeating Commit. Failed commit drafts survive; failed refreshes
 disable actions until disk state is loaded again. Quit waits for running Git
 operations. The focused web diff itself continues to render the patch.
+
+
+Working diff blocks also offer **Discard**. A native sheet previews the exact patch
+before **Discard Block**; Cancel makes no changes. The backend verifies the reviewed
+diff revision again when applying, so stale confirmations ask for refresh and review.
+Failed operations retain their error and proposal. Block selection is typed and
+scoped to the originating worktree; the renderer never submits arbitrary patches.

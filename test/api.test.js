@@ -525,6 +525,23 @@ test('POST /api/git/commit and /api/git/push', async () => {
   assert.ok(d2.body.error);
   assert.equal((await send('POST', '/api/git/discard', { path: dir })).status, 400);
 
+  // Native discard transports only a reviewed revision and block indices.
+  fs.writeFileSync(path.join(dir, 'a.txt'), 'NATIVE\n');
+  const native = (await get('/api/diff?path=' + encodeURIComponent(dir))).body;
+  assert.match(native.revision, /^[a-f0-9]{64}$/);
+  const selection = { path: dir, revision: native.revision, selection: [0, 0, 0] };
+  const preview = await send('POST', '/api/git/discard', { ...selection, mode: 'preview' });
+  assert.equal(preview.status, 200);
+  assert.equal(preview.body.path, 'a.txt');
+  assert.equal(fs.readFileSync(path.join(dir, 'a.txt'), 'utf8'), 'NATIVE\n');
+  fs.writeFileSync(path.join(dir, 'a.txt'), 'EXTERNAL\n');
+  assert.equal((await send('POST', '/api/git/discard', { ...selection, mode: 'apply' })).status, 409);
+  assert.equal(fs.readFileSync(path.join(dir, 'a.txt'), 'utf8'), 'EXTERNAL\n');
+  fs.writeFileSync(path.join(dir, 'a.txt'), 'NATIVE\n');
+  assert.equal((await send('POST', '/api/git/discard', { ...selection, mode: 'apply' })).body.ok, true);
+  assert.equal(fs.readFileSync(path.join(dir, 'a.txt'), 'utf8'), 'ONE\n');
+
+
   // Two blocks sharing one hunk (edits 5 context lines apart — beyond the merge gap,
   // within git's hunk-merge distance): discarding block 0 must leave block 1 untouched.
   fs.writeFileSync(path.join(dir, 'b.txt'), 'one\ntwo\nthree\nfour\nfive\nsix\nseven\neight\n');

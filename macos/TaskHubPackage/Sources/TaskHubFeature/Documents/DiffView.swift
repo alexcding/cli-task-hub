@@ -12,17 +12,17 @@ struct DiffView: View {
                 if let branch = model.snapshot?.branch { Text(branch).foregroundStyle(.secondary).lineLimit(1) }
                 Spacer()
                 if model.actions != nil {
-                    Button("Commit and Push…", systemImage: "arrow.up.circle") { model.showsActions = true }
+                    Button("Commit and Push…", systemImage: "arrow.up.circle") { model.showsActions = true }.disabled(model.actions?.busy == true)
                 }
-                if model.loading { ProgressView().controlSize(.small) }
+                if model.loading || model.actions?.busy == true { ProgressView().controlSize(.small) }
                 Button("Refresh Changes", systemImage: "arrow.clockwise", action: model.refresh)
-                    .labelStyle(.iconOnly).disabled(model.loading)
+                    .labelStyle(.iconOnly).disabled(model.loading || model.actions?.busy == true)
             }.padding(10)
             if let error = model.error {
                 HStack {
                     Text(error).font(.callout).foregroundStyle(.orange)
                     Spacer()
-                    Button("Reload Changes", action: model.reload)
+                    Button("Reload Changes", action: model.reload).disabled(model.actions?.busy == true)
                 }.padding(10)
             }
             Divider()
@@ -31,6 +31,9 @@ struct DiffView: View {
         }
         .sheet(isPresented: $model.showsActions) {
             if let actions = model.actions { GitChangesSheet(model: actions) }
+        }
+        .sheet(item: Binding(get: { model.actions?.discardProposal }, set: { if $0 == nil { model.actions?.cancelDiscard() } })) { proposal in
+            if let actions = model.actions { DiscardChangeSheet(model: actions, proposal: proposal) }
         }
         .onAppear { if active { model.show(appearance: appearance) } }
         .onChange(of: active) { _, value in if value { model.show(appearance: appearance) } else { model.hide() } }

@@ -728,15 +728,17 @@ async function gitCommit(dir, message, includeUntracked = true) {
 // fails cleanly and the caller re-renders — it can never half-apply a stale hunk.
 async function gitDiscard(dir, patch) {
   const os = require('os');
-  const file = path.join(os.tmpdir(), `taskhub-discard-${process.pid}-${Date.now()}.patch`);
+  let temporary;
   try {
-    await fsp.writeFile(file, patch);
+    temporary = await fsp.mkdtemp(path.join(os.tmpdir(), 'taskhub-discard-'));
+    const file = path.join(temporary, 'change.patch');
+    await fsp.writeFile(file, patch, { mode: 0o600 });
     await gitRun(dir, ['apply', '-R', file]);
     return { ok: true };
   } catch (err) {
     return { error: gitErrLine(err, 'git apply failed') };
   } finally {
-    fsp.unlink(file).catch(() => {});
+    if (temporary) await fsp.rm(temporary, { recursive: true, force: true }).catch(() => {});
   }
 }
 

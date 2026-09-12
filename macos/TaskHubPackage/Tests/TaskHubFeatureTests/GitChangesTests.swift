@@ -4,9 +4,21 @@ import Testing
 
 private actor GitActionFixture: GitChangesService {
     var commits: [(String, Bool)] = []
-    var pushes = 0
+    var pushes = 0, discards = 0
+    var discardFails = true
     var commitFails = false, pushFails = true, loadFails = false
     var dirty = true, ahead = 0
+    func previewDiscard(worktree: String, revision: String, selection: [Int]) async throws -> DiscardProposal {
+        try await Task.sleep(for: .milliseconds(40))
+        return .init(path: "test.swift", patch: "patch", revision: revision, selection: selection)
+    }
+    func discard(worktree: String, proposal: DiscardProposal) async throws {
+        discards += 1
+        try await Task.sleep(for: .milliseconds(40))
+        if discardFails { throw BackendError.operation("File changed on disk") }
+        dirty = false
+    }
+    func setDiscardFailure(_ value: Bool) { discardFails = value }
     func setCommitFailure(_ value: Bool) { commitFails = value }
     func setPushFailure(_ value: Bool) { pushFails = value }
     func setLoadFailure(_ value: Bool) { loadFails = value }
@@ -95,4 +107,51 @@ private actor GitActionFixture: GitChangesService {
     #expect(await service.pushes == 1)
     model.resume()
     #expect(model.canPush)
+}
+
+
+@MainActor @Test func discardRequiresPreviewAndConfirmationAndPreservesFailedProposal() async throws {
+    let service = GitActionFixture()
+    var refreshes = 0
+    let model = GitChangesActions(worktree: "/fixture", service: service, didChange: { refreshes += 1 })
+    await model.load()
+    await model.confirmDiscard()
+    #expect(await service.discards == 0)
+    await model.prepareDiscard(revision: "reviewed", selection: [0, 1, 2])
+    #expect(model.discardProposal?.selection == [0, 1, 2] && !model.canCommit && !model.canPush)
+    model.cancelDiscard()
+    #expect(model.discardProposal == nil)
+    #expect(await service.discards == 0)
+    await model.prepareDiscard(revision: "reviewed", selection: [0, 1, 2])
+    let operation = Task { await model.confirmDiscard() }
+    for _ in 0..<100 { if model.busy { break }; await Task.yield() }
+    await model.confirmDiscard()
+    await operation.value
+    #expect(await service.discards == 1)
+    #expect(model.error == "File changed on disk" && model.discardProposal != nil && refreshes == 1)
+    await service.setDiscardFailure(false)
+    await model.confirmDiscard()
+    #expect(model.discardProposal == nil && model.error == nil && refreshes == 2)
+    #expect(!model.canCommit && !model.canPush) // Commit must reload the changed disk state.
+}
+
+@MainActor @Test func hiddenDiffRejectsLateDiscardPreview() async {
+    let service = GitActionFixture()
+    let model = GitChangesActions(worktree: "/fixture", service: service)
+    let preview = Task { await model.prepareDiscard(revision: "reviewed", selection: [0, 0, 0]) }
+    for _ in 0..<100 { if model.busy { break }; await Task.yield() }
+    model.cancelDiscard()
+    await preview.value
+    #expect(model.discardProposal == nil && !model.busy)
+    #expect(await service.discards == 0)
+}
+
+
+@Test func discardMessagesRequireExactRenderedRevisionAndIntegerIndices() {
+    let valid: [String: Any] = ["type": "discard", "selection": [0, 1, 2], "revision": "current"]
+    #expect(DiscardSelectionMessage.decode(valid, revision: "current")?.selection == [0, 1, 2])
+    #expect(DiscardSelectionMessage.decode(valid, revision: "newer") == nil)
+    for selection: [Any] in [[true, 0, 0], [0.5, 0, 0], [-1, 0, 0], [0, 0], [0, 0, 0, 0]] {
+        #expect(DiscardSelectionMessage.decode(["type": "discard", "selection": selection, "revision": "current"], revision: "current") == nil)
+    }
 }

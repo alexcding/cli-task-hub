@@ -6,6 +6,7 @@ struct DiffSnapshot: Codable, Equatable, Sendable {
     let diff: String
     let untracked: [String]
     let branch: String?
+    var revision: String? = nil
     var ahead: Int? = nil
     var behind: Int? = nil
 }
@@ -21,6 +22,7 @@ struct APIDiffService: DiffService {
             let diff: String?
             let untracked: [String]?
             let branch: String?
+            let revision: String?
             let ahead: Int?
             let behind: Int?
             let error: String?
@@ -28,7 +30,7 @@ struct APIDiffService: DiffService {
         let result: Response = try await api.get(APIClient.query(Routes.DIFF, ["path": worktree]), timeout: 30)
         if let error = result.error { throw BackendError.operation(error) }
         guard let diff = result.diff else { throw BackendError.operation("The backend returned no diff.") }
-        return .init(diff: diff, untracked: result.untracked ?? [], branch: result.branch, ahead: result.ahead, behind: result.behind)
+        return .init(diff: diff, untracked: result.untracked ?? [], branch: result.branch, revision: result.revision, ahead: result.ahead, behind: result.behind)
     }
 }
 
@@ -38,7 +40,7 @@ struct APIDiffService: DiffService {
     private(set) var loading = false
     private var loadError: String?
     private var documentError: String?
-    var error: String? { documentError ?? loadError }
+    var error: String? { documentError ?? loadError ?? actions?.error }
     var showsActions = false
     private(set) var actions: GitChangesActions?
     private(set) var webView: WKWebView?
@@ -136,6 +138,7 @@ struct APIDiffService: DiffService {
     }
     func hide() {
         active = false; loaded = false
+        actions?.cancelDiscard()
         task?.cancel(); task = nil; generation = UUID(); loading = false
         webView?.stopLoading(); webView?.navigationDelegate = nil
         webView?.configuration.userContentController.removeScriptMessageHandler(forName: "diff")
@@ -159,6 +162,12 @@ struct APIDiffService: DiffService {
             loaded = true; documentError = nil; setAppearance(appearance); render()
         } else if body["type"] as? String == "error", let text = body["message"] as? String, text.utf8.count <= 4096 {
             documentError = "Could not load changes: \(text)"
+        } else if let request = DiscardSelectionMessage.decode(body, revision: snapshot?.revision), active, loaded, !loading, let actions {
+            let generation = generation
+            Task {
+                guard self.generation == generation, active else { return }
+                await actions.prepareDiscard(revision: request.revision, selection: request.selection)
+            }
         } else if body["type"] as? String == "open", let path = body["path"] as? String,
                   let line = body["line"] as? Int, active, loaded {
             let generation = generation, root = worktree
