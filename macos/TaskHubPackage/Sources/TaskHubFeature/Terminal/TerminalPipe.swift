@@ -21,7 +21,8 @@ final class TerminalPipe: @unchecked Sendable {
     private var lastStateSequence: UInt64?
     private var ended = false
     private var inputEnqueues = 0
-    private var latestGrid: (UInt16, UInt16)?
+    private var latestViewport: InMemoryTerminalViewport?
+    private var ownsGeometryResponses = false
     private let error: @Sendable (String) -> Void
     private let exited: @Sendable (Int) -> Void
     private(set) var memory: InMemoryTerminalSession!
@@ -31,13 +32,14 @@ final class TerminalPipe: @unchecked Sendable {
         error = onError
         exited = onExit
         memory = InMemoryTerminalSession(write: { [weak self] in self?.write($0) }, resize: { [weak self] in
-            self?.resize(columns: $0.columns, rows: $0.rows)
-        }, suppressesPixelOnlyResizes: true)
+            self?.resize($0)
+        }, suppressesPixelOnlyResizes: false)
     }
 
-    func bind(client: PtydClient, id: String) {
+    func bind(client: PtydClient, id: String, geometryOwned: Bool = false) {
         lock.lock()
         self.client = client; termID = id
+        ownsGeometryResponses = geometryOwned
         input?.close()
         input = TerminalInputQueue(send: { data in
             let _: Bool? = try await client.request(.init(op: "write", term: id, bytes: data))
@@ -45,19 +47,38 @@ final class TerminalPipe: @unchecked Sendable {
             guard let self else { return }
             self.lock.lock(); self.failLocked(message); self.lock.unlock()
         })
-        let grid = latestGrid
         lock.unlock()
-        if let grid { resize(columns: grid.0, rows: grid.1) }
+    }
+
+    func measuredGeometry() async throws -> PtyGeometry {
+        for _ in 0..<100 {
+            let (failed, viewport) = lock.withLock { (self.failed, latestViewport) }
+            guard !failed else { throw PtyError.closed }
+            if let viewport, viewport.cellWidthPixels > 0, viewport.cellHeightPixels > 0 {
+                let geometry = PtyGeometry(viewport)
+                try geometry.validate()
+                return geometry
+            }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        throw PtyError.connection("The native terminal did not report measured cell pixels.")
     }
 
     func synchronizeGrid() async throws {
         for _ in 0..<100 {
-            let state = lock.withLock { (failed, client, termID, latestGrid) }
-            guard !state.0, let client = state.1, let term = state.2 else { throw PtyError.closed }
-            if let grid = state.3 {
-                let _: Bool? = try await client.request(.init(op: "resize", term: term, cols: grid.0, rows: grid.1))
-                return
+            // Read and enqueue under the same lock as callbacks. A newer resize
+            // cannot overtake this fence and then be overwritten by an old size.
+            let sent: Bool = try await withCheckedThrowingContinuation { continuation in
+                lock.lock(); defer { lock.unlock() }
+                guard !failed, let client, termID != nil else { continuation.resume(throwing: PtyError.closed); return }
+                guard let viewport = latestViewport else { continuation.resume(returning: false); return }
+                do {
+                    client.sendAcknowledged(try resizeRequestLocked(viewport)) { result in
+                        continuation.resume(with: result.map { _ in true })
+                    }
+                } catch { continuation.resume(throwing: error) }
             }
+            if sent { return }
             try await Task.sleep(for: .milliseconds(20))
         }
         throw PtyError.connection("The native terminal did not report its grid size.")
@@ -88,15 +109,23 @@ final class TerminalPipe: @unchecked Sendable {
     }
 
     @MainActor
-    func attach(_ snapshot: PtySnapshot, daemonOwnsStateResponses: Bool = false, daemonOwnsIdentityResponses: Bool = false, onReady: @escaping @Sendable () -> Void) async throws {
+    func attach(_ snapshot: PtySnapshot, daemonOwnsStateResponses: Bool = false, daemonOwnsIdentityResponses: Bool = false, daemonOwnsGeometryResponses: Bool = false, onReady: @escaping @Sendable () -> Void) async throws {
         try snapshot.header.validate()
+        guard daemonOwnsGeometryResponses == (snapshot.header.geometry != nil),
+              !daemonOwnsGeometryResponses || daemonOwnsIdentityResponses else {
+            throw PtyError.connection("The terminal snapshot geometry does not match its response owner.")
+        }
         guard snapshot.bytes.count == snapshot.header.size else {
             throw PtyError.connection("The terminal snapshot is incomplete.")
         }
         guard memory.restoreSnapshot(snapshot.bytes) else {
             throw PtyError.connection("The terminal snapshot could not be imported. Reattach to retry with a fresh capture; the shell is still running.")
         }
-        if daemonOwnsIdentityResponses {
+        if daemonOwnsGeometryResponses {
+            guard memory.enableHostGeometryResponses() else {
+                throw PtyError.connection("Terminal geometry response ownership could not be configured.")
+            }
+        } else if daemonOwnsIdentityResponses {
             guard memory.enableHostIdentityResponses() else {
                 throw PtyError.connection("Terminal identity response ownership could not be configured.")
             }
@@ -195,10 +224,25 @@ final class TerminalPipe: @unchecked Sendable {
                     failLocked("The terminal daemon returned an invalid ordered resize."); return
                 }
                 lastStateSequence = next
+                guard ownsGeometryResponses == (event.geometry != nil) else {
+                    failLocked("The terminal daemon changed geometry response ownership during a resize."); return
+                }
+                if let geometry = event.geometry {
+                    do { try geometry.validate() }
+                    catch { failLocked(error.localizedDescription); return }
+                    guard geometry.cols == cols, geometry.rows == rows else {
+                        failLocked("The terminal daemon returned inconsistent resize geometry."); return
+                    }
+                }
                 outputQueue.async { [self] in
                     lock.lock(); let active = !failed; lock.unlock()
                     guard active else { return }
-                    if !memory.applyHostGridSize(columns: cols, rows: rows) {
+                    let applied: Bool
+                    if let geometry = event.geometry {
+                        applied = memory.applyHostGeometry(columns: cols, rows: rows,
+                            cellWidthPixels: geometry.cellWidthPixels, cellHeightPixels: geometry.cellHeightPixels)
+                    } else { applied = memory.applyHostGridSize(columns: cols, rows: rows) }
+                    if !applied {
                         lock.lock(); failLocked("The terminal could not apply its ordered grid change."); lock.unlock()
                     }
                     lock.lock(); consumedLocked(0); lock.unlock()
@@ -264,13 +308,41 @@ final class TerminalPipe: @unchecked Sendable {
         lock.lock(); inputEnqueues -= 1; lock.unlock()
     }
 
-    private func resize(columns: UInt16, rows: UInt16) {
-        guard columns > 0, rows > 0 else { return }
+    private func resizeRequestLocked(_ viewport: InMemoryTerminalViewport) throws -> PtyRequest {
+        var request = PtyRequest(op: "resize", term: termID, cols: viewport.columns, rows: viewport.rows)
+        if ownsGeometryResponses {
+            let geometry = PtyGeometry(viewport)
+            try geometry.validate()
+            request.geometry = geometry
+        }
+        return request
+    }
+
+    private func resize(_ viewport: InMemoryTerminalViewport) {
+        guard viewport.columns > 0, viewport.rows > 0 else { return }
         lock.lock()
         defer { lock.unlock() }
-        latestGrid = (columns, rows)
-        guard !failed, let termID else { return }
-        client?.fire(.init(op: "resize", term: termID, cols: columns, rows: rows))
+        let previous = latestViewport
+        latestViewport = viewport
+        guard !failed, termID != nil, let client else { return }
+        if let previous {
+            let unchanged = ownsGeometryResponses ? PtyGeometry(previous) == PtyGeometry(viewport)
+                : previous.columns == viewport.columns && previous.rows == viewport.rows
+            if unchanged { return }
+        }
+        do {
+            client.sendAcknowledged(try resizeRequestLocked(viewport)) { [weak self, weak client] result in
+                guard case .failure(let error) = result, let self else { return }
+                if (error as? PtyError)?.permitsReconnect == true {
+                    // Size changes are recoverable from the next snapshot. Let
+                    // the existing disconnect path assess pending user input.
+                    client?.close()
+                    return
+                }
+                self.lock.lock(); defer { self.lock.unlock() }
+                self.failLocked("Terminal resize failed: \(error.localizedDescription)")
+            }
+        } catch { failLocked(error.localizedDescription) }
     }
 
     func close() {

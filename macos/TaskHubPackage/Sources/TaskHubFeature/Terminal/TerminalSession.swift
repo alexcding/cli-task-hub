@@ -93,6 +93,9 @@ final class TerminalSession: Identifiable {
             try await Task.sleep(for: .milliseconds(100))
         }
         guard surface.surface != nil else { throw PtyError.connection("Ghostty could not create a native surface.") }
+        guard pipe.memory.enableGeometryCallbacks() else {
+            throw PtyError.connection("Ghostty could not report complete terminal geometry.")
+        }
         let config = try configuration ?? PtydConfiguration.current()
         let host = PtydHost(configuration: config)
         self.host = host
@@ -133,24 +136,33 @@ final class TerminalSession: Identifiable {
         } else {
             try negotiated.validateIdentityResponseOwner()
             try negotiated.validateShellIntegration()
+            try negotiated.validateGeometryResponseOwner()
             let profile = try PtyTerminalProfile.current()
+            let geometry = try await pipe.measuredGeometry()
+            try Task.checkCancellation()
             info = try await client.request(.init(op: "create", opts: .init(
                 cwd: cwd, paired: paired, pairKey: pairKey,
-                stateResponseOwner: PtyHello.identityResponseOwnerVersion, terminalProfile: profile)))
+                stateResponseOwner: PtyHello.identityResponseOwnerVersion, terminalProfile: profile,
+                geometryResponseOwner: PtyHello.geometryResponseOwnerVersion, geometry: geometry)))
             created = true
+        }
+        guard !created || info.geometryResponseOwner == PtyHello.geometryResponseOwnerVersion else {
+            throw PtyError.connection("The PTY helper did not preserve the requested terminal geometry owner. The created shell has been preserved.")
         }
         try info.validateStateResponseOwner()
         if info.stateResponseOwner == PtyHello.identityResponseOwnerVersion {
             try negotiated.validateIdentityResponseOwner()
         }
+        if info.geometryResponseOwner != nil { try negotiated.validateGeometryResponseOwner() }
         shellPID = info.pid
         termID = info.id
-        pipe.bind(client: client, id: info.id)
+        pipe.bind(client: client, id: info.id, geometryOwned: info.geometryResponseOwner != nil)
         try await pipe.synchronizeGrid()
         status = "Restoring terminal"
         let snapshot = try await PtySnapshotDownloader(client: client).fetch(term: info.id)
         try await pipe.attach(snapshot, daemonOwnsStateResponses: true,
-                              daemonOwnsIdentityResponses: info.stateResponseOwner == PtyHello.identityResponseOwnerVersion) { [weak self] in
+                              daemonOwnsIdentityResponses: info.stateResponseOwner == PtyHello.identityResponseOwnerVersion,
+                              daemonOwnsGeometryResponses: info.geometryResponseOwner != nil) { [weak self] in
             Task { @MainActor in
                 guard let self, self.started, self.surfaceGeneration == generation, self.error == nil else { return }
                 self.status = "Connected"

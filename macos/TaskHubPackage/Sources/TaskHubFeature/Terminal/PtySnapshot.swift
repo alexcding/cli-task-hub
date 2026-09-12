@@ -14,8 +14,15 @@ struct PtySnapshot: Sendable {
         let cols: UInt16
         let rows: UInt16
         let revision: String
+        var geometry: PtyGeometry? = nil
 
         func validate() throws {
+            if let geometry {
+                try geometry.validate()
+                guard geometry.cols == cols, geometry.rows == rows else {
+                    throw PtyError.connection("The snapshot geometry does not match its grid dimensions.")
+                }
+            }
             guard token > 0, size > 0, size <= PtySnapshot.limit,
                   chunkBytes == PtySnapshot.chunkBytes, revision == PtySnapshot.revision,
                   seq <= stateSeq, stateSeq < UInt64.max,

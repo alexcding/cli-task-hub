@@ -13,7 +13,7 @@ final class PtydClient: @unchecked Sendable {
     private var outgoing = Data()
     private var framer = PtyFramer()
     private var sequence: UInt64 = 0
-    private var pending: [UInt64: CheckedContinuation<Data, Error>] = [:]
+    private var pending: [UInt64: @Sendable (Result<Data, Error>) -> Void] = [:]
     private let event: @Sendable (PtyEvent) -> Void
     private let disconnected: @Sendable (PtyError) -> Void
 
@@ -68,21 +68,29 @@ final class PtydClient: @unchecked Sendable {
 
     func request<T: Decodable & Sendable>(_ request: PtyRequest, timeout: Double = 5) async throws -> T {
         let bytes: Data = try await withCheckedThrowingContinuation { continuation in
-            queue.async { [self] in
-                guard fd >= 0 else { continuation.resume(throwing: PtyError.closed); return }
-                sequence += 1
-                let id = sequence
-                var request = request
-                request.id = id
-                pending[id] = continuation
-                send(request)
-                queue.asyncAfter(deadline: .now() + timeout) { [weak self] in
-                    self?.pending.removeValue(forKey: id)?.resume(throwing: PtyError.timeout)
-                }
-            }
+            sendAcknowledged(request, timeout: timeout) { continuation.resume(with: $0) }
         }
         try Task.checkCancellation()
         return try JSONDecoder().decode(T.self, from: bytes)
+    }
+
+    // Enqueues synchronously onto the socket queue, preserving the caller's
+    // resize order without launching independently scheduled Tasks per event.
+    func sendAcknowledged(_ request: PtyRequest, timeout: Double = 5,
+                          completion: @escaping @Sendable (Result<Data, Error>) -> Void) {
+        queue.async { [self] in
+            guard fd >= 0 else { completion(.failure(PtyError.closed)); return }
+            guard pending.count < 1024 else { completion(.failure(PtyError.overflow)); return }
+            sequence += 1
+            let id = sequence
+            var request = request
+            request.id = id
+            pending[id] = completion
+            send(request)
+            queue.asyncAfter(deadline: .now() + timeout) { [weak self] in
+                self?.pending.removeValue(forKey: id)?(.failure(PtyError.timeout))
+            }
+        }
     }
 
     func fire(_ request: PtyRequest) { queue.async { [self] in send(request) } }
@@ -141,11 +149,11 @@ final class PtydClient: @unchecked Sendable {
         }
         if frame["ev"] != nil { event(try JSONDecoder().decode(PtyEvent.self, from: data)); return }
         guard let id = frame["id"] as? UInt64, let waiter = pending.removeValue(forKey: id) else { return }
-        if let error = frame["err"] as? String { waiter.resume(throwing: PtyError.connection(error)); return }
+        if let error = frame["err"] as? String { waiter(.failure(PtyError.connection(error))); return }
         do {
             let result = try JSONSerialization.data(withJSONObject: frame["ok"] ?? NSNull(), options: [.fragmentsAllowed])
-            waiter.resume(returning: result)
-        } catch { waiter.resume(throwing: error) }
+            waiter(.success(result))
+        } catch { waiter(.failure(error)) }
     }
 
     private func fail(_ error: Error) {
@@ -157,7 +165,7 @@ final class PtydClient: @unchecked Sendable {
         outgoing.removeAll()
         let waiters = pending.values
         pending.removeAll()
-        for waiter in waiters { waiter.resume(throwing: error) }
+        for waiter in waiters { waiter(.failure(error)) }
         disconnected(error as? PtyError ?? .connection(error.localizedDescription))
     }
 

@@ -266,14 +266,17 @@ shells retain normal startup behavior. These scripts are never written into user
 dotfiles. UI/config-dependent offline queries and snapshot-v1 image/glyph omissions
 still require work; see `crates/taskhub-ptyd/SNAPSHOTS.md`.
 
-The helper and native bridge now support optional `daemon-geometry-v1`; app-side
-negotiation is still pending. Complete imported pixel geometry is retained, and
-geometry-owned native surfaces can suppress size reports while applying ordered
-cell/pixel updates. `InMemoryTerminalSession.enableGeometryCallbacks()` opts into
-engine-ordered measurements including actual cell pixels; consumers must enqueue
-work without re-entering the native surface and leave pixel-only resize suppression
-disabled. The legacy callback has no cell metrics. Native tests cover backing-scale
-rounding, pixel-only changes, split queries/reset and preserved title/input policy.
+New app sessions also select `daemon-geometry-v1`. They wait for measured cell
+pixels before creation; kernel winsize, parser state, ordered resizes and snapshot
+metadata share those measurements. Native surfaces suppress the matching replies,
+including mode 2048 resize notifications, so two attached surfaces do not duplicate
+responses. Older identity/state sessions retain their existing response paths.
+Resize requests are acknowledged and queued in callback order; rejected resizes
+stop the pipeline visibly. Transport loss uses the existing reconnect/input-safety
+checks. Unchanged grid/cell measurements skip a request, while changed cell pixels
+remain significant. The native callback runs at the engine resize boundary and
+reports actual font metrics, including backing-scale rounding. Snapshot/event
+geometry and ownership are validated before use.
 
 Rebuilding the helper does not upgrade an already-running daemon; use an isolated
 socket to test the new helper without ending an existing shell. Broader

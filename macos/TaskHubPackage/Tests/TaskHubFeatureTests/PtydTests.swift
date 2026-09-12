@@ -245,13 +245,18 @@ private final class EventLog: @unchecked Sendable {
     defer { control.close(); _ = kill(hello.pid, SIGTERM) }
     try hello.validateSnapshots()
     try hello.validateIdentityResponseOwner()
+    try hello.validateGeometryResponseOwner()
+    let _: PtyHello = try await control.request(.init(op: "hello", dataEncoding: "base64", snapshotRevision: PtySnapshot.revision))
     let originalProfile = try PtyTerminalProfile.current()
     let movedBundle = directory.appendingPathComponent("temporary-bundle-terminfo")
     try FileManager.default.copyItem(at: URL(fileURLWithPath: originalProfile.terminfoDirectory), to: movedBundle)
     let profile = PtyTerminalProfile(version: originalProfile.version, terminfoDirectory: movedBundle.path)
     let term: PtyInfo = try await control.request(.init(op: "create", opts: .init(
         cwd: directory.path, shell: shell.path, pairKey: "app-snapshot",
-        stateResponseOwner: PtyHello.identityResponseOwnerVersion, terminalProfile: profile)))
+        stateResponseOwner: PtyHello.identityResponseOwnerVersion, terminalProfile: profile,
+        geometryResponseOwner: PtyHello.geometryResponseOwnerVersion,
+        geometry: PtyGeometry(.init(columns: 80, rows: 24, cellWidthPixels: 9, cellHeightPixels: 18)))))
+    #expect(term.geometryResponseOwner == PtyHello.geometryResponseOwnerVersion)
     let durableProfile = try #require(term.terminalProfile)
     #expect(durableProfile.version == profile.version)
     #expect(durableProfile.terminfoDirectory != profile.terminfoDirectory)
@@ -303,15 +308,23 @@ private final class EventLog: @unchecked Sendable {
     await first.stopConnecting()
     firstWindow.contentView = nil
 
-    let identityQuery = "\u{1B}[c\u{1B}[>c\u{1B}[=c\u{1B}[>q\u{1B}P+q544e\u{1B}\\"
+    func currentGeometry() async throws -> PtyGeometry {
+        let snapshot = try await PtySnapshotDownloader(client: control).fetch(term: term.id)
+        return try #require(snapshot.header.geometry)
+    }
+    func sizeReply(_ geometry: PtyGeometry) -> String {
+        "\u{1B}[4;\(UInt32(geometry.rows) * geometry.cellHeightPixels);\(UInt32(geometry.cols) * geometry.cellWidthPixels)t\u{1B}[6;\(geometry.cellHeightPixels);\(geometry.cellWidthPixels)t\u{1B}[8;\(geometry.rows);\(geometry.cols)t"
+    }
+    let identityQuery = "\u{1B}[c\u{1B}[>c\u{1B}[=c\u{1B}[>q\u{1B}P+q544e\u{1B}\\\u{1B}[14t\u{1B}[16t\u{1B}[18t"
     let identityReply = "\u{1B}[?62;22;52c\u{1B}[>1;10;0c\u{1B}P>|ghostty \(profile.version)\u{1B}\\\u{1B}P1+r544E=787465726D2D67686F73747479\u{1B}\\"
+    let offlineReply = identityReply + sizeReply(try await currentGeometry())
     let offlineStart = log.bytes.count
     let _: Bool? = try await control.request(.init(op: "write", term: term.id, data: identityQuery))
     for _ in 0..<100 {
-        if log.bytes.count >= offlineStart + identityQuery.utf8.count + identityReply.utf8.count { break }
+        if log.bytes.count >= offlineStart + identityQuery.utf8.count + offlineReply.utf8.count { break }
         try await Task.sleep(for: .milliseconds(10))
     }
-    #expect(String(decoding: log.bytes.dropFirst(offlineStart), as: UTF8.self) == identityQuery + identityReply)
+    #expect(String(decoding: log.bytes.dropFirst(offlineStart), as: UTF8.self) == identityQuery + offlineReply)
 
     let second = TerminalSession(pairKey: "app-snapshot", cwd: directory.path, configuration: config)
     let secondWindow = mount(second, width: 960)
@@ -349,16 +362,29 @@ private final class EventLog: @unchecked Sendable {
     await observer.start()
     try await observer.waitUntilReady()
     #expect(observer.shellPID == term.pid)
+    let observedGeometry = try await currentGeometry()
+    let observedReply = identityReply + sizeReply(observedGeometry)
     let identityStart = log.bytes.count
     let _: Bool? = try await control.request(.init(op: "write", term: term.id, data: identityQuery))
     for _ in 0..<100 {
-        if log.bytes.count >= identityStart + identityQuery.utf8.count + identityReply.utf8.count { break }
+        if log.bytes.count >= identityStart + identityQuery.utf8.count + observedReply.utf8.count { break }
         try await Task.sleep(for: .milliseconds(10))
     }
     try await Task.sleep(for: .milliseconds(200))
-    #expect(String(decoding: log.bytes.dropFirst(identityStart), as: UTF8.self) == identityQuery + identityReply)
+    #expect(String(decoding: log.bytes.dropFirst(identityStart), as: UTF8.self) == identityQuery + observedReply)
+    let modeStart = log.bytes.count
+    let modeQuery = "\u{1B}[?2048h"
+    let modeReply = "\u{1B}[48;\(observedGeometry.rows);\(observedGeometry.cols);\(UInt32(observedGeometry.rows) * observedGeometry.cellHeightPixels);\(UInt32(observedGeometry.cols) * observedGeometry.cellWidthPixels)t"
+    let _: Bool? = try await control.request(.init(op: "write", term: term.id, data: modeQuery))
+    for _ in 0..<100 {
+        if log.bytes.count >= modeStart + modeQuery.utf8.count + modeReply.utf8.count { break }
+        try await Task.sleep(for: .milliseconds(10))
+    }
+    try await Task.sleep(for: .milliseconds(100))
+    #expect(String(decoding: log.bytes.dropFirst(modeStart), as: UTF8.self) == modeQuery + modeReply)
     let beforeResize = log.bytes.count
-    let _: Bool? = try await control.request(.init(op: "resize", term: term.id, cols: 37, rows: 19))
+    let _: Bool? = try await control.request(.init(op: "resize", term: term.id, cols: 37, rows: 19,
+        geometry: PtyGeometry(.init(columns: 37, rows: 19, cellWidthPixels: 9, cellHeightPixels: 18))))
     let _: Bool? = try await control.request(.init(op: "write", term: term.id,
         data: "\u{1B}[2J\u{1B}[H" + String(repeating: "x", count: 40) + "\u{1B}[6n"))
     for _ in 0..<100 {
@@ -371,6 +397,8 @@ private final class EventLog: @unchecked Sendable {
     try await Task.sleep(for: .milliseconds(200))
     #expect(String(decoding: log.bytes.dropFirst(beforeResize), as: UTF8.self)
         .components(separatedBy: "\u{1B}[2;4R").count == 2)
+    #expect(String(decoding: log.bytes.dropFirst(beforeResize), as: UTF8.self)
+        .components(separatedBy: "\u{1B}[48;19;37;342;333t").count == 2)
     await observer.stopConnecting()
     observerWindow.contentView = nil
     let _: Bool? = try await control.request(.init(op: "write", term: term.id, data: "\u{1B}]7;\u{07}"))
@@ -594,6 +622,7 @@ private final class EventLog: @unchecked Sendable {
     #expect(try String(contentsOf: home.appendingPathComponent("startup.log"), encoding: .utf8) == "env\nprofile\nrc\nlogin\n")
     let terms: [PtyInfo] = try await control.request(.init(op: "list"))
     let term = try #require(terms.first)
+    #expect(term.geometryResponseOwner == PtyHello.geometryResponseOwnerVersion)
     let resources = try #require(term.terminalProfile?.resourcesDirectory)
     #expect(resources.hasPrefix(directory.path))
     #expect(FileManager.default.isReadableFile(atPath: resources + "/shell-integration/zsh/.zshenv"))

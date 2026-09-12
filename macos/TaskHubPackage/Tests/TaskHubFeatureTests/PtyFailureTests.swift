@@ -47,6 +47,69 @@ private final class FailureMessages: @unchecked Sendable {
     var all: [String] { lock.lock(); defer { lock.unlock() }; return values }
 }
 
+@MainActor @Test(.timeLimit(.minutes(1))) func measuredResizeRejectionStopsTheNativePipeline() async throws {
+    _ = NSApplication.shared
+    let fixture = try await ProtocolFixture.start(mode: "resize-reject")
+    defer { fixture.stop() }
+    let messages = FailureMessages()
+    let pipe = TerminalPipe(onError: messages.append, onExit: { _ in })
+    let state = TerminalViewState()
+    let view = WorkspaceTerminalView(frame: NSRect(x: 0, y: 0, width: 640, height: 320))
+    view.delegate = state; view.controller = state.controller
+    view.configuration = .init(backend: .inMemory(pipe.memory), fontSize: 13)
+    let window = NSWindow(contentRect: view.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+    window.isReleasedWhenClosed = false; window.contentView = view
+    defer { pipe.close(); window.contentView = nil; window.close() }
+    view.layoutSubtreeIfNeeded()
+    try #require(pipe.memory.enableGeometryCallbacks())
+    _ = try await pipe.measuredGeometry()
+    let client = PtydClient(onEvent: { pipe.receive($0) })
+    _ = try await client.connect(path: fixture.socket)
+    defer { client.close() }
+    pipe.bind(client: client, id: "fixture", geometryOwned: true)
+    window.setContentSize(NSSize(width: 900, height: 320))
+    view.layoutSubtreeIfNeeded()
+    for _ in 0..<100 {
+        if pipe.isClosed { break }
+        try await Task.sleep(for: .milliseconds(10))
+    }
+    #expect(pipe.isClosed)
+    #expect(messages.all.contains { $0.contains("Terminal resize failed") && $0.contains("fixture resize rejected") })
+    let lines = try String(contentsOf: fixture.directory.appendingPathComponent("ready.resizes"), encoding: .utf8)
+    let first = try #require(lines.split(separator: "\n").first)
+    let frame = try #require(JSONSerialization.jsonObject(with: Data(first.utf8)) as? [String: Any])
+    #expect(frame["id"] != nil, "resizes require acknowledgement")
+    let geometry = try #require(frame["geometry"] as? [String: Any])
+    #expect((geometry["cellWidthPixels"] as? Int ?? 0) > 0)
+    #expect((geometry["cellHeightPixels"] as? Int ?? 0) > 0)
+}
+
+@Test func geometryContractsRejectUnknownOwnersAndInconsistentSnapshots() throws {
+    let fields: [String: Any] = ["cols": 80, "rows": 24, "cellWidthPixels": 9, "cellHeightPixels": 18]
+    func geometry(_ updates: [String: Any]) throws -> PtyGeometry {
+        let data = try JSONSerialization.data(withJSONObject: fields.merging(updates) { _, new in new })
+        return try JSONDecoder().decode(PtyGeometry.self, from: data)
+    }
+    try geometry([:]).validate()
+    for updates in [["cols": 0], ["rows": 4097], ["cellWidthPixels": 0], ["cellHeightPixels": 2731], ["cellWidthPixels": Int(UInt32.max)]] {
+        #expect(throws: PtyError.self) { try geometry(updates).validate() }
+    }
+    var header = PtySnapshot.Header(token: 1, size: 10, chunkBytes: PtySnapshot.chunkBytes,
+        seq: 0, stateSeq: 0, cols: 80, rows: 24, revision: PtySnapshot.revision, geometry: try geometry([:]))
+    try header.validate()
+    header.geometry = try geometry(["cols": 81])
+    #expect(throws: PtyError.self) { try header.validate() }
+    let json = "{\"id\":\"x\",\"cwd\":\"/tmp\",\"title\":\"x\",\"paired\":false,\"pairKey\":\"x\",\"hasContext\":false,\"pid\":1,\"created\":0,\"stateResponseOwner\":\"daemon-state-v1\",\"geometryResponseOwner\":\"daemon-geometry-v1\"}"
+    let info = try JSONDecoder().decode(PtyInfo.self, from: Data(json.utf8))
+    #expect(throws: PtyError.self) { try info.validateStateResponseOwner() }
+    var hello = PtyHello(protocol: 2, pid: 1, dataEncoding: "base64", acknowledgedInput: true)
+    #expect(throws: PtyError.self) { try hello.validateGeometryResponseOwner() }
+    hello.geometryResponseOwner = "future-owner"
+    #expect(throws: PtyError.self) { try hello.validateGeometryResponseOwner() }
+    hello.geometryResponseOwner = PtyHello.geometryResponseOwnerVersion
+    try hello.validateGeometryResponseOwner()
+}
+
 @MainActor @Test(.timeLimit(.minutes(1))) func ghosttyEncodedInputReportsSocketRejectionAndStopsLaterKeystrokes() async throws {
     _ = NSApplication.shared
     let fixture = try await ProtocolFixture.start()

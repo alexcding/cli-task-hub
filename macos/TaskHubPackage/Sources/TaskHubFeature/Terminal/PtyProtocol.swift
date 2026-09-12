@@ -32,8 +32,15 @@ struct PtyInfo: Codable, Sendable, Identifiable {
     let created: UInt64
     var stateResponseOwner: String? = nil
     var terminalProfile: PtyTerminalProfile? = nil
+    var geometryResponseOwner: String? = nil
 
     func validateStateResponseOwner() throws {
+        if let geometryResponseOwner {
+            guard geometryResponseOwner == PtyHello.geometryResponseOwnerVersion,
+                  stateResponseOwner == PtyHello.identityResponseOwnerVersion else {
+                throw PtyError.connection("This shell has an incompatible terminal geometry owner. The existing shell has been preserved.")
+            }
+        }
         if stateResponseOwner == PtyHello.stateResponseOwnerVersion && terminalProfile == nil { return }
         guard stateResponseOwner == PtyHello.identityResponseOwnerVersion, let terminalProfile else {
             throw PtyError.connection("This shell uses an older terminal response owner. Save its work and close it explicitly before creating a new terminal. The existing shell has been preserved.")
@@ -45,6 +52,7 @@ struct PtyInfo: Codable, Sendable, Identifiable {
 struct PtyHello: Decodable, Sendable {
     static let stateResponseOwnerVersion = "daemon-state-v1"
     static let identityResponseOwnerVersion = "daemon-identity-v1"
+    static let geometryResponseOwnerVersion = "daemon-geometry-v1"
     let `protocol`: UInt32
     let pid: Int32
     let dataEncoding: String?
@@ -53,6 +61,13 @@ struct PtyHello: Decodable, Sendable {
     var stateResponseOwner: String? = nil
     var identityResponseOwner: String? = nil
     var shellIntegration: Bool? = nil
+    var geometryResponseOwner: String? = nil
+
+    func validateGeometryResponseOwner() throws {
+        guard geometryResponseOwner == Self.geometryResponseOwnerVersion else {
+            throw PtyError.connection("This PTY helper cannot preserve terminal pixel geometry. Save your work, quit TaskHub explicitly, rebuild the helper, and reopen. Existing shells have been preserved.")
+        }
+    }
 
     func validateShellIntegration() throws {
         guard shellIntegration == true else {
@@ -119,6 +134,7 @@ struct PtyEvent: Decodable, Sendable {
     var stateSeq: UInt64? = nil
     var cols: UInt16? = nil
     var rows: UInt16? = nil
+    var geometry: PtyGeometry? = nil
 }
 
 struct PtyRequest: Encodable, Sendable {
@@ -129,6 +145,8 @@ struct PtyRequest: Encodable, Sendable {
         var pairKey: String
         var stateResponseOwner: String? = nil
         var terminalProfile: PtyTerminalProfile? = nil
+        var geometryResponseOwner: String? = nil
+        var geometry: PtyGeometry? = nil
     }
     var id: UInt64?
     var op: String
@@ -143,6 +161,7 @@ struct PtyRequest: Encodable, Sendable {
     var snapshotRevision: String?
     var token: UInt64?
     var offset: Int?
+    var geometry: PtyGeometry?
 }
 
 // Stream framing is independent of socket reads. Decode only complete UTF-8 JSON

@@ -69,10 +69,10 @@ the identity/state set, with the same bounded collector and callback cleanup.
 It requires initialized pixel geometry; title, clipboard, colors and other host
 effects remain excluded. The daemon exposes these APIs through the optional
 `daemon-geometry-v1` creation contract, including initial kernel winsize, ordered
-resize and snapshot metadata. Native renderer negotiation/suppression is still
-pending; production app sessions retain their existing response ownership until
-that wiring is implemented. See the daemon protocol for the narrower kernel
-pixel bounds and required creation/resize fields.
+resize and snapshot metadata. New native app sessions negotiate that ownership
+and suppress the matching reports after import. Existing sessions retain their
+original ownership. See the daemon protocol for the narrower kernel pixel bounds
+and required creation/resize fields.
 
 Both native and headless builds apply
 `macos/patches/ghostty/0003-terminal-query-validation.patch`. It rejects echoed DA2

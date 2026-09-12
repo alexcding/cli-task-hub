@@ -129,16 +129,18 @@ and with two live native surfaces, and verifies same-PID snapshot reattachment a
 copy removal after reaping. Runtime/native regressions cover ANSI mode queries,
 echoed DA replies, split XTGETTCAP, terminal reset and invalid clipboard policy.
 
-## Pixel geometry ownership (native wiring pending)
+## Pixel geometry ownership
 
 Feature helpers advertise `hello.geometryResponseOwner:"daemon-geometry-v1"`.
 Creation can opt in with `opts.geometryResponseOwner` set to that exact string,
 alongside `stateResponseOwner:"daemon-identity-v1"`, its identity profile, and
 `geometry:{cols,rows,cellWidthPixels,cellHeightPixels}`. This adds CSI 14/16/18 t
 and mode 2048 replies to the identity/state set. Missing geometry, unsupported
-ownership or geometry without ownership fails before shell creation. The native
-app has not opted in yet; it must supply actual measured cells and suppress the
-matching responses before rendering these sessions.
+ownership or geometry without ownership fails before shell creation. New native
+app sessions supply measured cells before creation and suppress matching replies
+after import. The app rejects a helper that claims the capability but omits the
+requested owner in its creation response. Existing sessions retain their original
+state/identity-only ownership, without a mid-session switch.
 
 The parser and kernel PTY receive the initial geometry before the child starts,
 so the first query and TIOCGWINSZ agree. Cell pixels must be nonzero. Each grid
@@ -166,7 +168,13 @@ A real raw PTY program verifies initial and changed TIOCGWINSZ pixels, exact
 reply bytes with no clients and two snapshot observers, pixel-only and grid
 resizes, unchanged-size deduplication, mode disable, snapshot metrics, same PID
 and unchanged `hasContext`. Invalid/partial/mismatched sizes do not advance state.
-Native multi-surface suppression/creation wiring remains the next step.
+The native app fixture also verifies exactly one size-query/enable/resize response
+with two live surfaces, geometry-bearing snapshot reattachment, and new-session
+creation through the native Zsh integration path. Native bridge tests cover actual
+backing-scale rounding, pixel-only changes, split queries/reset and unchanged
+title/input policy. App resizes enqueue acknowledgements in callback order, with
+a synchronization fence before capture; rejected sizes stop the pipeline visibly.
+Transient delivery loss follows existing reconnect/input-safety checks.
 
 ## Shell integration resources
 

@@ -953,6 +953,30 @@ does not).
   Remaining migration gates and coordinator/VM/DI work are open. The Sprint board
   remains web-based.
 
+### M1 app geometry integration — 2026-09-12
+
+- New app terminals wait for measured native cells and negotiate
+  `daemon-geometry-v1` at creation. The returned owner is checked; old
+  state/identity-owned shells retain their established profile on reattachment.
+- Full geometry travels with ordered resize requests, events and snapshots.
+  Header/event grid consistency and pixel bounds are validated. Imported surfaces
+  suppress the daemon-owned size replies before metadata/live output, and apply
+  ordered cell/pixel updates without sending duplicate notifications.
+- Resize requests now receive acknowledgements in callback order. The pre-capture
+  resize fence enqueues under the same lock, preventing stale measurements from
+  overtaking newer callbacks. Unchanged grid/cell dimensions are deduplicated;
+  backing-scale/font-cell changes remain significant. Rejected resizes stop the
+  pipeline visibly; transient transport loss uses existing reconnect/input checks.
+- The real app fixture exercises geometry-owned history restoration, size queries
+  without a surface and with two live surfaces, and exactly one mode 2048 enable
+  and ordered-resize response. Native Zsh creation/reconnection verifies the new
+  owner. Additional tests cover resize rejection and invalid geometry contracts.
+  All 83 app-package tests pass and the macOS app builds; the final creation-owner
+  guard also passes the targeted Zsh regression.
+- Remaining terminal offline policies, image/glyph fidelity, interaction/performance
+  acceptance, M2–M6 gates and the final coordinator/VM/DI refactor remain open.
+  The Sprint board remains web-based.
+
 ## Why now, and why native
 
 The Tauri shell works, but roughly half of `src-tauri/` exists to work around what a DOM

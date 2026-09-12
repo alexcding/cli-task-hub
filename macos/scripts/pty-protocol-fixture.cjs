@@ -37,6 +37,11 @@ const server = net.createServer(socket => {
           reply(true);
           break;
         case 'hello': reply({ protocol: mode === 'mismatch' ? 999 : 2, pid: process.pid }); break;
+        case 'resize':
+          fs.appendFileSync(`${readyFile}.resizes`, `${JSON.stringify(request)}\n`);
+          if (mode === 'resize-reject') socket.write(JSON.stringify({ id: request.id, err: 'fixture resize rejected' }) + '\n');
+          else reply(null);
+          break;
         case 'write':
           fs.appendFileSync(`${readyFile}.writes`, `${request.bytes}\n`);
           socket.write(JSON.stringify({ id: request.id, err: 'fixture input queue is full' }) + '\n');
