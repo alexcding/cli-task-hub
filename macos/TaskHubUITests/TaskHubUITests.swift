@@ -3,6 +3,45 @@ import XCTest
 final class TaskHubUITests: XCTestCase {
 
     @MainActor
+    func testNativeEditorSaveCancelDiscardAndHistory() throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard let base = environment["TASKHUB_UI_BACKEND_URL"],
+              let path = environment["TASKHUB_UI_DATA_DIR"], let socket = environment["TASKHUB_UI_PTY_SOCKET"] else {
+            throw XCTSkip("Run macos/scripts/test-browser-ui.sh to provide the isolated fixture.")
+        }
+        let file = URL(fileURLWithPath: path).appendingPathComponent("Editable.swift").standardizedFileURL
+        let app = XCUIApplication()
+        app.launchArguments = ["--backend-url", base, "--data-dir", path, "--pty-socket", socket]
+        app.launch()
+        let row = app.outlines["workspace-sidebar"].staticTexts["Editor fixture"].firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 10)); row.click()
+        let editor = app.webViews.textViews.firstMatch
+        XCTAssertTrue(editor.waitForExistence(timeout: 15), "Saved file tab should load Monaco")
+        editor.click(); app.typeKey("a", modifierFlags: .command); app.typeText("let saved = true")
+        XCTAssertTrue(app.buttons["● Editable.swift"].waitForExistence(timeout: 5))
+        app.typeKey("s", modifierFlags: .command)
+        let saved = expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: app.buttons["● Editable.swift"])
+        wait(for: [saved], timeout: 6)
+        editor.click(); app.typeText(" // unsaved")
+        app.typeKey("w", modifierFlags: .command)
+        XCTAssertTrue(app.sheets.buttons["action-button-2"].waitForExistence(timeout: 5), app.debugDescription)
+        app.sheets.buttons["action-button-3"].click()
+        XCTAssertTrue(editor.exists)
+        app.typeKey("w", modifierFlags: .command)
+        XCTAssertTrue(app.sheets.buttons["action-button-2"].waitForExistence(timeout: 5))
+        app.sheets.buttons["action-button-2"].click()
+        let closed = expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: editor)
+        wait(for: [closed], timeout: 5)
+        app.menuButtons["History"].click()
+        app.menuItems[file.path].click()
+        XCTAssertTrue(editor.waitForExistence(timeout: 10), app.debugDescription)
+        editor.click()
+        XCTAssertEqual(editor.value as? String, "let saved = true")
+        XCTAssertFalse(app.webViews.staticTexts["let saved = true // unsaved"].exists)
+        app.typeKey("w", modifierFlags: .command)
+    }
+
+    @MainActor
     func testFocusedWorkingDiffCollapseRefreshAndRecovery() throws {
         let environment = ProcessInfo.processInfo.environment
         guard let base = environment["TASKHUB_UI_BACKEND_URL"],

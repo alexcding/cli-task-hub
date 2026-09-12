@@ -2,7 +2,7 @@ import AppKit
 
 public enum ShellCommand: String, Sendable {
     case overview, terminal, activity, settings, sidebar, refresh, tray, hide, biggerFont, smallerFont, resetFont
-    case newProject, newSession, closePage, findPage, back, forward, nextPage, previousPage, zoomIn, zoomOut, resetZoom
+    case newProject, newSession, openFile, saveFile, closePage, findPage, back, forward, nextPage, previousPage, zoomIn, zoomOut, resetZoom
 }
 
 // Editing commands use AppKit's responder chain, so the focused terminal,
@@ -53,7 +53,9 @@ public enum ShellCommand: String, Sendable {
         command(file, "New Project…", .newProject)
         command(file, "New Session…", .newSession, "n")
         command(file, "Open Terminal", .terminal, "n", [.command, .shift])
-        command(file, "Close Page / Window", .closePage, "w")
+        command(file, "Open File…", .openFile, "o")
+        command(file, "Save File", .saveFile, "s")
+        command(file, "Close Tab / Window", .closePage, "w")
         let edit = menu("Edit")
         action(edit, "Undo", Selector(("undo:")), "z")
         action(edit, "Redo", Selector(("redo:")), "z", [.command, .shift])

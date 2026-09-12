@@ -423,6 +423,49 @@ does not).
   failures, bounded UTF-8 reads, submitted-version tracking and remote-origin rejection.
   Native document tabs and their typed edit/save/close bridge are the next increment.
 
+### M5 native editor documents — 2026-09-12
+
+- Local files and remote pages now share one native tab order, active selection, and
+  History. New imports preserve interleaved web/file links and active files. Older
+  native snapshots without order metadata retain their existing page order and append
+  preserved file records; the previous format did not store their original positions.
+  Paths and tab metadata persist, never file contents. Closed files do not resurrect
+  from legacy metadata. File-URL entries also import without remote navigation.
+- **Open File** (Command-O) uses a native picker. Swift owns each document identity,
+  revision, loading/save errors, and service/factory injection. The render-only SwiftUI
+  document view hosts a focused Monaco surface with typed buffer/save/status messages.
+  Remote browser pages never receive the editor bridge; the editor cannot call HTTP
+  APIs, choose paths, or navigate away. Native Command-S saves and Command-F finds.
+- Saves coalesce and acknowledge only the submitted Monaco version, retaining later
+  edits and conflicts. Close freezes and queries the current buffer before native
+  Save/Discard/Cancel; cancel and failed saves retain edits. Session removal checks
+  affected documents across contexts before stopping shells. Tray Quit checks all
+  documents before stopping any terminal/backend, including files opened while a
+  confirmation awaited. Window close/Command-Q continue to hide the running app.
+- Hidden clean editors release their webviews after checking the current buffer;
+  dirty editors retain the buffer/undo stack. Backend preference restoration finishes
+  before editors become interactive. A crashed editor cannot silently close from a
+  stale clean flag; it requires explicit discard. Crash recovery of unsaved text is
+  still not provided, and dirty buffers are not an on-disk draft store.
+- The shared Monaco loader is independent of SPA stores. A same-origin worker
+  bootstrap replaces data-URL workers, which failed under the focused WebKit CSP.
+  Packaged assets include the vendored editor, language grammars, workers and fonts.
+- Verification: 54 native tests pass, including real WebKit/Monaco file saves with
+  BOM/CRLF preservation, external-write conflict retention, rejected remote navigation,
+  concurrent-save coalescing, last-keystroke close/cancel, clean/dirty eviction, and
+  interleaved tab/history restoration. The existing eight filesystem/web-save tests
+  also pass. The packaged backend serves all 125 focused assets and rejects the full
+  SPA entry point. Direct native UI verification covers the picker, typing, Command-S,
+  Cancel/Discard, and reopening saved content from History. XCUITest's synthetic
+  confirmation stalled in the system picker, so the repeatable editor regression uses
+  a saved file-tab fixture and passes save/cancel/discard/History; the picker was
+  verified separately through native controls. The existing browser navigation/find/
+  close/new-session UI regression also passes (its existing Xcode QoS warning remains).
+- Remaining M5 work includes terminal/diff file-and-line routing, diff discard/commit
+  actions, and wider shortcut/focus/IME acceptance. The sprint board remains web based;
+  M1 fidelity/performance, remaining M3/M4/M6 gates, and the final coordinator/VM/DI
+  alignment with elevate-ios remain open.
+
 ## Why now, and why native
 
 The Tauri shell works, but roughly half of `src-tauri/` exists to work around what a DOM

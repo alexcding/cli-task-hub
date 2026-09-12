@@ -9,73 +9,14 @@
 import { ROUTES } from '/shared/routes.mjs';
 import { api, apiJson } from '../services/api.js';
 import { state } from '../stores/store.js';
-import { esc, basename, loadScript, codeFontStack } from '../lib/util.js';
-import { XCODE_LIGHT, XCODE_DARK } from '../lib/monaco-xcode-theme.mjs';
+import { esc, basename, codeFontStack } from '../lib/util.js';
+import { loadMonaco, languageId } from '../lib/monaco-loader.mjs';
 import { toast, toastErr } from './toast.js';
 import { saveEditorBuffer } from '../lib/editor-save.mjs';
 
 // The shared "Code font" setting (Settings → Appearance — the same family+size that drives the
 // git diff view) also styles the editor. state.fonts.diff is that setting (kind kept as 'diff').
 const codeFont = () => ({ fontFamily: codeFontStack(state.fonts.diff.family), fontSize: state.fonts.diff.size });
-
-// Load the vendored Monaco once via its AMD loader. Resolves to the global `monaco`. On
-// failure the memo is cleared so a transient first-load error doesn't brick the editor for
-// the whole session — the next open retries.
-let _monaco = null;
-function loadMonaco() {
-  if (_monaco) return _monaco;
-  _monaco = buildMonaco().catch(e => { _monaco = null; throw e; });
-  return _monaco;
-}
-function buildMonaco() {
-  return new Promise((resolve, reject) => {
-    // Self-host the language workers: a data: URL that importScripts workerMain with the right
-    // baseUrl (the standard self-host pattern). Same-origin loopback, so this is allowed.
-    const base = location.origin + '/vendor/monaco/';
-    window.MonacoEnvironment = {
-      getWorkerUrl: () => 'data:text/javascript;charset=utf-8,' + encodeURIComponent(
-        `self.MonacoEnvironment={baseUrl:'${base}'};importScripts('${base}vs/base/worker/workerMain.js');`),
-    };
-    const css = document.createElement('link');
-    css.rel = 'stylesheet';
-    css.href = '/vendor/monaco/vs/editor/editor.main.css';
-    document.head.appendChild(css);
-    loadScript('/vendor/monaco/vs/loader.js').then(() => {
-      window.require.config({ paths: { vs: '/vendor/monaco/vs' } });
-      window.require(['vs/editor/editor.main'], () => {
-        // Monaco's loader sets a global define() with `.amd`. Drop the marker so our UMD vendor
-        // libs (xterm, loaded lazily) still take their global branch instead of registering as
-        // anonymous AMD modules. Monaco's own lazy language loads use define() directly and don't
-        // need the marker.
-        try { delete window.define.amd; } catch {}
-        // Register the converted XCode Modern themes (light + dark).
-        try {
-          window.monaco.editor.defineTheme('xcode-light', XCODE_LIGHT);
-          window.monaco.editor.defineTheme('xcode-dark', XCODE_DARK);
-        } catch {}
-        // The TS/JS language worker (tsWorker.js, ~5.6MB) is trimmed from the vendored build —
-        // we only need syntax highlighting (Monarch grammars, main-thread), not IntelliSense.
-        // Turn OFF every monaco-typescript feature so NO provider (completion/hover/diagnostics/
-        // …) ever registers — that's what would otherwise try to spawn the removed worker.
-        // Highlighting is unaffected (it comes from basic-languages, not the TS service).
-        try {
-          const ts = window.monaco.languages.typescript;
-          const allOff = {
-            completionItems: false, hovers: false, documentSymbols: false, definitions: false,
-            references: false, documentHighlights: false, rename: false, diagnostics: false,
-            documentRangeFormattingEdits: false, signatureHelp: false, onTypeFormattingEdits: false,
-            codeActions: false, inlayHints: false,
-          };
-          for (const d of [ts.typescriptDefaults, ts.javascriptDefaults]) {
-            d.setModeConfiguration(allOff);
-            d.setDiagnosticsOptions({ noSemanticValidation: true, noSyntaxValidation: true, noSuggestionDiagnostics: true });
-          }
-        } catch {}
-        resolve(window.monaco);
-      }, reject);
-    }).catch(reject);
-  });
-}
 
 // App theme → the converted XCode Modern Monaco theme.
 const monacoTheme = () => (document.documentElement.getAttribute('data-theme') === 'dark' ? 'xcode-dark' : 'xcode-light');
@@ -84,18 +25,6 @@ const monacoTheme = () => (document.documentElement.getAttribute('data-theme') =
 // global, so one setTheme covers every open editor; no-op until Monaco has loaded.
 export function applyEditorTheme() {
   try { window.monaco?.editor.setTheme(monacoTheme()); } catch {}
-}
-
-// Monaco language id for a path, from its own registered extensions/filenames (covers every
-// language it ships — Swift, Go, Rust, …). Falls back to plaintext.
-function languageId(monaco, file) {
-  const ext = '.' + (file.split('.').pop() || '').toLowerCase();
-  const base = (file.split('/').pop() || '').toLowerCase();
-  const langs = monaco.languages.getLanguages();
-  const hit = langs.find(l =>
-    (l.extensions || []).some(e => e.toLowerCase() === ext) ||
-    (l.filenames || []).some(f => f.toLowerCase() === base));
-  return hit ? hit.id : 'plaintext';
 }
 
 // Build (or no-op if already built) the Monaco editor for a file tab. Fetches the file, then

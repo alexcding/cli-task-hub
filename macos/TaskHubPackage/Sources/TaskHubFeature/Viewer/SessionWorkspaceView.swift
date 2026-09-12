@@ -68,7 +68,7 @@ struct SessionWorkspaceView: View {
     private var showsBuild: Bool { session != nil && context.pane == .build }
     private var showsTerminal: Bool { session != nil }
     private var showsChanges: Bool { session != nil && context.pane == .diff }
-    private var showsPage: Bool { session == nil || showsChanges || (!showsBuild && context.pane == .term && context.activePage != nil) }
+    private var showsPage: Bool { session == nil || showsChanges || (!showsBuild && context.pane == .term && context.activeID != nil) }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -80,17 +80,21 @@ struct SessionWorkspaceView: View {
                         NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: session.worktree)])
                     }.labelStyle(.iconOnly)
                 } else {
-                    Text(context.activePage?.title ?? "Web page").font(.headline).lineLimit(1)
+                    Text(context.activeDocument?.title ?? context.activePage?.title ?? "Workspace").font(.headline).lineLimit(1)
                     Button("Create Session", systemImage: "terminal.badge.plus") { store.creatingSession = true }
                         .disabled(store.projects.isEmpty || store.connection != "Connected")
                 }
                 Spacer()
                 Menu("History", systemImage: "clock.arrow.circlepath") {
-                    if context.history.isEmpty { Text("No closed or visited pages") }
-                    ForEach(context.history.reversed()) { record in
-                        Button(record.title.isEmpty ? record.url : record.title) { context.open(record.url, title: record.title) }
+                    if context.visits.isEmpty { Text("No closed or visited pages") }
+                    ForEach(context.visits.reversed()) { record in
+                        Button(record.title) {
+                            switch record { case .page(let page): context.open(page.url, title: page.title)
+                            case .file(let file): context.openFile(file.path) }
+                        }
                     }
                 }
+                Button("Open File", systemImage: "doc.badge.plus") { store.viewer.openFile(in: context) }
                 Button("Add Page", systemImage: "plus") { addingPage = true }
                 if session != nil {
                     Button(showsChanges ? "Hide Changes" : "Show Changes", systemImage: "arrow.triangle.branch") {
@@ -117,16 +121,16 @@ struct SessionWorkspaceView: View {
                         .disabled(session.map { store.changingSessions.contains($0.id) } ?? true)
                     Button(showsPage ? "Hide Context Pane" : "Show Context Pane", systemImage: "rectangle.righthalf.inset.filled") {
                         context.setPane(context.pane == .term ? .off : .term)
-                    }.disabled(context.activePage == nil)
+                    }.disabled(context.activeID == nil)
                 }
             }.labelStyle(.iconOnly).padding(12)
-            if !context.pages.isEmpty {
+            if !context.tabs.isEmpty {
                 ScrollView(.horizontal) {
                     HStack(spacing: 6) {
-                        ForEach(context.pages) { page in
+                        ForEach(context.tabs) { page in
                             HStack(spacing: 6) {
                                 Button { context.select(page) } label: {
-                                    Text(page.title.isEmpty ? page.url : page.title).lineLimit(1).frame(maxWidth: 190)
+                                    Text((page.dirty ? "● " : "") + page.title).lineLimit(1).frame(maxWidth: 190)
                                 }.buttonStyle(.plain)
                                 Button("Close \(page.title)", systemImage: "xmark") { context.close(page) }
                                     .labelStyle(.iconOnly).buttonStyle(.plain)
@@ -161,6 +165,8 @@ struct SessionWorkspaceView: View {
                 ZStack {
                     if showsChanges, let model = store.diffModels[context.id] {
                         DiffView(model: model, appearance: store.shell.appearance, active: active)
+                    } else if let document = context.activeDocument {
+                        EditorDocumentView(model: document, appearance: store.shell.appearance, active: active && showsPage && !context.restoring).id(document.id)
                     } else if let page = context.activePage { BrowserPane(page: page, context: context).id(page.id) }
                     else if session == nil {
                         ContentUnavailableView("No open pages", systemImage: "globe", description: Text("Add a page or reopen one from History."))

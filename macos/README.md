@@ -48,8 +48,7 @@ Remove Session previews affected sessions and asks separately before discarding
 uncommitted/untracked work. Orphan folders are retained. Xcode-configured projects
 offer Run Destination and a separate Build pane; Stop interrupts its build PTY.
 PR/Jira URLs resolve branches and existing ticket worktrees in the creation sheet.
-Existing saved web tabs and history seed native contexts; legacy file entries are
-retained for the M5 document host. Terminal links and full session acceptance remain
+Existing saved web/file tabs and history seed native contexts with one shared tab order. Terminal links and full session acceptance remain
 under implementation; this does not close the M1 terminal acceptance gate.
 
 ## Native Dashboard (M4, in progress)
@@ -246,6 +245,23 @@ socket to test the new helper without ending an existing shell. Automatic reconn
 full lifecycle coverage, links, workflow hooks, IME/mouse/selection checks, and the
 ten-minute multi-session performance benchmark remain part of M1's acceptance gate.
 
+## Native editor documents (M5, in progress)
+
+Choose **Open File** (Command-O) from a session/page context. File tabs share the
+native page strip and History; Monaco renders the editor, while Swift owns file I/O,
+revision conflicts, and document lifecycle through injected services and factories.
+Command-S saves, Command-F finds, and Command-W closes with Save/Discard/Cancel when
+needed. Session removal and tray Quit check unsaved documents before stopping shells.
+Hidden clean editors unload; unsaved editors retain their buffer and undo history.
+Unsaved text is not persisted for crash recovery. Files must be UTF-8 text, at most
+5 MB; hard-linked/unwritable files are read-only. Failed saves preserve edits.
+
+The focused editor has no HTTP file API or remote navigation. Its scoped bridge
+exchanges only the current document buffer and editor events. `web-assets.txt`
+includes the shared Monaco loader, same-origin worker bootstrap, and vendored assets.
+The sprint board remains web based; native diff actions and terminal file links are
+still in progress.
+
 ## Local bundle smoke test
 
 ```bash
@@ -260,7 +276,7 @@ ad hoc. It runs after Xcode builds; repeat it when rebuilding the app. It curren
 expects the arm64 sidecar from `scripts/build-sidecar.sh` (or `TASKHUB_NODE_SIDECAR`).
 Use an absolute app path. This is a development bundle, not a notarized release.
 Run `node macos/scripts/smoke-web-assets.cjs /absolute/path/TaskHub.app` from the repo
-root to check all packaged board assets using the bundled Node helper and isolated data.
+root to check all packaged board/diff/editor assets using the bundled Node helper and isolated data.
 
 Distribution is a direct Mac app without App Sandbox: TaskHub orchestrates local CLIs,
 worktrees, and detached PTYs. Developer ID signing, hardened-runtime entitlements,

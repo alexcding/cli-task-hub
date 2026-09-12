@@ -69,7 +69,7 @@ public final class AppStore {
     }
     var terminal: TerminalSession? { activeTerminalKey.flatMap { terminals[$0] } }
     public var hasOpenWork: Bool { !sessions.isEmpty || !tabs.isEmpty }
-    public var hasActivePage: Bool { viewer.active?.activePage != nil }
+    public var hasActivePage: Bool { viewer.active?.activeID != nil }
     var sessionOperations: SessionOperations? { api.map { SessionOperations(api: $0) } }
 
     func showChanges(for session: WorkspaceSession, context: WorkspaceContext) {
@@ -134,8 +134,11 @@ public final class AppStore {
         case .newSession: connection == "Connected" && !projects.isEmpty
         case .back: viewer.active?.activePage?.canGoBack == true
         case .forward: viewer.active?.activePage?.canGoForward == true
-        case .findPage, .zoomIn, .zoomOut, .resetZoom: hasActivePage
-        case .nextPage, .previousPage: (viewer.active?.pages.count ?? 0) > 1
+        case .openFile: viewer.active != nil && connection == "Connected"
+        case .saveFile: viewer.active?.activeDocument?.loaded == true && viewer.active?.activeDocument?.readOnly == false
+        case .findPage: hasActivePage
+        case .zoomIn, .zoomOut, .resetZoom: viewer.active?.activePage != nil
+        case .nextPage, .previousPage: (viewer.active?.tabOrder.count ?? 0) > 1
         case .biggerFont, .smallerFont, .resetFont: terminal?.ready == true
         case .refresh: connection == "Connected"
         default: true
@@ -146,8 +149,12 @@ public final class AppStore {
         switch command {
         case .newProject: creatingProject = true
         case .newSession: creatingSession = true
-        case .closePage: if let context = viewer.active, let page = context.activePage { context.close(page) }
-        case .findPage: viewer.active?.findVisible = true
+        case .openFile: if let context = viewer.active { viewer.openFile(in: context) }
+        case .saveFile: if let document = viewer.active?.activeDocument { Task { await document.save() } }
+        case .closePage: if let context = viewer.active, let id = context.activeID, let tab = context.tab(id) { context.close(tab) }
+        case .findPage:
+            if let document = viewer.active?.activeDocument { document.find() }
+            else { viewer.active?.findVisible = true }
         case .back: viewer.active?.activePage?.back()
         case .forward: viewer.active?.activePage?.forward()
         case .nextPage: viewer.active?.cycle(1)
@@ -288,6 +295,11 @@ public final class AppStore {
         guard changingSessions.isDisjoint(with: ids) else { throw BackendError.operation("A session operation is already in progress.") }
         changingSessions.formUnion(ids)
         removalLocks[operationID] = ids
+        let worktrees = sessions.filter { ids.contains($0.id) }.map(\.worktree)
+        guard await viewer.closeDocuments(contextIDs: Set(ids.map { "task:\($0)" }), worktrees: worktrees) else {
+            changingSessions.subtract(ids); removalLocks.removeValue(forKey: operationID)
+            throw CancellationError()
+        }
         for id in ids { buildModels.removeValue(forKey: "task:\(id)")?.disconnect() }
         for (key, terminal) in terminals where keys.contains(terminal.pairKey) {
             await terminal.stopConnecting()
@@ -367,6 +379,7 @@ public final class AppStore {
     }
 
     public func quit() async throws {
+        guard await viewer.closeDocuments() else { throw CancellationError() }
         for terminal in terminals.values { await terminal.stopConnecting() }
         let host = PtydHost(configuration: try PtydConfiguration.current())
         try await host.stopExisting()

@@ -10,6 +10,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var statusItem: NSStatusItem?
     private let popover = NSPopover()
     private var quitting = false
+    private var terminationApproved = false
     private var menus: NativeMenus?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -113,7 +114,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        if quitting { return .terminateNow }
+        if terminationApproved { return .terminateNow }
         window?.orderOut(nil)
         return .terminateCancel
     }
@@ -125,12 +126,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         Task {
             do {
                 try await store.quit()
+                terminationApproved = true
                 NSApp.terminate(nil)
             } catch {
                 quitting = false
                 showWindow()
                 let alert = NSAlert()
-                alert.messageText = "TaskHub could not stop its terminals"
+                if error is CancellationError { return }
+                alert.messageText = "TaskHub could not quit"
                 alert.informativeText = error.localizedDescription
                 alert.addButton(withTitle: "OK")
                 if let window { _ = await alert.beginSheetModal(for: window) }

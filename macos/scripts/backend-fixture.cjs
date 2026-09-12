@@ -89,6 +89,9 @@ if (process.env.TASKHUB_SIDEBAR_FIXTURE === '1') {
   configdb.setTabs([{ kind: 'web', title: 'Review context', url: 'https://example.com/review' },
                    { kind: 'web', title: 'Documentation', url: 'https://example.com/docs' }]);
 }
+if (process.env.TASKHUB_EDITOR_FIXTURE === '1') {
+  fs.writeFileSync(path.join(process.env.TASKHUB_DATA_DIR, 'Editable.swift'), 'let original = true\n');
+}
 if (process.env.TASKHUB_DIFF_FIXTURE === '1') {
   const github = require('../../src/server/repositories/github');
   let reads = 0;
@@ -138,6 +141,12 @@ const server = app.listen(Number(process.env.PORT || 0), '127.0.0.1', error => {
     const snapshot = db.getSnapshot(project.id);
     if (snapshot) db.setSnapshot(project.id, { ...snapshot,
       prs: snapshot.prs.map(pr => ({ ...pr, url: `${url}?pr=${pr.number}` })) });
+  }
+  if (process.env.TASKHUB_EDITOR_FIXTURE === '1') {
+    const configdb = require('../../src/server/database/configdb');
+    configdb.setTabs([...configdb.getTabs().tabs, { kind: 'web', title: 'Editor fixture',
+      url: `${baseURL}/fixture/editor-context`, pageClosed: true,
+      links: [{ kind: 'file', path: path.join(process.env.TASKHUB_DATA_DIR, 'Editable.swift'), active: true }] }]);
   }
   if (process.env.TASKHUB_READY_FILE) fs.writeFileSync(process.env.TASKHUB_READY_FILE, baseURL);
   console.log(baseURL);

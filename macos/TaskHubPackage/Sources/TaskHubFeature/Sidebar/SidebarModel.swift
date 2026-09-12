@@ -27,6 +27,15 @@ struct SavedTabContent: Codable, Equatable, Sendable {
     var title: String? = nil
     var path: String? = nil
     var active: Bool? = nil
+
+    var filePath: String? {
+        guard kind == "file" else { return nil }
+        if let path, path.hasPrefix("/"), !path.contains("\0") { return (path as NSString).standardizingPath }
+        guard let url, let value = URL(string: url), value.isFileURL,
+              value.host == nil || value.host == "" || value.host == "localhost",
+              !value.path.contains("\0") else { return nil }
+        return value.path
+    }
 }
 
 struct SavedTab: Codable, Identifiable, Equatable, Sendable {
