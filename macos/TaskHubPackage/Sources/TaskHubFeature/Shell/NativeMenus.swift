@@ -1,7 +1,7 @@
 import AppKit
 
 public enum ShellCommand: String, Sendable {
-    case overview, terminal, sidebar, refresh, tray, hide, biggerFont, smallerFont, resetFont
+    case overview, terminal, activity, sidebar, refresh, tray, hide, biggerFont, smallerFont, resetFont
     case newProject, newSession, closePage, findPage, back, forward, nextPage, previousPage, zoomIn, zoomOut, resetZoom
 }
 
@@ -80,6 +80,7 @@ public enum ShellCommand: String, Sendable {
         let go = menu("Go")
         command(go, "Overview", .overview, "1")
         command(go, "Terminal", .terminal, "2")
+        command(go, "Activity", .activity, "3")
         command(go, "Back", .back, "[")
         command(go, "Forward", .forward, "]")
         command(go, "Next Page", .nextPage, "]", [.command, .shift])

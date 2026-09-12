@@ -272,6 +272,16 @@ Dashboard; the remaining app pages and action parity are tracked under M4.
   Package verification now passes 36 tests. The five existing native UI tests pass;
   the new create/edit/cancel-delete/confirmed-delete UI flow passes after scoping its
   alert controls to avoid duplicate Touch Bar accessibility matches.
+- Added native Activity/Logs in the Cocoa sidebar and Go menu (Command-3), with
+  category/error filters, local search, readable event details, raw fallback payloads,
+  PR context links, and copy. JSON/event interpretation happens during off-main API
+  decoding. Failed reads preserve the matching scope's last snapshot. Non-URL activity
+  notification clicks now open this page.
+- Clearing logs captures and confirms the category, explicitly covering entries
+  hidden by search/error filtering. Failed deletion retains entries; pre-deletion reads
+  cannot reinsert cleared rows. The 36-test package suite passed after page wiring;
+  both new log tests and the native filter/cancel-clear/confirmed-clear UI test pass.
+  Jira ticket links and the rest of the M4 action inventory remain open.
 
 Companion docs: `ARCHITECTURE.md` (layers, HTTP-vs-IPC split), `TAURI-PORT.md`
 (the previous shell port — the same boundary makes this one tractable), `CLAUDE.md`

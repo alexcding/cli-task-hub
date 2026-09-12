@@ -72,6 +72,10 @@ detection, Jira key/JQL, and IDE configuration. Unsaved edits survive snapshot r
 and reconnects. Deleting a project requires confirmation and retains its sessions,
 workspace folders, and terminals. Jira, automation, and workflow tabs are still pending.
 
+**Activity** (Command-3) is native, with category/error filters, search, copy, and
+embedded PR opening. Clear Logs confirms the complete selected category, including
+entries hidden by filters. Failed reads and clears keep the last available entries.
+
 ## Native tray and appearance (M2)
 
 Click the menu-bar icon or **Reviews & Usage** in the window toolbar to open the

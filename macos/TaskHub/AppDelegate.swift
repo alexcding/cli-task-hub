@@ -35,7 +35,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             if let repo, let number { self?.store.shell.acknowledgeReview(repo: repo, number: number) }
         }, openActivity: { [weak self] in
             self?.showWindow()
-            self?.toggleTray()
+            self?.store.perform(.activity)
         })
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         item.button?.image = NSImage(systemSymbolName: "square.stack.3d.up", accessibilityDescription: "TaskHub Native")

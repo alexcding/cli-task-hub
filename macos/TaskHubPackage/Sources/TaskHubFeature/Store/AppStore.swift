@@ -7,6 +7,7 @@ public final class AppStore {
     public let shell = ShellStore()
     let viewer: ViewerStore
     private(set) var dashboard: DashboardViewModel!
+    private(set) var logs: LogsViewModel!
     public private(set) var projects: [Project] = []
     public private(set) var connection = "Connecting"
     public private(set) var error: String?
@@ -36,6 +37,12 @@ public final class AppStore {
             guard let self else { throw BackendError.operation("The workspace has closed.") }
             try await self.openPage(request)
         }, openBrowser: { NSWorkspace.shared.open($0) }, copy: {
+            NSPasteboard.general.clearContents(); NSPasteboard.general.setString($0, forType: .string)
+        })
+        logs = LogsViewModel(openPage: { [weak self] request in
+            guard let self else { throw BackendError.operation("The workspace has closed.") }
+            try await self.openPage(request)
+        }, copy: {
             NSPasteboard.general.clearContents(); NSPasteboard.general.setString($0, forType: .string)
         })
         if let data = UserDefaults.standard.data(forKey: "sidebar.selection"),
@@ -120,6 +127,7 @@ public final class AppStore {
         case .zoomOut: viewer.active?.activePage?.zoom(-0.1)
         case .resetZoom: viewer.active?.activePage?.zoom(nil)
         case .overview: select(.overview)
+        case .activity: select(.activity)
         case .terminal:
             if activeTerminalKey == nil { select(.terminal) }
             openTerminal()
@@ -337,6 +345,7 @@ public final class AppStore {
             guard started else { await process.stop(); return }
             if let api { shell.connect(api); viewer.connect(api); dashboard.connect(APIDashboardService(api: api)); shell.refreshUsage() }
             if let api { for model in projectModels.values { model.connect(APIProjectService(api: api)) } }
+            if let api { logs.connect(APILogService(api: api)) }
             startStream(baseURL: config.baseURL)
         } catch {
             connection = "Disconnected"
@@ -348,6 +357,7 @@ public final class AppStore {
     public func refresh() {
         shell.refresh()
         dashboard.refresh()
+        if selection == .activity { logs.refresh() }
         refreshPending = true
         guard refreshTask == nil, let api else { return }
         refreshTask = Task { [weak self] in
@@ -429,6 +439,7 @@ public final class AppStore {
         }
         if event.type == "activity", let activity = event.event {
             shell.notifications.receiveActivity(activity, enabled: shell.activityNotify)
+            if selection == .activity { logs.refresh() }
         }
         if event.type == "settings" { shell.loadSettings() }
         if event.type == "reviews" { shell.refresh() }
@@ -445,6 +456,7 @@ public final class AppStore {
         refreshTask = nil
         await shell.stop()
         await dashboard.stop()
+        await logs.stop()
         for model in projectModels.values { model.connect(nil) }
         await viewer.stop()
         for model in buildModels.values { model.disconnect() }

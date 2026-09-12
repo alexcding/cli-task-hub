@@ -23,7 +23,7 @@ logs.db-wal
 logs.db-shm
 
 # Logs (written to <userData>/logs in the packaged app; to repo root in `node server.js` dev)
-logs/
+/logs/
 
 # Intermediate icon build dir (the icon PNGs/ICNS themselves are committed)
 build/icon.iconset/

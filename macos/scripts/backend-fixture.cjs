@@ -6,6 +6,11 @@ process.env.TASKHUB_DATA_DIR ||= fs.mkdtempSync(path.join(os.tmpdir(), 'taskhub-
 const { app } = require('../../src/server/app');
 const db = require('../../src/server/database/db');
 const sse = require('../../src/server/routes/sse');
+if (process.env.TASKHUB_LOGS_FIXTURE === '1') {
+  db.addLog({ category: 'event', level: 'info', type: 'native_activity', payload: 'Synthetic successful operation' });
+  db.addLog({ category: 'event', level: 'error', type: 'native_failure', payload: 'Synthetic failed operation' });
+  db.addLog({ category: 'poller', level: 'info', type: 'keep_diagnostics', payload: 'This category survives clearing Activity' });
+}
 app.get('/fixture/page', (_req, res) => {
   res.setHeader('Set-Cookie', 'taskhub_native_fixture=retained; Path=/; Max-Age=3600; SameSite=Lax');
   res.type('html').send('<!doctype html><title>Native Browser Fixture</title><h1>Native browser fixture</h1><p>Find the quokka.</p><a href="/fixture/next">Next page</a><a href="/fixture/next" target="_blank">Popup page</a>');

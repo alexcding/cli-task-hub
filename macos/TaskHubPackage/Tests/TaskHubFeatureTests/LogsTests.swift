@@ -1,0 +1,63 @@
+import Foundation
+import Testing
+@testable import TaskHubFeature
+
+private actor LogFixture: LogService {
+    var fails = false
+    var cleared: [String] = []
+    var deleted = false
+    func fail(_ value: Bool) { fails = value }
+    func categories() -> [String] { ["event", "poller"] }
+    func entries(category: String, errorsOnly: Bool) async throws -> [LogEntry] {
+        if category == "event" { try await Task.sleep(for: .milliseconds(80)) }
+        if fails { throw BackendError.operation("Logs offline") }
+        if deleted { return [] }
+        return try JSONDecoder().decode([LogEntry].self, from: Data("[{\"seq\":1,\"category\":\"\(category)\",\"level\":\"info\",\"type\":\"fixture_event\",\"payload\":\"plain text\",\"created_at\":\"2026-09-12T12:00:00Z\"}]".utf8))
+    }
+    func clear(category: String) throws {
+        if fails { throw BackendError.operation("Clear unavailable") }
+        cleared.append(category); deleted = true
+    }
+}
+
+@MainActor @Test func logFiltersRejectStaleResponsesAndClearTheConfirmedCategoryOnly() async throws {
+    let service = LogFixture()
+    let model = LogsViewModel(openPage: { _ in }, copy: { _ in })
+    model.connect(service)
+    model.refresh()
+    try await Task.sleep(for: .milliseconds(10))
+    model.category = "poller"; model.refresh()
+    while model.loading { try await Task.sleep(for: .milliseconds(10)) }
+    #expect(model.rows.first?.category == "poller")
+    await service.fail(true)
+    model.refresh()
+    while model.loading { try await Task.sleep(for: .milliseconds(10)) }
+    #expect(model.rows.count == 1 && model.error == "Logs offline")
+    model.requestClear()
+    await model.clear(confirmed: false)
+    #expect(await service.cleared.isEmpty)
+    await model.clear(confirmed: true)
+    #expect(model.rows.count == 1 && model.error == "Clear unavailable")
+    await service.fail(false)
+    model.requestClear() // capture poller before changing the visible filter
+    model.category = "all"
+    await model.clear(confirmed: true)
+    while model.loading { try await Task.sleep(for: .milliseconds(10)) }
+    #expect(await service.cleared == ["poller"])
+    #expect(model.rows.isEmpty)
+    await model.stop()
+}
+
+@Test func logPayloadsPreserveRawTextAndRejectUnsafeEventLinks() throws {
+    let rows = try JSONDecoder().decode([LogEntry].self, from: Data(#"""
+    [
+      {"seq":1,"category":"event","level":"info","type":"pr_opened","payload":"{\"repo\":\"o/r\",\"pr\":{\"number\":42,\"title\":\"Native UI\",\"url\":\"https://github.com/o/r/pull/42\"}}","created_at":"2026-09-12T12:00:00Z"},
+      {"seq":2,"category":"poller","level":"warn","type":"parse_failed","payload":"not JSON <literal>","created_at":"bad timestamp"},
+      {"seq":3,"category":"event","level":"error","type":"pr_opened","payload":"{\"pr\":{\"url\":\"file:///tmp/local\"}}","created_at":"2026-09-12T12:00:00Z"}
+    ]
+    """#.utf8))
+    #expect(rows[0].title == "Pull request opened in r" && rows[0].detail == "#42 Native UI")
+    #expect(rows[0].link == "https://github.com/o/r/pull/42")
+    #expect(rows[1].detail == "not JSON <literal>" && rows[1].timestamp == "bad timestamp")
+    #expect(rows[2].link == nil)
+}

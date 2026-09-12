@@ -3,6 +3,31 @@ import XCTest
 final class TaskHubUITests: XCTestCase {
 
     @MainActor
+    func testNativeActivityFiltersAndConfirmsClear() throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard let base = environment["TASKHUB_UI_BACKEND_URL"],
+              let path = environment["TASKHUB_UI_DATA_DIR"], let socket = environment["TASKHUB_UI_PTY_SOCKET"] else {
+            throw XCTSkip("Run macos/scripts/test-browser-ui.sh to provide the isolated fixture.")
+        }
+        let app = XCUIApplication()
+        app.launchArguments = ["--backend-url", base, "--data-dir", path, "--pty-socket", socket]
+        app.launch()
+        XCTAssertTrue(app.outlines["workspace-sidebar"].waitForExistence(timeout: 10))
+        app.outlines["workspace-sidebar"].staticTexts["Activity"].click()
+        XCTAssertTrue(app.staticTexts["Native Activity"].waitForExistence(timeout: 10))
+        app.checkBoxes["Errors only"].click()
+        XCTAssertTrue(app.staticTexts["Native Failure"].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.staticTexts["Native Activity"].exists)
+        app.buttons["Clear Logs…"].click()
+        XCTAssertTrue(app.sheets.buttons["Clear Logs"].waitForExistence(timeout: 5))
+        app.sheets.buttons["Cancel"].click()
+        XCTAssertTrue(app.staticTexts["Native Failure"].exists)
+        app.buttons["Clear Logs…"].click()
+        app.sheets.buttons["Clear Logs"].click()
+        XCTAssertTrue(app.staticTexts["No matching entries."].waitForExistence(timeout: 10))
+    }
+
+    @MainActor
     func testNativeProjectCreateEditAndDelete() throws {
         let environment = ProcessInfo.processInfo.environment
         guard let base = environment["TASKHUB_UI_BACKEND_URL"],
