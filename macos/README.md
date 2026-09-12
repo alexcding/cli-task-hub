@@ -199,6 +199,12 @@ GhosttyTerminal is pinned to `Lakr233/libghostty-spm` **1.6.20260909**, revision
 `7e45d27160f9b34aca9ca5c9820e9207482f9f04`, using its host-managed in-memory backend.
 Socket I/O and output parsing run off the UI actor. Replay waits for actual parser
 consumption before enabling input; output uses byte-counted flow-control watermarks.
+Native connections negotiate `dataEncoding: "base64"` in the protocol-2 hello.
+PTY output, attachment history, and keyboard input preserve exact bytes through
+JSON `bytes` fields. Ghostty owns decoding, including incomplete UTF-8 across the
+replay/live boundary. Tauri clients keep their existing `chunk`/`buf` text protocol;
+both representations share one output sequence. An old helper without byte support
+is detected before the native pane creates or attaches a shell.
 
 The spike intentionally uses `taskhub-native-ptyd.sock` in the same private socket
 directory convention as Tauri, and `ptyd-native-spike` under the selected data directory.
@@ -211,8 +217,7 @@ output tail. The updated helper reports truncation atomically with its sequence;
 Swift refuses truncated history or an older helper without this field, preserving
 the shell and showing an error. Full VT state restoration remains unimplemented.
 Rebuilding the helper does not upgrade an already-running daemon; use an isolated
-socket to test the new helper without ending an existing shell. Input transport
-currently requires UTF-8; unsupported bytes fail visibly. Automatic reconnect,
+socket to test the new helper without ending an existing shell. Automatic reconnect,
 full lifecycle coverage, links, workflow hooks, IME/mouse/selection checks, and the
 ten-minute multi-session performance benchmark remain part of M1's acceptance gate.
 
@@ -258,7 +263,12 @@ to daily TaskHub sessions. Native surface tests create an unshown Metal-backed
 AppKit window and verify Unicode, alternate-screen restoration, hidden parsing,
 Enter encoding, and bracketed paste without touching the system clipboard.
 The native pipeline test also races output against an attachment snapshot, rejects
-duplicate sequences, and checks final parsed output before exit while hidden.
+duplicate sequences, completes a Unicode character split across that boundary, and
+checks final parsed output before exit while hidden. A real PTY round-trips all 256
+byte values with raw mode enabled, reattaches to identical bytes, and verifies that
+incomplete UTF-8 is delivered immediately. Rust integration tests attach native byte
+and legacy text clients to the same PTY, checking invalid input, split codepoints,
+both attachment formats, shared sequences, and continued legacy input support.
 Additional regressions cover stale replies after timeouts, incompatible/malformed
 peers, disconnects, multi-client pause ownership, real PTY history truncation, and
 explicit Quit with no existing connection. `pty-protocol-fixture.cjs` provides a

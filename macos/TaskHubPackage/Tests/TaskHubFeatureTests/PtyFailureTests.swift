@@ -40,12 +40,17 @@ private struct ProtocolFixture {
 
 @Test func incompleteReplayIsRejectedAndOldHelpersAreDetected() throws {
     func decode(_ fields: String) throws -> PtyAttachment {
-        try JSONDecoder().decode(PtyAttachment.self, from: Data("{\"buf\":\"history\",\"seq\":9,\(fields)}".utf8))
+        try JSONDecoder().decode(PtyAttachment.self, from: Data("{\"bytes\":\"aGlzdG9yeQ==\",\"seq\":9,\(fields)}".utf8))
     }
     try decode("\"live\":true,\"truncated\":false").validateReplay()
     #expect(throws: PtyError.self) { try decode("\"live\":true,\"truncated\":true").validateReplay() }
     #expect(throws: PtyError.self) { try decode("\"live\":true").validateReplay() }
     #expect(throws: PtyError.self) { try decode("\"live\":false,\"truncated\":false").validateReplay() }
+}
+
+@Test func legacyHelperCannotSilentlyDowngradeNativeTerminalBytes() throws {
+    let hello = try JSONDecoder().decode(PtyHello.self, from: Data(#"{"protocol":2,"pid":123}"#.utf8))
+    #expect(throws: PtyError.self) { try hello.validateByteTransport() }
 }
 
 @Test func onlyAbsentOrRefusedSocketsPermitDaemonStartup() {

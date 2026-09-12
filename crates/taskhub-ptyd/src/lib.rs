@@ -9,6 +9,10 @@
 //   response {"id":<n>, "ok":<value>}  or  {"id":<n>, "err":"..."}
 //   event    {"ev":"data", "id":"pty..", "chunk":"..", "seq":<n>}   (fanned out to EVERY client)
 //            {"ev":"exit", "id":"pty..", "exitCode":<n>, "signal":<n>}
+// Protocol 2 extension: hello {dataEncoding:"base64"} opts one connection into
+// exact byte output/attachments via `bytes` (standard padded base64), replacing
+// `chunk`/`buf`. `write` accepts either `bytes` or legacy UTF-8 `data`, never both.
+// Output sequences are shared across encodings, including incomplete UTF-8 batches.
 // A request without "id" gets no response (writes/resizes/flow are fire-and-forget).
 //
 // Performance model (borrowed from unpeel's PTY core):
@@ -41,6 +45,7 @@ use std::sync::{mpsc, Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize};
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 mod utf8;
@@ -98,20 +103,31 @@ pub fn owned_socket(p: &Path) -> bool {
   std::fs::metadata(p).map(|m| m.uid() == unsafe { libc::getuid() }).unwrap_or(false)
 }
 
+struct OutputChunk {
+  bytes: Vec<u8>,
+  text: String,
+}
+
+impl OutputChunk {
+  // Both representations together retain at most twice the ring's byte budget.
+  fn size(&self) -> usize { self.bytes.len().max(self.text.len()) }
+}
+
 struct Ring {
-  chunks: Vec<String>,
+  chunks: VecDeque<OutputChunk>,
   len: usize,
   seq: u64,
   truncated: bool,
 }
 
 impl Ring {
-  fn push(&mut self, text: String) -> u64 {
+  fn push(&mut self, bytes: Vec<u8>, text: String) -> u64 {
     self.seq += 1;
-    self.len += text.len();
-    self.chunks.push(text);
-    while self.len > RING_MAX && self.chunks.len() > 1 {
-      self.len -= self.chunks.remove(0).len();
+    let chunk = OutputChunk { bytes, text };
+    self.len += chunk.size();
+    self.chunks.push_back(chunk);
+    while self.len > RING_MAX {
+      self.len -= self.chunks.pop_front().unwrap().size();
       self.truncated = true;
     }
     self.seq
@@ -124,16 +140,28 @@ mod ring_tests {
 
   #[test]
   fn truncation_is_reported_at_the_atomic_sequence_boundary() {
-    let mut ring = Ring { chunks: Vec::new(), len: 0, seq: 0, truncated: false };
-    assert_eq!(ring.push("a".repeat(RING_MAX / 2)), 1);
-    assert_eq!(ring.push("b".repeat(RING_MAX / 2)), 2);
+    let mut ring = Ring { chunks: VecDeque::new(), len: 0, seq: 0, truncated: false };
+    assert_eq!(ring.push(vec![b'a'; RING_MAX / 2], "a".repeat(RING_MAX / 2)), 1);
+    assert_eq!(ring.push(vec![b'b'; RING_MAX / 2], "b".repeat(RING_MAX / 2)), 2);
     assert!(!ring.truncated); // exactly full still contains the entire history
-    assert_eq!(ring.push("日本語".into()), 3);
+    assert_eq!(ring.push("日本語".as_bytes().to_vec(), "日本語".into()), 3);
     assert!(ring.truncated);
     assert_eq!(ring.len, RING_MAX / 2 + "日本語".len());
-    assert!(ring.chunks.concat().ends_with("日本語"));
-    ring.push("small later update".into());
+    assert_eq!(ring.chunks.back().unwrap().text, "日本語");
+    ring.push(b"small later update".to_vec(), "small later update".into());
     assert!(ring.truncated); // a small subsequent batch cannot make a tail complete
+  }
+
+  #[test]
+  fn invalid_utf8_expansion_cannot_exceed_the_ring_budget() {
+    let mut ring = Ring { chunks: VecDeque::new(), len: 0, seq: 0, truncated: false };
+    ring.push(vec![0xff; RING_MAX / 2], "\u{fffd}".repeat(RING_MAX / 2));
+    assert!(ring.truncated);
+    assert_eq!(ring.seq, 1);
+    assert!(ring.len <= RING_MAX);
+    ring.push(vec![b'a'], "a".into());
+    assert_eq!(ring.len, 1);
+    assert!(ring.truncated);
   }
 }
 
@@ -193,6 +221,7 @@ pub struct CreateOpts {
 // socket (responses and events share it, so frames never interleave). `owed` is the byte budget.
 struct Client {
   id: u64,
+  byte_transport: bool,
   tx: mpsc::Sender<Arc<str>>,
   owed: Arc<AtomicUsize>,
   progress: Arc<Mutex<Instant>>,
@@ -292,6 +321,25 @@ impl Daemon {
     cs.retain(|c| self.offer(c, &line));
   }
 
+  // Encode at most once per representation, regardless of viewer count. Legacy
+  // Tauri clients keep their streaming UTF-8 text; native clients receive the
+  // exact bytes, with no replacement or incomplete-codepoint delay in the daemon.
+  fn broadcast_output(&self, id: &str, seq: u64, bytes: &[u8], text: &str) {
+    let mut cs = self.clients.lock().unwrap();
+    let mut raw_line: Option<Arc<str>> = None;
+    let mut text_line: Option<Arc<str>> = None;
+    cs.retain(|c| {
+      let line = if c.byte_transport {
+        raw_line.get_or_insert_with(|| Arc::from(format!("{}\n",
+          json!({ "ev": "data", "id": id, "bytes": BASE64.encode(bytes), "seq": seq }))))
+      } else {
+        text_line.get_or_insert_with(|| Arc::from(format!("{}\n",
+          json!({ "ev": "data", "id": id, "chunk": text, "seq": seq }))))
+      };
+      self.offer(c, line)
+    });
+  }
+
   fn offer(&self, c: &Client, line: &Arc<str>) -> bool {
     let owed = c.owed.load(Ordering::Relaxed);
     let stalled = owed > 0 && c.progress.lock().unwrap().elapsed() > STALL_DROP;
@@ -378,7 +426,7 @@ impl Daemon {
       pid,
       created: now_ms(),
     };
-    let ring = Arc::new(Mutex::new(Ring { chunks: Vec::new(), len: 0, seq: 0, truncated: false }));
+    let ring = Arc::new(Mutex::new(Ring { chunks: VecDeque::new(), len: 0, seq: 0, truncated: false }));
     let input = Arc::new(Mutex::new(Input { writer, queue: VecDeque::new(), dropped: 0 }));
     let paused = Arc::new(AtomicBool::new(false));
     let killed = Arc::new(AtomicBool::new(false));
@@ -405,7 +453,8 @@ impl Daemon {
     let me = self.clone();
     std::thread::spawn(move || {
       let mut tmp = vec![0u8; READ_CHUNK];
-      let mut pending: Vec<u8> = Vec::new(); // bytes read but not yet emitted (batch + utf-8 tail)
+      let mut pending: Vec<u8> = Vec::new(); // raw output batch
+      let mut text_pending: Vec<u8> = Vec::new(); // legacy decoder's incomplete codepoint only
       let mut backlog_paused = false;
       let hangup: bool;
       'io: loop {
@@ -482,10 +531,12 @@ impl Daemon {
             }
           }
           if got_any || eof {
-            let s = utf8::take_text(&mut pending, eof);
-            if !s.is_empty() {
-              let seq = ring.lock().unwrap().push(s.clone());
-              me.broadcast(&json!({ "ev": "data", "id": id, "chunk": s, "seq": seq }));
+            let bytes = std::mem::take(&mut pending);
+            text_pending.extend_from_slice(&bytes);
+            let s = utf8::take_text(&mut text_pending, eof);
+            if !bytes.is_empty() || !s.is_empty() {
+              let seq = ring.lock().unwrap().push(bytes.clone(), s.clone());
+              me.broadcast_output(&id, seq, &bytes, &s);
             }
           }
           if eof {
@@ -509,7 +560,7 @@ impl Daemon {
 
   // Queue input for a terminal and try to push it through right away (non-blocking). Holds the
   // registry lock only to look the terminal up — a stuck program stalls nobody else.
-  fn write(&self, id: &str, data: &str) {
+  fn write(&self, id: &str, data: &[u8]) {
     let (input, wake, manifest) = {
       let mut map = self.terms.lock().unwrap();
       let Some(t) = map.get_mut(id) else { return };
@@ -534,7 +585,7 @@ impl Daemon {
         return;
       }
       inp.dropped = 0;
-      inp.queue.extend(data.as_bytes());
+      inp.queue.extend(data);
       drain_input(&mut inp)
     };
     if still_queued {
@@ -607,6 +658,7 @@ impl Daemon {
   // Attach: the ring for replay. A renderer flow pause belongs to the client that asked for it;
   // attaching releases only that client's pause, never another viewer's backpressure.
   fn attach(&self, cid: u64, id: &str) -> Value {
+    let byte_transport = self.clients.lock().unwrap().iter().any(|c| c.id == cid && c.byte_transport);
     match self.terms.lock().unwrap().get_mut(id) {
       Some(t) => {
         if t.pause_owners.remove(&cid) {
@@ -614,11 +666,17 @@ impl Daemon {
           poke(t.wake_w);
         }
         let b = t.ring.lock().unwrap();
-        json!({ "buf": b.chunks.concat(), "seq": b.seq, "live": true, "truncated": b.truncated })
+        if byte_transport {
+          let bytes: Vec<u8> = b.chunks.iter().flat_map(|c| c.bytes.iter().copied()).collect();
+          json!({ "bytes": BASE64.encode(bytes), "seq": b.seq, "live": true, "truncated": b.truncated })
+        } else {
+          let text: String = b.chunks.iter().map(|c| c.text.as_str()).collect();
+          json!({ "buf": text, "seq": b.seq, "live": true, "truncated": b.truncated })
+        }
       }
       // Unknown id: the PTY exited (or never existed). Say so, so the renderer doesn't keep a view
       // for it — its exit broadcast may have predated the renderer's subscription.
-      None => json!({ "buf": "", "seq": 0, "live": false, "truncated": false }),
+      None => json!({ "buf": "", "bytes": "", "seq": 0, "live": false, "truncated": false }),
     }
   }
 
@@ -639,13 +697,34 @@ impl Daemon {
     let op = req.get("op").and_then(Value::as_str).unwrap_or("");
     let sid = || req.get("term").and_then(Value::as_str).unwrap_or("").to_string();
     match op {
-      "hello" => Ok(json!({ "protocol": PROTOCOL, "pid": std::process::id(), "version": env!("CARGO_PKG_VERSION") })),
+      "hello" => {
+        let mut clients = self.clients.lock().unwrap();
+        let client = clients.iter_mut().find(|c| c.id == cid).ok_or("client disconnected")?;
+        if let Some(encoding) = req.get("dataEncoding") {
+          match encoding.as_str() {
+            Some("utf8") => client.byte_transport = false,
+            Some("base64") => client.byte_transport = true,
+            _ => return Err("unsupported terminal data encoding".into()),
+          }
+        }
+        let encoding = if client.byte_transport { "base64" } else { "utf8" };
+        Ok(json!({ "protocol": PROTOCOL, "pid": std::process::id(), "version": env!("CARGO_PKG_VERSION"), "dataEncoding": encoding }))
+      }
       "create" => {
         let opts: CreateOpts = req.get("opts").cloned().map(serde_json::from_value).transpose().map_err(|e| e.to_string())?.unwrap_or_default();
         self.create(opts).map(|i| serde_json::to_value(i).unwrap())
       }
       "write" => {
-        self.write(&sid(), req.get("data").and_then(Value::as_str).unwrap_or(""));
+        if let Some(encoded) = req.get("bytes") {
+          if req.get("data").is_some() { return Err("write must supply bytes or data, not both".into()); }
+          let encoded = encoded.as_str().ok_or("bytes must be a base64 string")?;
+          if encoded.len() > ((INPUT_MAX + 2) / 3) * 4 { return Err("terminal input exceeds buffer limit".into()); }
+          let bytes = BASE64.decode(encoded).map_err(|_| "invalid base64 terminal input")?;
+          if bytes.len() > INPUT_MAX { return Err("terminal input exceeds buffer limit".into()); }
+          self.write(&sid(), &bytes);
+        } else {
+          self.write(&sid(), req.get("data").and_then(Value::as_str).unwrap_or("").as_bytes());
+        }
         Ok(Value::Null)
       }
       "resize" => {
@@ -674,7 +753,7 @@ impl Daemon {
     let (tx, rx) = mpsc::channel::<Arc<str>>();
     let owed = Arc::new(AtomicUsize::new(0));
     let progress = Arc::new(Mutex::new(Instant::now()));
-    self.clients.lock().unwrap().push(Client { id: cid, tx, owed: owed.clone(), progress: progress.clone(), sock });
+    self.clients.lock().unwrap().push(Client { id: cid, byte_transport: false, tx, owed: owed.clone(), progress: progress.clone(), sock });
     *self.idle_since.lock().unwrap() = None;
     log(&format!("client {cid} connected"));
 

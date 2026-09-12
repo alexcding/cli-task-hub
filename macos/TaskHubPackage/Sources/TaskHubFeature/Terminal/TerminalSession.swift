@@ -62,6 +62,7 @@ final class TerminalSession: Identifiable {
             })
             self.client = client
             hello = try await host.connect(client: client)
+            try hello?.validateByteTransport()
             try Task.checkCancellation()
             let terminals: [PtyInfo] = try await client.request(.init(op: "list"))
             let info: PtyInfo
@@ -96,7 +97,7 @@ final class TerminalSession: Identifiable {
                     }
                 }
             }
-        } catch { setError(error.localizedDescription) }
+        } catch { setError(error.localizedDescription); client?.close() }
     }
 
     private func setError(_ text: String) {

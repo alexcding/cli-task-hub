@@ -42,7 +42,10 @@ final class TerminalPipe: @unchecked Sendable {
         defer { lock.unlock() }
         guard event.id == termID, !failed else { return }
         if event.ev == "data" {
-            queuedBytes += event.chunk?.utf8.count ?? 0
+            guard let bytes = event.bytes, event.seq != nil else {
+                failLocked("The terminal daemon sent an incomplete byte frame."); return
+            }
+            queuedBytes += bytes.count
             guard queuedBytes <= 8 * 1024 * 1024 else { failLocked("Terminal output exceeded its buffer limit."); return }
             if queuedBytes > 1024 * 1024 && !paused { flowLocked(true) }
         }
@@ -57,7 +60,7 @@ final class TerminalPipe: @unchecked Sendable {
         do { try attachment.validateReplay() }
         catch { failLocked(error.localizedDescription); return }
         lastSequence = attachment.seq
-        let replay = Data(attachment.buf.utf8)
+        let replay = attachment.bytes
         queuedBytes += replay.count
         guard queuedBytes <= 8 * 1024 * 1024 else { failLocked("Terminal attachment exceeded its buffer limit."); return }
         if queuedBytes > 1024 * 1024 && !paused { flowLocked(true) }
@@ -73,7 +76,7 @@ final class TerminalPipe: @unchecked Sendable {
         }
         for event in buffered {
             if event.ev == "data", (event.seq ?? 0) <= attachment.seq {
-                consumedLocked(event.chunk?.utf8.count ?? 0)
+                consumedLocked(event.bytes?.count ?? 0)
             } else { scheduleLocked(event) }
         }
         buffered.removeAll()
@@ -81,11 +84,10 @@ final class TerminalPipe: @unchecked Sendable {
     }
 
     private func scheduleLocked(_ event: PtyEvent) {
-        if event.ev == "data", let sequence = event.seq, let chunk = event.chunk {
-            guard sequence > lastSequence else { consumedLocked(chunk.utf8.count); return }
+        if event.ev == "data", let sequence = event.seq, let bytes = event.bytes {
+            guard sequence > lastSequence else { consumedLocked(bytes.count); return }
             guard sequence == lastSequence + 1 else { failLocked("Terminal output sequence gap; reconnect required."); return }
             lastSequence = sequence
-            let bytes = Data(chunk.utf8)
             outputQueue.async { [self] in
                 memory.receive(bytes)
                 memory.waitForPendingOutput()
@@ -124,11 +126,7 @@ final class TerminalPipe: @unchecked Sendable {
         // The drain fence keeps replies to historical terminal queries from being
         // injected into the live shell after the replay has supposedly finished.
         guard !replaying, !failed, let termID else { return }
-        guard let text = String(data: data, encoding: .utf8) else {
-            failLocked("Non-UTF-8 input requires byte transport; input was not sent.")
-            return
-        }
-        client?.fire(.init(op: "write", term: termID, data: text))
+        client?.fire(.init(op: "write", term: termID, bytes: data))
     }
 
     private func resize(columns: UInt16, rows: UInt16) {

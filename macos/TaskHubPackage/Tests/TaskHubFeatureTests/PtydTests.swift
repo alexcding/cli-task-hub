@@ -7,17 +7,22 @@ private final class EventLog: @unchecked Sendable {
     private var storage: [PtyEvent] = []
     func append(_ event: PtyEvent) { lock.lock(); storage.append(event); lock.unlock() }
     var events: [PtyEvent] { lock.lock(); defer { lock.unlock() }; return storage }
-    var text: String { events.compactMap(\.chunk).joined() }
+    var bytes: Data { events.compactMap(\.bytes).reduce(into: Data()) { $0.append($1) } }
+    var text: String { String(decoding: bytes, as: UTF8.self) }
 }
 
 @Test func ptyFramesPreserveSplitUTF8AndBoundMemory() throws {
     var framer = PtyFramer()
     var frames: [Data] = []
-    for byte in "{\"ev\":\"data\",\"id\":\"pty1\",\"chunk\":\"日本語🦀\",\"seq\":1}\n\n{\"id\":2,\"ok\":null}\n".utf8 {
+    let payload = Data("日本語🦀".utf8)
+    for byte in "{\"ev\":\"data\",\"id\":\"pty1\",\"bytes\":\"\(payload.base64EncodedString())\",\"seq\":1}\n\n{\"id\":2,\"ok\":null}\n".utf8 {
         frames += try framer.append(Data([byte]))
     }
     #expect(frames.count == 2)
-    #expect(try JSONDecoder().decode(PtyEvent.self, from: frames[0]).chunk == "日本語🦀")
+    #expect(try JSONDecoder().decode(PtyEvent.self, from: frames[0]).bytes == payload)
+    #expect(throws: (any Error).self) {
+        try JSONDecoder().decode(PtyEvent.self, from: Data(#"{"ev":"data","id":"pty1","bytes":"?invalid","seq":1}"#.utf8))
+    }
     framer.limit = 8
     #expect(throws: PtyError.self) { _ = try framer.append(Data(repeating: 65, count: 9)) }
 }
@@ -29,7 +34,7 @@ private final class EventLog: @unchecked Sendable {
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
     defer { try? FileManager.default.removeItem(at: directory) }
     let shell = directory.appendingPathComponent("echo-shell")
-    try "#!/bin/sh\n/usr/bin/stty raw -echo\nprintf 'PTY_READY\\n'\nexec /bin/cat\n".write(to: shell, atomically: true, encoding: .utf8)
+    try "#!/bin/sh\n/bin/stty raw -echo || exit 1\nprintf 'PTY_READY\\n'\nexec /bin/cat\n".write(to: shell, atomically: true, encoding: .utf8)
     try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: shell.path)
     let config = PtydConfiguration(executable: root.appendingPathComponent("crates/taskhub-ptyd/target/debug/taskhub-ptyd"),
                                    directory: directory, socketPath: directory.appendingPathComponent("pty.sock").path)
@@ -39,6 +44,7 @@ private final class EventLog: @unchecked Sendable {
     let hello = try await host.connect(client: client)
     defer { client.close(); _ = kill(hello.pid, SIGTERM) }
     #expect(hello.protocol == 2)
+    try hello.validateByteTransport()
     let terminal: PtyInfo = try await client.request(.init(op: "create", opts: .init(cwd: directory.path, shell: shell.path, pairKey: "fixture")))
     for _ in 0..<100 {
         if log.text.contains("PTY_READY") { break }
@@ -52,8 +58,33 @@ private final class EventLog: @unchecked Sendable {
         try await Task.sleep(for: .milliseconds(20))
     }
     #expect(log.text.contains("UNICODE_é_日本語_🦀"))
+    // Every byte must survive both input and output. No decoder may replace
+    // invalid UTF-8, interpret C1 bytes, or hold an incomplete codepoint back.
+    let binaryStart = log.bytes.count
+    let binary = Data((0...255).map(UInt8.init))
+    let _: String? = try await client.request(.init(op: "write", term: terminal.id, bytes: binary))
+    for _ in 0..<100 {
+        if log.bytes.count >= binaryStart + binary.count { break }
+        try await Task.sleep(for: .milliseconds(20))
+    }
+    #expect(log.bytes.dropFirst(binaryStart) == binary)
+    let splitStart = log.bytes.count
+    let _: String? = try await client.request(.init(op: "write", term: terminal.id, bytes: Data([0xf0, 0x9f])))
+    for _ in 0..<100 {
+        if log.bytes.count >= splitStart + 2 { break }
+        try await Task.sleep(for: .milliseconds(20))
+    }
+    #expect(log.bytes.dropFirst(splitStart) == Data([0xf0, 0x9f]))
+    let splitSnapshot: PtyAttachment = try await client.request(.init(op: "attach", term: terminal.id))
+    #expect(splitSnapshot.bytes.suffix(2) == Data([0xf0, 0x9f]))
+    let _: String? = try await client.request(.init(op: "write", term: terminal.id, bytes: Data([0xa6, 0x80])))
+    for _ in 0..<100 {
+        if log.bytes.count >= splitStart + 4 { break }
+        try await Task.sleep(for: .milliseconds(20))
+    }
+    #expect(log.bytes.dropFirst(splitStart) == Data("🦀".utf8))
     let snapshot: PtyAttachment = try await client.request(.init(op: "attach", term: terminal.id))
-    #expect(snapshot.live && snapshot.buf.contains("UNICODE_é_日本語_🦀"))
+    #expect(snapshot.live && snapshot.bytes == log.bytes)
     #expect(snapshot.truncated == false)
     let sequences = log.events.compactMap(\.seq)
     #expect(sequences == sequences.sorted())
@@ -67,7 +98,7 @@ private final class EventLog: @unchecked Sendable {
     let terms: [PtyInfo] = try await second.request(.init(op: "list"))
     #expect(terms.first?.pid == terminal.pid)
     let restored: PtyAttachment = try await second.request(.init(op: "attach", term: terminal.id))
-    #expect(restored.buf == snapshot.buf)
+    #expect(restored.bytes == snapshot.bytes)
     // Another client attaching, resuming, or disconnecting must not release the
     // first client's pause. Allow the daemon's in-flight batch to finish first.
     let _: String? = try await second.request(.init(op: "flow", term: terminal.id, pause: false))
@@ -102,8 +133,8 @@ private final class EventLog: @unchecked Sendable {
     #expect(secondLog.text.contains("HISTORY_END"))
     let truncated: PtyAttachment = try await second.request(.init(op: "attach", term: terminal.id))
     #expect(truncated.live && truncated.truncated == true)
-    #expect(truncated.buf.contains("HISTORY_END"))
-    #expect(truncated.buf.utf8.count <= 256 * 1024)
+    #expect(String(decoding: truncated.bytes, as: UTF8.self).contains("HISTORY_END"))
+    #expect(truncated.bytes.count <= 256 * 1024)
     #expect(throws: PtyError.self) { try truncated.validateReplay() }
     let killed: Bool = try await second.request(.init(op: "kill", term: terminal.id))
     #expect(killed)

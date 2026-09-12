@@ -40,17 +40,18 @@ private final class PipeEvents: @unchecked Sendable {
     }
     #expect(state.surface != nil)
     view.setSurfaceVisible(false)
-    func output(_ sequence: UInt64, _ text: String) -> PtyEvent {
-        PtyEvent(ev: "data", id: "attach-test", chunk: text, seq: sequence, exitCode: nil, signal: nil)
+    func output(_ sequence: UInt64, _ bytes: Data) -> PtyEvent {
+        PtyEvent(ev: "data", id: "attach-test", bytes: bytes, seq: sequence, exitCode: nil, signal: nil)
     }
     // Output races the attach reply: seq 1 is included in the atomic snapshot;
     // seq 2 arrives after its boundary. Both are buffered before attaching.
-    pipe.receive(output(1, "SNAPSHOT\r\n"))
-    pipe.receive(output(2, "DURING_ATTACH_日本語\r\n"))
-    pipe.attach(PtyAttachment(buf: "SNAPSHOT\r\n", seq: 1, live: true, truncated: false)) { events.append("ready") }
-    pipe.receive(output(2, "DUPLICATE_MUST_NOT_RENDER\r\n"))
-    pipe.receive(output(3, "FINAL_BEFORE_EXIT\r\n"))
-    pipe.receive(PtyEvent(ev: "exit", id: "attach-test", chunk: nil, seq: nil, exitCode: 7, signal: nil))
+    let replay = Data("SNAPSHOT\r\nSPLIT_".utf8) + Data([0xf0, 0x9f])
+    pipe.receive(output(1, replay))
+    pipe.receive(output(2, Data([0xa6, 0x80]) + Data("\r\nDURING_ATTACH_日本語\r\n".utf8)))
+    pipe.attach(PtyAttachment(bytes: replay, seq: 1, live: true, truncated: false)) { events.append("ready") }
+    pipe.receive(output(2, Data("DUPLICATE_MUST_NOT_RENDER\r\n".utf8)))
+    pipe.receive(output(3, Data("FINAL_BEFORE_EXIT\r\n".utf8)))
+    pipe.receive(PtyEvent(ev: "exit", id: "attach-test", bytes: nil, seq: nil, exitCode: 7, signal: nil))
     for _ in 0..<100 {
         if events.all.contains("exit: 7") { break }
         try await Task.sleep(for: .milliseconds(20))
@@ -59,6 +60,7 @@ private final class PipeEvents: @unchecked Sendable {
     let screen = try #require(pipe.memory.readViewportText())
     #expect(screen.components(separatedBy: "SNAPSHOT").count == 2)
     #expect(screen.contains("DURING_ATTACH_日本語"))
+    #expect(screen.contains("SPLIT_🦀"))
     #expect(screen.contains("FINAL_BEFORE_EXIT"))
     #expect(!screen.contains("DUPLICATE_MUST_NOT_RENDER"))
 }

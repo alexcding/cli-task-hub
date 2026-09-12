@@ -28,10 +28,17 @@ struct PtyInfo: Codable, Sendable, Identifiable {
 struct PtyHello: Decodable, Sendable {
     let `protocol`: UInt32
     let pid: Int32
+    let dataEncoding: String?
+
+    func validateByteTransport() throws {
+        guard dataEncoding == "base64" else {
+            throw PtyError.connection("This PTY helper cannot preserve terminal bytes. Quit TaskHub explicitly after saving your work, rebuild the helper, and reopen. Existing shells have been preserved.")
+        }
+    }
 }
 
 struct PtyAttachment: Decodable, Sendable {
-    let buf: String
+    let bytes: Data
     let seq: UInt64
     let live: Bool
     let truncated: Bool?
@@ -50,7 +57,7 @@ struct PtyAttachment: Decodable, Sendable {
 struct PtyEvent: Decodable, Sendable {
     let ev: String
     let id: String
-    let chunk: String?
+    let bytes: Data?
     let seq: UInt64?
     let exitCode: Int?
     let signal: Int?
@@ -67,6 +74,8 @@ struct PtyRequest: Encodable, Sendable {
     var op: String
     var term: String?
     var data: String?
+    var bytes: Data?
+    var dataEncoding: String?
     var cols: UInt16?
     var rows: UInt16?
     var pause: Bool?

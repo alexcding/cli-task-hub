@@ -60,7 +60,7 @@ final class PtydClient: @unchecked Sendable {
             }
         }
         do {
-            let hello: PtyHello = try await request(.init(op: "hello"))
+            let hello: PtyHello = try await request(.init(op: "hello", dataEncoding: "base64"))
             guard hello.protocol == 2 else { throw PtyError.protocolMismatch(hello.protocol) }
             return hello
         } catch { close(); throw error }

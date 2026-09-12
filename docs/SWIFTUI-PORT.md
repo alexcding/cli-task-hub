@@ -82,12 +82,36 @@ Dashboard; the remaining app pages and action parity are tracked under M4.
   and final output is parsed before the exit callback. The test runs with the native
   surface hidden. It covers the Swift pipeline boundary, not all daemon exit races.
 - Still open: complete VT restoration after ring truncation (the 256 KiB tail is not
-  sufficient), byte transport decision, automatic reconnect and full lifecycle/race
+  sufficient), automatic reconnect and full lifecycle/race
   coverage, IME/mouse/selection/scrollback/display
   testing, file/URL routing and workflow hooks, sustained flood/isolation tests, and
   the ten-minute one-active/nine-hidden benchmark with recorded hardware and metrics.
   The user has authorized starting M2 with the Cocoa sidebar while these M1
   acceptance items remain open; this does not mark the terminal gate complete.
+
+### M1 byte transport — 2026-09-12
+
+- Native connections negotiate base64 byte transport through the existing protocol-2
+  hello. Exact PTY bytes now reach Ghostty and exact keyboard bytes reach the PTY;
+  the native path no longer converts output to text or rejects non-UTF-8 input.
+  JSON framing stays bounded, and decoding/flow accounting remain off the UI actor.
+- Legacy Tauri connections retain their incremental UTF-8 text events and attachment
+  format. Native and legacy clients share sequence boundaries; each output format
+  is encoded once per broadcast. The ring retains both representations under a
+  bounded budget and reports truncation even when invalid-byte expansion fills it.
+- The native pane detects helpers without byte support before creating/attaching a
+  terminal. Running shells are preserved; rebuilding a binary does not replace its
+  already-running daemon. Control connections remain compatible for explicit Quit.
+- Verification covers every byte value through a real raw PTY, incomplete UTF-8
+  delivered before its continuation, exact attachment history, legacy/native clients
+  on the same PTY, malformed base64 rejection, and real hidden Ghostty parsing of a
+  Unicode character split between replay and live events. The test fixture's stty
+  path was corrected to `/bin/stty` and now fails immediately if raw mode setup fails.
+- The native app builds, all 48 Swift package tests and seven Rust tests pass, and
+  the existing Tauri host passes `cargo check` with its existing vendor warnings.
+- Full VT restoration after truncated history remains open. The pinned Ghostty
+  embedding package does not expose a complete terminal-state serialization API;
+  a text or ANSI viewport export is insufficient evidence of full restoration.
 
 ### M2 native shell — AppKit/Cocoa (implemented; OS notification acceptance open)
 
