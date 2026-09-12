@@ -9,6 +9,9 @@ pub const RESPONSE_LIMIT: usize = 256 * 1024;
 /// Fixed ownership contract; extending this set requires a new version.
 pub const STATE_RESPONSE_OWNER: &str = "daemon-state-v1";
 pub const IDENTITY_RESPONSE_OWNER: &str = "daemon-identity-v1";
+/// Identity/state replies plus XTWINOPS size queries and mode 2048 reports.
+/// The daemon/native handshake must opt into this separately before using it.
+pub const GEOMETRY_RESPONSE_OWNER: &str = "daemon-geometry-v1";
 type Writer = unsafe extern "C" fn(*mut c_void, *const u8, usize) -> bool;
 
 extern "C" {
@@ -23,8 +26,25 @@ extern "C" {
         userdata: *mut c_void,
         version: *const u8,
         version_len: usize,
+        geometry: bool,
     ) -> i32;
     fn taskhub_vt_resize(terminal: *mut c_void, cols: u16, rows: u16) -> i32;
+    fn taskhub_vt_resize_geometry(
+        terminal: *mut c_void,
+        cols: u16,
+        rows: u16,
+        cell_width: u32,
+        cell_height: u32,
+        write: Writer,
+        userdata: *mut c_void,
+    ) -> i32;
+    fn taskhub_vt_geometry(
+        terminal: *mut c_void,
+        cols: *mut u16,
+        rows: *mut u16,
+        cell_width: *mut u32,
+        cell_height: *mut u32,
+    ) -> i32;
     fn taskhub_vt_snapshot(terminal: *mut c_void, write: Writer, userdata: *mut c_void) -> i32;
     fn taskhub_vt_restore(bytes: *const u8, len: usize) -> *mut c_void;
     fn taskhub_vt_format(terminal: *mut c_void, write: Writer, userdata: *mut c_void) -> i32;
@@ -40,6 +60,29 @@ impl fmt::Display for Error {
     }
 }
 impl std::error::Error for Error {}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Geometry {
+    pub cols: u16,
+    pub rows: u16,
+    pub cell_width: u32,
+    pub cell_height: u32,
+}
+impl Geometry {
+    fn validate(self) -> Result<(), Error> {
+        if self.cols == 0
+            || self.rows == 0
+            || self.cell_width == 0
+            || self.cell_height == 0
+            || self.cell_width.checked_mul(u32::from(self.cols)).is_none()
+            || self.cell_height.checked_mul(u32::from(self.rows)).is_none()
+        {
+            Err(Error("Invalid or overflowing terminal geometry"))
+        } else {
+            Ok(())
+        }
+    }
+}
 
 pub struct Terminal(NonNull<c_void>);
 // Ghostty requires exclusive access, but not thread affinity. No method exposes
@@ -62,14 +105,14 @@ impl Terminal {
     /// This does not write to a PTY or grant access to host clipboard/UI effects.
     /// An error can occur after input was consumed; retrying it is not safe.
     pub fn feed_with_responses(&mut self, bytes: &[u8]) -> Result<Vec<u8>, Error> {
-        self.collect_responses(bytes, write_response, None)
+        self.collect_responses(bytes, write_response, None, false)
     }
     /// Collect only daemon-state-v1 replies: DSR status/cursor, DECRQM,
     /// DECRQSS, and Kitty keyboard flags. UI/config-dependent replies remain
     /// renderer-owned. Filtering complete runtime effect packets avoids a
     /// second VT request parser and preserves split-sequence handling.
     pub fn feed_state_responses(&mut self, bytes: &[u8]) -> Result<Vec<u8>, Error> {
-        self.collect_responses(bytes, write_state_response, None)
+        self.collect_responses(bytes, write_state_response, None, false)
     }
     /// State replies plus native DA1/DA2, XTVERSION and XTGETTCAP. The profile
     /// must match the shell's TERM/terminfo and default native clipboard policy.
@@ -79,19 +122,28 @@ impl Terminal {
         bytes: &[u8],
         version: &str,
     ) -> Result<Vec<u8>, Error> {
-        if version.is_empty()
-            || version.len() > 256
-            || !version.bytes().all(|b| (0x20..=0x7e).contains(&b))
-        {
-            return Err(Error("Invalid terminal identity version"));
-        }
-        self.collect_responses(bytes, write_identity_response, Some(version))
+        validate_version(version)?;
+        self.collect_responses(bytes, write_identity_response, Some(version), false)
+    }
+    /// Identity/state replies plus sizes from the parser's current geometry.
+    /// Requires complete cell pixels, set before output is parsed. Title and
+    /// other host effects remain excluded. As with other feeds, do not retry
+    /// consumed bytes on failure.
+    pub fn feed_geometry_responses(
+        &mut self,
+        bytes: &[u8],
+        version: &str,
+    ) -> Result<Vec<u8>, Error> {
+        validate_version(version)?;
+        self.geometry()?;
+        self.collect_responses(bytes, write_geometry_response, Some(version), true)
     }
     fn collect_responses(
         &mut self,
         bytes: &[u8],
         writer: Writer,
         version: Option<&str>,
+        geometry: bool,
     ) -> Result<Vec<u8>, Error> {
         let mut responses = Vec::new();
         check(
@@ -104,9 +156,10 @@ impl Terminal {
                     (&mut responses as *mut Vec<u8>).cast(),
                     version.map_or(std::ptr::null(), str::as_ptr),
                     version.map_or(0, str::len),
+                    geometry,
                 )
             },
-            "Terminal protocol responses exceeded their buffer or allocation limit",
+            "Could not collect complete terminal protocol responses",
         )?;
         Ok(responses)
     }
@@ -115,6 +168,52 @@ impl Terminal {
             unsafe { taskhub_vt_resize(self.0.as_ptr(), cols, rows) },
             "Could not resize Ghostty terminal",
         )
+    }
+    /// Apply cell and pixel geometry and collect a single mode 2048 report
+    /// when enabled. Equal geometry is a no-op; pixel-only changes are not.
+    /// A runtime failure may occur after the resize was applied.
+    pub fn resize_geometry(&mut self, geometry: Geometry) -> Result<Vec<u8>, Error> {
+        geometry.validate()?;
+        let mut responses = Vec::new();
+        check(
+            unsafe {
+                taskhub_vt_resize_geometry(
+                    self.0.as_ptr(),
+                    geometry.cols,
+                    geometry.rows,
+                    geometry.cell_width,
+                    geometry.cell_height,
+                    write_geometry_response,
+                    (&mut responses as *mut Vec<u8>).cast(),
+                )
+            },
+            "Could not apply terminal geometry or collect its size report",
+        )?;
+        Ok(responses)
+    }
+    /// Exact metrics retained in the snapshot. Legacy zero-pixel terminals
+    /// have no reportable geometry and return an error.
+    pub fn geometry(&mut self) -> Result<Geometry, Error> {
+        let mut geometry = Geometry {
+            cols: 0,
+            rows: 0,
+            cell_width: 0,
+            cell_height: 0,
+        };
+        check(
+            unsafe {
+                taskhub_vt_geometry(
+                    self.0.as_ptr(),
+                    &mut geometry.cols,
+                    &mut geometry.rows,
+                    &mut geometry.cell_width,
+                    &mut geometry.cell_height,
+                )
+            },
+            "Terminal cell pixel geometry is unavailable",
+        )?;
+        geometry.validate()?;
+        Ok(geometry)
     }
     pub fn snapshot(&mut self) -> Result<Vec<u8>, Error> {
         self.collect(
@@ -176,6 +275,16 @@ fn check(result: i32, message: &'static str) -> Result<(), Error> {
         Err(Error(message))
     }
 }
+fn validate_version(version: &str) -> Result<(), Error> {
+    if version.is_empty()
+        || version.len() > 256
+        || !version.bytes().all(|b| (0x20..=0x7e).contains(&b))
+    {
+        Err(Error("Invalid terminal identity version"))
+    } else {
+        Ok(())
+    }
+}
 unsafe extern "C" fn write(userdata: *mut c_void, data: *const u8, len: usize) -> bool {
     append_bounded(userdata, data, len, SNAPSHOT_LIMIT)
 }
@@ -185,15 +294,15 @@ unsafe extern "C" fn write_response(userdata: *mut c_void, data: *const u8, len:
 // WRITE_PTY supplies a complete response per callback at the pinned revision.
 // Only accept the explicitly owned packet classes; OSC clipboard/color, APC
 // graphics, DA/version/terminfo, title, visibility, and geometry stay native.
+fn numbers(bytes: &[u8], count: usize) -> bool {
+    let mut fields = bytes.split(|b| *b == b';');
+    (0..count).all(|_| {
+        fields
+            .next()
+            .is_some_and(|part| !part.is_empty() && part.iter().all(u8::is_ascii_digit))
+    }) && fields.next().is_none()
+}
 fn is_state_response(bytes: &[u8]) -> bool {
-    fn numbers(bytes: &[u8], count: usize) -> bool {
-        let mut fields = bytes.split(|b| *b == b';');
-        (0..count).all(|_| {
-            fields
-                .next()
-                .is_some_and(|part| !part.is_empty() && part.iter().all(u8::is_ascii_digit))
-        }) && fields.next().is_none()
-    }
     if bytes == b"\x1b[0n" {
         return true;
     }
@@ -236,13 +345,44 @@ unsafe extern "C" fn write_identity_response(
         return true;
     }
     let bytes = std::slice::from_raw_parts(data, len);
-    let identity = bytes == b"\x1b[?62;22;52c"
-        || bytes == b"\x1b[>1;10;0c"
-        || ((bytes.starts_with(b"\x1bP>|") || bytes.starts_with(b"\x1bP1+r"))
-            && bytes.ends_with(b"\x1b\\"));
     // DA3 remains silent, matching the native implementation. Clipboard,
     // geometry, colors, visibility and graphics are still UI-owned.
-    if !identity && !is_state_response(bytes) {
+    if !is_identity_response(bytes) && !is_state_response(bytes) {
+        return true;
+    }
+    append_bounded(userdata, data, len, RESPONSE_LIMIT)
+}
+fn is_identity_response(bytes: &[u8]) -> bool {
+    bytes == b"\x1b[?62;22;52c"
+        || bytes == b"\x1b[>1;10;0c"
+        || ((bytes.starts_with(b"\x1bP>|") || bytes.starts_with(b"\x1bP1+r"))
+            && bytes.ends_with(b"\x1b\\"))
+}
+fn is_geometry_response(bytes: &[u8]) -> bool {
+    let Some(body) = bytes
+        .strip_prefix(b"\x1b[")
+        .and_then(|b| b.strip_suffix(b"t"))
+    else {
+        return false;
+    };
+    if let Some(size) = body.strip_prefix(b"48;") {
+        return numbers(size, 4);
+    }
+    [b"4;".as_slice(), b"6;", b"8;"].iter().any(|prefix| {
+        body.strip_prefix(*prefix)
+            .is_some_and(|size| numbers(size, 2))
+    })
+}
+unsafe extern "C" fn write_geometry_response(
+    userdata: *mut c_void,
+    data: *const u8,
+    len: usize,
+) -> bool {
+    if len == 0 {
+        return true;
+    }
+    let bytes = std::slice::from_raw_parts(data, len);
+    if !is_state_response(bytes) && !is_identity_response(bytes) && !is_geometry_response(bytes) {
         return true;
     }
     append_bounded(userdata, data, len, RESPONSE_LIMIT)
@@ -262,6 +402,171 @@ unsafe fn append_bounded(userdata: *mut c_void, data: *const u8, len: usize, lim
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn geometry_queries_and_pixel_only_resizes_survive_snapshots_and_reset() {
+        let mut terminal = Terminal::new(80, 24).unwrap();
+        let geometry = Geometry {
+            cols: 80,
+            rows: 24,
+            cell_width: 9,
+            cell_height: 18,
+        };
+        assert!(terminal.resize_geometry(geometry).unwrap().is_empty());
+        let query = b"\x1b[14t\x1b[16t\x1b[18t";
+        let expected = b"\x1b[4;432;720t\x1b[6;18;9t\x1b[8;24;80t";
+        assert_eq!(
+            terminal
+                .feed_geometry_responses(query, "ghostty test")
+                .unwrap(),
+            expected
+        );
+        assert_eq!(
+            terminal
+                .feed_geometry_responses(b"\x1b[?2048h", "ghostty test")
+                .unwrap(),
+            b"\x1b[48;24;80;432;720t"
+        );
+        // An acknowledgement/reconnect with unchanged measurements must not
+        // generate another resize notification or disturb parser state.
+        assert!(terminal.resize_geometry(geometry).unwrap().is_empty());
+        terminal.feed(b"\x1b[16");
+        let mut restored = Terminal::restore(&terminal.snapshot().unwrap()).unwrap();
+        assert_eq!(restored.geometry().unwrap(), geometry);
+        assert!(restored.mode(2048, false).unwrap());
+        assert_eq!(
+            restored
+                .feed_geometry_responses(b"t", "ghostty test")
+                .unwrap(),
+            b"\x1b[6;18;9t"
+        );
+        let retina = Geometry {
+            cell_width: 18,
+            cell_height: 36,
+            ..geometry
+        };
+        assert_eq!(
+            restored.resize_geometry(retina).unwrap(),
+            b"\x1b[48;24;80;864;1440t"
+        );
+        assert_eq!(restored.geometry().unwrap(), retina);
+        assert!(restored.resize_geometry(retina).unwrap().is_empty());
+        let bigger = Geometry {
+            cols: 100,
+            rows: 30,
+            ..retina
+        };
+        assert_eq!(
+            restored.resize_geometry(bigger).unwrap(),
+            b"\x1b[48;30;100;1080;1800t"
+        );
+        assert_eq!(
+            restored
+                .feed_geometry_responses(query, "ghostty test")
+                .unwrap(),
+            b"\x1b[4;1080;1800t\x1b[6;36;18t\x1b[8;30;100t"
+        );
+        assert!(restored
+            .feed_geometry_responses(b"\x1b[?2048l", "ghostty test")
+            .unwrap()
+            .is_empty());
+        assert!(restored.resize_geometry(geometry).unwrap().is_empty());
+        assert_eq!(
+            restored
+                .feed_geometry_responses(b"\x1bc\x1b[14t\x1b[16t\x1b[18t", "ghostty test")
+                .unwrap(),
+            expected
+        );
+        assert!(!restored.mode(2048, false).unwrap());
+    }
+
+    #[test]
+    fn geometry_is_explicit_bounded_and_does_not_take_other_host_responses() {
+        let mut terminal = Terminal::new(80, 24).unwrap();
+        assert!(terminal.geometry().is_err());
+        assert!(terminal
+            .feed_geometry_responses(b"NOT_PARSED", "ghostty test")
+            .is_err());
+        let geometry = Geometry {
+            cols: 80,
+            rows: 24,
+            cell_width: 9,
+            cell_height: 18,
+        };
+        terminal.resize_geometry(geometry).unwrap();
+        for invalid in [
+            Geometry {
+                cols: 0,
+                ..geometry
+            },
+            Geometry {
+                rows: 0,
+                ..geometry
+            },
+            Geometry {
+                cell_width: 0,
+                ..geometry
+            },
+            Geometry {
+                cell_height: 0,
+                ..geometry
+            },
+            Geometry {
+                cell_width: u32::MAX,
+                ..geometry
+            },
+            Geometry {
+                cell_height: u32::MAX,
+                ..geometry
+            },
+        ] {
+            assert!(terminal.resize_geometry(invalid).is_err());
+            assert_eq!(terminal.geometry().unwrap(), geometry);
+        }
+        assert!(terminal
+            .feed_geometry_responses(b"NOT_PARSED", "bad\x1bversion")
+            .is_err());
+        assert_eq!(terminal.cursor().unwrap(), (0, 0));
+        let mixed = b"\x1b[6n\x1b[>q\x1b[18t\x1b[21t\x1b[?5522$p\x1b]52;c;?\x07\x1b[?996n";
+        assert_eq!(
+            terminal
+                .feed_geometry_responses(mixed, "ghostty test")
+                .unwrap(),
+            b"\x1b[1;1R\x1bP>|ghostty test\x1b\\\x1b[8;24;80t"
+        );
+        // Callbacks must be cleared after success and after collector overflow.
+        assert!(terminal
+            .feed_identity_responses(b"\x1b[18t", "ghostty test")
+            .unwrap()
+            .is_empty());
+        let mut flood = b"\x1b[16t".repeat(RESPONSE_LIMIT / 4);
+        flood.extend_from_slice(b"ONCE");
+        assert!(terminal
+            .feed_geometry_responses(&flood, "ghostty test")
+            .is_err());
+        assert_eq!(terminal.cursor().unwrap(), (4, 0));
+        assert!(terminal
+            .feed_with_responses(b"\x1b[18t")
+            .unwrap()
+            .is_empty());
+        assert_eq!(
+            terminal
+                .feed_geometry_responses(b"\x1b[18t", "ghostty test")
+                .unwrap(),
+            b"\x1b[8;24;80t"
+        );
+        // Untrusted title/color/clipboard packets cannot pass the size filter.
+        for packet in [
+            b"\x1b]lTitle\x1b\\".as_slice(),
+            b"\x1b[48;1;2;3t",
+            b"\x1b[4;1;2;3t",
+            b"\x1b[8;1;X t",
+            b"\x1b[48;;2;3;4t",
+            b"\x1b[?997;1n",
+        ] {
+            assert!(!is_geometry_response(packet));
+        }
+    }
+
     #[test]
     fn echoed_device_attributes_are_not_queries_and_ansi_modes_report_state() {
         let mut terminal = Terminal::new(80, 24).unwrap();

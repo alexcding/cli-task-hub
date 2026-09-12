@@ -49,13 +49,41 @@ static void taskhub_write_response(GhosttyTerminal terminal, void *userdata,
     if (!sink->failed && len > 0 && !sink->write(sink->userdata, bytes, len)) sink->failed = true;
 }
 
+// Geometry is read from the parser, including after snapshot restoration. Only
+// complete cell metrics can produce pixel reports; zero/rounded sizes must not
+// be presented as measurements from the native surface.
+int taskhub_vt_geometry(void *terminal, uint16_t *cols, uint16_t *rows,
+                        uint32_t *cell_width, uint32_t *cell_height) {
+    uint32_t width = 0, height = 0;
+    int result = ghostty_terminal_get(terminal, GHOSTTY_TERMINAL_DATA_COLS, cols);
+    if (result == GHOSTTY_SUCCESS)
+        result = ghostty_terminal_get(terminal, GHOSTTY_TERMINAL_DATA_ROWS, rows);
+    if (result == GHOSTTY_SUCCESS)
+        result = ghostty_terminal_get(terminal, GHOSTTY_TERMINAL_DATA_WIDTH_PX, &width);
+    if (result == GHOSTTY_SUCCESS)
+        result = ghostty_terminal_get(terminal, GHOSTTY_TERMINAL_DATA_HEIGHT_PX, &height);
+    if (result != GHOSTTY_SUCCESS) return result;
+    if (*cols == 0 || *rows == 0 || width == 0 || height == 0 ||
+        width % *cols != 0 || height % *rows != 0) return GHOSTTY_INVALID_VALUE;
+    *cell_width = width / *cols;
+    *cell_height = height / *rows;
+    return GHOSTTY_SUCCESS;
+}
+static bool taskhub_size(GhosttyTerminal terminal, void *userdata,
+                         GhosttySizeReportSize *out) {
+    if (taskhub_vt_geometry(terminal, &out->columns, &out->rows,
+                           &out->cell_width, &out->cell_height) == GHOSTTY_SUCCESS) return true;
+    ((TaskHubResponseSink *)userdata)->failed = true;
+    return false;
+}
+
 // Effect callbacks are synchronous. Their stack-owned context must be removed
 // before returning, including after allocation/buffer failure in the receiver.
 // The parser still consumes the whole input on a receiver failure: callers must
 // not retry these bytes, since doing so would apply terminal state twice.
 int taskhub_vt_feed_with_responses(void *terminal, const uint8_t *bytes, size_t len,
                                  GhosttyWriterFn write, void *userdata,
-                                 const uint8_t *version, size_t version_len) {
+                                 const uint8_t *version, size_t version_len, bool geometry) {
     TaskHubResponseSink sink = { .write = write, .userdata = userdata, .failed = false,
                                 .version = { .ptr = version, .len = version_len } };
     int result = ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_USERDATA, &sink);
@@ -73,6 +101,9 @@ int taskhub_vt_feed_with_responses(void *terminal, const uint8_t *bytes, size_t 
             result = ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_XTVERSION,
                                           (const void *)taskhub_version);
     }
+    if (result == GHOSTTY_SUCCESS && geometry)
+        result = ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_SIZE,
+                                     (const void *)taskhub_size);
     if (result == GHOSTTY_SUCCESS) {
         ghostty_terminal_vt_write(terminal, bytes, len);
         if (sink.failed) result = GHOSTTY_OUT_OF_SPACE;
@@ -81,11 +112,36 @@ int taskhub_vt_feed_with_responses(void *terminal, const uint8_t *bytes, size_t 
     ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_DEVICE_ATTRIBUTES, NULL);
     ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_XTVERSION, NULL);
     ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_TERMINFO_NAME, NULL);
+    ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_SIZE, NULL);
     ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_USERDATA, NULL);
     return result;
 }
 int taskhub_vt_resize(void *terminal, uint16_t cols, uint16_t rows) {
     return ghostty_terminal_resize(terminal, cols, rows, 0, 0);
+}
+int taskhub_vt_resize_geometry(void *terminal, uint16_t cols, uint16_t rows,
+                               uint32_t cell_width, uint32_t cell_height,
+                               GhosttyWriterFn write, void *userdata) {
+    uint16_t old_cols = 0, old_rows = 0;
+    uint32_t old_width = 0, old_height = 0;
+    if (taskhub_vt_geometry(terminal, &old_cols, &old_rows, &old_width, &old_height) == GHOSTTY_SUCCESS &&
+        old_cols == cols && old_rows == rows && old_width == cell_width && old_height == cell_height)
+        return GHOSTTY_SUCCESS;
+
+    TaskHubResponseSink sink = { .write = write, .userdata = userdata };
+    int result = ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_USERDATA, &sink);
+    if (result == GHOSTTY_SUCCESS)
+        result = ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_WRITE_PTY,
+                                     (const void *)taskhub_write_response);
+    if (result == GHOSTTY_SUCCESS) {
+        // Ghostty emits mode 2048 here, including for pixel-only changes. Do
+        // not separately encode another notification for the same resize.
+        result = ghostty_terminal_resize(terminal, cols, rows, cell_width, cell_height);
+        if (result == GHOSTTY_SUCCESS && sink.failed) result = GHOSTTY_OUT_OF_SPACE;
+    }
+    ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_WRITE_PTY, NULL);
+    ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_USERDATA, NULL);
+    return result;
 }
 int taskhub_vt_snapshot(void *terminal, GhosttyWriterFn write, void *userdata) {
     return ghostty_snapshot_encode(terminal, (GhosttyWriter){ .write = write, .userdata = userdata });

@@ -884,6 +884,24 @@ does not).
 - Remaining terminal fidelity/performance checks, M2–M6 acceptance and the final
   coordinator/VM/DI refactor continue. The Sprint board remains web-based.
 
+### M1 terminal geometry runtime — 2026-09-12 (transport wiring pending)
+
+- Added pixel-aware headless geometry updates and size-query collection. Cell
+  dimensions are nonzero and pixel products checked for overflow. Queries use
+  the parser's current metrics, which survive binary snapshots and reset.
+- Mode 2048 enable and resize notifications use Ghostty's existing encoder and
+  effect path. Pixel-only changes report once; unchanged measurements are a
+  no-op. Split size queries resume across snapshots. Temporary callbacks are
+  cleared after success and response-buffer overflow.
+- The new `daemon-geometry-v1` runtime set includes identity/state and size
+  reports, preserving the existing ownership sets. Title/clipboard/color effects
+  remain excluded. Ten runtime tests and 16 feature-enabled daemon tests pass.
+- Next: carry actual native cell pixels through shell creation, kernel winsize,
+  ordered resize/snapshot transport, and matching native response suppression.
+  Production still uses the existing identity/state contract until that wiring
+  lands. Remaining migration acceptance and the final coordinator/VM/DI pass are
+  open; the Sprint board remains web-based.
+
 ## Why now, and why native
 
 The Tauri shell works, but roughly half of `src-tauri/` exists to work around what a DOM

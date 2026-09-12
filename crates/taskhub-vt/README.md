@@ -60,6 +60,18 @@ and XTGETTCAP. The shell's creation profile supplies the printable product/versi
 TN reports `xterm-ghostty`, matching its environment and bundled terminfo. Temporary
 identity callbacks and terminfo configuration are cleared after each feed.
 
+`resize_geometry` accepts nonzero cell dimensions in pixels, checks pixel-product
+overflow, and collects Ghostty's own mode 2048 resize notification. Equal geometry
+is a no-op; changes to cell pixels alone still update the parser and report once.
+`geometry` reads these exact metrics from parser state, including restored
+snapshots. `feed_geometry_responses` adds CSI 14/16/18 t and mode 2048 replies to
+the identity/state set, with the same bounded collector and callback cleanup.
+It requires initialized pixel geometry; title, clipboard, colors and other host
+effects remain excluded. These APIs prepare `daemon-geometry-v1`; the daemon
+handshake, kernel winsize and native renderer have not opted into it yet, so
+production sessions retain their existing response ownership until that wiring
+is implemented together.
+
 Both native and headless builds apply
 `macos/patches/ghostty/0003-terminal-query-validation.patch`. It rejects echoed DA2
 responses as requests and enables the existing ANSI DECRQM handler. The runtime
