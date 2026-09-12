@@ -344,6 +344,13 @@ function upsertTask(t = {}) {
 }
 const removeTask = id => db.prepare('DELETE FROM tasks WHERE id = ?').run(id);
 const setTaskPinned = (id, pinned) => db.prepare('UPDATE tasks SET pinned = ? WHERE id = ?').run(pinned ? 1 : 0, id).changes > 0;
+const patchTask = (id, patch) => {
+  const columns = { title: 'title', kind: 'kind', url: 'url', jiraKey: 'jira_key', cli: 'cli', sessionId: 'session_id' };
+  const fields = Object.keys(patch).filter(key => Object.hasOwn(columns, key));
+  if (!fields.length) return false;
+  return db.prepare(`UPDATE tasks SET ${fields.map(key => `${columns[key]} = ?`).join(', ')} WHERE id = ?`)
+    .run(...fields.map(key => patch[key]), id).changes > 0;
+};
 
 // ── Review state (per-PR review-request tracking — see the review_state table) ────
 const getReviewState = key => db.prepare('SELECT requested_at, viewed_at FROM review_state WHERE key = ?').get(key) || null;
@@ -380,7 +387,7 @@ module.exports = {
   getLinks, getLinksByPR, addLink, removeLink,
   addEvent, getEvents,
   getTabs, setTabs,
-  getTasks, upsertTask, removeTask, setTaskPinned,
+  getTasks, upsertTask, removeTask, setTaskPinned, patchTask,
   getReviewState, setReviewRequestedAt, setReviewViewed, pruneReviewStateForRepo,
   getSetting, setSetting, getAllSettings,
 };

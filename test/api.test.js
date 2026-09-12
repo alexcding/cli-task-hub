@@ -212,6 +212,15 @@ test('tasks: upsert, list, and delete through /api/tasks (keyed by id)', async (
   assert.deepEqual(t, { ...beforePin, pinned: true }, 'pin changes only the pin column');
   assert.equal((await send('PATCH', `/api/tasks/${id}/pin`, { pinned: 'false' })).status, 400);
   assert.equal((await send('PATCH', '/api/tasks/missing/pin', { pinned: false })).status, 404);
+  const beforeMetadata = (await get('/api/tasks')).body.find(x => x.id === id);
+  assert.equal((await send('PATCH', `/api/tasks/${id}`, { sessionId: 'new-agent-id', cli: 'codex' })).status, 200);
+  t = (await get('/api/tasks')).body.find(x => x.id === id);
+  assert.deepEqual(t, { ...beforeMetadata, sessionId: 'new-agent-id', cli: 'codex' }, 'agent metadata preserves pin and worktree');
+  assert.equal((await send('PATCH', `/api/tasks/${id}`, { worktree: '/other' })).status, 400);
+  assert.equal((await send('PATCH', `/api/tasks/${id}`, { cli: 'unknown' })).status, 400);
+  assert.equal((await send('PATCH', `/api/tasks/${id}`, { sessionId: null })).status, 400);
+  assert.equal((await send('PATCH', `/api/tasks/${id}`, {})).status, 400);
+  assert.equal((await send('PATCH', '/api/tasks/missing', { title: 'Missing' })).status, 404);
   // Pinned round-trips as a boolean (the sidebar sorts pinned sessions above the rest), and
   // created_at is immutable — an upsert must never restamp it.
   const firstCreatedAt = t.createdAt;

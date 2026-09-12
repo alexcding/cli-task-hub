@@ -13,6 +13,10 @@ public enum Routes {
     public static let TABS = "/api/tabs"
     public static let TASKS = "/api/tasks"
     public static let TASK_PIN = "/api/tasks/:id/pin"
+    public static let TASK = "/api/tasks/:id"
+    public static func task(_ value: String) -> String {
+        "/api/tasks/\(encodeComponent(value))"
+    }
     public static func taskPin(_ value: String) -> String {
         "/api/tasks/\(encodeComponent(value))/pin"
     }

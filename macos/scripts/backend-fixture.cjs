@@ -6,8 +6,13 @@ process.env.TASKHUB_DATA_DIR ||= fs.mkdtempSync(path.join(os.tmpdir(), 'taskhub-
 const { app } = require('../../src/server/app');
 const db = require('../../src/server/database/db');
 const sse = require('../../src/server/routes/sse');
+app.get('/fixture/page', (_req, res) => {
+  res.setHeader('Set-Cookie', 'taskhub_native_fixture=retained; Path=/; Max-Age=3600; SameSite=Lax');
+  res.type('html').send('<!doctype html><title>Native Browser Fixture</title><h1>Native browser fixture</h1><p>Find the quokka.</p><a href="/fixture/next">Next page</a><a href="/fixture/next" target="_blank">Popup page</a>');
+});
+app.get('/fixture/next', (_req, res) => res.type('html').send('<!doctype html><title>Next Fixture Page</title><h1>Next page</h1><a href="/fixture/page">Back to fixture</a>'));
 if (!db.getProjects().length) {
-  db.addProject({ name: 'Native integration fixture', repo: '', color: '#64748b', workspace: '/tmp' });
+  db.addProject({ name: 'Native integration fixture', repo: '', color: '#64748b', workspace: process.env.TASKHUB_FIXTURE_WORKSPACE || '/tmp' });
 }
 // Opt-in sample hierarchy for native sidebar/UI checks. Uses only this fixture's
 // isolated data directory and never reads the daily app's sessions.
@@ -51,8 +56,15 @@ if (process.env.TASKHUB_TRAY_FIXTURE === '1') {
       codexLimits: { session: window(8), weekly: window(18) }, asOf: new Date().toISOString() };
   };
 }
-const server = app.listen(Number(process.env.PORT || 0), '127.0.0.1', () => {
+const server = app.listen(Number(process.env.PORT || 0), '127.0.0.1', error => {
+  if (error) { console.error(error.message); process.exit(1); }
   const baseURL = `http://127.0.0.1:${server.address().port}`;
+  if (process.env.TASKHUB_BROWSER_FIXTURE === '1') {
+    const configdb = require('../../src/server/database/configdb');
+    const url = `${baseURL}/fixture/page`;
+    configdb.patchTask('sidebar-1', { url });
+    configdb.setTabs([{ kind: 'web', title: 'Browser fixture', url }, { kind: 'web', title: 'Next page', url: `${baseURL}/fixture/next` }]);
+  }
   if (process.env.TASKHUB_READY_FILE) fs.writeFileSync(process.env.TASKHUB_READY_FILE, baseURL);
   console.log(baseURL);
 });

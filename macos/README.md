@@ -20,14 +20,32 @@ Pinning requires the updated backend's `PATCH /api/tasks/:id/pin` endpoint.
 Selecting a session shows its saved worktree and branch. **Open Terminal** opens or
 reattaches its shell; switching sidebar rows preserves the mounted emulator and
 hidden parsing. Pinned rows are additional entries for the same session. Browser
-tabs currently offer external opening; the embedded viewer and agent launch/resume
-workflows follow in M3. Sidebar implementation is authorized ahead of the remaining
+tabs now open embedded context pages with native controls. Sidebar implementation is authorized ahead of the remaining
 M1 terminal acceptance checks, which are still open.
 
 For an isolated sample hierarchy, run `macos/scripts/backend-fixture.cjs` with
 `TASKHUB_SIDEBAR_FIXTURE=1`, an isolated `TASKHUB_DATA_DIR`, and an unused `PORT`,
 then launch the app with `--backend-url` pointing to it. The fixture starts no
 pollers or agent hooks and uses no daily app data.
+
+## Session workspace (M3, in progress)
+
+**New Session** (Command-N) chooses a project, branch/base, agent, and optional page
+URL. It creates or reuses a linked worktree and saves the session before opening its
+native terminal. A newly created shell launches the chosen agent; reattaching a
+running shell preserves its input. Restart requires confirmation and resumes a saved
+agent conversation when its ID is known. Shell-only sessions launch no agent.
+
+Context pages share persistent WebKit website storage and use a native page strip,
+History, find bar, navigation, and AppKit split controls. Command-F finds in the page,
+Command-brackets navigate, Shift-Command-brackets cycle pages, and Option-Command
+plus/minus/zero zooms the page. Command-W closes a page while keeping its session;
+with no page it hides the window. Page state is cached locally and synced to SQLite.
+At most six remote views remain live; suspended pages reload when selected.
+
+Run `bash macos/scripts/test-browser-ui.sh` for the isolated browser UI regression.
+Session removal, build destinations, terminal links, and old tab-state import remain
+under implementation; this does not close the M1 terminal acceptance gate.
 
 ## Native tray and appearance (M2)
 

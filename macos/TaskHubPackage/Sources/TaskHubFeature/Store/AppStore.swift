@@ -4,6 +4,7 @@ import Observation
 @MainActor @Observable
 public final class AppStore {
     public let shell = ShellStore()
+    let viewer: ViewerStore
     public private(set) var projects: [Project] = []
     public private(set) var connection = "Connecting"
     public private(set) var error: String?
@@ -13,6 +14,8 @@ public final class AppStore {
     private(set) var tabs: [SavedTab] = []
     private(set) var selection: SidebarDestination = .overview
     private(set) var terminals: [String: TerminalSession] = [:]
+    var creatingSession = false
+    private(set) var changingSessions: Set<String> = []
     @ObservationIgnored private var pendingPins: Set<String> = []
     @ObservationIgnored private var owner: BackendProcess?
     @ObservationIgnored private var api: APIClient?
@@ -22,6 +25,7 @@ public final class AppStore {
     @ObservationIgnored private var started = false
 
     public init() {
+        viewer = ViewerStore(cacheURL: try? PtydConfiguration.current().directory.appendingPathComponent("page-tabs.json"))
         if let data = UserDefaults.standard.data(forKey: "sidebar.selection"),
            let saved = try? JSONDecoder().decode(SidebarDestination.self, from: data) { selection = saved }
     }
@@ -36,9 +40,16 @@ public final class AppStore {
     }
     var terminal: TerminalSession? { activeTerminalKey.flatMap { terminals[$0] } }
     public var hasOpenWork: Bool { !sessions.isEmpty || !tabs.isEmpty }
+    public var hasActivePage: Bool { viewer.active?.activePage != nil }
+    var sessionOperations: SessionOperations? { api.map { SessionOperations(api: $0) } }
 
     public func canPerform(_ command: ShellCommand) -> Bool {
         switch command {
+        case .newSession: connection == "Connected" && !projects.isEmpty
+        case .back: viewer.active?.activePage?.canGoBack == true
+        case .forward: viewer.active?.activePage?.canGoForward == true
+        case .findPage, .zoomIn, .zoomOut, .resetZoom: hasActivePage
+        case .nextPage, .previousPage: (viewer.active?.pages.count ?? 0) > 1
         case .biggerFont, .smallerFont, .resetFont: terminal?.ready == true
         case .refresh: connection == "Connected"
         default: true
@@ -47,10 +58,21 @@ public final class AppStore {
 
     public func perform(_ command: ShellCommand) {
         switch command {
+        case .newSession: creatingSession = true
+        case .closePage: if let context = viewer.active, let page = context.activePage { context.close(page) }
+        case .findPage: viewer.active?.findVisible = true
+        case .back: viewer.active?.activePage?.back()
+        case .forward: viewer.active?.activePage?.forward()
+        case .nextPage: viewer.active?.cycle(1)
+        case .previousPage: viewer.active?.cycle(-1)
+        case .zoomIn: viewer.active?.activePage?.zoom(0.1)
+        case .zoomOut: viewer.active?.activePage?.zoom(-0.1)
+        case .resetZoom: viewer.active?.activePage?.zoom(nil)
         case .overview: select(.overview)
         case .terminal:
             if activeTerminalKey == nil { select(.terminal) }
             openTerminal()
+            viewer.active?.setPane(.term)
             terminal?.showsSurface = true
             terminal?.surface.requestFocus()
         case .refresh: refresh()
@@ -75,14 +97,69 @@ public final class AppStore {
 
     func select(_ destination: SidebarDestination) {
         selection = destination
+        showSelectedContext()
         if let data = try? JSONEncoder().encode(destination) { UserDefaults.standard.set(data, forKey: "sidebar.selection") }
+    }
+
+    private func showSelectedContext() {
+        switch selection {
+        case .session(let id):
+            if let session = sessions.first(where: { $0.id == id }) {
+                viewer.select(id: "task:\(id)", url: session.url, title: session.title)
+            }
+        case .tab(let url):
+            viewer.select(id: "tab:\(url)", url: url, title: tabs.first { $0.url == url }?.title ?? url)
+        default: viewer.deactivate()
+        }
     }
 
     func openTerminal() {
         guard let key = activeTerminalKey, terminals[key] == nil else { return }
         if case .session(let id) = selection, let record = sessions.first(where: { $0.id == id }) {
-            terminals[key] = TerminalSession(pairKey: record.id, cwd: record.worktree, paired: true)
+            terminals[key] = makeTerminal(record)
         } else if selection == .terminal { terminals[key] = TerminalSession() }
+    }
+
+    private func makeTerminal(_ record: WorkspaceSession, fresh: Bool = false) -> TerminalSession {
+        let terminal = TerminalSession(pairKey: record.id, cwd: record.worktree, paired: true)
+        terminal.onCreated = { [weak self] terminal in
+            guard let self else { return }
+            let latest = self.sessions.first { $0.id == record.id } ?? record
+            let agent = SessionAgent(rawValue: latest.cli ?? "") ?? .shell
+            var id = latest.sessionId
+            var firstLaunch = fresh
+            if agent == .claude && (id == nil || id == "") {
+                guard let operations = self.sessionOperations else { throw BackendError.operation("Connect before starting the agent.") }
+                let newID = UUID().uuidString.lowercased()
+                try await operations.saveAgentID(newID, session: latest)
+                id = newID; firstLaunch = true
+                if let index = self.sessions.firstIndex(where: { $0.id == latest.id }) { self.sessions[index].sessionId = newID }
+            }
+            if let command = agent.command(sessionID: id, fresh: firstLaunch) { try await terminal.submit(command) }
+        }
+        return terminal
+    }
+
+    func createdSession(_ session: WorkspaceSession) {
+        if !sessions.contains(where: { $0.id == session.id }) { sessions.append(session) }
+        select(.session(session.id))
+        terminals["task:\(session.id)"] = makeTerminal(session, fresh: true)
+        creatingSession = false
+        refresh()
+    }
+
+    func restartSession(_ record: WorkspaceSession) {
+        guard changingSessions.insert(record.id).inserted else { return }
+        Task {
+            defer { changingSessions.remove(record.id) }
+            do {
+                let key = "task:\(record.id)"
+                await terminals[key]?.stopConnecting()
+                let host = PtydHost(configuration: try PtydConfiguration.current())
+                try await host.stopPaired(keys: [record.id])
+                terminals[key] = makeTerminal(sessions.first { $0.id == record.id } ?? record)
+            } catch { self.error = "Could not restart session: \(error.localizedDescription)" }
+        }
     }
 
     func reattachTerminal() {
@@ -90,7 +167,8 @@ public final class AppStore {
         Task {
             await previous.stopConnecting()
             if terminals[key] === previous {
-                terminals[key] = TerminalSession(pairKey: previous.pairKey, cwd: previous.cwd, paired: previous.paired)
+                if let record = sessions.first(where: { $0.id == previous.pairKey }) { terminals[key] = makeTerminal(record) }
+                else { terminals[key] = TerminalSession(pairKey: previous.pairKey, cwd: previous.cwd, paired: previous.paired) }
             }
         }
     }
@@ -125,7 +203,7 @@ public final class AppStore {
             owner = process
             api = try await process.start()
             guard started else { await process.stop(); return }
-            if let api { shell.connect(api) }
+            if let api { shell.connect(api); viewer.connect(api) }
             startStream(baseURL: config.baseURL)
         } catch {
             connection = "Disconnected"
@@ -152,6 +230,7 @@ public final class AppStore {
                     if projects != snapshot { projects = snapshot }
                     if sessions != sessionSnapshot { sessions = sessionSnapshot }
                     if tabs != tabSnapshot.tabs { tabs = tabSnapshot.tabs }
+                    showSelectedContext()
                     if !sidebarEntries.flatMap(\.descendants).contains(where: { $0.destination == selection }) { select(.overview) }
                     lastUpdate = Date()
                     error = nil
@@ -197,6 +276,20 @@ public final class AppStore {
     }
 
     private func received(_ event: ServerEvent) {
+        if ["agent-turn-start", "agent-turn-done"].contains(event.type), let runID = event.runId,
+           let terminal = terminals.values.first(where: { $0.termID == runID }),
+           let session = sessions.first(where: { $0.id == terminal.pairKey }) {
+            terminal.agentBusy = event.type == "agent-turn-start"
+            if let id = event.sessionId, !id.isEmpty, id != session.sessionId, event.cli == session.cli,
+               let operations = sessionOperations {
+                Task {
+                    do {
+                        try await operations.saveAgentID(id, session: session)
+                        if let index = sessions.firstIndex(where: { $0.id == session.id }) { sessions[index].sessionId = id }
+                    } catch { self.error = "Could not save agent session: \(error.localizedDescription)" }
+                }
+            }
+        }
         if event.type == "activity", let activity = event.event {
             shell.notifications.receiveActivity(activity, enabled: shell.activityNotify)
         }
@@ -214,6 +307,7 @@ public final class AppStore {
         streamTask = nil
         refreshTask = nil
         await shell.stop()
+        await viewer.stop()
         await owner?.stop()
         api = nil
     }

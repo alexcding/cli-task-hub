@@ -117,6 +117,26 @@ actor PtydHost {
         try await terminate(client: client, hello: hello)
     }
 
+    // Session removal/restart owns only these paired shells. A missing daemon is
+    // already stopped; never create one just to remove a session record.
+    func stopPaired(keys: Set<String>) async throws {
+        guard !keys.isEmpty else { return }
+        try configuration.validateSocket()
+        let client = PtydClient(onEvent: { _ in })
+        defer { client.close() }
+        do { _ = try await client.connect(path: configuration.socketPath) }
+        catch { if Self.mayStartDaemon(after: error) { return }; throw error }
+        let all: [PtyInfo] = try await client.request(.init(op: "list"))
+        let owned = all.filter { $0.paired && keys.contains($0.pairKey) }
+        for term in owned { let _: Bool = try await client.request(.init(op: "kill", term: term.id)) }
+        for _ in 0..<100 {
+            let remaining: [PtyInfo] = try await client.request(.init(op: "list"))
+            if !remaining.contains(where: { $0.paired && keys.contains($0.pairKey) }) { return }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        throw PtyError.connection("Session processes did not stop. The worktree has been kept; retry the operation.")
+    }
+
     // The M1 namespace is exclusively for the spike. Never invokes the daily
     // daemon's killAll. Verify the connected PID again before signalling it.
     func quit(client: PtydClient, hello: PtyHello) async {

@@ -24,6 +24,8 @@ export const ROUTES = Object.freeze({
   TABS: '/api/tabs',
   TASKS: '/api/tasks',                                // durable New Task sessions (GET list / POST upsert / DELETE ?url=)
   TASK_PIN: '/api/tasks/:id/pin',
+  TASK: '/api/tasks/:id',
+  task: id => `/api/tasks/${encodeURIComponent(id)}`,
   taskPin: id => `/api/tasks/${encodeURIComponent(id)}/pin`,
   FILE: '/api/file',                                  // local file for the embedded editor (GET ?path= read / PUT write)
   // Which document an IDE should actually open for a folder (GET ?path=&kind=xcode → { path }).

@@ -2,6 +2,7 @@ import AppKit
 
 public enum ShellCommand: String, Sendable {
     case overview, terminal, sidebar, refresh, tray, hide, biggerFont, smallerFont, resetFont
+    case newSession, closePage, findPage, back, forward, nextPage, previousPage, zoomIn, zoomOut, resetZoom
 }
 
 // Editing commands use AppKit's responder chain, so the focused terminal,
@@ -49,8 +50,9 @@ public enum ShellCommand: String, Sendable {
         app.addItem(.separator())
         command(app, "Hide Window (Keep Running)", .hide, "q")
         let file = menu("File")
+        command(file, "New Session…", .newSession, "n")
         command(file, "Open Terminal", .terminal, "n", [.command, .shift])
-        action(file, "Close Window", #selector(NSWindow.performClose(_:)), "w")
+        command(file, "Close Page / Window", .closePage, "w")
         let edit = menu("Edit")
         action(edit, "Undo", Selector(("undo:")), "z")
         action(edit, "Redo", Selector(("redo:")), "z", [.command, .shift])
@@ -59,6 +61,8 @@ public enum ShellCommand: String, Sendable {
         action(edit, "Copy", #selector(NSText.copy(_:)), "c")
         action(edit, "Paste", #selector(NSText.paste(_:)), "v")
         action(edit, "Select All", #selector(NSText.selectAll(_:)), "a")
+        edit.addItem(.separator())
+        command(edit, "Find in Page…", .findPage, "f")
         let view = menu("View")
         command(view, "Refresh", .refresh, "r")
         command(view, "Reviews & Usage", .tray, "u", [.command, .shift])
@@ -68,9 +72,17 @@ public enum ShellCommand: String, Sendable {
         command(view, "Bigger Terminal Font", .biggerFont, "=")
         command(view, "Smaller Terminal Font", .smallerFont, "-")
         command(view, "Reset Terminal Font", .resetFont, "0")
+        view.addItem(.separator())
+        command(view, "Zoom Page In", .zoomIn, "=", [.command, .option])
+        command(view, "Zoom Page Out", .zoomOut, "-", [.command, .option])
+        command(view, "Reset Page Zoom", .resetZoom, "0", [.command, .option])
         let go = menu("Go")
         command(go, "Overview", .overview, "1")
         command(go, "Terminal", .terminal, "2")
+        command(go, "Back", .back, "[")
+        command(go, "Forward", .forward, "]")
+        command(go, "Next Page", .nextPage, "]", [.command, .shift])
+        command(go, "Previous Page", .previousPage, "[", [.command, .shift])
         go.addItem(.separator())
         command(go, "Focus Sidebar", .sidebar, "s", [.command, .control])
         command(go, "Focus Terminal", .terminal, "t", [.command, .control])

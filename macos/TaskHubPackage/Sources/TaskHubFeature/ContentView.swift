@@ -12,7 +12,7 @@ public struct ContentView: View {
                 .navigationSplitViewColumnWidth(min: 200, ideal: 260, max: 420)
         } detail: {
             VStack(alignment: .leading, spacing: 18) {
-                Text(title).font(.largeTitle.weight(.semibold))
+                if store.viewer.active == nil { Text(title).font(.largeTitle.weight(.semibold)) }
                 if let error = store.error {
                     Label(error, systemImage: "exclamationmark.triangle")
                         .foregroundStyle(.orange).textSelection(.enabled)
@@ -21,7 +21,7 @@ public struct ContentView: View {
                 ZStack(alignment: .topLeading) {
                     // Keep every opened emulator mounted. Selection changes only
                     // visibility, never the PTY identity or parser state.
-                    ForEach(store.terminals.keys.sorted(), id: \.self) { key in
+                    ForEach(store.terminals.keys.filter { $0 == "scratch" }.sorted(), id: \.self) { key in
                         if let terminal = store.terminals[key] {
                             let active = key == store.activeTerminalKey
                             TerminalPane(session: terminal, reconnect: store.reattachTerminal, active: active)
@@ -31,14 +31,23 @@ public struct ContentView: View {
                                 .accessibilityHidden(!active)
                         }
                     }
-                    if store.terminal == nil { selectedContent }
+                    ForEach(store.viewer.contexts.keys.sorted(), id: \.self) { id in
+                        if let context = store.viewer.contexts[id] {
+                            let active = store.viewer.activeContextID == id
+                            SessionWorkspaceView(context: context, store: store, active: active)
+                                .opacity(active ? 1 : 0).allowsHitTesting(active).accessibilityHidden(!active)
+                        }
+                    }
+                    if store.terminal == nil && store.viewer.active == nil { selectedContent }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
-            .padding(28)
+            .padding(store.viewer.active == nil ? 28 : 0)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .navigationTitle("TaskHub")
             .toolbar {
+                Button("New Session", systemImage: "plus") { store.creatingSession = true }
+                    .disabled(store.connection != "Connected" || store.projects.isEmpty)
                 Button("Reviews & Usage", systemImage: "menubar.rectangle", action: showTray)
                 Button("Refresh", systemImage: "arrow.clockwise") { store.refresh() }
                     .disabled(store.connection != "Connected")
@@ -50,6 +59,7 @@ public struct ContentView: View {
                 .frame(maxWidth: 420).padding(16)
         }
         .task { await store.start() }
+        .sheet(isPresented: $store.creatingSession) { NewSessionView(store: store) }
     }
 
     private var title: String {

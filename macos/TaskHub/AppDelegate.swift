@@ -18,7 +18,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                               styleMask: [.titled, .closable, .miniaturizable, .resizable],
                               backing: .buffered, defer: false)
         window.title = "TaskHub Native"
-        window.contentView = NSHostingView(rootView: ContentView(store: store, showTray: { [weak self] in self?.toggleTray() }))
+        let content = NSHostingView(rootView: ContentView(store: store, showTray: { [weak self] in self?.toggleTray() }))
+        // The window owns its size. Deriving constraints from nested browser and
+        // split-view ideal sizes can feed changes back into the same layout pass.
+        content.sizingOptions = []
+        window.contentMinSize = NSSize(width: 760, height: 480)
+        window.contentView = content
         window.delegate = self
         window.isReleasedWhenClosed = false
         window.setFrameAutosaveName("TaskHubNativeMain")
@@ -54,6 +59,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     private func perform(_ command: ShellCommand) {
         switch command {
+        case .closePage:
+            if store.hasActivePage { store.perform(command) } else { window?.orderOut(nil) }
         case .hide: window?.orderOut(nil)
         case .tray: toggleTray()
         case .sidebar:

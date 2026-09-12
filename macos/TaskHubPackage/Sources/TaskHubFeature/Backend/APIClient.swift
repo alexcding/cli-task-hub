@@ -6,10 +6,11 @@ public enum BackendError: LocalizedError, Sendable {
     case incompatible
     case startup(String)
     case oversizedEvent
+    case operation(String)
 
     public var errorDescription: String? {
         switch self {
-        case .configuration(let message), .startup(let message): message
+        case .configuration(let message), .startup(let message), .operation(let message): message
         case .http(let status): "The backend returned HTTP \(status)."
         case .incompatible: "This address is not a compatible TaskHub backend."
         case .oversizedEvent: "The backend sent an oversized stream event."
@@ -40,6 +41,7 @@ public struct Project: Decodable, Identifiable, Equatable, Sendable {
 // Actor isolation keeps response decoding off the UI actor. Only decoded snapshots
 // cross into the store; network operations remain cancellable.
 public actor APIClient {
+    private struct Failure: Decodable { let error: String? }
     public let baseURL: URL
     private let session: URLSession
 
@@ -98,6 +100,28 @@ public actor APIClient {
         request.httpBody = try JSONEncoder().encode(body)
         let (_, response) = try await session.data(for: request)
         try Self.validate(response)
+    }
+
+    func request<Response: Decodable & Sendable, Body: Encodable & Sendable>(
+        _ path: String, method: String, body: Body, timeout: TimeInterval = 120
+    ) async throws -> Response {
+        var request = URLRequest(url: try url(path))
+        request.httpMethod = method; request.timeoutInterval = timeout
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder().encode(body)
+        let (data, response) = try await session.data(for: request)
+        if let failure = try? JSONDecoder().decode(Failure.self, from: data), let message = failure.error {
+            throw BackendError.operation(message)
+        }
+        try Self.validate(response)
+        return try JSONDecoder().decode(Response.self, from: data)
+    }
+
+    nonisolated static func query(_ path: String, _ values: [String: String]) -> String {
+        var components = URLComponents()
+        components.path = path
+        components.queryItems = values.keys.sorted().map { URLQueryItem(name: $0, value: values[$0]) }
+        return components.string ?? path
     }
 
     func url(_ path: String) throws -> URL {

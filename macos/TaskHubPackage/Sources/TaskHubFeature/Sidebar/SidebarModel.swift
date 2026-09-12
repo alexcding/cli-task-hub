@@ -1,6 +1,6 @@
 import Foundation
 
-struct WorkspaceSession: Decodable, Identifiable, Equatable, Sendable {
+struct WorkspaceSession: Codable, Identifiable, Equatable, Sendable {
     let id: String
     let projectId: String
     let workspace: String
@@ -10,6 +10,10 @@ struct WorkspaceSession: Decodable, Identifiable, Equatable, Sendable {
     let url: String
     let createdAt: String?
     var pinned: Bool
+    var kind: String? = nil
+    var jiraKey: String? = nil
+    var cli: String? = nil
+    var sessionId: String? = nil
 
     var label: String {
         let folder = (worktree as NSString).lastPathComponent

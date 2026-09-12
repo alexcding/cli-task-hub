@@ -6,11 +6,21 @@ Diff and code editing may remain web-based, embedded as focused `WKWebView` view
 The terminal is the first correctness gate, before the broader page rewrite.
 Branch: `feat/swiftui-native`. Worktree: `../cli-task-hub-swiftui`.
 
+## Final architecture pass (user requested)
+
+After completing the migration phases, inspect the SwiftUI coordinator pattern in
+`/Users/accedo/Workspace/elevate-ios` and apply the equivalent macOS structure here.
+Coordinators own navigation, view models own business logic, and views render state
+and forward user actions. Construct dependencies through DI and factories, with
+replaceable services for tests. This is required follow-up work, not the optional
+backend rewrite. Preserve AppKit sidebar and terminal ownership during the refactor.
+
 ## Implementation status
 
 M0 foundation is committed as `bf0c7a6`; the M1 terminal spike is committed as
 `c05a57a`; the M2 Cocoa sidebar is committed as `609d889` and native tray/appearance
-as `5cf368a`. Native notifications and terminal acceptance work continue in `macos/`
+as `5cf368a`; native menus/notifications are committed as `9d34f2b`.
+Session workspace and terminal acceptance work continue in `macos/`
 (see `macos/README.md` for commands).
 The checked-in Xcode workspace uses a local Swift package, Swift 6, macOS 14 minimum,
 and direct distribution without App Sandbox. The current screen is the native
@@ -158,6 +168,49 @@ connection/project-list foundation; it is not the completed Dashboard.
 - Remaining M1 terminal gates continue to apply. Browser/document-specific shortcuts
   join the native menus with their M3/M5 surfaces; native Settings replaces the tray
   preferences shortcut in M4. Embedded context pages and session lifecycle are M3.
+
+### M3 session workspace — in progress
+
+- Added per-session and page-only contexts, one ordered page strip, bounded History,
+  native navigation/find/zoom controls, popup tabs, and persistent WebKit cookies.
+  Remote pages receive no host script or local-document capabilities. Unsafe schemes
+  and credential-bearing addresses are rejected. Web process failures expose Reload.
+- Remote view retention is bounded to six live WKWebViews using least-recently-used
+  eviction. Eviction retains page URL/title/history and reloads on selection; terminal
+  emulators remain mounted separately. This is a count bound, not a measured RSS bound.
+- Page state uses `native.context.<identity>` settings with serialized writes and an
+  atomic local recovery copy. Offline changes survive relaunch and retry on reconnect.
+  Build pane selection is intentionally ephemeral. Existing web-renderer tab links
+  and document history still need migration into this native context representation.
+- New Session creates/reuses a linked worktree through existing local-git APIs, then
+  persists a durable task. The native sheet chooses project, branch/base, optional
+  context URL, and Shell/Claude/Codex. Failed record persistence keeps and identifies
+  the created worktree for recovery. No replacement/force deletion is implicit.
+- Agent launch happens only for a newly created shell. Claude IDs are saved before
+  launch; restarts use the exact saved Claude/Codex ID. Existing shell attachment
+  never types a launch command. Agent hook SSE matches the daemon run ID; scoped
+  metadata PATCH preserves pin/worktree fields when saving agent conversation IDs.
+  CLI argument verification used installed help and the official
+  [Codex resume reference](https://learn.chatgpt.com/docs/developer-commands?surface=cli#codex-resume).
+- Restart confirms interruption, targets only the session's paired shell, and waits
+  for daemon reaping. Other paired and scratch shells remain alive. Session removal
+  and isolated build terminals remain the next increment.
+- Native menus include New Session, page close/find/back/forward/cycle/zoom. Closing
+  the last page keeps its session; closing with no page hides the window. AppKit now
+  owns inner split collapse and window size; interactive tests caught and drove fixes
+  for recursive constraints in the earlier nested SwiftUI split implementation.
+- Verification so far: 26 Swift package tests, 28 backend API tests, generated-route
+  drift check, and native app build pass. Tests exercise real worktree creation,
+  metadata preservation, targeted PTY stop, navigation/find/cookies, page persistence,
+  offline recovery, and bounded live view retention. Browser UI regression runs with
+  `bash macos/scripts/test-browser-ui.sh` against an isolated external fixture because
+  the XCUITest runner cannot bind its own server socket.
+  The browser UI test now passes find, navigation, last-page close without terminating
+  the session/window, and the native New Session sheet. Xcode reports an internal
+  UI-runner QoS warning; no app crash remains in this exercised flow.
+- Still open: removal, PR/Jira-aware session creation, isolated build/Run destinations,
+  terminal link routing, existing tab-state migration, full login/popup acceptance,
+  and the complete end-to-end session acceptance gate. M1/M2 acceptance gaps remain.
 
 Companion docs: `ARCHITECTURE.md` (layers, HTTP-vs-IPC split), `TAURI-PORT.md`
 (the previous shell port — the same boundary makes this one tractable), `CLAUDE.md`

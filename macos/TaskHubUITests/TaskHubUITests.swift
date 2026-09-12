@@ -2,6 +2,42 @@ import XCTest
 
 final class TaskHubUITests: XCTestCase {
 
+    @MainActor
+    func testContextPageFindNavigationCloseAndNewSessionSheet() throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard let base = environment["TASKHUB_UI_BACKEND_URL"],
+              let path = environment["TASKHUB_UI_DATA_DIR"] else {
+            throw XCTSkip("Run macos/scripts/test-browser-ui.sh to provide the isolated browser fixture.")
+        }
+        let directory = URL(fileURLWithPath: path)
+        let app = XCUIApplication()
+        app.launchArguments = ["--backend-url", base, "--data-dir", directory.path]
+        app.launch()
+        let session = app.outlines["workspace-sidebar"].staticTexts["sidebar-1"].firstMatch
+        XCTAssertTrue(session.waitForExistence(timeout: 10))
+        session.click()
+        XCTAssertTrue(app.webViews.firstMatch.waitForExistence(timeout: 10))
+        XCTAssertTrue(app.webViews.staticTexts["Native browser fixture"].waitForExistence(timeout: 10))
+        app.typeKey("f", modifierFlags: .command)
+        XCTAssertTrue(app.textFields["Find in page"].waitForExistence(timeout: 5))
+        app.textFields["Find in page"].click()
+        app.typeText("quokka\n")
+        XCTAssertFalse(app.staticTexts["No match"].exists)
+        app.buttons["Close Find"].click()
+        app.webViews.links["Next page"].click()
+        XCTAssertTrue(app.webViews.staticTexts["Next page"].waitForExistence(timeout: 5))
+        app.typeKey("[", modifierFlags: .command)
+        XCTAssertTrue(app.webViews.staticTexts["Native browser fixture"].waitForExistence(timeout: 5))
+        app.typeKey("w", modifierFlags: .command)
+        XCTAssertTrue(app.buttons["Open Terminal"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.webViews.firstMatch.exists)
+        XCTAssertNotEqual(app.state, .notRunning)
+        app.typeKey("n", modifierFlags: .command)
+        XCTAssertTrue(app.staticTexts["New Session"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.textFields["session-branch"].exists, app.debugDescription)
+        app.buttons["Cancel"].click()
+    }
+
     override func setUpWithError() throws {
         // Put setup code here. This method is called before the invocation of each test method in the class.
 

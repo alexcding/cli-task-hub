@@ -114,6 +114,16 @@ private final class EventLog: @unchecked Sendable {
     #expect(secondLog.events.contains(where: { $0.ev == "exit" && $0.id == terminal.id }))
     let survivor: PtyInfo = try await second.request(.init(op: "create", opts: .init(
         cwd: directory.path, shell: shell.path, pairKey: "quit-after-relaunch")))
+    let owned: PtyInfo = try await second.request(.init(op: "create", opts: .init(
+        cwd: directory.path, shell: shell.path, paired: true, pairKey: "restart-one")))
+    let unrelated: PtyInfo = try await second.request(.init(op: "create", opts: .init(
+        cwd: directory.path, shell: shell.path, paired: true, pairKey: "keep-other")))
+    try await host.stopPaired(keys: ["restart-one"])
+    let afterRestart: [PtyInfo] = try await second.request(.init(op: "list"))
+    #expect(!afterRestart.contains { $0.id == owned.id })
+    #expect(kill(Int32(owned.pid), 0) == -1)
+    #expect(afterRestart.contains { $0.id == unrelated.id })
+    #expect(afterRestart.contains { $0.id == survivor.id })
     second.close()
     // A freshly launched host has no stored connection or terminal view. Explicit
     // Quit must still stop its daemon and wait for the live shell to be reaped.

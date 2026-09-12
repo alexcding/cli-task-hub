@@ -42,6 +42,35 @@ private actor Events {
     let projects: [Project] = try await api.get(Routes.PROJECTS)
     #expect(projects.count == 1)
     #expect(projects.first?.name == "Native integration fixture")
+    let checkout = directory.appendingPathComponent("repo")
+    try FileManager.default.createDirectory(at: checkout, withIntermediateDirectories: true)
+    func git(_ arguments: [String]) throws {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        process.arguments = ["-C", checkout.path] + arguments
+        process.standardOutput = FileHandle.nullDevice; process.standardError = FileHandle.nullDevice
+        try process.run(); process.waitUntilExit()
+        #expect(process.terminationStatus == 0)
+    }
+    try git(["init", "-b", "main"])
+    try git(["-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "--allow-empty", "-m", "Initial"])
+    let project = Project(id: projects[0].id, name: "Fixture", repo: "", color: nil, workspace: checkout.path)
+    let operations = SessionOperations(api: api)
+    let refs = try await operations.references(project)
+    #expect(refs.branches.map(\.name).contains("main"))
+    let record = try await operations.create(project: project,
+        draft: SessionDraft(branch: "feature/native", base: "main", title: "Native session", agent: .shell))
+    #expect(FileManager.default.fileExists(atPath: record.worktree + "/.git"))
+    #expect(record.url == "session:\(record.id)")
+    try await api.setPinned(true, for: record.id)
+    try await operations.saveAgentID("persisted-agent", session: record)
+    let saved: [WorkspaceSession] = try await api.get(Routes.TASKS)
+    #expect(saved.first?.pinned == true && saved.first?.sessionId == "persisted-agent")
+    #expect(saved.first?.worktree == record.worktree)
+    do {
+        _ = try await operations.create(project: project, draft: SessionDraft(branch: "../escape", agent: .shell))
+        Issue.record("Accepted an unsafe worktree branch")
+    } catch { #expect((error as? BackendError) != nil) }
     let events = Events()
     let consumer = Task {
         try await SSEClient().consume(from: base, onConnect: { await events.connect() },

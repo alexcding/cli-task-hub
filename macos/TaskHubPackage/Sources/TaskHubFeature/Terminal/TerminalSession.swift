@@ -14,6 +14,8 @@ final class TerminalSession: Identifiable {
     private(set) var status = "Connecting"
     private(set) var error: String?
     private(set) var shellPID: UInt32?
+    private(set) var termID: String?
+    var agentBusy = false
     private(set) var ready = false
     @ObservationIgnored private var pipe: TerminalPipe!
     @ObservationIgnored private var client: PtydClient?
@@ -21,6 +23,8 @@ final class TerminalSession: Identifiable {
     @ObservationIgnored private var hello: PtyHello?
     @ObservationIgnored private var started = false
     @ObservationIgnored private var startTask: Task<Void, Never>?
+    @ObservationIgnored private var launchTask: Task<Void, Never>?
+    @ObservationIgnored var onCreated: ((TerminalSession) async throws -> Void)?
 
     init(pairKey: String = "native-terminal-spike", cwd: String = FileManager.default.homeDirectoryForCurrentUser.path, paired: Bool = false) {
         self.pairKey = pairKey
@@ -61,22 +65,35 @@ final class TerminalSession: Identifiable {
             try Task.checkCancellation()
             let terminals: [PtyInfo] = try await client.request(.init(op: "list"))
             let info: PtyInfo
+            let created: Bool
             if let existing = terminals.first(where: { $0.pairKey == pairKey && $0.paired == paired }) {
                 info = existing
+                created = false
             } else {
                 info = try await client.request(.init(op: "create", opts: .init(
                     cwd: cwd, paired: paired, pairKey: pairKey)))
+                created = true
             }
             shellPID = info.pid
+            termID = info.id
             pipe.bind(client: client, id: info.id)
             let attachment: PtyAttachment = try await client.request(.init(op: "attach", term: info.id))
             status = "Restoring output"
             pipe.attach(attachment) { [weak self] in
                 Task { @MainActor in
-                    guard let self, self.error == nil else { return }
+                    guard let self, self.started, self.error == nil else { return }
                     self.status = "Connected"
                     self.ready = true
                     if self.isActive { self.surface.requestFocus() }
+                    if created, let onCreated = self.onCreated {
+                        self.launchTask = Task {
+                            do {
+                                // Let the shell finish its startup files before entering a command.
+                                try await Task.sleep(for: .seconds(1))
+                                try await onCreated(self)
+                            } catch { if !Task.isCancelled { self.error = error.localizedDescription } }
+                        }
+                    }
                 }
             }
         } catch { setError(error.localizedDescription) }
@@ -93,11 +110,28 @@ final class TerminalSession: Identifiable {
     func disconnect() { pipe.close(); ready = false }
 
     func stopConnecting() async {
+        started = false
+        launchTask?.cancel()
         startTask?.cancel()
         // A create already sent may still be completing in the daemon. Await its
         // reply before closing the transport so Quit can account for that shell.
         await startTask?.value
+        await launchTask?.value
         disconnect()
+    }
+
+    func submit(_ line: String) async throws {
+        struct Foreground: Decodable, Sendable { let atShell: Bool }
+        guard ready, let client, let termID else { throw PtyError.closed }
+        guard !line.contains("\n"), !line.contains("\r"), !line.contains("\0") else {
+            throw PtyError.connection("Terminal commands must contain a single line.")
+        }
+        let foreground: Foreground = try await client.request(.init(op: "foreground", term: termID))
+        guard foreground.atShell else { throw PtyError.connection("The terminal is busy. Return to its shell before launching the agent.") }
+        try Task.checkCancellation()
+        let _: Bool? = try await client.request(.init(op: "write", term: termID, data: line))
+        try await Task.sleep(for: .milliseconds(60))
+        let _: Bool? = try await client.request(.init(op: "write", term: termID, data: "\r"))
     }
 
     func quit() async {

@@ -73,6 +73,17 @@ function register(app) {
     sse.broadcast({ type: 'tasks' });
     res.json({ ok: true });
   }));
+  app.patch(ROUTES.TASK, wrap((req, res) => {
+    const patch = req.body || {};
+    const allowed = new Set(['title', 'kind', 'url', 'jiraKey', 'cli', 'sessionId']);
+    if (!Object.keys(patch).length || Object.entries(patch).some(([key, value]) => !allowed.has(key) || typeof value !== 'string')) {
+      return res.status(400).json({ error: 'Only string session metadata fields may be updated' });
+    }
+    if ('cli' in patch && !['', 'claude', 'codex'].includes(patch.cli)) return res.status(400).json({ error: 'Unsupported agent' });
+    if (!configdb.patchTask(req.params.id, patch)) return res.status(404).json({ error: 'Session not found' });
+    sse.broadcast({ type: 'tasks' });
+    res.json({ ok: true });
+  }));
 }
 
 module.exports = { register };
