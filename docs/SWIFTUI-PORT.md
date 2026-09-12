@@ -725,6 +725,29 @@ does not).
   metadata, fidelity and performance gates remain open. The Sprint board remains
   web-based as requested; it is not a pending native rewrite.
 
+### M1 app snapshot attachment — 2026-09-12
+
+- The native app now uses the generated, pinned Ghostty package and requires the
+  snapshot-enabled helper. It negotiates the exact runtime revision before shell
+  creation, synchronizes the initial grid, downloads the capture, imports it into
+  a fresh surface, then drains newer output and resize events before enabling input.
+  The bundle script builds the helper with `terminal-snapshots`; preparation and
+  development instructions now include both pinned runtime builds.
+- The capture owns the logical grid independently of the view's asynchronous
+  resize queue. This removes the initial-import race exposed by the app-level test.
+  State sequence gaps, missing resize metadata and invalid grids fail the pipeline;
+  attachment buffers bound both bytes and event count. Closed session generations
+  cannot become ready through a delayed callback.
+- The isolated app test restores the same live shell into two fresh native surfaces
+  at different window widths. It verifies history exceeding the old replay tail,
+  alternate and primary screens, split UTF-8 continuation, saved cursor state,
+  retained first history line, and a cursor reply after a live ordered grid change.
+  All 76 Swift tests, four native bridge tests and the snapshot-enabled daemon's
+  12 tests pass. The macOS app builds with the generated local dependency.
+- Automatic reconnect, restored title/cwd publication, offline response ownership,
+  image/glyph fidelity, remaining interaction checks and the performance gate remain
+  open. This establishes app attachment; it does not complete M1 acceptance.
+
 ## Why now, and why native
 
 The Tauri shell works, but roughly half of `src-tauri/` exists to work around what a DOM

@@ -6,7 +6,7 @@
          surfaceAccess.currentSurface
 +    }
 +
-+    /// Imports initial state into a fresh surface with matching grid dimensions.
++    /// Imports initial state and its logical grid into a fresh surface.
 +    /// Call before exposing the surface to user input or sending live output.
 +    /// Invalid snapshots and non-fresh surfaces are left unchanged.
 +    @MainActor

@@ -9,7 +9,8 @@ does this in generated checkouts; do not edit SwiftPM dependency checkouts.
 `ghostty_surface_restore_snapshot` / `InMemoryTerminalSession.restoreSnapshot`
 imports a complete bounded snapshot into a fresh host-managed surface. Call on
 the main actor before exposing the surface to input or feeding live output.
-The surface grid must match the capture. Invalid, truncated, trailing or mismatched
+The capture supplies the logical grid independently of the current physical view.
+Invalid, truncated or trailing
 data returns false without changing the original terminal. Search, selection,
 composition, previous output and a second import also reject the operation.
 
@@ -29,8 +30,8 @@ queue as output. The wrapper drains preceding bytes before changing the grid;
 later output then uses that grid. Input stays gated until attachment completes.
 
 This is a TaskHub extension, not an upstream snapshot compatibility promise. The
-normal app still uses its released Swift dependency until the daemon download,
-native import, ordered live resizes and surface lifecycle are connected together.
+native app consumes the generated local Swift package for download/import and
+ordered live resizes. Automatic reconnect remains under implementation.
 Restored title/pwd publication, offline query response ownership, native default/config synchronization and
 snapshot-v1 omissions (Kitty images and glyph registrations) also remain open.
 

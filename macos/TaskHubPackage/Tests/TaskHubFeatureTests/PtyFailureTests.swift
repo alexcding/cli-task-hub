@@ -196,3 +196,17 @@ private final class FailureMessages: @unchecked Sendable {
         }
     }
 }
+
+@Test func resizeOnlyFloodCannotGrowTheAttachmentBufferWithoutBound() {
+    let messages = FailureMessages()
+    let pipe = TerminalPipe(onError: messages.append, onExit: { _ in })
+    let client = PtydClient(onEvent: { _ in })
+    pipe.bind(client: client, id: "flood")
+    defer { pipe.close() }
+    for sequence in 1...16385 {
+        pipe.receive(.init(ev: "resize", id: "flood", bytes: nil, seq: 0,
+                           exitCode: nil, signal: nil, stateSeq: UInt64(sequence), cols: 80, rows: 24))
+    }
+    #expect(messages.all.count == 1)
+    #expect(messages.all.first?.contains("event limit") == true)
+}

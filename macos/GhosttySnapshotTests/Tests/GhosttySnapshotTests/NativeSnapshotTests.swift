@@ -61,6 +61,22 @@ private final class SurfaceHarness {
 @Suite(.serialized)
 @MainActor
 struct NativeSnapshotTests {
+    @Test func capturedGridIsRestoredIndependentlyOfTheCurrentViewGrid() async throws {
+        let harness = SurfaceHarness()
+        defer { harness.close() }
+        try await Task.sleep(for: .milliseconds(50))
+        let original = try #require(harness.coordinator.surface?.size())
+        let snapshot = try harness.snapshot(Data(repeating: 120, count: Int(original.columns) + 5), extraColumn: true)
+        try #require(harness.session.restoreSnapshot(snapshot))
+        harness.feed(Data("\u{1B}[6n".utf8))
+        let expected = Data("\u{1B}[2;5R".utf8)
+        for _ in 0..<100 {
+            if harness.writes.bytes.count >= expected.count { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(harness.writes.bytes == expected)
+    }
+
     @Test func viewResizeWaitsForTheOrderedHostGridEventBeforeReflowingOutput() async throws {
         let harness = SurfaceHarness()
         defer { harness.close() }
@@ -149,7 +165,6 @@ struct NativeSnapshotTests {
             var trailing = snapshot
             trailing.append(0)
             #expect(!harness.session.restoreSnapshot(trailing))
-            #expect(!harness.session.restoreSnapshot(try harness.snapshot(prefix, extraColumn: true)))
             #expect(harness.text == original)
             try #require(harness.session.restoreSnapshot(snapshot))
             #expect(harness.writes.bytes.isEmpty)

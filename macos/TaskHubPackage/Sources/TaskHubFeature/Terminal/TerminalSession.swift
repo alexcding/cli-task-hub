@@ -22,15 +22,19 @@ final class TerminalSession: Identifiable {
     @ObservationIgnored private var host: PtydHost?
     @ObservationIgnored private var hello: PtyHello?
     @ObservationIgnored private var started = false
+    @ObservationIgnored private var stopped = false
     @ObservationIgnored private var startTask: Task<Void, Never>?
     @ObservationIgnored private var launchTask: Task<Void, Never>?
+    @ObservationIgnored private let configuration: PtydConfiguration?
     @ObservationIgnored var openLink: (String, String, Bool) -> Void = { _, _, _ in }
     @ObservationIgnored var onCreated: ((TerminalSession) async throws -> Void)?
 
-    init(pairKey: String = "native-terminal-spike", cwd: String = FileManager.default.homeDirectoryForCurrentUser.path, paired: Bool = false) {
+    init(pairKey: String = "native-terminal-spike", cwd: String = FileManager.default.homeDirectoryForCurrentUser.path, paired: Bool = false,
+         configuration: PtydConfiguration? = nil) {
         self.pairKey = pairKey
         self.cwd = cwd
         self.paired = paired
+        self.configuration = configuration
         pipe = TerminalPipe(onError: { [weak self] text in Task { @MainActor in self?.setError(text, prefer: true) } },
                             onExit: { [weak self] code in Task { @MainActor in self?.status = "Exited (\(code))"; self?.ready = false } })
         surface.configuration = .init(backend: .inMemory(pipe.memory), fontSize: 13, resizeThrottleMilliseconds: 80)
@@ -46,7 +50,7 @@ final class TerminalSession: Identifiable {
     }
 
     func start() async {
-        guard !started else { return }
+        guard !started, !stopped else { return }
         started = true
         let task = Task { await connect() }
         startTask = task
@@ -62,7 +66,7 @@ final class TerminalSession: Identifiable {
                 try await Task.sleep(for: .milliseconds(100))
             }
             guard surface.surface != nil else { throw PtyError.connection("Ghostty could not create a native surface.") }
-            let config = try PtydConfiguration.current()
+            let config = try configuration ?? PtydConfiguration.current()
             let host = PtydHost(configuration: config)
             self.host = host
             let pipe = self.pipe!
@@ -73,6 +77,10 @@ final class TerminalSession: Identifiable {
             hello = try await host.connect(client: client)
             try hello?.validateByteTransport()
             try hello?.validateInputAcknowledgements()
+            try hello?.validateSnapshots()
+            let negotiated: PtyHello = try await client.request(.init(op: "hello", dataEncoding: "base64",
+                                                                      snapshotRevision: PtySnapshot.revision))
+            try negotiated.validateSnapshots()
             try Task.checkCancellation()
             let terminals: [PtyInfo] = try await client.request(.init(op: "list"))
             let info: PtyInfo
@@ -88,9 +96,10 @@ final class TerminalSession: Identifiable {
             shellPID = info.pid
             termID = info.id
             pipe.bind(client: client, id: info.id)
-            let attachment: PtyAttachment = try await client.request(.init(op: "attach", term: info.id))
-            status = "Restoring output"
-            pipe.attach(attachment) { [weak self] in
+            try await pipe.synchronizeGrid()
+            status = "Restoring terminal"
+            let snapshot = try await PtySnapshotDownloader(client: client).fetch(term: info.id)
+            try pipe.attach(snapshot) { [weak self] in
                 Task { @MainActor in
                     guard let self, self.started, self.error == nil else { return }
                     self.status = "Connected"
@@ -107,7 +116,7 @@ final class TerminalSession: Identifiable {
                     }
                 }
             }
-        } catch { setError(error.localizedDescription); client?.close() }
+        } catch { setError(error.localizedDescription); pipe.close(); client?.close() }
     }
 
     private func setError(_ text: String, prefer: Bool = false) {
@@ -118,7 +127,14 @@ final class TerminalSession: Identifiable {
         ready = false
     }
 
-    func disconnect() { pipe.close(); ready = false }
+    func disconnect() {
+        // This object owns one connection/surface generation. A delayed ready
+        // callback must not reactivate it after its owner removes the pane.
+        stopped = true
+        started = false
+        pipe.close()
+        ready = false
+    }
 
     func stopConnecting() async {
         started = false

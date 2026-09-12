@@ -14,14 +14,16 @@ let package = Package(
         ),
     ],
     dependencies: [
-        .package(url: "https://github.com/Lakr233/libghostty-spm.git", exact: "1.6.20260909"),
+        // Generated from the locked upstream revisions and maintained patches.
+        // Prepare with macos/scripts/build-ghostty-native.py before resolving.
+        .package(name: "GhosttyKit", path: "../.build/ghostty-native/package"),
     ],
     targets: [
         // Targets are the basic building blocks of a package, defining a module or a test suite.
         // Targets can depend on other targets in this package and products from dependencies.
         .target(
             name: "TaskHubFeature",
-            dependencies: [.product(name: "GhosttyTerminal", package: "libghostty-spm")]
+            dependencies: [.product(name: "GhosttyTerminal", package: "GhosttyKit")]
         ),
         .testTarget(
             name: "TaskHubFeatureTests",

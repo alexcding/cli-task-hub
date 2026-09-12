@@ -164,6 +164,8 @@ From the repository root:
 ```bash
 npm ci --ignore-scripts
 npm run gen:swift-routes
+python3 macos/scripts/build-ghostty-vt.py
+python3 macos/scripts/build-ghostty-native.py
 xcodebuildmcp macos build --workspace-path macos/TaskHub.xcworkspace --scheme TaskHub --derived-data-path macos/.build/xcode --arch arm64
 ```
 
@@ -212,15 +214,18 @@ a save is in flight; this contract will also back the native document lifecycle.
 
 ## Native terminal spike (M1, in progress)
 
-Build the standalone helper with `cargo build --manifest-path crates/taskhub-ptyd/Cargo.toml`.
+Build the pinned runtimes using the commands above, then build the standalone
+helper with `cargo build --manifest-path crates/taskhub-ptyd/Cargo.toml --features terminal-snapshots`.
 For development, add `--ptyd-path /absolute/path/to/repo/crates/taskhub-ptyd/target/debug/taskhub-ptyd`
 to the app's launch arguments; a bundled app uses `Contents/Helpers/taskhub-ptyd`.
 Click **Open native terminal**. **Show terminal** hides drawing while retaining the
 emulator and shell. **Reattach** creates a fresh connection/emulator for the same
 spike shell, including after an app rebuild.
 
-GhosttyTerminal is pinned to `Lakr233/libghostty-spm` **1.6.20260909**, revision
-`7e45d27160f9b34aca9ca5c9820e9207482f9f04`, using its host-managed in-memory backend.
+GhosttyTerminal uses the source-built local package generated from
+`Lakr233/libghostty-spm` **1.6.20260909**, revision
+`7e45d27160f9b34aca9ca5c9820e9207482f9f04`, with TaskHub's maintained snapshot and
+ordered-grid patches. The source builder requires Apple's Metal compiler component.
 Socket I/O and output parsing run off the UI actor. Replay waits for actual parser
 consumption before enabling input; output uses byte-counted flow-control watermarks.
 Native connections negotiate `dataEncoding: "base64"` in the protocol-2 hello.
@@ -236,10 +241,14 @@ It does not attach to daily Tauri sessions. `--pty-socket` or `TASKHUB_PTYD_SOCK
 override this; use a separate test socket because explicit Quit tears down the
 connected daemon's sessions.
 
-This is not yet a production terminal. Reattachment replays the existing 256 KiB
-output tail. The updated helper reports truncation atomically with its sequence;
-Swift refuses truncated history or an older helper without this field, preserving
-the shell and showing an error. Full VT state restoration remains unimplemented.
+This is not yet a production terminal. Attachment negotiates the exact snapshot
+revision, downloads a bounded binary capture, imports it into a fresh native
+surface, and drains newer output/resize events in daemon order before enabling
+input. History beyond the old 256 KiB tail is retained. Incompatible helpers are
+rejected before shell creation; invalid captures and sequence gaps stop attachment
+without terminating the shell. The capture supplies its logical grid even if a
+physical view resize is still pending. Restored title/cwd publication, offline protocol reply ownership,
+snapshot-v1 image/glyph omissions and automatic reconnect still require work.
 Rebuilding the helper does not upgrade an already-running daemon; use an isolated
 socket to test the new helper without ending an existing shell. Automatic reconnect,
 full lifecycle coverage, links, workflow hooks, IME/mouse/selection checks, and the
@@ -289,7 +298,7 @@ is `tv.accedo.taskhub.native`.
 npm run check:swift-routes
 node --test --test-force-exit test/contracts.test.js test/swift-routes.test.js test/api.test.js
 xcodebuildmcp swift-package test --package-path macos/TaskHubPackage
-cargo test --offline --manifest-path crates/taskhub-ptyd/Cargo.toml
+cargo test --offline --manifest-path crates/taskhub-ptyd/Cargo.toml --features terminal-snapshots
 cargo check --offline --manifest-path src-tauri/Cargo.toml
 xcodebuildmcp macos test --workspace-path macos/TaskHub.xcworkspace --scheme TaskHub --derived-data-path macos/.build/ui-tests --extra-args '-only-testing:TaskHubUITests'
 ```

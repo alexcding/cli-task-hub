@@ -4,7 +4,7 @@
  GHOSTTY_API bool ghostty_surface_process_exited(ghostty_surface_t);
  GHOSTTY_API void ghostty_surface_write_buffer(ghostty_surface_t, const uint8_t*, uintptr_t);
  GHOSTTY_API void ghostty_surface_write_buffer_replay(ghostty_surface_t, const uint8_t*, uintptr_t);
-+// TaskHub: fresh surface, UI thread, matching pinned revision and terminal grid.
++// TaskHub: fresh surface, UI thread, matching pinned revision; restores the captured grid.
 +GHOSTTY_API bool ghostty_surface_restore_snapshot(ghostty_surface_t, const uint8_t*, uintptr_t);
 +GHOSTTY_API bool ghostty_surface_apply_host_grid_size(ghostty_surface_t, uint16_t, uint16_t);
  GHOSTTY_API void ghostty_surface_process_exit(ghostty_surface_t, uint32_t, uint64_t);
@@ -30,7 +30,7 @@
 +    }
 +
 +    /// TaskHub snapshot extension. Call on the UI thread on a fresh surface,
-+    /// before exposing it to input. A grid mismatch or invalid payload returns
++    /// before exposing it to input. An invalid payload returns
 +    /// false and preserves the original terminal. Revisions must match exactly.
 +    export fn ghostty_surface_restore_snapshot(
 +        surface: *Surface,
@@ -159,8 +159,8 @@
 +    if (self.backend != .host_managed or self.host_output_received) return error.SurfaceNotFresh;
 +    if (self.terminal.screens.active.selection != null or self.renderer_state.preedit != null)
 +        return error.SurfaceNotFresh;
-+    if (decoded.terminal.?.cols != self.terminal.cols or decoded.terminal.?.rows != self.terminal.rows)
-+        return error.SnapshotGridMismatch;
++    // The capture owns the logical grid. A physical view resize may still be
++    // queued; it must not change the imported grid ahead of daemon events.
 +
 +    // Preserve the host's visual defaults while retaining explicit program colors.
 +    try decoded.terminal.?.colors.palette.changeDefault(self.alloc, self.config.palette);

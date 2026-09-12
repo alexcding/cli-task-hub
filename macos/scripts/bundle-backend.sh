@@ -7,7 +7,7 @@ NODE_SIDECAR="${TASKHUB_NODE_SIDECAR:-$ROOT/src-tauri/binaries/taskhub-node-aarc
 test -d "$APP/Contents/MacOS"
 test -x "$NODE_SIDECAR"
 node "$ROOT/scripts/gen-swift-routes.mjs" --check
-cargo build --locked --release --manifest-path "$ROOT/crates/taskhub-ptyd/Cargo.toml"
+cargo build --locked --release --manifest-path "$ROOT/crates/taskhub-ptyd/Cargo.toml" --features terminal-snapshots
 BACKEND="$APP/Contents/Resources/backend"
 mkdir -p "$BACKEND/src" "$APP/Contents/Helpers"
 cp -R "$ROOT/src/server" "$ROOT/src/shared" "$BACKEND/src/"

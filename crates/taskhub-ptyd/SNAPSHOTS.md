@@ -7,9 +7,10 @@ python3 macos/scripts/build-ghostty-vt.py
 cargo test --manifest-path crates/taskhub-ptyd/Cargo.toml --features terminal-snapshots
 ```
 
-Normal app/helper builds do not enable this feature yet. The native embedding
-surface still needs snapshot import; its existing truncated-tail rejection remains
-in place. Snapshot v1 also omits Kitty images and glyph glossary registrations.
+The native app and its bundle script require this feature; Tauri keeps its
+existing feature-free helper protocol. Prepare both runtimes before building the
+native app as described in `macos/README.md`. Snapshot v1 omits Kitty images and
+glyph glossary registrations, and offline query response ownership remains open.
 
 Each terminal owns a headless Ghostty parser from creation. Output enters that
 parser and the legacy ring under one lock. Kernel and parser resizing run on the

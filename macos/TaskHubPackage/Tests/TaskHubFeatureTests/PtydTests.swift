@@ -1,3 +1,5 @@
+import AppKit
+import GhosttyTerminal
 import Foundation
 import Testing
 @testable import TaskHubFeature
@@ -210,4 +212,101 @@ private final class EventLog: @unchecked Sendable {
     let terms: [PtyInfo] = try await client.request(.init(op: "list"))
     #expect(terms.first?.pid == terminal.pid)
     await host.quit(client: client, hello: hello)
+}
+
+
+@MainActor @Test(.timeLimit(.minutes(1))) func appSessionRestoresLargeHistoryAndParserStateIntoFreshNativeSurfaces() async throws {
+    _ = NSApplication.shared
+    var root = URL(fileURLWithPath: #filePath)
+    for _ in 0..<5 { root.deleteLastPathComponent() }
+    let directory = URL(fileURLWithPath: "/tmp/th-state-\(UUID().uuidString.prefix(12))")
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let shell = directory.appendingPathComponent("fixture-shell")
+    try "#!/bin/sh\n/bin/stty raw -echo || exit 1\n/bin/cat '\(directory.path)/startup'\nexec /bin/cat\n".write(to: shell, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: shell.path)
+    var text = ""
+    for line in 0..<8000 { text += "history \(line) styled \u{1B}[32m日本語🦀\u{1B}[0m line\r\n" }
+    text += "PRIMARY_MARKER\u{1B}[5;9H\u{1B}7\u{1B}[?1049hALT_MARKER\r\nSPLIT_"
+    let startup = Data(text.utf8) + Data([0xf0, 0x9f])
+    try startup.write(to: directory.appendingPathComponent("startup"))
+    let config = PtydConfiguration(executable: root.appendingPathComponent("crates/taskhub-ptyd/target/debug/taskhub-ptyd"),
+                                   directory: directory, socketPath: directory.appendingPathComponent("pty.sock").path)
+    let host = PtydHost(configuration: config)
+    let log = EventLog()
+    let control = PtydClient(onEvent: log.append)
+    let hello = try await host.connect(client: control)
+    defer { control.close(); _ = kill(hello.pid, SIGTERM) }
+    try hello.validateSnapshots()
+    let term: PtyInfo = try await control.request(.init(op: "create", opts: .init(
+        cwd: directory.path, shell: shell.path, pairKey: "app-snapshot")))
+    defer { _ = kill(Int32(term.pid), SIGTERM) }
+    for _ in 0..<200 {
+        if log.bytes.count >= startup.count { break }
+        try await Task.sleep(for: .milliseconds(10))
+    }
+    #expect(log.bytes == startup)
+    let tail: PtyAttachment = try await control.request(.init(op: "attach", term: term.id))
+    #expect(tail.truncated == true)
+
+    func mount(_ session: TerminalSession, width: CGFloat) -> NSWindow {
+        let view = WorkspaceTerminalView(frame: NSRect(x: 0, y: 0, width: width, height: 420))
+        view.delegate = session.surface; view.controller = session.surface.controller
+        view.configuration = session.surface.configuration
+        let window = NSWindow(contentRect: view.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false; window.contentView = view
+        view.layoutSubtreeIfNeeded()
+        view.setSurfaceVisible(false)
+        return window
+    }
+    let first = TerminalSession(pairKey: "app-snapshot", cwd: directory.path, configuration: config)
+    let firstWindow = mount(first, width: 800)
+    defer { first.disconnect(); firstWindow.contentView = nil; firstWindow.close() }
+    await first.start()
+    try await first.waitUntilReady()
+    #expect(first.shellPID == term.pid && first.termID == term.id)
+    #expect(await first.viewportText()?.contains("ALT_MARKER") == true)
+    let _: Bool? = try await control.request(.init(op: "write", term: term.id, bytes: Data([0xa6, 0x80])))
+    for _ in 0..<100 {
+        if await first.viewportText()?.contains("SPLIT_🦀") == true { break }
+        try await Task.sleep(for: .milliseconds(10))
+    }
+    #expect(await first.viewportText()?.contains("SPLIT_🦀") == true)
+    await first.stopConnecting()
+    firstWindow.contentView = nil
+
+    let second = TerminalSession(pairKey: "app-snapshot", cwd: directory.path, configuration: config)
+    let secondWindow = mount(second, width: 960)
+    defer { second.disconnect(); secondWindow.contentView = nil; secondWindow.close() }
+    await second.start()
+    try await second.waitUntilReady()
+    #expect(second.shellPID == term.pid && second.termID == term.id)
+    #expect(await second.viewportText()?.contains("SPLIT_🦀") == true)
+    let _: Bool? = try await control.request(.init(op: "write", term: term.id,
+        data: "\u{1B}[?1049l\u{1B}8AFTER_SAVED_CURSOR"))
+    for _ in 0..<100 {
+        if await second.viewportText()?.contains("AFTER_SAVED_CURSOR") == true { break }
+        try await Task.sleep(for: .milliseconds(10))
+    }
+    #expect(await second.viewportText()?.contains("PRIMARY_MARKER") == true)
+    #expect(await second.viewportText()?.contains("AFTER_SAVED_CURSOR") == true)
+    #expect(second.surface.surface?.performBindingAction("scroll_to_top") == true)
+    for _ in 0..<100 {
+        if await second.viewportText()?.hasPrefix("history 0 ") == true { break }
+        try await Task.sleep(for: .milliseconds(10))
+    }
+    #expect(await second.viewportText()?.hasPrefix("history 0 ") == true)
+    // The view keeps its physical size while the daemon changes the logical
+    // grid. Subsequent output and its cursor query must observe the ordered grid.
+    let beforeResize = log.bytes.count
+    let _: Bool? = try await control.request(.init(op: "resize", term: term.id, cols: 37, rows: 19))
+    let _: Bool? = try await control.request(.init(op: "write", term: term.id,
+        data: "\u{1B}[2J\u{1B}[H" + String(repeating: "x", count: 40) + "\u{1B}[6n"))
+    for _ in 0..<100 {
+        if String(decoding: log.bytes.dropFirst(beforeResize), as: UTF8.self).contains("\u{1B}[2;4R") { break }
+        try await Task.sleep(for: .milliseconds(10))
+    }
+    #expect(String(decoding: log.bytes.dropFirst(beforeResize), as: UTF8.self).contains("\u{1B}[2;4R"))
+    await second.stopConnecting()
+    try await host.stopExisting()
 }

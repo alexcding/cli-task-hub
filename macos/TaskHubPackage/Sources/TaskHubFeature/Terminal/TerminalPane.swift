@@ -33,7 +33,7 @@ struct TerminalPane: View {
         .background(.background)
         .onChange(of: visible) { _, shown in
             updateVisibility()
-            if shown && active { session.surface.requestFocus() }
+            if shown && active && session.ready { session.surface.requestFocus() }
         }
         .onChange(of: active) { _, _ in updateVisibility() }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didChangeOcclusionStateNotification)) { notification in
