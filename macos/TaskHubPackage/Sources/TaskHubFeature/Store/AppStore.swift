@@ -17,6 +17,8 @@ public final class AppStore {
     private(set) var selection: SidebarDestination = .overview
     private(set) var terminals: [String: TerminalSession] = [:]
     var creatingSession = false
+    var creatingProject = false
+    private(set) var projectModels: [String: ProjectPageViewModel] = [:]
     private(set) var changingSessions: Set<String> = []
     private(set) var buildModels: [String: BuildWorkspaceViewModel] = [:]
     @ObservationIgnored private var pendingPins: Set<String> = []
@@ -53,6 +55,27 @@ public final class AppStore {
     public var hasActivePage: Bool { viewer.active?.activePage != nil }
     var sessionOperations: SessionOperations? { api.map { SessionOperations(api: $0) } }
 
+    func projectEditor(for project: Project? = nil) -> ProjectEditorViewModel? {
+        guard let api else { return nil }
+        return ProjectEditorViewModel(project: project, service: APIProjectService(api: api), chooseFolder: NativeFolderPicker.choose,
+            didSave: { [weak self] project in
+                guard let self else { return }
+                if let index = projects.firstIndex(where: { $0.id == project.id }) { projects[index] = project }
+                else { projects.append(project) }
+                projectModels[project.id]?.update(project)
+                for session in sessions where session.projectId == project.id {
+                    buildModels.removeValue(forKey: "task:\(session.id)")?.disconnect()
+                }
+                creatingProject = false
+                select(.project(project.id))
+                refresh()
+            }, didDelete: { [weak self] id in
+                guard let self else { return }
+                projects.removeAll { $0.id == id }; projectModels.removeValue(forKey: id)
+                select(.overview); refresh()
+            })
+    }
+
     func newSessionModel() -> NewSessionViewModel {
         let selected: String
         switch selection {
@@ -71,6 +94,7 @@ public final class AppStore {
 
     public func canPerform(_ command: ShellCommand) -> Bool {
         switch command {
+        case .newProject: connection == "Connected"
         case .newSession: connection == "Connected" && !projects.isEmpty
         case .back: viewer.active?.activePage?.canGoBack == true
         case .forward: viewer.active?.activePage?.canGoForward == true
@@ -84,6 +108,7 @@ public final class AppStore {
 
     public func perform(_ command: ShellCommand) {
         switch command {
+        case .newProject: creatingProject = true
         case .newSession: creatingSession = true
         case .closePage: if let context = viewer.active, let page = context.activePage { context.close(page) }
         case .findPage: viewer.active?.findVisible = true
@@ -143,6 +168,14 @@ public final class AppStore {
 
     private func showSelectedContext() {
         switch selection {
+        case .project(let id):
+            viewer.deactivate()
+            if let project = projects.first(where: { $0.id == id }), let api {
+                if let model = projectModels[id] { model.update(project) }
+                else if let editor = projectEditor(for: project) {
+                    projectModels[id] = ProjectPageViewModel(project: project, service: APIProjectService(api: api), editor: editor)
+                }
+            }
         case .session(let id):
             if let session = sessions.first(where: { $0.id == id }) {
                 viewer.select(id: "task:\(id)", url: session.url, title: session.title, legacy: tabs.first { $0.url == session.url })
@@ -303,6 +336,7 @@ public final class AppStore {
             api = try await process.start()
             guard started else { await process.stop(); return }
             if let api { shell.connect(api); viewer.connect(api); dashboard.connect(APIDashboardService(api: api)); shell.refreshUsage() }
+            if let api { for model in projectModels.values { model.connect(APIProjectService(api: api)) } }
             startStream(baseURL: config.baseURL)
         } catch {
             connection = "Disconnected"
@@ -331,6 +365,9 @@ public final class AppStore {
                     if sessions != sessionSnapshot { sessions = sessionSnapshot }
                     if tabs != tabSnapshot.tabs { tabs = tabSnapshot.tabs }
                     showSelectedContext()
+                    if case .project(let id) = selection, let model = projectModels[id], model.state == "open" {
+                        await model.refresh()
+                    }
                     if !sidebarEntries.flatMap(\.descendants).contains(where: { $0.destination == selection }) { select(.overview) }
                     lastUpdate = Date()
                     error = nil
@@ -408,6 +445,7 @@ public final class AppStore {
         refreshTask = nil
         await shell.stop()
         await dashboard.stop()
+        for model in projectModels.values { model.connect(nil) }
         await viewer.stop()
         for model in buildModels.values { model.disconnect() }
         buildModels.removeAll()

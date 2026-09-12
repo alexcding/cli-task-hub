@@ -66,6 +66,12 @@ context menu also opens the browser or copies the link. Agent usage uses the sha
 native panel and refreshes once per minute while Overview is visible.
 Project/Jira/board/settings/logs/workflow/git-action parity remains M4 work.
 
+Project rows now show native Open/Merged/All PR lists and a Settings tab. **New Project**
+opens a native creation sheet. Settings include workspace selection, GitHub remote
+detection, Jira key/JQL, and IDE configuration. Unsaved edits survive snapshot refreshes
+and reconnects. Deleting a project requires confirmation and retains its sessions,
+workspace folders, and terminals. Jira, automation, and workflow tabs are still pending.
+
 ## Native tray and appearance (M2)
 
 Click the menu-bar icon or **Reviews & Usage** in the window toolbar to open the

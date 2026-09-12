@@ -46,6 +46,8 @@ public struct ContentView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .navigationTitle("TaskHub")
             .toolbar {
+                Button("New Project", systemImage: "folder.badge.plus") { store.creatingProject = true }
+                    .disabled(store.connection != "Connected")
                 Button("New Session", systemImage: "plus") { store.creatingSession = true }
                     .disabled(store.connection != "Connected" || store.projects.isEmpty)
                 Button("Reviews & Usage", systemImage: "menubar.rectangle", action: showTray)
@@ -60,6 +62,9 @@ public struct ContentView: View {
         }
         .task { await store.start() }
         .sheet(isPresented: $store.creatingSession) { NewSessionView(model: store.newSessionModel()) }
+        .sheet(isPresented: $store.creatingProject) {
+            if let model = store.projectEditor() { NewProjectSheet(model: model) }
+        }
     }
 
     private var title: String {
@@ -83,13 +88,10 @@ public struct ContentView: View {
                     .buttonStyle(.borderedProminent)
             }
         case .project(let id):
-            if let project = store.projects.first(where: { $0.id == id }) {
-                VStack(alignment: .leading, spacing: 16) {
-                    LabeledContent("Repository", value: project.repo.isEmpty ? "None" : project.repo)
-                    LabeledContent("Workspace", value: project.workspace)
-                    LabeledContent("Sessions", value: String(store.sessions.filter { $0.projectId == id }.count))
-                    Text("Select a session to open its terminal.").foregroundStyle(.secondary)
-                }.textSelection(.enabled)
+            if let model = store.projectModels[id] {
+                ProjectPageView(model: model, actions: store.dashboard).id(id)
+            } else {
+                Text("Connect to load this project.").foregroundStyle(.secondary)
             }
         case .session(let id):
             if let session = store.sessions.first(where: { $0.id == id }) {

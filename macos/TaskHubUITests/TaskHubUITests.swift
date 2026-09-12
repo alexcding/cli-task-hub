@@ -3,6 +3,44 @@ import XCTest
 final class TaskHubUITests: XCTestCase {
 
     @MainActor
+    func testNativeProjectCreateEditAndDelete() throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard let base = environment["TASKHUB_UI_BACKEND_URL"],
+              let path = environment["TASKHUB_UI_DATA_DIR"], let socket = environment["TASKHUB_UI_PTY_SOCKET"] else {
+            throw XCTSkip("Run macos/scripts/test-browser-ui.sh to provide the isolated fixture.")
+        }
+        let app = XCUIApplication()
+        app.launchArguments = ["--backend-url", base, "--data-dir", path, "--pty-socket", socket]
+        app.launch()
+        let create = app.buttons["New Project"]
+        XCTAssertTrue(create.waitForExistence(timeout: 10))
+        let enabled = expectation(for: NSPredicate(format: "enabled == true"), evaluatedWith: create)
+        wait(for: [enabled], timeout: 10)
+        create.click()
+        let name = app.textFields["project-name"]
+        XCTAssertTrue(name.waitForExistence(timeout: 5))
+        name.click(); app.typeText("UI project")
+        app.buttons["Create Project"].click()
+        let row = app.outlines["workspace-sidebar"].staticTexts["UI project"]
+        XCTAssertTrue(row.waitForExistence(timeout: 10))
+        row.click()
+        XCTAssertTrue(app.radioButtons["Settings"].waitForExistence(timeout: 5), app.debugDescription)
+        app.radioButtons["Settings"].click()
+        XCTAssertTrue(name.waitForExistence(timeout: 5))
+        name.click(); app.typeKey("a", modifierFlags: .command); app.typeText("Renamed UI project")
+        app.buttons["Save Project"].click()
+        XCTAssertTrue(app.outlines["workspace-sidebar"].staticTexts["Renamed UI project"].waitForExistence(timeout: 10))
+        app.buttons["Delete Project…"].click()
+        XCTAssertTrue(app.sheets.buttons["Delete Project"].waitForExistence(timeout: 5))
+        app.sheets.buttons["Cancel"].click()
+        XCTAssertTrue(app.outlines["workspace-sidebar"].staticTexts["Renamed UI project"].exists)
+        app.buttons["Delete Project…"].click()
+        app.sheets.buttons["Delete Project"].click()
+        let removed = expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: app.outlines["workspace-sidebar"].staticTexts["Renamed UI project"])
+        wait(for: [removed], timeout: 10)
+    }
+
+    @MainActor
     func testNativeDashboardFiltersAndOpensContextPage() throws {
         let environment = ProcessInfo.processInfo.environment
         guard let base = environment["TASKHUB_UI_BACKEND_URL"],

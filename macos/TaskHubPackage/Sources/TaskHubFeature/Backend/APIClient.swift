@@ -40,6 +40,9 @@ public struct Project: Decodable, Identifiable, Equatable, Sendable {
     var ideTarget: String? = nil
     var runScheme: String? = nil
     var runSim: String? = nil
+    var jiraProjectKey: String? = nil
+    var jql: String? = nil
+    var ideCmd: String? = nil
 }
 
 // Actor isolation keeps response decoding off the UI actor. Only decoded snapshots

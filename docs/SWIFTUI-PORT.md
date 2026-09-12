@@ -259,6 +259,19 @@ Dashboard; the remaining app pages and action parity are tracked under M4.
   browser/menu/offline/tray flows. Xcode still reports its internal runner QoS warning.
 - Still open: remaining project/Jira/board/settings/logs/automation/workflow/git actions,
   dashboard Jira-link/session actions, and complete parity acceptance. M1–M3 gates remain.
+- Added native project pages with Open/Merged/All PR selection and search, including
+  other authors' PRs. Late responses cannot replace a newer state filter. Open lists
+  continue reading snapshots; Merged/All use the existing explicit on-demand API.
+- Native project creation/settings cover name, folder picker, repository detection,
+  Jira key/JQL, IDE preset/custom template, and relative launch target. Injected
+  services and factories construct editor/page view models. Dirty drafts survive
+  refreshes and reconnects; failed writes retain them. Form saves preserve automation,
+  workflows, and run destinations by sending only the form's owned fields.
+- Deletion confirms the actual backend behavior: removes project configuration and
+  PR/Jira links, keeps folders, sessions, and running PTYs. Cancel leaves the project.
+  Package verification now passes 36 tests. The five existing native UI tests pass;
+  the new create/edit/cancel-delete/confirmed-delete UI flow passes after scoping its
+  alert controls to avoid duplicate Touch Bar accessibility matches.
 
 Companion docs: `ARCHITECTURE.md` (layers, HTTP-vs-IPC split), `TAURI-PORT.md`
 (the previous shell port — the same boundary makes this one tractable), `CLAUDE.md`
