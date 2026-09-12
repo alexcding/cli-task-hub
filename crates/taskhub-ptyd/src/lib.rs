@@ -30,7 +30,7 @@
 //   <dir>/ptyd.pid          the daemon's pid
 //   /tmp/taskhub-ptyd-<uid>.sock  the control socket (see sock_path)
 // The daemon exits by itself once it holds no terminals and no client for IDLE_EXIT.
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::os::unix::fs::DirBuilderExt;
 use std::os::unix::io::RawFd;
@@ -43,6 +43,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+mod utf8;
 
 pub const PROTOCOL: u32 = 2;
 const RING_MAX: usize = 256 * 1024; // per-terminal rolling output tail replayed to (re)attaching clients
@@ -101,6 +102,39 @@ struct Ring {
   chunks: Vec<String>,
   len: usize,
   seq: u64,
+  truncated: bool,
+}
+
+impl Ring {
+  fn push(&mut self, text: String) -> u64 {
+    self.seq += 1;
+    self.len += text.len();
+    self.chunks.push(text);
+    while self.len > RING_MAX && self.chunks.len() > 1 {
+      self.len -= self.chunks.remove(0).len();
+      self.truncated = true;
+    }
+    self.seq
+  }
+}
+
+#[cfg(test)]
+mod ring_tests {
+  use super::*;
+
+  #[test]
+  fn truncation_is_reported_at_the_atomic_sequence_boundary() {
+    let mut ring = Ring { chunks: Vec::new(), len: 0, seq: 0, truncated: false };
+    assert_eq!(ring.push("a".repeat(RING_MAX / 2)), 1);
+    assert_eq!(ring.push("b".repeat(RING_MAX / 2)), 2);
+    assert!(!ring.truncated); // exactly full still contains the entire history
+    assert_eq!(ring.push("日本語".into()), 3);
+    assert!(ring.truncated);
+    assert_eq!(ring.len, RING_MAX / 2 + "日本語".len());
+    assert!(ring.chunks.concat().ends_with("日本語"));
+    ring.push("small later update".into());
+    assert!(ring.truncated); // a small subsequent batch cannot make a tail complete
+  }
 }
 
 // The write side of a PTY: the (non-blocking) writer plus the bounded queue of bytes it could not
@@ -117,6 +151,7 @@ struct Term {
   input: Arc<Mutex<Input>>,
   wake_w: RawFd, // self-pipe: poke the poll thread (queued input, flow change, kill)
   paused: Arc<AtomicBool>, // renderer-requested flow pause
+  pause_owners: HashSet<u64>, // protected by the terms lock; only the owner can release a pause
   killed: Arc<AtomicBool>, // kill requested: the I/O thread reaps, removes, and announces exit
   info: TermInfo,
   ring: Arc<Mutex<Ring>>,
@@ -343,7 +378,7 @@ impl Daemon {
       pid,
       created: now_ms(),
     };
-    let ring = Arc::new(Mutex::new(Ring { chunks: Vec::new(), len: 0, seq: 0 }));
+    let ring = Arc::new(Mutex::new(Ring { chunks: Vec::new(), len: 0, seq: 0, truncated: false }));
     let input = Arc::new(Mutex::new(Input { writer, queue: VecDeque::new(), dropped: 0 }));
     let paused = Arc::new(AtomicBool::new(false));
     let killed = Arc::new(AtomicBool::new(false));
@@ -356,6 +391,7 @@ impl Daemon {
         input: input.clone(),
         wake_w,
         paused: paused.clone(),
+        pause_owners: HashSet::new(),
         killed: killed.clone(),
         info: info.clone(),
         ring: ring.clone(),
@@ -445,26 +481,10 @@ impl Daemon {
               break; // quiet for the window → emit what we have
             }
           }
-          if got_any {
-            // Emit whole UTF-8 only; an incomplete trailing codepoint waits for the next read.
-            let valid = match std::str::from_utf8(&pending) {
-              Ok(s) => s.len(),
-              Err(e) => e.valid_up_to(),
-            };
-            if valid > 0 {
-              let s = String::from_utf8_lossy(&pending[..valid]).into_owned();
-              pending.drain(..valid);
-              let seq = {
-                let mut b = ring.lock().unwrap();
-                b.seq += 1;
-                b.len += s.len();
-                b.chunks.push(s.clone());
-                while b.len > RING_MAX && b.chunks.len() > 1 {
-                  let removed = b.chunks.remove(0).len();
-                  b.len -= removed;
-                }
-                b.seq
-              };
+          if got_any || eof {
+            let s = utf8::take_text(&mut pending, eof);
+            if !s.is_empty() {
+              let seq = ring.lock().unwrap().push(s.clone());
               me.broadcast(&json!({ "ev": "data", "id": id, "chunk": s, "seq": seq }));
             }
           }
@@ -529,9 +549,10 @@ impl Daemon {
   }
 
   // Renderer-driven flow control: pause PTY reads while its xterm write buffer runs ahead.
-  fn flow(&self, id: &str, pause: bool) {
-    if let Some(t) = self.terms.lock().unwrap().get(id) {
-      t.paused.store(pause, Ordering::Relaxed);
+  fn flow(&self, cid: u64, id: &str, pause: bool) {
+    if let Some(t) = self.terms.lock().unwrap().get_mut(id) {
+      if pause { t.pause_owners.insert(cid); } else { t.pause_owners.remove(&cid); }
+      t.paused.store(!t.pause_owners.is_empty(), Ordering::Relaxed);
       poke(t.wake_w);
     }
   }
@@ -584,19 +605,20 @@ impl Daemon {
   }
 
   // Attach: the ring for replay. A renderer flow pause belongs to the client that asked for it;
-  // an attaching client starts with an empty xterm buffer, so any leftover pause is lifted here.
-  fn attach(&self, id: &str) -> Value {
-    match self.terms.lock().unwrap().get(id) {
+  // attaching releases only that client's pause, never another viewer's backpressure.
+  fn attach(&self, cid: u64, id: &str) -> Value {
+    match self.terms.lock().unwrap().get_mut(id) {
       Some(t) => {
-        if t.paused.swap(false, Ordering::Relaxed) {
+        if t.pause_owners.remove(&cid) {
+          t.paused.store(!t.pause_owners.is_empty(), Ordering::Relaxed);
           poke(t.wake_w);
         }
         let b = t.ring.lock().unwrap();
-        json!({ "buf": b.chunks.concat(), "seq": b.seq, "live": true })
+        json!({ "buf": b.chunks.concat(), "seq": b.seq, "live": true, "truncated": b.truncated })
       }
       // Unknown id: the PTY exited (or never existed). Say so, so the renderer doesn't keep a view
       // for it — its exit broadcast may have predated the renderer's subscription.
-      None => json!({ "buf": "", "seq": 0, "live": false }),
+      None => json!({ "buf": "", "seq": 0, "live": false, "truncated": false }),
     }
   }
 
@@ -613,7 +635,7 @@ impl Daemon {
     }
   }
 
-  fn handle(self: &Arc<Self>, req: &Value) -> Result<Value, String> {
+  fn handle(self: &Arc<Self>, cid: u64, req: &Value) -> Result<Value, String> {
     let op = req.get("op").and_then(Value::as_str).unwrap_or("");
     let sid = || req.get("term").and_then(Value::as_str).unwrap_or("").to_string();
     match op {
@@ -633,13 +655,13 @@ impl Daemon {
         Ok(Value::Null)
       }
       "flow" => {
-        self.flow(&sid(), req.get("pause").and_then(Value::as_bool).unwrap_or(false));
+        self.flow(cid, &sid(), req.get("pause").and_then(Value::as_bool).unwrap_or(false));
         Ok(Value::Null)
       }
       "kill" => Ok(json!(self.kill(&sid()))),
       "killAll" => Ok(json!(self.kill_all())),
       "list" => Ok(serde_json::to_value(self.list()).unwrap()),
-      "attach" => Ok(self.attach(&sid())),
+      "attach" => Ok(self.attach(cid, &sid())),
       "foreground" => Ok(self.foreground(&sid())),
       other => Err(format!("unknown op {other:?}")),
     }
@@ -681,7 +703,7 @@ impl Daemon {
           continue;
         }
       };
-      let res = self.handle(&req);
+      let res = self.handle(cid, &req);
       if let Some(id) = req.get("id") {
         let resp = match res {
           Ok(v) => json!({ "id": id, "ok": v }),
@@ -694,8 +716,9 @@ impl Daemon {
     // untouched — that is the whole point.
     self.clients.lock().unwrap().retain(|c| c.id != cid);
     // Its flow pauses die with it — a paused PTY with no one to resume it would freeze forever.
-    for t in self.terms.lock().unwrap().values() {
-      if t.paused.swap(false, Ordering::Relaxed) {
+    for t in self.terms.lock().unwrap().values_mut() {
+      if t.pause_owners.remove(&cid) {
+        t.paused.store(!t.pause_owners.is_empty(), Ordering::Relaxed);
         poke(t.wake_w);
       }
     }

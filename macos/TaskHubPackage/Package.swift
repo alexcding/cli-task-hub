@@ -13,11 +13,15 @@ let package = Package(
             targets: ["TaskHubFeature"]
         ),
     ],
+    dependencies: [
+        .package(url: "https://github.com/Lakr233/libghostty-spm.git", exact: "1.6.20260909"),
+    ],
     targets: [
         // Targets are the basic building blocks of a package, defining a module or a test suite.
         // Targets can depend on other targets in this package and products from dependencies.
         .target(
-            name: "TaskHubFeature"
+            name: "TaskHubFeature",
+            dependencies: [.product(name: "GhosttyTerminal", package: "libghostty-spm")]
         ),
         .testTarget(
             name: "TaskHubFeatureTests",

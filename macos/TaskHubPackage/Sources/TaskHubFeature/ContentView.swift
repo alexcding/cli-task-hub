@@ -39,9 +39,16 @@ public struct ContentView: View {
                         .foregroundStyle(.orange).textSelection(.enabled)
                     Button("Reconnect") { Task { await store.reconnect() } }
                 }
-                Text("The native terminal is the next implementation gate. Dashboard, sessions, and document views follow it.")
-                    .foregroundStyle(.secondary)
-                Spacer()
+                if let session = store.terminal {
+                    TerminalPane(session: session, reconnect: store.reattachTerminal)
+                        .id(session.id)
+                } else {
+                    Text("Terminal correctness spike. Dashboard, sessions, and document views follow this gate.")
+                        .foregroundStyle(.secondary)
+                    Button("Open native terminal", systemImage: "terminal") { store.openTerminal() }
+                        .buttonStyle(.borderedProminent)
+                    Spacer()
+                }
             }
             .padding(32)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)

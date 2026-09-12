@@ -8,7 +8,8 @@ Branch: `feat/swiftui-native`. Worktree: `../cli-task-hub-swiftui`.
 
 ## Implementation status
 
-M0 implementation has started in `macos/` (see `macos/README.md` for commands).
+M0 foundation is committed as `bf0c7a6`; M1 is in progress in `macos/`
+(see `macos/README.md` for commands).
 The checked-in Xcode workspace uses a local Swift package, Swift 6, macOS 14 minimum,
 and direct distribution without App Sandbox. The current screen is the native
 connection/project-list foundation; it is not the completed Dashboard.
@@ -17,16 +18,56 @@ connection/project-list foundation; it is not the completed Dashboard.
   identity/readiness endpoint, external/owned backend modes, bounded SSE parsing,
   snapshot refresh on reconnect, and a native window/menu-bar lifecycle.
 - Extracted: `crates/taskhub-ptyd` is the shared daemon implementation for Tauri and
-  the standalone helper. Protocol and terminal behavior remain unchanged.
+  the standalone helper. The extraction preserved protocol and terminal behavior;
+  subsequent M1 corrections are recorded below.
 - Added: isolated backend integration tests and daemon protocol/reconnect test;
   local bundling script for Node, production dependencies, and the daemon.
 - Verified: native arm64 build, 6 Swift tests (including real API/SSE and ownership),
   32 Node API/contract tests, 1 isolated daemon protocol test, 1 native UI launch test,
   and the bundled app visibly connected to its own backend on an isolated port/data
   directory. The existing Tauri host still passes `cargo check` (existing vendor warnings).
-- Next: M1 native Ghostty integration and the terminal acceptance gate. Ghostty is
-  not integrated yet. M0 data migration/rollback beyond preserving the existing
+- Started M1: pinned native Ghostty surface, Swift Unix-socket client, bounded output
+  pipeline, replay sequence handling, hidden output parsing, and same-shell reattach.
+  M0 data migration/rollback beyond preserving the existing
   data-directory convention remains unverified; release signing/notarization is M6.
+
+### M1 progress — 2026-09-11 (acceptance gate not passed)
+
+- Dependency: `Lakr233/libghostty-spm` **1.6.20260909**, revision
+  `7e45d27160f9b34aca9ca5c9820e9207482f9f04`, `GhosttyTerminal` host-managed backend.
+- Implemented: native Metal surface; off-main socket framing/output parsing; 1 MiB
+  pause / 256 KiB resume watermarks and an 8 MiB output hard limit; sequence-bounded
+  replay with a parser drain fence suppressing historical writeback; grid resize;
+  parsed viewport reads; manual reattach and hidden/occluded drawing control.
+- Fixed shared daemon UTF-8 decoding so split codepoints survive and invalid bytes
+  cannot stall subsequent output. The standalone executable now detaches correctly
+  from Foundation's process-group-leader launch. Protocol 2 remains unchanged.
+- Isolation: spike uses its own `taskhub-native-ptyd.sock` and data subdirectory;
+  development does not adopt existing Tauri terminals.
+- Hardened flow ownership: each client's pause survives other viewers attaching,
+  resuming, or disconnecting. Only its owner releasing/disconnecting removes it.
+- Added an optional `truncated` flag to protocol 2 attachment responses, sampled
+  under the same ring lock as the sequence boundary. Swift refuses an incomplete
+  tail or a helper without this flag; it preserves the running shell and explains
+  the failure. This detects unsafe restoration; it does not implement a VT snapshot.
+- Hardened transport/lifecycle: one connected generation per Swift client, only
+  absent/refused sockets permit helper startup, stale timed-out replies are ignored,
+  and explicit Quit reconnects independently of any pane, waits for PTY reaping,
+  then terminates the verified helper. A shutdown failure keeps the app open.
+- Evidence: native arm64 app built and visibly ran an interactive shell. Thirteen Swift
+  tests pass, including real daemon reconnect to the same shell PID, disconnect while
+  paused, Unicode, fragmented framing, and real hidden Ghostty parsing/alternate-screen/
+  Enter/bracketed-paste checks. Added timeout/mismatch/malformed-peer tests, multi-client
+  pause ownership, a 390 KB real PTY history-truncation check, and Quit after relaunch
+  with a live shell. Five Rust tests pass; existing Tauri `cargo check`
+  passes with its existing vendor warnings. These are functional checks, not a
+  performance result.
+- Still open: complete VT restoration after ring truncation (the 256 KiB tail is not
+  sufficient), byte transport decision, automatic reconnect and full lifecycle/race
+  coverage, IME/mouse/selection/scrollback/display
+  testing, file/URL routing and workflow hooks, sustained flood/isolation tests, and
+  the ten-minute one-active/nine-hidden benchmark with recorded hardware and metrics.
+  Do not start broad page rewrites on the strength of this initial spike.
 
 Companion docs: `ARCHITECTURE.md` (layers, HTTP-vs-IPC split), `TAURI-PORT.md`
 (the previous shell port — the same boundary makes this one tractable), `CLAUDE.md`
@@ -248,8 +289,8 @@ terminal correctness work must not be traded away to meet the old estimate.
 
 - M0 decisions: macOS 14 minimum, checked-in Xcode workspace/project plus local Swift
   package; direct distribution, initially ad-hoc signed for development.
-- Exact Ghostty package revision and whether correct restoration requires a daemon VT
-  snapshot or protocol extension (M1).
+- Ghostty is pinned above; complete restoration still requires a daemon VT snapshot
+  or another complete-state protocol solution (M1).
 - iOS/remote client later? Keep it out of the initial Mac scope; assess its additional
   transport and session requirements separately.
 - Does the tray need the full PR list, or does a native `MenuBarExtra` with a SwiftUI

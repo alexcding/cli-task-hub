@@ -8,6 +8,7 @@ public final class AppStore {
     public private(set) var error: String?
     public private(set) var lastUpdate: Date?
     public private(set) var backendAddress = ""
+    private(set) var terminal: TerminalSession?
     @ObservationIgnored private var owner: BackendProcess?
     @ObservationIgnored private var api: APIClient?
     @ObservationIgnored private var streamTask: Task<Void, Never>?
@@ -16,6 +17,27 @@ public final class AppStore {
     @ObservationIgnored private var started = false
 
     public init() {}
+
+    func openTerminal() {
+        guard terminal == nil else { return }
+        terminal = TerminalSession()
+    }
+
+    func reattachTerminal() {
+        guard let previous = terminal else { return }
+        Task {
+            await previous.stopConnecting()
+            if terminal === previous { terminal = TerminalSession() }
+        }
+    }
+
+    public func quit() async throws {
+        await terminal?.stopConnecting()
+        let host = PtydHost(configuration: try PtydConfiguration.current())
+        try await host.stopExisting()
+        terminal?.disconnect()
+        await stop()
+    }
 
     public func start() async {
         guard !started else { return }

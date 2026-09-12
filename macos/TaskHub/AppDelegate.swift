@@ -56,8 +56,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         guard !quitting else { return }
         quitting = true
         Task {
-            await store.stop()
-            NSApp.terminate(nil)
+            do {
+                try await store.quit()
+                NSApp.terminate(nil)
+            } catch {
+                quitting = false
+                showWindow()
+                let alert = NSAlert()
+                alert.messageText = "TaskHub could not stop its terminals"
+                alert.informativeText = error.localizedDescription
+                alert.addButton(withTitle: "OK")
+                if let window { _ = await alert.beginSheetModal(for: window) }
+            }
         }
     }
 }

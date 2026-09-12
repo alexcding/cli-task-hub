@@ -8,8 +8,17 @@ fn main() {
         eprintln!("usage: taskhub-ptyd <data-directory>");
         std::process::exit(2);
     }
-    // The helper is its own session leader; shells survive a native app crash.
-    if unsafe { libc::setsid() } == -1 {
+    // Foundation.Process may launch us as a process-group leader. Such a process
+    // cannot setsid(); fork once before any threads are started and let its child
+    // become the detached session leader. A normal CLI launch needs no fork.
+    if unsafe { libc::getpgrp() == libc::getpid() && libc::getsid(0) != libc::getpid() } {
+        match unsafe { libc::fork() } {
+            -1 => { eprintln!("fork: {}", std::io::Error::last_os_error()); std::process::exit(1); }
+            0 => {}
+            _ => std::process::exit(0),
+        }
+    }
+    if unsafe { libc::getsid(0) != libc::getpid() && libc::setsid() == -1 } {
         eprintln!("setsid: {}", std::io::Error::last_os_error());
         std::process::exit(1);
     }
