@@ -788,6 +788,20 @@ does not).
   synchronization, broader interaction checks and the performance gate remain
   open. The remaining M2–M6 and final architecture requirements still apply.
 
+### M1 response capture foundation — 2026-09-12 (ownership wiring pending)
+
+- The headless runtime can now capture Ghostty-generated protocol replies while
+  parsing each input batch once. Response storage is bounded separately from
+  snapshots, and synchronous C callback context is removed on every return path.
+  Collection failure is explicit even though parser state has advanced; callers
+  must not retry that batch or send the partial response buffer.
+- Runtime tests verify exact cursor/status/mode replies, a query split across
+  snapshot restoration, silent parsing without retained callbacks, and overflow
+  followed by continued parsing without duplicate application of input.
+- The daemon remains on silent parsing until response ownership is connected to
+  native suppression. Capability/configuration reports and clipboard/UI effects
+  need explicit ownership; this foundation does not yet answer offline queries.
+
 ## Why now, and why native
 
 The Tauri shell works, but roughly half of `src-tauri/` exists to work around what a DOM

@@ -19,6 +19,40 @@ void taskhub_vt_free(void *terminal) { ghostty_terminal_free(terminal); }
 void taskhub_vt_feed(void *terminal, const uint8_t *bytes, size_t len) {
     ghostty_terminal_vt_write(terminal, bytes, len);
 }
+
+typedef struct {
+    GhosttyWriterFn write;
+    void *userdata;
+    bool failed;
+} TaskHubResponseSink;
+
+static void taskhub_write_response(GhosttyTerminal terminal, void *userdata,
+                                  const uint8_t *bytes, size_t len) {
+    (void)terminal;
+    TaskHubResponseSink *sink = userdata;
+    if (!sink->failed && len > 0 && !sink->write(sink->userdata, bytes, len)) sink->failed = true;
+}
+
+// Effect callbacks are synchronous. Their stack-owned context must be removed
+// before returning, including after allocation/buffer failure in the receiver.
+// The parser still consumes the whole input on a receiver failure: callers must
+// not retry these bytes, since doing so would apply terminal state twice.
+int taskhub_vt_feed_with_responses(void *terminal, const uint8_t *bytes, size_t len,
+                                 GhosttyWriterFn write, void *userdata) {
+    TaskHubResponseSink sink = { .write = write, .userdata = userdata, .failed = false };
+    int result = ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_USERDATA, &sink);
+    if (result == GHOSTTY_SUCCESS) {
+        result = ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_WRITE_PTY,
+                                     (const void *)taskhub_write_response);
+    }
+    if (result == GHOSTTY_SUCCESS) {
+        ghostty_terminal_vt_write(terminal, bytes, len);
+        if (sink.failed) result = GHOSTTY_OUT_OF_SPACE;
+    }
+    ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_WRITE_PTY, NULL);
+    ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_USERDATA, NULL);
+    return result;
+}
 int taskhub_vt_resize(void *terminal, uint16_t cols, uint16_t rows) {
     return ghostty_terminal_resize(terminal, cols, rows, 0, 0);
 }

@@ -5,12 +5,20 @@ use std::{ffi::c_void, fmt, ptr::NonNull};
 
 pub const GHOSTTY_REVISION: &str = "82938b633ba646db38591d969c3c526332bd7e65";
 pub const SNAPSHOT_LIMIT: usize = 32 * 1024 * 1024;
+pub const RESPONSE_LIMIT: usize = 256 * 1024;
 type Writer = unsafe extern "C" fn(*mut c_void, *const u8, usize) -> bool;
 
 extern "C" {
     fn taskhub_vt_new(cols: u16, rows: u16) -> *mut c_void;
     fn taskhub_vt_free(terminal: *mut c_void);
     fn taskhub_vt_feed(terminal: *mut c_void, bytes: *const u8, len: usize);
+    fn taskhub_vt_feed_with_responses(
+        terminal: *mut c_void,
+        bytes: *const u8,
+        len: usize,
+        write: Writer,
+        userdata: *mut c_void,
+    ) -> i32;
     fn taskhub_vt_resize(terminal: *mut c_void, cols: u16, rows: u16) -> i32;
     fn taskhub_vt_snapshot(terminal: *mut c_void, write: Writer, userdata: *mut c_void) -> i32;
     fn taskhub_vt_restore(bytes: *const u8, len: usize) -> *mut c_void;
@@ -44,6 +52,25 @@ impl Terminal {
     }
     pub fn feed(&mut self, bytes: &[u8]) {
         unsafe { taskhub_vt_feed(self.0.as_ptr(), bytes.as_ptr(), bytes.len()) }
+    }
+    /// Parse once and collect Ghostty's synchronous terminal protocol responses.
+    /// This does not write to a PTY or grant access to host clipboard/UI effects.
+    /// An error can occur after input was consumed; retrying it is not safe.
+    pub fn feed_with_responses(&mut self, bytes: &[u8]) -> Result<Vec<u8>, Error> {
+        let mut responses = Vec::new();
+        check(
+            unsafe {
+                taskhub_vt_feed_with_responses(
+                    self.0.as_ptr(),
+                    bytes.as_ptr(),
+                    bytes.len(),
+                    write_response,
+                    (&mut responses as *mut Vec<u8>).cast(),
+                )
+            },
+            "Terminal protocol responses exceeded their buffer or allocation limit",
+        )?;
+        Ok(responses)
     }
     pub fn resize(&mut self, cols: u16, rows: u16) -> Result<(), Error> {
         check(
@@ -112,11 +139,17 @@ fn check(result: i32, message: &'static str) -> Result<(), Error> {
     }
 }
 unsafe extern "C" fn write(userdata: *mut c_void, data: *const u8, len: usize) -> bool {
+    append_bounded(userdata, data, len, SNAPSHOT_LIMIT)
+}
+unsafe extern "C" fn write_response(userdata: *mut c_void, data: *const u8, len: usize) -> bool {
+    append_bounded(userdata, data, len, RESPONSE_LIMIT)
+}
+unsafe fn append_bounded(userdata: *mut c_void, data: *const u8, len: usize, limit: usize) -> bool {
     if len == 0 {
         return true;
     }
     let bytes = &mut *userdata.cast::<Vec<u8>>();
-    if len > SNAPSHOT_LIMIT.saturating_sub(bytes.len()) || bytes.try_reserve(len).is_err() {
+    if len > limit.saturating_sub(bytes.len()) || bytes.try_reserve(len).is_err() {
         return false;
     }
     bytes.extend_from_slice(std::slice::from_raw_parts(data, len));
@@ -126,6 +159,41 @@ unsafe extern "C" fn write(userdata: *mut c_void, data: *const u8, len: usize) -
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn captures_queries_once_across_snapshot_continuation() {
+        let mut terminal = Terminal::new(80, 24).unwrap();
+        assert_eq!(
+            terminal
+                .feed_with_responses(b"abc\x1b[6n\x1b[5n\x1b[?7$p")
+                .unwrap(),
+            b"\x1b[1;4R\x1b[0n\x1b[?7;1$y"
+        );
+        assert!(terminal.feed_with_responses(b"\x1b[6").unwrap().is_empty());
+        let snapshot = terminal.snapshot().unwrap();
+        let mut restored = Terminal::restore(&snapshot).unwrap();
+        assert_eq!(restored.feed_with_responses(b"n").unwrap(), b"\x1b[1;4R");
+        assert!(restored.feed_with_responses(b"plain").unwrap().is_empty());
+        // Silent parsing neither retains the collector nor re-emits past queries.
+        restored.feed(b"\x1b[5n");
+        assert_eq!(
+            restored.feed_with_responses(b"\x1b[6n").unwrap(),
+            b"\x1b[1;9R"
+        );
+    }
+
+    #[test]
+    fn response_overflow_consumes_input_once_and_does_not_retain_callback_context() {
+        let mut terminal = Terminal::new(80, 24).unwrap();
+        let mut flood = b"\x1b[6n".repeat(RESPONSE_LIMIT / 4);
+        flood.extend_from_slice(b"AFTER_OVERFLOW");
+        assert!(terminal.feed_with_responses(&flood).is_err());
+        assert_eq!(terminal.cursor().unwrap(), (14, 0));
+        terminal.feed(b"x\x1b[5n");
+        assert_eq!(
+            terminal.feed_with_responses(b"\x1b[6n").unwrap(),
+            b"\x1b[1;16R"
+        );
+    }
     fn equivalent(left: &mut Terminal, right: &mut Terminal) {
         assert_eq!(left.cursor().unwrap(), right.cursor().unwrap());
         assert_eq!(left.formatted().unwrap(), right.formatted().unwrap());

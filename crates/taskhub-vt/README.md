@@ -2,8 +2,8 @@
 
 This crate owns a headless Ghostty terminal and exposes binary snapshot capture and
 restore for the detached PTY daemon. The daemon consumes it in builds with the
-`terminal-snapshots` feature. Production builds leave that feature disabled until
-the native Metal surface can import the snapshot.
+`terminal-snapshots` feature, required by the native macOS app. Tauri retains its
+feature-free helper protocol.
 
 Build the pinned runtime and run its real-library tests:
 
@@ -35,7 +35,18 @@ I/O thread, and captures an atomic sequence boundary. Its connection-owned trans
 returns at most 128 KiB per read, with one snapshot of at most 32 MiB per connection.
 See [the daemon snapshot protocol](../taskhub-ptyd/SNAPSHOTS.md).
 
-Next is importing state into the existing native surface before applying newer
-output and ordered resizes. That work must preserve the same shell and suppress
-historical side effects. Headless parsing currently emits no terminal replies;
-offline query handling and avoiding duplicate replies remain integration work.
+The native app imports state into a fresh surface before applying newer output
+and ordered resizes, preserving the shell across reattachment and reconnect.
+
+`feed_with_responses` additionally collects the pinned runtime's synchronous
+protocol replies, capped at 256 KiB per call. It applies input exactly once and
+clears its temporary C callback/userdata before returning. If collection fails,
+state may already have advanced: discard the partial reply buffer and do not
+retry the input. Plain `feed` continues to parse silently. This API does not access
+the host clipboard or write to a PTY; default runtime replies can include protocol
+denials for unsupported host effects.
+
+The daemon still uses silent `feed`. Enabling responses requires the daemon/native
+ownership contract, matching capability/configuration reports, and clipboard/UI
+mediation so only one component responds to each query. Offline query delivery
+and duplicate prevention remain integration work.
