@@ -11,6 +11,27 @@ const assert = require('node:assert');
 const poller = require('../src/server/services/poller');
 const github = require('../src/server/repositories/github');
 
+test('edited polling intervals replace only running loops and never start an idle backend', (t) => {
+  const db = require('../src/server/database/db');
+  const scheduled = [], cleared = [];
+  t.mock.method(global, 'setInterval', (callback, delay) => {
+    const timer = { callback, delay }; scheduled.push(timer); return timer;
+  });
+  t.mock.method(global, 'clearInterval', timer => cleared.push(timer));
+  t.mock.method(db, 'getProjects', () => []); // startup's immediate pass cannot spawn a CLI
+  t.after(() => poller.stop());
+  poller.stop(); poller.reconfigure();
+  assert.equal(scheduled.length, 0);
+  db.set('poll_interval', '60'); db.set('jira_poll_interval', '120');
+  poller.start(); poller.startJira();
+  db.set('poll_interval', '90'); db.set('jira_poll_interval', '180');
+  poller.reconfigure();
+  assert.deepEqual(scheduled.map(timer => timer.delay), [60000, 120000, 90000, 180000]);
+  assert.deepEqual(cleared, scheduled.slice(0, 2));
+  poller.stop(); poller.reconfigure();
+  assert.equal(scheduled.length, 4);
+});
+
 test('syncProject coalesces concurrent syncs of one project, then runs fresh after', async (t) => {
   let calls = 0;
   mock.method(github, 'getOpenPRs', async () => {

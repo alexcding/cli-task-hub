@@ -8,6 +8,7 @@ public final class AppStore {
     let viewer: ViewerStore
     private(set) var dashboard: DashboardViewModel!
     private(set) var logs: LogsViewModel!
+    private(set) var settings: SettingsViewModel!
     public private(set) var projects: [Project] = []
     public private(set) var connection = "Connecting"
     public private(set) var error: String?
@@ -44,6 +45,12 @@ public final class AppStore {
             try await self.openPage(request)
         }, copy: {
             NSPasteboard.general.clearContents(); NSPasteboard.general.setString($0, forType: .string)
+        })
+        settings = SettingsViewModel(didSave: { [weak self] patch in
+            guard let self else { return }
+            if patch["jira_base_url"] != nil || patch["jira_api_token"] != nil {
+                for model in projectModels.values { await model.tickets?.invalidateSite() }
+            }
         })
         if let data = UserDefaults.standard.data(forKey: "sidebar.selection"),
            let saved = try? JSONDecoder().decode(SidebarDestination.self, from: data) { selection = saved }
@@ -96,6 +103,7 @@ public final class AppStore {
         }
         let model = NewSessionViewModel(projects: projects, selectedProject: selected, operations: sessionOperations,
                                         didCreate: { [weak self] in self?.createdSession($0) })
+        model.draft.agent = shell.defaultAgent
         if case .tab(let url) = selection {
             model.draft.url = url
             if SessionPage.parse(url) != nil { model.draft.branch = url }
@@ -132,6 +140,7 @@ public final class AppStore {
         case .resetZoom: viewer.active?.activePage?.zoom(nil)
         case .overview: select(.overview)
         case .activity: select(.activity)
+        case .settings: select(.settings)
         case .terminal:
             if activeTerminalKey == nil { select(.terminal) }
             openTerminal()
@@ -363,6 +372,10 @@ public final class AppStore {
                 model.tickets?.connect(APIJiraService(api: api))
             } }
             if let api { logs.connect(APILogService(api: api)) }
+            if let api {
+                settings.connect(APISettingsService(api: api))
+                if selection == .settings { settings.refresh() }
+            }
             startStream(baseURL: config.baseURL)
         } catch {
             connection = "Disconnected"
@@ -465,6 +478,7 @@ public final class AppStore {
             if selection == .activity { logs.refresh() }
         }
         if event.type == "settings" { shell.loadSettings() }
+        if event.type == "config" { settings.refresh() }
         if event.type == "reviews" { shell.refresh() }
         if ["sync", "jira-sync", "tabs", "tasks", "reload"].contains(event.type) { refresh() }
     }
@@ -480,6 +494,7 @@ public final class AppStore {
         await shell.stop()
         await dashboard.stop()
         await logs.stop()
+        await settings.stop()
         for model in projectModels.values { model.connect(nil); model.board?.pause(); await model.tickets?.stop() }
         await viewer.stop()
         for model in buildModels.values { model.disconnect() }

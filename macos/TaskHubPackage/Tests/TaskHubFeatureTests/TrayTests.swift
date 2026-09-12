@@ -103,12 +103,16 @@ import Testing
     shell.setAppearance(.light)
     shell.setAppearance(.system)
     shell.setUsageAgent("codex")
+    shell.setDefaultAgent(.codex)
+    shell.setDefaultAgent(.shell)
     await shell.stop() // Drains preference writes in order before disconnecting.
     let settings: [String: String] = try await api.get(Routes.SETTINGS)
     #expect(settings["theme"] == "auto")
     #expect(settings["usageAgent"] == "codex")
+    #expect(settings["defaultCli"] == "")
     #expect(settings["activityNotify"] == "off" && settings["reviewSound"] == "off")
     let reopened = ShellStore(preferences: preferences)
     #expect(reopened.appearance == .system && reopened.usageAgent == "codex")
     #expect(!reopened.activityNotify && reopened.reviewSound == "off")
+    #expect(reopened.defaultAgent == .shell)
 }

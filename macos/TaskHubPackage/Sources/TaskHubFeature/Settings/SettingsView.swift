@@ -1,0 +1,56 @@
+import SwiftUI
+
+struct SettingsView: View {
+    @Bindable var model: SettingsViewModel
+    let shell: ShellStore
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Picker("Settings section", selection: $model.section) {
+                ForEach(SettingsSection.allCases) { Text($0.rawValue).tag($0) }
+            }.pickerStyle(.segmented)
+            switch model.section {
+            case .general:
+                Form {
+                    Section("Appearance") {
+                        Picker("Theme", selection: Binding(get: { shell.appearance }, set: shell.setAppearance)) {
+                            ForEach(AppAppearance.allCases) { Text($0.title).tag($0) }
+                        }
+                        Picker("Default session agent", selection: Binding(get: { shell.defaultAgent }, set: shell.setDefaultAgent)) {
+                            ForEach(SessionAgent.allCases) { Text($0.label).tag($0) }
+                        }.accessibilityIdentifier("settings-default-agent")
+                    }
+                    Section {
+                        NotificationPreferencesView(shell: shell, sounds: model.sounds)
+                        Button("Preview Sound") { shell.notifications.previewSound(shell.reviewSound) }.disabled(shell.reviewSound == "off")
+                    }
+                }.formStyle(.grouped)
+                if let error = shell.settingsError { Text(error).foregroundStyle(.orange) }
+            case .connections:
+                Form {
+                    Section("GitHub") {
+                        TextField("PR polling interval (seconds)", text: $model.draft.pollInterval).accessibilityIdentifier("settings-poll-interval")
+                    }
+                    Section("Jira") {
+                        TextField("Site URL (blank to detect)", text: $model.draft.jiraBaseURL).accessibilityIdentifier("settings-jira-site")
+                        SecureField("API token", text: $model.draft.jiraAPIToken)
+                        TextField("Jira polling interval (seconds)", text: $model.draft.jiraPollInterval)
+                        TextField("Ticket limit", text: $model.draft.jiraLimit)
+                    }
+                }.formStyle(.grouped).disabled(!model.loaded || model.saving)
+                if let message = model.draft.validationError { Text(message).foregroundStyle(.orange) }
+                HStack {
+                    Button("Revert Settings", action: model.revert).disabled(!model.dirty || model.saving)
+                    Spacer()
+                    if model.saved && !model.dirty { Text("Settings saved").foregroundStyle(.secondary) }
+                    if model.saving { ProgressView().controlSize(.small) }
+                    Button("Save Settings") { Task { await model.save() } }.disabled(!model.canSave).buttonStyle(.borderedProminent)
+                }
+            }
+            if let error = model.error {
+                Text(error).foregroundStyle(.orange).textSelection(.enabled)
+                Button("Retry Settings", action: model.refresh)
+            }
+            if model.loading && !model.loaded { ProgressView("Loading settings…") }
+        }.onAppear { model.refresh(); shell.loadSettings(); shell.notifications.refreshAuthorization() }
+    }
+}

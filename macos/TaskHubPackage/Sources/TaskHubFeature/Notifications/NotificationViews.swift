@@ -2,6 +2,7 @@ import SwiftUI
 
 struct NotificationPreferencesView: View {
     let shell: ShellStore
+    var sounds: [ReviewSound] = []
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -17,7 +18,8 @@ struct NotificationPreferencesView: View {
             Picker("Review sound", selection: Binding(get: { shell.reviewSound }, set: shell.setReviewSound)) {
                 Text("Glass (default)").tag("system")
                 Text("None").tag("off")
-                if !["system", "off"].contains(shell.reviewSound) {
+                ForEach(sounds) { Text($0.name).tag($0.path) }
+                if !["system", "off"].contains(shell.reviewSound) && !sounds.contains(where: { $0.path == shell.reviewSound }) {
                     Text(URL(fileURLWithPath: shell.reviewSound).deletingPathExtension().lastPathComponent)
                         .tag(shell.reviewSound)
                 }

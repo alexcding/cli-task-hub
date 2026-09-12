@@ -43,6 +43,10 @@ import Observation
         self.openBrowser = openBrowser; self.copy = copy; self.now = now
     }
     func update(_ project: Project) { self.project = project }
+    func invalidateSite() async {
+        discoveryTask?.cancel(); await discoveryTask?.value
+        baseURL = nil
+    }
     func connect(_ service: any JiraService) { self.service = service; persistFilters() }
     var source: JiraSnapshot? { searchResult ?? snapshot }
     var items: [JiraTicket] {

@@ -72,6 +72,7 @@ public struct ContentView: View {
         case .overview: "Overview"
         case .terminal: "Terminal"
         case .activity: "Activity"
+        case .settings: "Settings"
         case .project(let id): store.projects.first { $0.id == id }?.name ?? "Project"
         case .session(let id): store.sessions.first { $0.id == id }?.label ?? "Session"
         case .tab(let url): store.tabs.first { $0.url == url }?.title ?? "Tab"
@@ -84,6 +85,8 @@ public struct ContentView: View {
             DashboardView(model: store.dashboard, shell: store.shell)
         case .activity:
             LogsView(model: store.logs)
+        case .settings:
+            SettingsView(model: store.settings, shell: store.shell)
         case .terminal:
             VStack(alignment: .leading, spacing: 16) {
                 Text("Open an interactive shell.").foregroundStyle(.secondary)

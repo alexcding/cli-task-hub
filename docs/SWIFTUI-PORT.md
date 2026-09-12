@@ -320,6 +320,21 @@ Dashboard; the remaining app pages and action parity are tracked under M4.
   successful moves, key search/clear, and embedded ticket opening. Three shared JQL
   tests and the focused web-asset manifest test also pass. Full Jira parity and the
   remaining M4 actions are still tracked separately.
+- Added native General/Connections Settings through the Cocoa sidebar and Command-comma.
+  Reuses offline-safe appearance/notification persistence, loads the full sound list
+  with explicit preview, and honors the saved default agent in new-session sheets.
+  Config validation covers intervals, ticket limit, and safe Jira site URLs; token
+  input is secure. Saving patches only changed fields and preserves unsaved/newer edits.
+- Backend interval edits now reschedule existing PR/Jira loops without starting loops
+  in an idle/read-only backend. Config changes emit an SSE invalidation. Native Jira
+  site discovery is invalidated after a native site/token save. CLI/hooks, diagnostics,
+  login items, fonts, git-client actions, and the native memory policy remain open.
+- Settings verification: all 45 Swift package tests and all ten native UI scenarios
+  pass, including config validation/save/revert, preserving edits across navigation,
+  persisted default-agent choice, and existing board/Jira/project/menu/tray flows.
+  The 38 backend API/poller/route tests pass; the interval ownership regression also
+  passes after adding the one-day timer ceiling. Xcode's existing internal UI-runner
+  QoS warnings remain; no application failure was reported in these scenarios.
 
 Companion docs: `ARCHITECTURE.md` (layers, HTTP-vs-IPC split), `TAURI-PORT.md`
 (the previous shell port — the same boundary makes this one tractable), `CLAUDE.md`

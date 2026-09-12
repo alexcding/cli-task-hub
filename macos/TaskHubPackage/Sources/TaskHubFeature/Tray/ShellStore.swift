@@ -16,6 +16,7 @@ import Observation
     private(set) var usageLoading = false
     public private(set) var appearance: AppAppearance
     private(set) var usageAgent: String
+    private(set) var defaultAgent: SessionAgent
     private(set) var settingsError: String?
     private(set) var acknowledging: Set<String> = []
     @ObservationIgnored private var api: APIClient?
@@ -35,6 +36,7 @@ import Observation
         pendingSettings = preferences.dictionary(forKey: "native.pendingSettings") as? [String: String] ?? [:]
         appearance = AppAppearance(rawValue: preferences.string(forKey: "native.theme") ?? "auto") ?? .system
         usageAgent = preferences.string(forKey: "native.usageAgent") == "codex" ? "codex" : "claude"
+        defaultAgent = SessionAgent(rawValue: preferences.string(forKey: "native.defaultCli") ?? "claude") ?? .claude
         activityNotify = preferences.string(forKey: "native.activityNotify") != "off"
         reviewSound = preferences.string(forKey: "native.reviewSound") ?? "system"
     }
@@ -157,6 +159,12 @@ import Observation
         saveSetting("usageAgent", value: usageAgent)
     }
 
+    func setDefaultAgent(_ value: SessionAgent) {
+        defaultAgent = value
+        preferences.set(value.rawValue, forKey: "native.defaultCli")
+        saveSetting("defaultCli", value: value.rawValue)
+    }
+
     private func saveSetting(_ key: String, value: String) {
         pendingSettings[key] = value
         preferences.set(pendingSettings, forKey: "native.pendingSettings")
@@ -199,10 +207,12 @@ import Observation
                 }
                 if pendingSettings["activityNotify"] == nil { activityNotify = (settings["activityNotify"] ?? nil) != "off" }
                 if pendingSettings["reviewSound"] == nil { reviewSound = (settings["reviewSound"] ?? nil) ?? "system" }
+                if pendingSettings["defaultCli"] == nil { defaultAgent = SessionAgent(rawValue: (settings["defaultCli"] ?? nil) ?? "claude") ?? .claude }
                 preferences.set(appearance.rawValue, forKey: "native.theme")
                 preferences.set(usageAgent, forKey: "native.usageAgent")
                 preferences.set(activityNotify ? "on" : "off", forKey: "native.activityNotify")
                 preferences.set(reviewSound, forKey: "native.reviewSound")
+                preferences.set(defaultAgent.rawValue, forKey: "native.defaultCli")
                 applyAppearance()
                 if pendingSettings.isEmpty { settingsError = nil }
             } catch { if !Task.isCancelled { settingsError = error.localizedDescription } }

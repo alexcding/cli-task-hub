@@ -1,7 +1,7 @@
 import AppKit
 
 public enum ShellCommand: String, Sendable {
-    case overview, terminal, activity, sidebar, refresh, tray, hide, biggerFont, smallerFont, resetFont
+    case overview, terminal, activity, settings, sidebar, refresh, tray, hide, biggerFont, smallerFont, resetFont
     case newProject, newSession, closePage, findPage, back, forward, nextPage, previousPage, zoomIn, zoomOut, resetZoom
 }
 
@@ -38,7 +38,7 @@ public enum ShellCommand: String, Sendable {
         let app = menu("TaskHub")
         action(app, "About TaskHub", #selector(NSApplication.orderFrontStandardAboutPanel(_:)))
         app.addItem(.separator())
-        command(app, "Appearance & Notifications…", .tray, ",")
+        command(app, "Settings…", .settings, ",")
         app.addItem(.separator())
         let services = app.addItem(withTitle: "Services", action: nil, keyEquivalent: "")
         services.submenu = NSMenu(title: "Services")

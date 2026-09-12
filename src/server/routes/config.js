@@ -14,6 +14,8 @@ function register(app) {
     for (const [k, v] of Object.entries(req.body)) db.set(k, v);
     // A new REST token can resolve the Jira accountId `me` was missing — forget the cached one.
     if ('jira_api_token' in req.body) require('./jira').invalidateJiraMe();
+    if ('poll_interval' in req.body || 'jira_poll_interval' in req.body) require('../services/poller').reconfigure();
+    sse.broadcast({ type: 'config' });
     res.json({ ok: true });
   });
 

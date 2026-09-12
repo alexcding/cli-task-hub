@@ -42,6 +42,12 @@ import Observation
         }
     }
 
+    func previewSound(_ sound: String) {
+        guard sound != "off", let delivery else { return }
+        do { try delivery.playReviewSound(sound); error = nil }
+        catch { self.error = error.localizedDescription }
+    }
+
     func receiveReviews(_ prs: [TrayPR], sound: String) {
         let fresh = reviewTracker.consume(prs)
         guard !fresh.isEmpty else { return }

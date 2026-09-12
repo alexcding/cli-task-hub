@@ -442,8 +442,25 @@ function stop() {
   jiraTimer = null;
 }
 
+// Apply edited intervals only to loops already owned by this process. A fixture or
+// read-only server must not start polling merely because a config field was saved.
+function reconfigure() {
+  const seconds = (key, fallback, minimum) => {
+    const value = Number.parseInt(db.get(key), 10);
+    return Math.min(86400, Math.max(minimum, Number.isFinite(value) ? value : fallback));
+  };
+  if (timer) {
+    clearInterval(timer);
+    timer = setInterval(() => poll().catch(err => console.error('[sync]', err.message)), seconds('poll_interval', 60, 15) * 1000);
+  }
+  if (jiraTimer) {
+    clearInterval(jiraTimer);
+    jiraTimer = setInterval(() => pollJira().catch(err => console.error('[jira-sync]', err.message)), seconds('jira_poll_interval', 120, 30) * 1000);
+  }
+}
+
 module.exports = {
-  start, startJira, stop, poll, pollJira,
+  start, startJira, stop, reconfigure, poll, pollJira,
   syncProject, syncProjectJira, syncProjectBoard, projectJql,
   activeSprintFor, boardSnapId,
   handleMerge, applyMergeAutomation,

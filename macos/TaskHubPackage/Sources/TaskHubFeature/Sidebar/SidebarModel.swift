@@ -48,7 +48,7 @@ struct SavedTabs: Decodable, Sendable {
 }
 
 enum SidebarDestination: Hashable, Codable {
-    case overview, terminal, activity, project(String), session(String), tab(String)
+    case overview, terminal, activity, settings, project(String), session(String), tab(String)
 }
 
 struct SidebarEntry: Equatable {
@@ -75,7 +75,8 @@ struct SidebarEntry: Equatable {
         var result: [Self] = [
             .init(id: "overview", title: "Overview", symbol: "square.grid.2x2", destination: .overview),
             .init(id: "terminal", title: "Terminal", symbol: "terminal", destination: .terminal),
-            .init(id: "activity", title: "Activity", symbol: "clock", destination: .activity)
+            .init(id: "activity", title: "Activity", symbol: "clock", destination: .activity),
+            .init(id: "settings", title: "Settings", symbol: "gearshape", destination: .settings)
         ]
         let pinned = ordered.filter(\.pinned)
         if !pinned.isEmpty {

@@ -91,6 +91,15 @@ web terminal is loaded. Drag-gesture acceptance remains pending.
 embedded PR opening. Clear Logs confirms the complete selected category, including
 entries hidden by filters. Failed reads and clears keep the last available entries.
 
+**Settings** (Command-comma or sidebar) has native General and Connections sections.
+General shares the tray's offline-safe theme/notification preferences, adds the full
+macOS sound list and explicit preview, and persists the default agent for new sessions.
+Connections edits polling intervals, Jira site, token, and ticket limit. Saves send
+only changed fields and preserve drafts on failure/reconnect. Interval edits reschedule
+only running backend loops; saving to a fixture does not start polling.
+CLI/hook controls, diagnostics, launch at login, fonts, git-client actions, and native
+memory-budget policy still need their remaining Settings/parity increments.
+
 ## Native tray and appearance (M2)
 
 Click the menu-bar icon or **Reviews & Usage** in the window toolbar to open the

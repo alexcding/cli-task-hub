@@ -3,6 +3,38 @@ import XCTest
 final class TaskHubUITests: XCTestCase {
 
     @MainActor
+    func testNativeSettingsSaveRevertAndMenuNavigation() throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard let base = environment["TASKHUB_UI_BACKEND_URL"],
+              let path = environment["TASKHUB_UI_DATA_DIR"], let socket = environment["TASKHUB_UI_PTY_SOCKET"] else {
+            throw XCTSkip("Run macos/scripts/test-browser-ui.sh to provide the isolated fixture.")
+        }
+        let app = XCUIApplication()
+        app.launchArguments = ["--backend-url", base, "--data-dir", path, "--pty-socket", socket]
+        app.launch()
+        XCTAssertTrue(app.outlines["workspace-sidebar"].waitForExistence(timeout: 10))
+        app.typeKey(",", modifierFlags: .command)
+        XCTAssertTrue(app.radioButtons["Connections"].waitForExistence(timeout: 5))
+        app.radioButtons["Connections"].click()
+        let interval = app.textFields["settings-poll-interval"]
+        XCTAssertTrue(interval.waitForExistence(timeout: 5))
+        interval.click(); app.typeKey("a", modifierFlags: .command); app.typeText("0")
+        XCTAssertTrue(app.staticTexts["PR polling must be between 15 and 86400 seconds."].exists)
+        XCTAssertFalse(app.buttons["Save Settings"].isEnabled)
+        interval.click(); app.typeKey("a", modifierFlags: .command); app.typeText("90")
+        app.buttons["Save Settings"].click()
+        XCTAssertTrue(app.staticTexts["Settings saved"].waitForExistence(timeout: 5))
+        interval.click(); app.typeKey("a", modifierFlags: .command); app.typeText("120")
+        app.typeKey("1", modifierFlags: .command)
+        app.typeKey(",", modifierFlags: .command)
+        XCTAssertEqual(interval.value as? String, "120")
+        app.buttons["Revert Settings"].click()
+        XCTAssertEqual(interval.value as? String, "90")
+        app.radioButtons["General"].click()
+        XCTAssertTrue(app.descendants(matching: .any)["settings-default-agent"].firstMatch.waitForExistence(timeout: 5), app.debugDescription)
+    }
+
+    @MainActor
     func testNativeJiraTicketsSearchTransitionAndOpen() throws {
         let environment = ProcessInfo.processInfo.environment
         guard let base = environment["TASKHUB_UI_BACKEND_URL"],
@@ -32,6 +64,9 @@ final class TaskHubUITests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any)["jira-ticket-REC-2"].firstMatch.exists)
         app.buttons["Clear Search"].click()
         XCTAssertTrue(ticket.waitForExistence(timeout: 5))
+        status.click(); app.menuItems["To Do"].click()
+        let restored = expectation(for: NSPredicate(format: "title == 'To Do'"), evaluatedWith: status)
+        wait(for: [restored], timeout: 5)
         ticket.click()
         XCTAssertTrue(app.webViews.staticTexts["Native ticket fixture"].waitForExistence(timeout: 10))
     }
