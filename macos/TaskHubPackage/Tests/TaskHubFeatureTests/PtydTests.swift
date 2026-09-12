@@ -522,3 +522,104 @@ private final class EventLog: @unchecked Sendable {
         try await host.stopExisting()
     }
 }
+
+@MainActor @Test(.timeLimit(.minutes(1))) func nativeZshIntegrationPreservesStartupFilesAndRestoresChangedWorkingDirectory() async throws {
+    _ = NSApplication.shared
+    var root = URL(fileURLWithPath: #filePath)
+    for _ in 0..<5 { root.deleteLastPathComponent() }
+    let directory = URL(fileURLWithPath: "/private/tmp/th-zsh-\(UUID().uuidString.prefix(12))")
+    let home = directory.appendingPathComponent("home")
+    let originalStartup = directory.appendingPathComponent("original config")
+    let startup = directory.appendingPathComponent("relocated config")
+    let workspace = directory.appendingPathComponent("workspace")
+    let changed = workspace.appendingPathComponent("next folder 日本語")
+    for path in [home, originalStartup, startup, changed] {
+        try FileManager.default.createDirectory(at: path, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+    }
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let files: [URL: String] = [
+        originalStartup.appendingPathComponent(".zshenv"): "print -r -- env >> \"$HOME/startup.log\"\nexport ZDOTDIR='\(startup.path)'\n",
+        startup.appendingPathComponent(".zprofile"): "print -r -- profile >> \"$HOME/startup.log\"\n",
+        startup.appendingPathComponent(".zshrc"): "print -r -- rc >> \"$HOME/startup.log\"\nPROMPT='USER_PROMPT> '\nprecmd() { print -r -- user-hook >> \"$HOME/hooks.log\"; }\n",
+        startup.appendingPathComponent(".zlogin"): "print -r -- login >> \"$HOME/startup.log\"\n",
+    ]
+    for (path, text) in files { try text.write(to: path, atomically: true, encoding: .utf8) }
+    let config = PtydConfiguration(executable: root.appendingPathComponent("crates/taskhub-ptyd/target/debug/taskhub-ptyd"),
+                                   directory: directory, socketPath: directory.appendingPathComponent("pty.sock").path)
+    // Isolate only this daemon's child environment; no user shell configuration
+    // or history is read or modified by the integration test.
+    let process = Process()
+    process.executableURL = config.executable
+    process.arguments = [directory.path]
+    var environment = ProcessInfo.processInfo.environment
+    environment["TASKHUB_PTYD_SOCK"] = config.socketPath
+    environment["HOME"] = home.path
+    environment["ZDOTDIR"] = originalStartup.path
+    environment["SHELL"] = "/bin/zsh"
+    environment["HISTFILE"] = "/dev/null"
+    process.environment = environment
+    process.standardInput = FileHandle.nullDevice
+    process.standardOutput = FileHandle.nullDevice
+    process.standardError = FileHandle.nullDevice
+    try process.run()
+    for _ in 0..<100 {
+        if FileManager.default.fileExists(atPath: config.socketPath) { break }
+        try await Task.sleep(for: .milliseconds(20))
+    }
+    let log = EventLog()
+    let control = PtydClient(onEvent: log.append)
+    let hello = try await control.connect(path: config.socketPath)
+    defer { control.close(); _ = kill(hello.pid, SIGTERM) }
+    try hello.validateShellIntegration()
+    func mount(_ session: TerminalSession) -> NSWindow {
+        let view = WorkspaceTerminalView(frame: NSRect(x: 0, y: 0, width: 800, height: 420))
+        view.delegate = session.surface; view.controller = session.surface.controller
+        view.configuration = session.surface.configuration
+        let window = NSWindow(contentRect: view.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false; window.contentView = view
+        view.layoutSubtreeIfNeeded(); view.setSurfaceVisible(false)
+        return window
+    }
+    let first = TerminalSession(pairKey: "native-zsh", cwd: workspace.path, configuration: config)
+    let firstWindow = mount(first)
+    defer { first.disconnect(); firstWindow.contentView = nil; firstWindow.close() }
+    await first.start()
+    try await first.waitUntilReady()
+    for _ in 0..<200 {
+        if first.surface.workingDirectory == workspace.path { break }
+        try await Task.sleep(for: .milliseconds(10))
+    }
+    try #require(first.surface.workingDirectory == workspace.path)
+    #expect(await first.viewportText()?.contains("USER_PROMPT>") == true)
+    #expect(try String(contentsOf: home.appendingPathComponent("startup.log"), encoding: .utf8) == "env\nprofile\nrc\nlogin\n")
+    let terms: [PtyInfo] = try await control.request(.init(op: "list"))
+    let term = try #require(terms.first)
+    let resources = try #require(term.terminalProfile?.resourcesDirectory)
+    #expect(resources.hasPrefix(directory.path))
+    #expect(FileManager.default.isReadableFile(atPath: resources + "/shell-integration/zsh/.zshenv"))
+    try await first.submit("cd -- '\(changed.path)'; false")
+    for _ in 0..<200 {
+        if first.surface.workingDirectory == changed.path { break }
+        try await Task.sleep(for: .milliseconds(10))
+    }
+    #expect(first.surface.workingDirectory == changed.path)
+    #expect((firstWindow.contentView as? WorkspaceTerminalView)?.directory == changed.path)
+    #expect(log.text.contains("\u{1B}]133;A") && log.text.contains("\u{1B}]133;B") && log.text.contains("\u{1B}]133;C"))
+    #expect(log.text.contains("\u{1B}]133;D;1"))
+    await first.stopConnecting()
+    firstWindow.contentView = nil
+    let second = TerminalSession(pairKey: "native-zsh", cwd: workspace.path, configuration: config)
+    let secondWindow = mount(second)
+    defer { second.disconnect(); secondWindow.contentView = nil; secondWindow.close() }
+    await second.start()
+    try await second.waitUntilReady()
+    #expect(second.shellPID == term.pid && second.termID == term.id)
+    #expect(second.surface.workingDirectory == changed.path)
+    #expect((secondWindow.contentView as? WorkspaceTerminalView)?.directory == changed.path)
+    #expect(try String(contentsOf: home.appendingPathComponent("startup.log"), encoding: .utf8) == "env\nprofile\nrc\nlogin\n")
+    #expect(try String(contentsOf: home.appendingPathComponent("hooks.log"), encoding: .utf8).components(separatedBy: "user-hook").count >= 3)
+    for (path, text) in files { #expect(try String(contentsOf: path, encoding: .utf8) == text) }
+    await second.stopConnecting()
+    try await PtydHost(configuration: config).stopExisting()
+    #expect(!FileManager.default.fileExists(atPath: resources))
+}

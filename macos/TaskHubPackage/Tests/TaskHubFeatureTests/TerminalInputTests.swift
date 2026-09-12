@@ -108,13 +108,16 @@ private final class InputErrors: @unchecked Sendable {
     let decoder = JSONDecoder()
     let old = try decoder.decode(PtyHello.self, from: Data(#"{"protocol":2,"pid":123}"#.utf8))
     #expect(throws: PtyError.self) { try old.validateIdentityResponseOwner() }
-    let current = try decoder.decode(PtyHello.self, from: Data(#"{"protocol":2,"pid":123,"identityResponseOwner":"daemon-identity-v1"}"#.utf8))
+    #expect(throws: PtyError.self) { try old.validateShellIntegration() }
+    let current = try decoder.decode(PtyHello.self, from: Data(#"{"protocol":2,"pid":123,"identityResponseOwner":"daemon-identity-v1","shellIntegration":true}"#.utf8))
     try current.validateIdentityResponseOwner()
+    try current.validateShellIntegration()
     var info = PtyInfo(id: "original", cwd: "/tmp", title: "Shell", paired: false, pairKey: "session", hasContext: true, pid: 123, created: 1)
     info.stateResponseOwner = PtyHello.identityResponseOwnerVersion
     #expect(throws: PtyError.self) { try info.validateStateResponseOwner() }
     for invalid in [PtyTerminalProfile(version: "bad\u{1B}version", terminfoDirectory: "/tmp"),
-                    PtyTerminalProfile(version: "1.0", terminfoDirectory: "relative")] {
+                    PtyTerminalProfile(version: "1.0", terminfoDirectory: "relative"),
+                    PtyTerminalProfile(version: "1.0", terminfoDirectory: "/tmp", resourcesDirectory: "relative")] {
         info.terminalProfile = invalid
         #expect(throws: PtyError.self) { try info.validateStateResponseOwner() }
     }

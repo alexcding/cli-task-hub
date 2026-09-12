@@ -258,8 +258,13 @@ copy of bundled terminfo until the shell exits, independent of app relocation or
 rebuild. Existing state-owned shells retain their original profile. Native surfaces
 suppress the matching set after import/reconnect; keyboard, paste and UI effects
 keep their native paths. Unsupported helpers/owners are rejected without replacement.
-UI/config-dependent offline queries and snapshot-v1 image/glyph omissions still
-require work; see `crates/taskhub-ptyd/SNAPSHOTS.md`.
+New sessions also retain the pinned package's shell integration scripts. Zsh's
+bootstrap preserves user startup files and prompt hooks while publishing working
+directory and command boundaries, so a cd updates native file-link destinations.
+Non-Apple Bash uses Ghostty's ENV startup mechanism; Apple Bash and other unsupported
+shells retain normal startup behavior. These scripts are never written into user
+dotfiles. UI/config-dependent offline queries and snapshot-v1 image/glyph omissions
+still require work; see `crates/taskhub-ptyd/SNAPSHOTS.md`.
 Rebuilding the helper does not upgrade an already-running daemon; use an isolated
 socket to test the new helper without ending an existing shell. Broader
 lifecycle coverage, links, workflow hooks, IME/mouse/selection checks, and the

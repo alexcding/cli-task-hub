@@ -860,6 +860,30 @@ does not).
   acceptance, remaining M2–M6 gates and the final coordinator/VM/DI refactor remain
   open. The Sprint board remains web-based.
 
+### M1 native shell integration — 2026-09-12
+
+- New shells retain a bounded private copy of the pinned package's MIT Zsh/Bash
+  integration scripts and license. The creation profile records their location;
+  helper capability negotiation prevents silently ignoring resources on older
+  helpers. Existing shells keep their original startup behavior.
+- Zsh uses the package's ZDOTDIR bootstrap. User startup files, ZDOTDIR relocation,
+  login semantics, prompt and hooks are preserved. OSC 7 updates the native working
+  directory and file-link base after cd; OSC 133 records command/prompt boundaries
+  and exit status. Resource lifetime follows the shell, independent of app rebuilds.
+- Non-Apple Bash uses Ghostty's ENV/POSIX startup mechanism with preserved ENV and
+  history settings. Apple Bash, relative executables and other unsupported shells
+  retain normal startup; no dotfiles are edited or runtime commands injected.
+  Homebrew Bash execution remains an acceptance item because it is not installed
+  on this machine. The Zsh end-to-end fixture uses isolated startup/history paths.
+- The real native test verifies startup order, user prompt/hooks, unchanged files,
+  a cd into a Unicode/spaced path, native directory propagation, failure exit
+  markers, same-PID snapshot reattachment and private-resource cleanup. Resource
+  copy bounds and startup environment preservation have Rust regressions. All
+  81 app-package tests, 16 feature-enabled daemon tests and 12 legacy daemon tests
+  pass, and the macOS app builds.
+- Remaining terminal fidelity/performance checks, M2–M6 acceptance and the final
+  coordinator/VM/DI refactor continue. The Sprint board remains web-based.
+
 ## Why now, and why native
 
 The Tauri shell works, but roughly half of `src-tauri/` exists to work around what a DOM

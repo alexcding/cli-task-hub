@@ -132,6 +132,7 @@ final class TerminalSession: Identifiable {
             created = false
         } else {
             try negotiated.validateIdentityResponseOwner()
+            try negotiated.validateShellIntegration()
             let profile = try PtyTerminalProfile.current()
             info = try await client.request(.init(op: "create", opts: .init(
                 cwd: cwd, paired: paired, pairKey: pairKey,

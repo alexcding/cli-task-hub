@@ -128,3 +128,33 @@ source bundle after creation, checks exact identity replies with no native view
 and with two live native surfaces, and verifies same-PID snapshot reattachment and
 copy removal after reaping. Runtime/native regressions cover ANSI mode queries,
 echoed DA replies, split XTGETTCAP, terminal reset and invalid clipboard policy.
+
+## Shell integration resources
+
+`hello.shellIntegration:true` advertises support for the optional
+`terminalProfile.resourcesDirectory`. New native sessions require that capability
+before creating a shell, avoiding silent field loss with older helpers. Existing
+profiles without resources remain attachable with their original behavior.
+
+The daemon copies the pinned package's Zsh/Bash scripts and license from a fixed
+five-file allowlist, including Zsh's hidden `.zshenv`, into the shell's private
+resource directory. Reads are capped at 1 MiB total; missing/empty/oversized files
+fail creation and the profile guard removes partial copies. Returned profiles
+record the private resource path, which lives until shell reaping.
+
+Absolute Zsh executables use the package's ZDOTDIR bootstrap, preserving the
+original ZDOTDIR and allowing the user's `.zshenv` to relocate it. Normal login,
+rc and prompt hooks run, then the bundled integration reports OSC 7 working
+directory and OSC 133 prompt/command boundaries. Title/cursor features are enabled.
+Supported non-Apple Bash uses the pinned `--posix`/ENV mechanism and restores the
+user's ENV and history settings. Apple's `/bin/bash` (including symlinks), relative
+executables and other shells retain their existing startup arguments; scripts
+remain available for manual integration. No startup file is edited and no command
+is injected into a running shell to enable integration.
+
+A real `/bin/zsh` test isolates its home and startup files, relocates ZDOTDIR,
+checks startup order and user prompt/hooks, changes into a Unicode/spaced path,
+verifies native working-directory/file-link state and command exit markers, then
+reattaches a fresh native surface to the same PID. Resource bounds/lifetime and
+Bash environment preservation have automated coverage. Executing Homebrew Bash
+still needs acceptance on a machine with that shell installed.

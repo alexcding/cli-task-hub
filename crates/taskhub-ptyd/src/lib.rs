@@ -49,6 +49,7 @@ use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 mod utf8;
+mod shell_integration;
 #[cfg(feature = "terminal-snapshots")]
 mod snapshot;
 
@@ -296,6 +297,8 @@ pub struct CreateOpts {
 pub struct TerminalProfile {
   pub version: String,
   pub terminfo_directory: String,
+  #[serde(default, skip_serializing_if = "Option::is_none")]
+  pub resources_directory: Option<String>,
 }
 
 struct PreparedProfile { profile: TerminalProfile, root: PathBuf }
@@ -323,9 +326,13 @@ impl TerminalProfile {
     std::fs::DirBuilder::new().recursive(true).mode(0o700).create(&root).map_err(|e| e.to_string())?;
     let prepared = PreparedProfile { profile: Self {
       version: self.version.clone(), terminfo_directory: root.to_string_lossy().into_owned(),
+      resources_directory: self.resources_directory.as_ref().map(|_| root.join("resources").to_string_lossy().into_owned()),
     }, root };
     std::fs::create_dir(prepared.root.join("78")).map_err(|e| e.to_string())?;
     std::fs::write(prepared.root.join("78/xterm-ghostty"), bytes).map_err(|e| e.to_string())?;
+    if let Some(source) = &self.resources_directory {
+      shell_integration::copy_resources(Path::new(source), &prepared.root.join("resources"))?;
+    }
     Ok(prepared)
   }
 }
@@ -616,6 +623,9 @@ impl Daemon {
     // Login + interactive shell so it sources dotfiles and gets the full environment
     // (PATH, nvm, Homebrew, aliases) — like a Terminal.app tab.
     let mut cmd = CommandBuilder::new(&shell_path);
+    if let Some(resources) = prepared_profile.as_ref().and_then(|value| value.profile.resources_directory.as_deref()) {
+      shell_integration::configure(&mut cmd, Path::new(&shell_path), Path::new(resources));
+    }
     cmd.args(["-l", "-i"]);
     cmd.cwd(&dir);
     if let Some(prepared) = &prepared_profile {
@@ -991,6 +1001,7 @@ impl Daemon {
           hello["snapshotRevision"] = json!(taskhub_vt::GHOSTTY_REVISION);
           hello["stateResponseOwner"] = json!(taskhub_vt::STATE_RESPONSE_OWNER);
           hello["identityResponseOwner"] = json!(taskhub_vt::IDENTITY_RESPONSE_OWNER);
+          hello["shellIntegration"] = json!(true);
           if let Some(revision) = req.get("snapshotRevision") {
             if !client.byte_transport || revision.as_str() != Some(taskhub_vt::GHOSTTY_REVISION) {
               return Err("snapshots require base64 output and the exact Ghostty revision".into());

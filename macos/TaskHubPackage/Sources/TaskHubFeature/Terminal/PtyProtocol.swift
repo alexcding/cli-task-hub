@@ -52,6 +52,13 @@ struct PtyHello: Decodable, Sendable {
     var snapshotRevision: String? = nil
     var stateResponseOwner: String? = nil
     var identityResponseOwner: String? = nil
+    var shellIntegration: Bool? = nil
+
+    func validateShellIntegration() throws {
+        guard shellIntegration == true else {
+            throw PtyError.connection("This PTY helper cannot preserve native shell integration. Save your work, quit TaskHub explicitly, rebuild the helper, and reopen. Existing shells have been preserved.")
+        }
+    }
 
     func validateIdentityResponseOwner() throws {
         guard identityResponseOwner == Self.identityResponseOwnerVersion else {
