@@ -49,6 +49,28 @@ test('backend health identifies TaskHub without a CLI read', async () => {
   assert.equal(body.instanceId, process.env.TASKHUB_INSTANCE_ID || null);
 });
 
+test('file API requires revisions and rejects stale or foreign-origin saves', async t => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const directory = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'taskhub-file-api-'));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const file = path.join(directory, 'file name.swift');
+  fs.writeFileSync(file, 'original');
+  const opened = await get('/api/file?path=' + encodeURIComponent(file));
+  assert.equal(opened.status, 200);
+  assert.match(opened.body.revision, /^[a-f0-9]{64}$/);
+  assert.equal((await send('PUT', '/api/file', { path: file, content: 'unchecked' })).status, 428);
+  const saved = await send('PUT', '/api/file', { path: file, content: 'saved', revision: opened.body.revision });
+  assert.equal(saved.status, 200);
+  assert.notEqual(saved.body.revision, opened.body.revision);
+  assert.equal((await send('PUT', '/api/file', { path: file, content: 'stale', revision: opened.body.revision })).status, 409);
+  const foreign = await fetch(base + '/api/file', { method: 'PUT', headers: {
+    'Content-Type': 'application/json', Origin: 'https://remote.example',
+  }, body: JSON.stringify({ path: file, content: 'foreign', revision: saved.body.revision }) });
+  assert.equal(foreign.status, 403);
+  assert.equal(fs.readFileSync(file, 'utf8'), 'saved');
+});
+
 test('config round-trips through /api/config', async () => {
   const set = await send('POST', '/api/config', { poll_interval: '90' });
   assert.equal(set.status, 200);

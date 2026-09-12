@@ -204,6 +204,13 @@ This first diff increment is read-only. Monaco editing, save/conflict recovery,
 dirty-close protection, file-tab migration, terminal file links, discard/commit,
 and document shortcuts remain part of M5.
 
+The shared editor save contract now uses `/api/file` revisions. Reads return an
+opaque revision; saves must submit it and retain the returned revision for the next
+save. A stale revision fails without replacing the observed newer file. Edits stage
+beside the destination before rename, preserving macOS file metadata and symlinks.
+Hard-linked files are read-only. The existing web editor now retains edits made while
+a save is in flight; this contract will also back the native document lifecycle.
+
 ## Native terminal spike (M1, in progress)
 
 Build the standalone helper with `cargo build --manifest-path crates/taskhub-ptyd/Cargo.toml`.

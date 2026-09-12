@@ -401,6 +401,28 @@ does not).
   terminal file links, discard/commit actions, and document find/save shortcuts.
   Full M1 restoration and the remaining M3/M4/M6 gates continue to apply.
 
+### M5 save contract — 2026-09-12
+
+- `/api/file` now returns a revision tied to canonical file identity, metadata and
+  content. PUT requires that revision, serializes writes to the same canonical path,
+  stages edits beside the file, rechecks the revision, then atomically replaces it.
+  Missing revisions return 428; observed disk changes return 409. Uncoordinated
+  external writers can still race the final filesystem check/rename; this is
+  optimistic conflict detection, not an OS-level compare-and-swap.
+- Staging preserves macOS permissions, ACLs and extended attributes with `cp -p`;
+  symlinks continue to target the same canonical file. Hard-linked files are read-only
+  so a save cannot silently split their aliases. File reads/writes remain bounded to
+  5 MB and reject binary/invalid text. Failed staging leaves the original intact.
+- The shared Monaco save helper records the submitted model version before awaiting
+  I/O. Edits made during a save stay dirty, undo back to the submitted version becomes
+  clean, and failures preserve both edits and the old revision. Duplicate saves are
+  coalesced. Export preserves BOM and the model's line endings; the API was checked
+  against the vendored Monaco code and its [official reference](https://microsoft.github.io/monaco-editor/typedoc/interfaces/editor_editor_api.editor.ICodeEditor.html#getValue).
+- Verification: 38 API/filesystem/editor-save tests pass, covering revision conflicts,
+  concurrent saves, permissions/xattrs, symlink retargeting, hard links, write/rename
+  failures, bounded UTF-8 reads, submitted-version tracking and remote-origin rejection.
+  Native document tabs and their typed edit/save/close bridge are the next increment.
+
 ## Why now, and why native
 
 The Tauri shell works, but roughly half of `src-tauri/` exists to work around what a DOM

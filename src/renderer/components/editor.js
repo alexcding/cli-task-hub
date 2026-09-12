@@ -12,6 +12,7 @@ import { state } from '../stores/store.js';
 import { esc, basename, loadScript, codeFontStack } from '../lib/util.js';
 import { XCODE_LIGHT, XCODE_DARK } from '../lib/monaco-xcode-theme.mjs';
 import { toast, toastErr } from './toast.js';
+import { saveEditorBuffer } from '../lib/editor-save.mjs';
 
 // The shared "Code font" setting (Settings → Appearance — the same family+size that drives the
 // git diff view) also styles the editor. state.fonts.diff is that setting (kind kept as 'diff').
@@ -119,6 +120,7 @@ export async function ensureEditor(tab) {
   if (!alive()) { tab._edLoading = false; return; }
 
   tab.readOnly = !!data.readOnly;
+  tab._fileRevision = data.revision;
   tab.dirty = false;
 
   // No file URI on the model — a URI is global, so two tabs on the same path would share (and
@@ -180,14 +182,9 @@ export function gotoLine(tab, line) {
 
 // Save the file tab's content to disk, then clear dirty. ⌘S and the tab's save button route here.
 export async function saveEditor(tab) {
-  if (!tab || tab.kind !== 'file' || !tab.edView || tab.readOnly || !tab.dirty) return;
-  const content = tab.edView.getValue();
+  if (!tab || tab.kind !== 'file' || tab._savePromise) return;
   try {
-    await apiJson(ROUTES.FILE, 'PUT', { path: tab.path, content });
-    // New saved baseline = the version we just wrote, so later edits (and undo back to it)
-    // compute dirty correctly.
-    tab._savedVersion = tab._edModel?.getAlternativeVersionId();
-    tab.dirty = false;
+    if (!(await saveEditorBuffer(tab, payload => apiJson(ROUTES.FILE, 'PUT', payload)))) return;
     toast('Saved ' + basename(tab.path));
     window.__refreshTabs?.();
   } catch (e) {
