@@ -8,6 +8,7 @@ pub const SNAPSHOT_LIMIT: usize = 32 * 1024 * 1024;
 pub const RESPONSE_LIMIT: usize = 256 * 1024;
 /// Fixed ownership contract; extending this set requires a new version.
 pub const STATE_RESPONSE_OWNER: &str = "daemon-state-v1";
+pub const IDENTITY_RESPONSE_OWNER: &str = "daemon-identity-v1";
 type Writer = unsafe extern "C" fn(*mut c_void, *const u8, usize) -> bool;
 
 extern "C" {
@@ -20,6 +21,8 @@ extern "C" {
         len: usize,
         write: Writer,
         userdata: *mut c_void,
+        version: *const u8,
+        version_len: usize,
     ) -> i32;
     fn taskhub_vt_resize(terminal: *mut c_void, cols: u16, rows: u16) -> i32;
     fn taskhub_vt_snapshot(terminal: *mut c_void, write: Writer, userdata: *mut c_void) -> i32;
@@ -59,16 +62,37 @@ impl Terminal {
     /// This does not write to a PTY or grant access to host clipboard/UI effects.
     /// An error can occur after input was consumed; retrying it is not safe.
     pub fn feed_with_responses(&mut self, bytes: &[u8]) -> Result<Vec<u8>, Error> {
-        self.collect_responses(bytes, write_response)
+        self.collect_responses(bytes, write_response, None)
     }
     /// Collect only daemon-state-v1 replies: DSR status/cursor, DECRQM,
     /// DECRQSS, and Kitty keyboard flags. UI/config-dependent replies remain
     /// renderer-owned. Filtering complete runtime effect packets avoids a
     /// second VT request parser and preserves split-sequence handling.
     pub fn feed_state_responses(&mut self, bytes: &[u8]) -> Result<Vec<u8>, Error> {
-        self.collect_responses(bytes, write_state_response)
+        self.collect_responses(bytes, write_state_response, None)
     }
-    fn collect_responses(&mut self, bytes: &[u8], writer: Writer) -> Result<Vec<u8>, Error> {
+    /// State replies plus native DA1/DA2, XTVERSION and XTGETTCAP. The profile
+    /// must match the shell's TERM/terminfo and default native clipboard policy.
+    /// `version` is the full printable product/version string fixed at creation.
+    pub fn feed_identity_responses(
+        &mut self,
+        bytes: &[u8],
+        version: &str,
+    ) -> Result<Vec<u8>, Error> {
+        if version.is_empty()
+            || version.len() > 256
+            || !version.bytes().all(|b| (0x20..=0x7e).contains(&b))
+        {
+            return Err(Error("Invalid terminal identity version"));
+        }
+        self.collect_responses(bytes, write_identity_response, Some(version))
+    }
+    fn collect_responses(
+        &mut self,
+        bytes: &[u8],
+        writer: Writer,
+        version: Option<&str>,
+    ) -> Result<Vec<u8>, Error> {
         let mut responses = Vec::new();
         check(
             unsafe {
@@ -78,6 +102,8 @@ impl Terminal {
                     bytes.len(),
                     writer,
                     (&mut responses as *mut Vec<u8>).cast(),
+                    version.map_or(std::ptr::null(), str::as_ptr),
+                    version.map_or(0, str::len),
                 )
             },
             "Terminal protocol responses exceeded their buffer or allocation limit",
@@ -201,6 +227,26 @@ unsafe extern "C" fn write_state_response(
     }
     append_bounded(userdata, data, len, RESPONSE_LIMIT)
 }
+unsafe extern "C" fn write_identity_response(
+    userdata: *mut c_void,
+    data: *const u8,
+    len: usize,
+) -> bool {
+    if len == 0 {
+        return true;
+    }
+    let bytes = std::slice::from_raw_parts(data, len);
+    let identity = bytes == b"\x1b[?62;22;52c"
+        || bytes == b"\x1b[>1;10;0c"
+        || ((bytes.starts_with(b"\x1bP>|") || bytes.starts_with(b"\x1bP1+r"))
+            && bytes.ends_with(b"\x1b\\"));
+    // DA3 remains silent, matching the native implementation. Clipboard,
+    // geometry, colors, visibility and graphics are still UI-owned.
+    if !identity && !is_state_response(bytes) {
+        return true;
+    }
+    append_bounded(userdata, data, len, RESPONSE_LIMIT)
+}
 unsafe fn append_bounded(userdata: *mut c_void, data: *const u8, len: usize, limit: usize) -> bool {
     if len == 0 {
         return true;
@@ -217,6 +263,85 @@ unsafe fn append_bounded(userdata: *mut c_void, data: *const u8, len: usize, lim
 mod tests {
     use super::*;
     #[test]
+    fn echoed_device_attributes_are_not_queries_and_ansi_modes_report_state() {
+        let mut terminal = Terminal::new(80, 24).unwrap();
+        for query in [b"\x1b[>c".as_slice(), b"\x1b[>0c"] {
+            let reply = terminal
+                .feed_identity_responses(query, "ghostty test")
+                .unwrap();
+            assert_eq!(reply, b"\x1b[>1;10;0c");
+            assert!(terminal
+                .feed_identity_responses(&reply, "ghostty test")
+                .unwrap()
+                .is_empty());
+        }
+        for invalid in [
+            b"\x1b[1c".as_slice(),
+            b"\x1b[>1c",
+            b"\x1b[=1c",
+            b"\x1b[>0;0c",
+        ] {
+            assert!(terminal
+                .feed_identity_responses(invalid, "ghostty test")
+                .unwrap()
+                .is_empty());
+        }
+        assert_eq!(
+            terminal
+                .feed_state_responses(b"\x1b[4$p\x1b[4h\x1b[4$p")
+                .unwrap(),
+            b"\x1b[4;2$y\x1b[4;1$y"
+        );
+    }
+
+    #[test]
+    fn identity_queries_use_the_creation_profile_across_restore_and_reset() {
+        let mut terminal = Terminal::new(80, 24).unwrap();
+        let expected = b"\x1b[?62;22;52c\x1b[>1;10;0c\x1bP>|ghostty 1.2.3-test\x1b\\\x1bP1+r544E=787465726D2D67686F73747479\x1b\\";
+        let query = b"\x1b[c\x1b[>c\x1b[=c\x1b[>q\x1bP+q544e\x1b\\";
+        assert_eq!(
+            terminal
+                .feed_identity_responses(query, "ghostty 1.2.3-test")
+                .unwrap(),
+            expected
+        );
+        terminal.feed(b"\x1bP+q54");
+        let mut restored = Terminal::restore(&terminal.snapshot().unwrap()).unwrap();
+        assert_eq!(
+            restored
+                .feed_identity_responses(b"4e\x1b\\", "ghostty 1.2.3-test")
+                .unwrap(),
+            b"\x1bP1+r544E=787465726D2D67686F73747479\x1b\\"
+        );
+        restored.feed(b"\x1bc");
+        assert_eq!(
+            restored
+                .feed_identity_responses(query, "ghostty 1.2.3-test")
+                .unwrap(),
+            expected
+        );
+        assert_eq!(
+            restored
+                .feed_identity_responses(b"\x1b[6n", "ghostty 1.2.3-test")
+                .unwrap(),
+            b"\x1b[1;1R"
+        );
+        assert!(restored
+            .feed_identity_responses(b"\x1b[?5522$p\x1b]52;c;?\x07\x1b[21t", "ghostty 1.2.3-test")
+            .unwrap()
+            .is_empty());
+        assert!(restored
+            .feed_identity_responses(b"NOT_PARSED", "bad\x1bversion")
+            .is_err());
+        assert_eq!(restored.cursor().unwrap(), (0, 0));
+        // Temporary identity callbacks must not leak into another feed mode.
+        assert_eq!(
+            restored.feed_with_responses(b"\x1b[>q").unwrap(),
+            b"\x1bP>|libghostty\x1b\\"
+        );
+    }
+
+    #[test]
     fn state_owner_answers_only_its_fixed_protocol_classes() {
         let mut terminal = Terminal::new(80, 24).unwrap();
         let response = terminal
@@ -226,7 +351,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             response,
-            b"\x1b[1;4R\x1b[0n\x1b[?7;1$y\x1b[?9999;0$y\x1b[?0u\x1bP1$r0m\x1b\\"
+            b"\x1b[1;4R\x1b[0n\x1b[?7;1$y\x1b[4;2$y\x1b[?9999;0$y\x1b[?0u\x1bP1$r0m\x1b\\"
         );
         assert!(terminal.feed_state_responses(b"\x1b[?5522$p\x1b[c\x1b[>c\x1b[=c\x1b[>q\x1b[?996n\x1b[?997n\x1b[21t\x1bP+q544e;524742\x1b\\\x1b]52;c;?\x07").unwrap().is_empty());
         for packet in [

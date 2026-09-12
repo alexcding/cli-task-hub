@@ -224,7 +224,7 @@ private final class EventLog: @unchecked Sendable {
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
     defer { try? FileManager.default.removeItem(at: directory) }
     let shell = directory.appendingPathComponent("fixture-shell")
-    try "#!/bin/sh\n/bin/stty raw -echo || exit 1\n/bin/cat '\(directory.path)/startup'\nexec /bin/cat\n".write(to: shell, atomically: true, encoding: .utf8)
+    try "#!/bin/sh\n/bin/stty raw -echo || exit 1\nprintf '%s\\n' \"$TERM\" \"$TERM_PROGRAM\" \"$TERM_PROGRAM_VERSION\" \"$TERMINFO\" > environment\n/usr/bin/tput colors > colors\n/bin/cat '\(directory.path)/startup'\nexec /bin/cat\n".write(to: shell, atomically: true, encoding: .utf8)
     try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: shell.path)
     var text = ""
     for line in 0..<8000 { text += "history \(line) styled \u{1B}[32m日本語🦀\u{1B}[0m line\r\n" }
@@ -244,14 +244,29 @@ private final class EventLog: @unchecked Sendable {
     let hello = try await host.connect(client: control)
     defer { control.close(); _ = kill(hello.pid, SIGTERM) }
     try hello.validateSnapshots()
+    try hello.validateIdentityResponseOwner()
+    let originalProfile = try PtyTerminalProfile.current()
+    let movedBundle = directory.appendingPathComponent("temporary-bundle-terminfo")
+    try FileManager.default.copyItem(at: URL(fileURLWithPath: originalProfile.terminfoDirectory), to: movedBundle)
+    let profile = PtyTerminalProfile(version: originalProfile.version, terminfoDirectory: movedBundle.path)
     let term: PtyInfo = try await control.request(.init(op: "create", opts: .init(
-        cwd: directory.path, shell: shell.path, pairKey: "app-snapshot", stateResponseOwner: PtyHello.stateResponseOwnerVersion)))
+        cwd: directory.path, shell: shell.path, pairKey: "app-snapshot",
+        stateResponseOwner: PtyHello.identityResponseOwnerVersion, terminalProfile: profile)))
+    let durableProfile = try #require(term.terminalProfile)
+    #expect(durableProfile.version == profile.version)
+    #expect(durableProfile.terminfoDirectory != profile.terminfoDirectory)
+    #expect(try Data(contentsOf: URL(fileURLWithPath: durableProfile.terminfoDirectory).appendingPathComponent("78/xterm-ghostty"))
+        == Data(contentsOf: movedBundle.appendingPathComponent("78/xterm-ghostty")))
+    try FileManager.default.removeItem(at: movedBundle)
     defer { _ = kill(Int32(term.pid), SIGTERM) }
     for _ in 0..<200 {
         if log.bytes.count >= startup.count { break }
         try await Task.sleep(for: .milliseconds(10))
     }
     #expect(log.bytes == startup)
+    #expect(try String(contentsOf: directory.appendingPathComponent("environment"), encoding: .utf8)
+        == "xterm-ghostty\nghostty\n\(profile.version)\n\(durableProfile.terminfoDirectory)\n")
+    #expect(try String(contentsOf: directory.appendingPathComponent("colors"), encoding: .utf8) == "256\n")
     let tail: PtyAttachment = try await control.request(.init(op: "attach", term: term.id))
     #expect(tail.truncated == true)
 
@@ -287,6 +302,16 @@ private final class EventLog: @unchecked Sendable {
     #expect(await first.viewportText()?.contains("SPLIT_🦀") == true)
     await first.stopConnecting()
     firstWindow.contentView = nil
+
+    let identityQuery = "\u{1B}[c\u{1B}[>c\u{1B}[=c\u{1B}[>q\u{1B}P+q544e\u{1B}\\"
+    let identityReply = "\u{1B}[?62;22;52c\u{1B}[>1;10;0c\u{1B}P>|ghostty \(profile.version)\u{1B}\\\u{1B}P1+r544E=787465726D2D67686F73747479\u{1B}\\"
+    let offlineStart = log.bytes.count
+    let _: Bool? = try await control.request(.init(op: "write", term: term.id, data: identityQuery))
+    for _ in 0..<100 {
+        if log.bytes.count >= offlineStart + identityQuery.utf8.count + identityReply.utf8.count { break }
+        try await Task.sleep(for: .milliseconds(10))
+    }
+    #expect(String(decoding: log.bytes.dropFirst(offlineStart), as: UTF8.self) == identityQuery + identityReply)
 
     let second = TerminalSession(pairKey: "app-snapshot", cwd: directory.path, configuration: config)
     let secondWindow = mount(second, width: 960)
@@ -324,6 +349,14 @@ private final class EventLog: @unchecked Sendable {
     await observer.start()
     try await observer.waitUntilReady()
     #expect(observer.shellPID == term.pid)
+    let identityStart = log.bytes.count
+    let _: Bool? = try await control.request(.init(op: "write", term: term.id, data: identityQuery))
+    for _ in 0..<100 {
+        if log.bytes.count >= identityStart + identityQuery.utf8.count + identityReply.utf8.count { break }
+        try await Task.sleep(for: .milliseconds(10))
+    }
+    try await Task.sleep(for: .milliseconds(200))
+    #expect(String(decoding: log.bytes.dropFirst(identityStart), as: UTF8.self) == identityQuery + identityReply)
     let beforeResize = log.bytes.count
     let _: Bool? = try await control.request(.init(op: "resize", term: term.id, cols: 37, rows: 19))
     let _: Bool? = try await control.request(.init(op: "write", term: term.id,
@@ -349,6 +382,7 @@ private final class EventLog: @unchecked Sendable {
     #expect(restoredView.directory == nil)
     await second.stopConnecting()
     try await host.stopExisting()
+    #expect(!FileManager.default.fileExists(atPath: durableProfile.terminfoDirectory))
 }
 
 

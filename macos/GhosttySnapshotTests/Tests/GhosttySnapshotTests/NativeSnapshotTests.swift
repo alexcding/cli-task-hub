@@ -28,7 +28,7 @@ private final class SurfaceHarness {
     let metadata = Metadata()
     private let view = NSView(frame: NSRect(x: 0, y: 0, width: 800, height: 500))
 
-    init() {
+    init(controller: TerminalController = TerminalController()) {
         let writes = self.writes
         session = InMemoryTerminalSession(write: { writes.append($0) }, resize: { _ in })
         view.wantsLayer = true
@@ -42,7 +42,7 @@ private final class SurfaceHarness {
                 nsview: Unmanaged.passUnretained(view).toOpaque()))
         }
         coordinator.configuration = TerminalSurfaceOptions(backend: .inMemory(session))
-        coordinator.controller = TerminalController()
+        coordinator.controller = controller
         precondition(coordinator.surface != nil)
     }
     func close() { coordinator.freeSurface() }
@@ -72,6 +72,58 @@ private final class SurfaceHarness {
 @Suite(.serialized)
 @MainActor
 struct NativeSnapshotTests {
+    @Test func nativeParserDoesNotAnswerEchoedDeviceRepliesAndReportsANSIModes() async throws {
+        let harness = SurfaceHarness()
+        defer { harness.close() }
+        harness.feed(Data("\u{1B}[>1;10;0c\u{1B}[1c\u{1B}[>1c\u{1B}[=1c\u{1B}[>0;0c\u{1B}[4$p\u{1B}[4h\u{1B}[4$p\u{1B}[>0c".utf8))
+        let expected = Data("\u{1B}[4;2$y\u{1B}[4;1$y\u{1B}[>1;10;0c".utf8)
+        for _ in 0..<100 {
+            if harness.writes.bytes.count >= expected.count { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(harness.writes.bytes == expected)
+    }
+
+    @Test func daemonIdentitySuppressesOnlyMatchingRepliesAndRequiresTheNativeClipboardPolicy() async throws {
+        let version = try #require(InMemoryTerminalSession.runtimeVersion)
+        let original = SurfaceHarness()
+        original.feed(Data("\u{1B}[>q".utf8))
+        let expected = Data("\u{1B}P>|ghostty \(version)\u{1B}\\".utf8)
+        for _ in 0..<100 {
+            if original.writes.bytes.count >= expected.count { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(original.writes.bytes == expected)
+        original.close()
+
+        let harness = SurfaceHarness()
+        defer { harness.close() }
+        #expect(!harness.session.enableHostIdentityResponses())
+        let snapshot = try harness.snapshot(Data("\u{1B}P+q54".utf8))
+        try #require(harness.session.restoreSnapshot(snapshot))
+        try #require(harness.session.enableHostIdentityResponses())
+        harness.feed(Data("4e\u{1B}\\\u{1B}[c\u{1B}[>c\u{1B}[=c\u{1B}[>q\u{1B}[6n\u{1B}[?5522$p".utf8))
+        let clipboard = Data("\u{1B}[?5522;2$y".utf8)
+        for _ in 0..<100 {
+            if harness.writes.bytes.count >= clipboard.count { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(harness.writes.bytes == clipboard)
+        #expect(!harness.session.enableHostIdentityResponses())
+        harness.feed(Data("\u{1B}c\u{1B}[c\u{1B}[>q\u{1B}P+q544e\u{1B}\\\u{1B}[?5522$p".utf8))
+        for _ in 0..<100 {
+            if harness.writes.bytes.count >= 2 * clipboard.count { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(harness.writes.bytes == clipboard + clipboard)
+
+        let denied = SurfaceHarness(controller: TerminalController { $0.withCustom("clipboard-write", "deny") })
+        defer { denied.close() }
+        try #require(denied.session.restoreSnapshot(try denied.snapshot(Data())))
+        #expect(!denied.session.enableHostIdentityResponses())
+        #expect(denied.session.enableHostStateResponses())
+    }
+
     @Test func daemonOwnedStateQueriesAreSuppressedWithoutSuppressingNativeInputOrCapabilities() async throws {
         let harness = SurfaceHarness()
         defer { harness.close() }

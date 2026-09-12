@@ -1,12 +1,13 @@
 --- a/include/ghostty.h
 +++ b/include/ghostty.h
-@@ -1194,6 +1194,11 @@
+@@ -1194,6 +1194,12 @@
  GHOSTTY_API bool ghostty_surface_process_exited(ghostty_surface_t);
  GHOSTTY_API void ghostty_surface_write_buffer(ghostty_surface_t, const uint8_t*, uintptr_t);
  GHOSTTY_API void ghostty_surface_write_buffer_replay(ghostty_surface_t, const uint8_t*, uintptr_t);
 +// TaskHub: fresh surface, UI thread, matching pinned revision; restores the captured grid.
 +GHOSTTY_API bool ghostty_surface_restore_snapshot(ghostty_surface_t, const uint8_t*, uintptr_t);
 +GHOSTTY_API bool ghostty_surface_enable_host_state_responses(ghostty_surface_t);
++bool ghostty_surface_enable_host_identity_responses(ghostty_surface_t);
 +bool ghostty_surface_publish_snapshot_metadata(ghostty_surface_t);
 +GHOSTTY_API bool ghostty_surface_apply_host_grid_size(ghostty_surface_t, uint16_t, uint16_t);
  GHOSTTY_API void ghostty_surface_process_exit(ghostty_surface_t, uint32_t, uint64_t);
@@ -25,7 +26,7 @@
      pub fn deinit(_: *@This()) void {}
  };
  
-@@ -1934,6 +1936,48 @@
+@@ -1934,6 +1936,54 @@
      ) void {
          if (len == 0) return;
          surface.core_surface.io.processOutputSuppressingResponses(ptr[0..len]);
@@ -50,7 +51,13 @@
 +
 +    /// Opt in to daemon-state-v1 on a fresh imported surface before output.
 +    export fn ghostty_surface_enable_host_state_responses(surface: *Surface) bool {
-+        surface.core_surface.io.enableHostStateResponses() catch return false;
++        surface.core_surface.io.enableHostStateResponses(false) catch return false;
++        return true;
++    }
++
++    /// Adds DA/version/terminfo ownership using the shell's creation profile.
++    export fn ghostty_surface_enable_host_identity_responses(surface: *Surface) bool {
++        surface.core_surface.io.enableHostStateResponses(true) catch return false;
 +        return true;
 +    }
 +
@@ -151,7 +158,7 @@
          .cell_width = self.size.cell.width,
          .cell_height = self.size.cell.height,
      };
-@@ -695,8 +705,161 @@
+@@ -695,8 +705,166 @@
      self.processOutputLocked(buf);
  }
  
@@ -257,12 +264,17 @@
 +
 +/// Select daemon-state-v1 only after importing a fresh host-owned snapshot.
 +/// Ownership cannot change after live output, eliminating attach/detach races.
-+pub fn enableHostStateResponses(self: *Termio) !void {
++pub fn enableHostStateResponses(self: *Termio, identity: bool) !void {
 +    self.renderer_state.mutex.lockUncancelable(global.io());
 +    defer self.renderer_state.mutex.unlock(global.io());
 +    if (!self.host_ordered_grid or !self.snapshot_metadata_pending or
 +        self.backend != .host_managed) return error.NoFreshImportedState;
++    // The identity profile advertises clipboard access using the native
++    // default policy. Reject a mismatched surface instead of lying to programs.
++    if (identity and self.terminal_stream.handler.clipboard_write != .allow)
++        return error.IncompatibleClipboardPolicy;
 +    self.terminal_stream.handler.host_state_responses = true;
++    self.terminal_stream.handler.host_identity_responses = identity;
 +}
 +
 +/// Run off the UI thread before live output. A full app mailbox can block
@@ -315,7 +327,7 @@
  
 --- a/src/termio/stream_handler.zig
 +++ b/src/termio/stream_handler.zig
-@@ -93,6 +93,10 @@
+@@ -93,6 +93,11 @@
      /// sends meanwhile (changeConfig's color_scheme_report) must not be
      /// discarded as part of the replay.
      suppress_terminal_responses: bool = false,
@@ -323,10 +335,19 @@
 +    /// Persistent daemon-state-v1 ownership. Only state query handlers consult
 +    /// this flag; clipboard, geometry, colors, and UI effects remain native.
 +    host_state_responses: bool = false,
++    host_identity_responses: bool = false,
  
      /// This is set to true when we've seen a title escape sequence. We use
      /// this to determine if we need to default the window title.
-@@ -506,6 +510,7 @@
+@@ -498,6 +503,7 @@
+             },
+ 
+             .xtgettcap => |*gettcap| {
++                if (self.host_identity_responses) return;
+                 const map = comptime terminfo.ghostty.xtgettcapMap();
+                 while (gettcap.next()) |key| {
+                     const response = map.get(key) orelse continue;
+@@ -506,6 +512,7 @@
              },
  
              .decrqss => |decrqss| {
@@ -334,7 +355,7 @@
                  var response: [terminal.dcs.Command.DECRQSS.max_response_bytes]u8 = undefined;
                  const encoded = try decrqss.encode(self.terminal, &response);
                  const msg = try termio.Message.writeReq(
-@@ -612,6 +617,8 @@
+@@ -612,6 +619,8 @@
      }
  
      fn sendModeReport(self: *StreamHandler, report: terminal.modes.Report) void {
@@ -343,7 +364,15 @@
          var data: termio.Message.WriteReq.Small.Array = undefined;
          var writer: std.Io.Writer = .fixed(&data);
          report.encode(&writer) catch |err| {
-@@ -841,6 +848,10 @@
+@@ -816,6 +825,7 @@
+         self: *StreamHandler,
+         req: terminal.DeviceAttributeReq,
+     ) !void {
++        if (self.host_identity_responses) return;
+         // For the below, we quack as a VT220. We don't quack as
+         // a 420 because we don't support DCS sequences.
+         switch (req) {
+@@ -841,6 +851,10 @@
          self: *StreamHandler,
          req: terminal.device_status.Request,
      ) !void {
@@ -354,7 +383,7 @@
          switch (req) {
              .operating_status => self.messageWriter(.{ .write_stable = "\x1B[0n" }),
  
-@@ -931,6 +942,7 @@
+@@ -931,6 +945,7 @@
      }
  
      pub fn queryKittyKeyboard(self: *StreamHandler) !void {
@@ -362,7 +391,15 @@
          log.debug("querying kitty keyboard mode", .{});
          var data: termio.Message.WriteReq.Small.Array = undefined;
          const resp = try std.fmt.bufPrint(&data, "\x1b[?{}u", .{
-@@ -1482,6 +1494,22 @@
+@@ -948,6 +963,7 @@
+     pub fn reportXtversion(
+         self: *StreamHandler,
+     ) !void {
++        if (self.host_identity_responses) return;
+         log.debug("reporting XTVERSION: ghostty {s}", .{build_config.version_string});
+         var buf: [288]u8 = undefined;
+         const resp = try std.fmt.bufPrint(
+@@ -1482,6 +1498,22 @@
          // We do this last so failures are still processed correctly
          // above.
          try self.terminal.semanticPrompt(cmd);

@@ -131,18 +131,25 @@ final class TerminalSession: Identifiable {
             info = existing
             created = false
         } else {
+            try negotiated.validateIdentityResponseOwner()
+            let profile = try PtyTerminalProfile.current()
             info = try await client.request(.init(op: "create", opts: .init(
-                cwd: cwd, paired: paired, pairKey: pairKey, stateResponseOwner: PtyHello.stateResponseOwnerVersion)))
+                cwd: cwd, paired: paired, pairKey: pairKey,
+                stateResponseOwner: PtyHello.identityResponseOwnerVersion, terminalProfile: profile)))
             created = true
         }
         try info.validateStateResponseOwner()
+        if info.stateResponseOwner == PtyHello.identityResponseOwnerVersion {
+            try negotiated.validateIdentityResponseOwner()
+        }
         shellPID = info.pid
         termID = info.id
         pipe.bind(client: client, id: info.id)
         try await pipe.synchronizeGrid()
         status = "Restoring terminal"
         let snapshot = try await PtySnapshotDownloader(client: client).fetch(term: info.id)
-        try await pipe.attach(snapshot, daemonOwnsStateResponses: true) { [weak self] in
+        try await pipe.attach(snapshot, daemonOwnsStateResponses: true,
+                              daemonOwnsIdentityResponses: info.stateResponseOwner == PtyHello.identityResponseOwnerVersion) { [weak self] in
             Task { @MainActor in
                 guard let self, self.started, self.surfaceGeneration == generation, self.error == nil else { return }
                 self.status = "Connected"

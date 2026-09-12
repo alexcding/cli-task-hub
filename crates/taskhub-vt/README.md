@@ -54,3 +54,16 @@ the identical set after import. Clipboard/UI, geometry, colors, device identity
 and other configuration-dependent reports remain renderer-owned and require more
 work for complete offline behavior. See the daemon protocol for the contract and
 failure handling.
+
+`feed_identity_responses` extends state ownership with native DA1/DA2, XTVERSION
+and XTGETTCAP. The shell's creation profile supplies the printable product/version;
+TN reports `xterm-ghostty`, matching its environment and bundled terminfo. Temporary
+identity callbacks and terminfo configuration are cleared after each feed.
+
+Both native and headless builds apply
+`macos/patches/ghostty/0003-terminal-query-validation.patch`. It rejects echoed DA2
+responses as requests and enables the existing ANSI DECRQM handler. The runtime
+builder applies/reverses that exact patch around a clean pinned source build and
+records the patch bytes beside the revision. The Rust build rejects a missing or
+mismatched marker, preventing accidental use of an older unpatched archive. These
+changes do not alter the binary snapshot layout or upstream revision.

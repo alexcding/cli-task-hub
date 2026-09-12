@@ -69,11 +69,13 @@ feature-enabled builds, so existing Tauri shells keep their response path.
 `daemon-state-v1` owns DSR operating status/cursor position, DECRQM except Kitty
 paste mode 5522, DECRQSS, and Kitty keyboard-flag queries. It filters complete
 synchronous Ghostty response packets, not raw requests, so fragmented queries and
-snapshot continuations use the single authoritative parser. The pinned parser
-ignores ANSI DECRQM in both runtime variants; this existing upstream limitation is
-not changed by ownership. Device attributes, version/terminfo, clipboard (including
-mode 5522), colors, title, visibility/focus, geometry and graphics remain native.
-Those categories still need an explicit offline policy and configuration mediation.
+snapshot continuations use the single authoritative parser. A shared maintained
+parser patch enables ANSI DECRQM and rejects nonzero/multiple DA request parameters,
+preventing echoed DA2 replies from triggering a feedback loop. Device attributes
+and version/terminfo stay native for these older shells; new shells can use the
+identity contract below. Clipboard (including mode 5522), colors, title,
+visibility/focus, geometry and graphics still need an explicit offline policy and
+configuration mediation.
 
 Replies are generated before snapshot capture can observe the advanced state and
 queued by the same PTY I/O worker. They share the bounded input queue and preserve
@@ -94,3 +96,35 @@ Real-PTY validation queries with no clients, two snapshot observers and after th
 disconnection, checking exact response bytes, same PID and unchanged `hasContext`.
 Native tests verify suppression across split DCS and reset, native paste/capability
 responses, and exactly one CPR with two live app surfaces.
+
+## Native identity profile
+
+`hello.identityResponseOwner` advertises `daemon-identity-v1`. New native shells
+select that value in `create.opts.stateResponseOwner` and supply
+`terminalProfile:{version,terminfoDirectory}`. The version comes from the actual
+linked native renderer; the directory comes from its pinned package resources.
+This contract includes all `daemon-state-v1` replies plus primary/secondary device
+attributes, XTVERSION and XTGETTCAP. Tertiary DA stays silent, as in native Ghostty.
+DA advertises the native default clipboard-write policy; a native surface with a
+different policy rejects identity ownership. Clipboard contents remain UI-owned.
+
+Before spawning, the daemon validates the profile and copies the compiled
+`xterm-ghostty` entry into `<data>/terminfo/<terminal-id>/78/xterm-ghostty`. The shell
+receives `TERM=xterm-ghostty`, `TERM_PROGRAM=ghostty`, `TERM_PROGRAM_VERSION` and
+`TERMINFO` pointing to its private copy. The returned/listed profile contains that
+copy's path. An app move, bundle replacement or reconnect cannot change an existing
+shell's reported version or break its terminfo path. Normal exit/reaping removes
+the copy; failed creation also cleans it up. Copies left by a daemon crash may
+remain for later cleanup; unrelated data and other live helpers are never swept.
+
+Old state-owned shells remain attachable with their original response path. A new
+shell requires the new helper capability; missing/invalid profiles or unsupported
+owners reject before spawning. Import selects state-only or state-plus-identity
+suppression according to the shell, before live output. Ordinary paste and native
+clipboard-mode handling remain active.
+
+Verification uses the real bundled terminfo with macOS `tput`, deletes a temporary
+source bundle after creation, checks exact identity replies with no native view
+and with two live native surfaces, and verifies same-PID snapshot reattachment and
+copy removal after reaping. Runtime/native regressions cover ANSI mode queries,
+echoed DA replies, split XTGETTCAP, terminal reset and invalid clipboard policy.

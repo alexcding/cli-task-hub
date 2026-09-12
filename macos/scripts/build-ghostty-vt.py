@@ -52,13 +52,22 @@ def main():
     if version != lock["zigVersion"]:
         parser.error("Zig version does not match ghostty-vt.lock.json.")
     output = (args.output or build / "runtime").resolve()
-    run(zig, "build", "-Demit-lib-vt", "-Demit-exe=false", "-Demit-macos-app=false",
-        "-Demit-xcframework=false", "-Doptimize=ReleaseFast", "--prefix", output,
-        "--cache-dir", (args.local_cache or build / "local-cache").resolve(),
-        "--global-cache-dir", (args.global_cache or build / "global-cache").resolve(), cwd=source)
+    query_patch = Path(__file__).resolve().parents[1] / "patches/ghostty/0003-terminal-query-validation.patch"
+    run("git", "apply", "--check", query_patch, cwd=source)
+    run("git", "apply", query_patch, cwd=source)
+    try:
+        run(zig, "build", "-Demit-lib-vt", "-Demit-exe=false", "-Demit-macos-app=false",
+            "-Demit-xcframework=false", "-Doptimize=ReleaseFast", "--prefix", output,
+            "--cache-dir", (args.local_cache or build / "local-cache").resolve(),
+            "--global-cache-dir", (args.global_cache or build / "global-cache").resolve(), cwd=source)
+    finally:
+        # This builder requires a clean source checkout and restores it even
+        # after a failed build. Never overwrite unrelated local modifications.
+        run("git", "apply", "--reverse", query_patch, cwd=source)
     if not (output / "lib" / "libghostty-vt.a").is_file():
         parser.error("The build did not produce the static snapshot library.")
     (output / "taskhub-ghostty-revision").write_text(revision + "\n")
+    (output / "taskhub-ghostty-query-patch").write_bytes(query_patch.read_bytes())
     print(f"Pinned terminal snapshot runtime: {output}")
 
 

@@ -1,6 +1,6 @@
 --- a/Sources/GhosttyTerminal/InMemory/InMemoryTerminalSession.swift
 +++ b/Sources/GhosttyTerminal/InMemory/InMemoryTerminalSession.swift
-@@ -91,6 +91,59 @@
+@@ -91,6 +91,76 @@
  
      var currentSurface: ghostty_surface_t? {
          surfaceAccess.currentSurface
@@ -19,6 +19,23 @@
 +                guard let pointer = bytes.baseAddress?.assumingMemoryBound(to: UInt8.self) else { return false }
 +                return ghostty_surface_restore_snapshot(surface, pointer, UInt(bytes.count))
 +            }
++        } ?? false
++    }
++
++    /// The version of the actual linked renderer, used for shell identity.
++    public static var runtimeVersion: String? {
++        let info = ghostty_info()
++        guard let version = info.version, info.version_len > 0, info.version_len <= 128 else { return nil }
++        return String(bytes: UnsafeRawBufferPointer(start: version, count: Int(info.version_len)), encoding: .utf8)
++    }
++
++    /// Enable daemon-identity-v1 (state plus DA/version/terminfo replies).
++    /// Requires an imported surface with the default clipboard-write policy.
++    @MainActor
++    public func enableHostIdentityResponses() -> Bool {
++        surfaceAccess.waitForPendingOutput()
++        return surfaceAccess.withCurrentSurface { surface in
++            ghostty_surface_enable_host_identity_responses(surface)
 +        } ?? false
 +    }
 +

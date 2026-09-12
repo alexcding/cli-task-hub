@@ -126,6 +126,7 @@ struct Ring {
   #[cfg(feature = "terminal-snapshots")]
   terminal: Result<taskhub_vt::Terminal, String>,
   state_response_owner: bool,
+  identity_version: Option<String>,
   responses: Result<Vec<u8>, String>,
 }
 
@@ -134,7 +135,7 @@ impl Ring {
     Ok(Self {
       chunks: VecDeque::new(), len: 0, seq: 0, truncated: false,
       state_seq: 0, cols: 80, rows: 24,
-      state_response_owner: false, responses: Ok(Vec::new()),
+      state_response_owner: false, identity_version: None, responses: Ok(Vec::new()),
       #[cfg(feature = "terminal-snapshots")]
       terminal: Ok(taskhub_vt::Terminal::new(80, 24).map_err(|e| e.to_string())?),
     })
@@ -168,7 +169,10 @@ impl Ring {
     #[cfg(feature = "terminal-snapshots")]
     if let Ok(terminal) = &mut self.terminal {
       if self.state_response_owner {
-        self.responses = terminal.feed_state_responses(&bytes).map_err(|e| e.to_string());
+        self.responses = match self.identity_version.as_deref() {
+          Some(version) => terminal.feed_identity_responses(&bytes, version),
+          None => terminal.feed_state_responses(&bytes),
+        }.map_err(|e| e.to_string());
         if let Err(error) = &self.responses {
           // Input was consumed, but its replies could not all be delivered.
           // Invalidate the snapshot and latch input failure; never replay it.
@@ -268,6 +272,8 @@ pub struct TermInfo {
   pub created: u64,
   #[serde(default, skip_serializing_if = "Option::is_none")]
   pub state_response_owner: Option<String>,
+  #[serde(default, skip_serializing_if = "Option::is_none")]
+  pub terminal_profile: Option<TerminalProfile>,
 }
 
 #[derive(Deserialize, Default)]
@@ -280,6 +286,48 @@ pub struct CreateOpts {
   #[serde(default)]
   pub pair_key: String,
   pub state_response_owner: Option<String>,
+  pub terminal_profile: Option<TerminalProfile>,
+}
+
+/// Identity is fixed at shell creation. The returned profile records the
+/// daemon-owned terminfo copy, so app relocation/rebuild cannot invalidate it.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct TerminalProfile {
+  pub version: String,
+  pub terminfo_directory: String,
+}
+
+struct PreparedProfile { profile: TerminalProfile, root: PathBuf }
+impl Drop for PreparedProfile {
+  fn drop(&mut self) { let _ = std::fs::remove_dir_all(&self.root); }
+}
+impl TerminalProfile {
+  fn prepare(&self, directory: &Path, id: &str) -> Result<PreparedProfile, String> {
+    if self.version.is_empty() || self.version.len() > 128 ||
+        !self.version.bytes().all(|b| (0x21..=0x7e).contains(&b)) {
+      return Err("invalid native terminal version".into());
+    }
+    let source = Path::new(&self.terminfo_directory);
+    if !source.is_absolute() { return Err("native terminfo directory must be absolute".into()); }
+    let file = [source.join("78/xterm-ghostty"), source.join("x/xterm-ghostty")]
+      .into_iter().find(|path| path.is_file()).ok_or("bundled xterm-ghostty terminfo is missing")?;
+    let mut bytes = Vec::new();
+    std::fs::File::open(file).map_err(|e| e.to_string())?.take(1024 * 1024 + 1)
+      .read_to_end(&mut bytes).map_err(|e| e.to_string())?;
+    if bytes.len() < 12 || bytes.len() > 1024 * 1024 ||
+        ![0x011au16, 0x021e].contains(&u16::from_le_bytes([bytes[0], bytes[1]])) {
+      return Err("invalid compiled xterm-ghostty terminfo".into());
+    }
+    let root = directory.join("terminfo").join(id);
+    std::fs::DirBuilder::new().recursive(true).mode(0o700).create(&root).map_err(|e| e.to_string())?;
+    let prepared = PreparedProfile { profile: Self {
+      version: self.version.clone(), terminfo_directory: root.to_string_lossy().into_owned(),
+    }, root };
+    std::fs::create_dir(prepared.root.join("78")).map_err(|e| e.to_string())?;
+    std::fs::write(prepared.root.join("78/xterm-ghostty"), bytes).map_err(|e| e.to_string())?;
+    Ok(prepared)
+  }
 }
 
 // A connected client: lines go through `tx` to its outbox thread, which is the ONLY writer on the
@@ -529,10 +577,14 @@ impl Daemon {
   fn create(self: &Arc<Self>, opts: CreateOpts) -> Result<TermInfo, String> {
     if let Some(owner) = opts.state_response_owner.as_deref() {
       #[cfg(feature = "terminal-snapshots")]
-      let supported = owner == taskhub_vt::STATE_RESPONSE_OWNER;
+      let supported = [taskhub_vt::STATE_RESPONSE_OWNER, taskhub_vt::IDENTITY_RESPONSE_OWNER].contains(&owner);
       #[cfg(not(feature = "terminal-snapshots"))]
       let supported = { let _ = owner; false };
       if !supported { return Err("unsupported terminal state response owner".into()); }
+    }
+    let identity_owned = opts.state_response_owner.as_deref() == Some("daemon-identity-v1");
+    if identity_owned != opts.terminal_profile.is_some() {
+      return Err("native terminal identity ownership requires its creation profile".into());
     }
     let n = self.seq.fetch_add(1, Ordering::SeqCst) + 1;
     // Unique across daemon restarts so a stale id persisted by the renderer never collides.
@@ -554,6 +606,8 @@ impl Daemon {
     // orphan a child. It sees every raw output batch, even without a viewer.
     let mut state = Ring::new()?;
     state.state_response_owner = opts.state_response_owner.is_some();
+    let prepared_profile = opts.terminal_profile.as_ref().map(|profile| profile.prepare(&self.dir, &id)).transpose()?;
+    state.identity_version = prepared_profile.as_ref().map(|value| format!("ghostty {}", value.profile.version));
     let ring = Arc::new(Mutex::new(state));
     let pair = native_pty_system()
       .openpty(PtySize { rows: 24, cols: 80, pixel_width: 0, pixel_height: 0 })
@@ -564,7 +618,14 @@ impl Daemon {
     let mut cmd = CommandBuilder::new(&shell_path);
     cmd.args(["-l", "-i"]);
     cmd.cwd(&dir);
-    cmd.env("TERM", "xterm-256color");
+    if let Some(prepared) = &prepared_profile {
+      cmd.env("TERM", "xterm-ghostty");
+      cmd.env("TERMINFO", &prepared.profile.terminfo_directory);
+      cmd.env("TERM_PROGRAM", "ghostty");
+      cmd.env("TERM_PROGRAM_VERSION", &prepared.profile.version);
+    } else {
+      cmd.env("TERM", "xterm-256color");
+    }
     cmd.env("COLORTERM", "truecolor");
     cmd.env("LANG", std::env::var("LANG").unwrap_or_else(|_| "en_US.UTF-8".into()));
     // TASKHUB_RUN_ID lets an installed Claude/Codex hook ping back tagged with THIS terminal's id.
@@ -600,6 +661,7 @@ impl Daemon {
       pid,
       created: now_ms(),
       state_response_owner: opts.state_response_owner,
+      terminal_profile: prepared_profile.as_ref().map(|value| value.profile.clone()),
     };
     let master = Arc::new(Mutex::new(pair.master));
     let resizes = Arc::new(Mutex::new(VecDeque::<ResizeRequest>::new()));
@@ -755,6 +817,7 @@ impl Daemon {
       let _ = hangup;
       // Shell exited (or the master failed): reap it, drop it from the registry, announce the death.
       let exit_code = child.lock().unwrap().wait().map(|s| s.exit_code() as i64).unwrap_or(0);
+      drop(prepared_profile); // clean up before list reports completion to an explicit Quit
       me.terms.lock().unwrap().remove(&id); // drops Term → closes wake_w
       unsafe { libc::close(wake_r) };
       let _ = std::fs::remove_file(me.manifest_path(&id));
@@ -927,6 +990,7 @@ impl Daemon {
           _session.snapshots.clear();
           hello["snapshotRevision"] = json!(taskhub_vt::GHOSTTY_REVISION);
           hello["stateResponseOwner"] = json!(taskhub_vt::STATE_RESPONSE_OWNER);
+          hello["identityResponseOwner"] = json!(taskhub_vt::IDENTITY_RESPONSE_OWNER);
           if let Some(revision) = req.get("snapshotRevision") {
             if !client.byte_transport || revision.as_str() != Some(taskhub_vt::GHOSTTY_REVISION) {
               return Err("snapshots require base64 output and the exact Ghostty revision".into());

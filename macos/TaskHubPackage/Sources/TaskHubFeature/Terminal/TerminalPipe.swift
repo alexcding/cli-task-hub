@@ -88,7 +88,7 @@ final class TerminalPipe: @unchecked Sendable {
     }
 
     @MainActor
-    func attach(_ snapshot: PtySnapshot, daemonOwnsStateResponses: Bool = false, onReady: @escaping @Sendable () -> Void) async throws {
+    func attach(_ snapshot: PtySnapshot, daemonOwnsStateResponses: Bool = false, daemonOwnsIdentityResponses: Bool = false, onReady: @escaping @Sendable () -> Void) async throws {
         try snapshot.header.validate()
         guard snapshot.bytes.count == snapshot.header.size else {
             throw PtyError.connection("The terminal snapshot is incomplete.")
@@ -96,7 +96,11 @@ final class TerminalPipe: @unchecked Sendable {
         guard memory.restoreSnapshot(snapshot.bytes) else {
             throw PtyError.connection("The terminal snapshot could not be imported. Reattach to retry with a fresh capture; the shell is still running.")
         }
-        if daemonOwnsStateResponses, !memory.enableHostStateResponses() {
+        if daemonOwnsIdentityResponses {
+            guard memory.enableHostIdentityResponses() else {
+                throw PtyError.connection("Terminal identity response ownership could not be configured.")
+            }
+        } else if daemonOwnsStateResponses, !memory.enableHostStateResponses() {
             throw PtyError.connection("Terminal state response ownership could not be configured.")
         }
         let memory = memory!

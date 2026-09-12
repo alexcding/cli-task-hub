@@ -249,11 +249,15 @@ rejected before shell creation; invalid captures and sequence gaps stop attachme
 without terminating the shell. The capture supplies its logical grid even if a
 physical view resize is still pending. Restored titles and working directories use
 native callbacks; only local working-directory URIs become file-link bases, and
-an empty directory report clears the previous base. New shells use the versioned
-`daemon-state-v1` response owner: status/cursor, mode (except Kitty clipboard mode),
-DECRQSS and Kitty keyboard queries keep working without a viewer. Native surfaces
-suppress that same set, including after reconnect; keyboard, paste and UI effects
-keep their native paths. Older helpers/shell owners are rejected without replacement.
+an empty directory report clears the previous base. The versioned
+`daemon-state-v1` response owner covers status/cursor, mode (except Kitty clipboard mode),
+DECRQSS and Kitty keyboard queries keep working without a viewer. Newly created
+shells now select `daemon-identity-v1`, adding DA/version/terminfo replies and using
+`TERM=xterm-ghostty` with the actual renderer version. The daemon keeps a private
+copy of bundled terminfo until the shell exits, independent of app relocation or
+rebuild. Existing state-owned shells retain their original profile. Native surfaces
+suppress the matching set after import/reconnect; keyboard, paste and UI effects
+keep their native paths. Unsupported helpers/owners are rejected without replacement.
 UI/config-dependent offline queries and snapshot-v1 image/glyph omissions still
 require work; see `crates/taskhub-ptyd/SNAPSHOTS.md`.
 Rebuilding the helper does not upgrade an already-running daemon; use an isolated

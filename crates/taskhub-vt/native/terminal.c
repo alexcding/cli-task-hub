@@ -24,7 +24,23 @@ typedef struct {
     GhosttyWriterFn write;
     void *userdata;
     bool failed;
+    GhosttyString version;
 } TaskHubResponseSink;
+
+static GhosttyString taskhub_version(GhosttyTerminal terminal, void *userdata) {
+    (void)terminal;
+    return ((TaskHubResponseSink *)userdata)->version;
+}
+static bool taskhub_device_attributes(GhosttyTerminal terminal, void *userdata,
+                                     GhosttyDeviceAttributes *out) {
+    (void)terminal; (void)userdata;
+    // The native profile uses Ghostty's default clipboard-write=allow policy.
+    *out = (GhosttyDeviceAttributes){
+        .primary = { .conformance_level = 62, .features = {22, 52}, .num_features = 2 },
+        .secondary = { .device_type = 1, .firmware_version = 10, .rom_cartridge = 0 },
+    };
+    return true;
+}
 
 static void taskhub_write_response(GhosttyTerminal terminal, void *userdata,
                                   const uint8_t *bytes, size_t len) {
@@ -38,18 +54,33 @@ static void taskhub_write_response(GhosttyTerminal terminal, void *userdata,
 // The parser still consumes the whole input on a receiver failure: callers must
 // not retry these bytes, since doing so would apply terminal state twice.
 int taskhub_vt_feed_with_responses(void *terminal, const uint8_t *bytes, size_t len,
-                                 GhosttyWriterFn write, void *userdata) {
-    TaskHubResponseSink sink = { .write = write, .userdata = userdata, .failed = false };
+                                 GhosttyWriterFn write, void *userdata,
+                                 const uint8_t *version, size_t version_len) {
+    TaskHubResponseSink sink = { .write = write, .userdata = userdata, .failed = false,
+                                .version = { .ptr = version, .len = version_len } };
     int result = ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_USERDATA, &sink);
     if (result == GHOSTTY_SUCCESS) {
         result = ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_WRITE_PTY,
                                      (const void *)taskhub_write_response);
+    }
+    if (result == GHOSTTY_SUCCESS && version != NULL) {
+        const GhosttyString name = { .ptr = (const uint8_t *)"xterm-ghostty", .len = 13 };
+        result = ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_TERMINFO_NAME, &name);
+        if (result == GHOSTTY_SUCCESS)
+            result = ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_DEVICE_ATTRIBUTES,
+                                          (const void *)taskhub_device_attributes);
+        if (result == GHOSTTY_SUCCESS)
+            result = ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_XTVERSION,
+                                          (const void *)taskhub_version);
     }
     if (result == GHOSTTY_SUCCESS) {
         ghostty_terminal_vt_write(terminal, bytes, len);
         if (sink.failed) result = GHOSTTY_OUT_OF_SPACE;
     }
     ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_WRITE_PTY, NULL);
+    ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_DEVICE_ATTRIBUTES, NULL);
+    ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_XTVERSION, NULL);
+    ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_TERMINFO_NAME, NULL);
     ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_USERDATA, NULL);
     return result;
 }

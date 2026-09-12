@@ -286,6 +286,16 @@ while True:
     assert!(connection
         .request(json!({"op":"create", "opts":{"stateResponseOwner":"future-owner"}}))
         .is_err());
+    for opts in [
+        json!({"stateResponseOwner":taskhub_vt::IDENTITY_RESPONSE_OWNER}),
+        json!({"terminalProfile":{"version":"1.0","terminfoDirectory":"/tmp"}}),
+        json!({"stateResponseOwner":taskhub_vt::IDENTITY_RESPONSE_OWNER,"terminalProfile":{"version":"bad\u{1b}version","terminfoDirectory":"/tmp"}}),
+        json!({"stateResponseOwner":taskhub_vt::IDENTITY_RESPONSE_OWNER,"terminalProfile":{"version":"1.0","terminfoDirectory":"relative"}}),
+    ] {
+        assert!(connection
+            .request(json!({"op":"create","opts":opts}))
+            .is_err());
+    }
     assert_eq!(connection.request(json!({"op":"list"})).unwrap(), json!([]));
     let term = connection.request(json!({"op":"create", "opts":{
         "cwd":fixture.root, "shell":script, "stateResponseOwner":taskhub_vt::STATE_RESPONSE_OWNER

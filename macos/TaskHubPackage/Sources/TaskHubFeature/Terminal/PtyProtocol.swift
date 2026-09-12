@@ -31,22 +31,33 @@ struct PtyInfo: Codable, Sendable, Identifiable {
     let pid: UInt32
     let created: UInt64
     var stateResponseOwner: String? = nil
+    var terminalProfile: PtyTerminalProfile? = nil
 
     func validateStateResponseOwner() throws {
-        guard stateResponseOwner == PtyHello.stateResponseOwnerVersion else {
+        if stateResponseOwner == PtyHello.stateResponseOwnerVersion && terminalProfile == nil { return }
+        guard stateResponseOwner == PtyHello.identityResponseOwnerVersion, let terminalProfile else {
             throw PtyError.connection("This shell uses an older terminal response owner. Save its work and close it explicitly before creating a new terminal. The existing shell has been preserved.")
         }
+        try terminalProfile.validate()
     }
 }
 
 struct PtyHello: Decodable, Sendable {
     static let stateResponseOwnerVersion = "daemon-state-v1"
+    static let identityResponseOwnerVersion = "daemon-identity-v1"
     let `protocol`: UInt32
     let pid: Int32
     let dataEncoding: String?
     let acknowledgedInput: Bool?
     var snapshotRevision: String? = nil
     var stateResponseOwner: String? = nil
+    var identityResponseOwner: String? = nil
+
+    func validateIdentityResponseOwner() throws {
+        guard identityResponseOwner == Self.identityResponseOwnerVersion else {
+            throw PtyError.connection("This PTY helper cannot preserve the native terminal identity. Save your work, quit TaskHub explicitly, rebuild the helper, and reopen. Existing shells have been preserved.")
+        }
+    }
 
     func validateStateResponseOwner() throws {
         guard stateResponseOwner == Self.stateResponseOwnerVersion else {
@@ -110,6 +121,7 @@ struct PtyRequest: Encodable, Sendable {
         var paired = false
         var pairKey: String
         var stateResponseOwner: String? = nil
+        var terminalProfile: PtyTerminalProfile? = nil
     }
     var id: UInt64?
     var op: String

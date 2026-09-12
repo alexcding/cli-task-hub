@@ -831,6 +831,35 @@ does not).
   limitation is unchanged. The Sprint board remains web-based, and the final
   elevate-ios coordinator/VM/DI pass follows the migration work.
 
+### M1 native terminal identity — 2026-09-12
+
+- Found and corrected an identity mismatch: native Ghostty advertised its own
+  capabilities while shells started as xterm-256color. New shells negotiate
+  `daemon-identity-v1` and use xterm-ghostty, the actual linked renderer version,
+  and a daemon-owned copy of the bundled compiled terminfo. Copies survive app
+  rebuilds/moves and are removed after shell reaping. Existing state-owned shells
+  keep their original profile and remain attachable.
+- The daemon now owns DA1/DA2, XTVERSION and XTGETTCAP for identity-profile shells,
+  in addition to state queries. A fresh native import suppresses the matching set;
+  its default clipboard policy must match the profile. Clipboard and geometry
+  effects are still native and are not accidentally disabled.
+- The real app test exposed a pinned parser bug: echoed DA2 response parameters
+  were accepted as another query, producing a reply feedback loop. A shared patch
+  now restricts DA requests to an omitted/zero parameter in both runtimes. The
+  same patch enables the existing ANSI DECRQM handler. These rules follow the
+  [xterm control-sequence reference](https://invisible-island.net/xterm/ctlseqs/ctlseqs.html).
+  The headless build verifies the exact patch marker; native preparation includes
+  it in the artifact fingerprint. The upstream snapshot layout is unchanged.
+- Runtime/native tests cover echo rejection, ANSI mode state changes, split
+  XTGETTCAP and reset. App validation exercises the bundled entry with tput,
+  removes a temporary source bundle, queries without a native view and with two
+  live native surfaces, and checks snapshot reattachment and private-copy cleanup.
+  Verification: eight runtime tests, 14 feature-enabled and ten legacy daemon tests,
+  nine native bridge tests and 80 app-package tests pass; the macOS app builds.
+- UI/config-dependent offline replies, image/glyph state, interaction/performance
+  acceptance, remaining M2–M6 gates and the final coordinator/VM/DI refactor remain
+  open. The Sprint board remains web-based.
+
 ## Why now, and why native
 
 The Tauri shell works, but roughly half of `src-tauri/` exists to work around what a DOM

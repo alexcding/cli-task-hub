@@ -28,6 +28,15 @@ fn main() {
         REVISION,
         "The daemon and native renderer must use the same pinned Ghostty snapshot format"
     );
+    let query_patch = root.join("../../macos/patches/ghostty/0003-terminal-query-validation.patch");
+    let applied_patch = runtime.join("taskhub-ghostty-query-patch");
+    println!("cargo:rerun-if-changed={}", query_patch.display());
+    println!("cargo:rerun-if-changed={}", applied_patch.display());
+    assert_eq!(
+        fs::read(applied_patch).expect("Rebuild the headless runtime with build-ghostty-vt.py"),
+        fs::read(query_patch).expect("missing shared terminal query patch"),
+        "The headless runtime needs the same query validation patch as the native renderer"
+    );
     let out = PathBuf::from(env::var_os("OUT_DIR").unwrap());
     let archive = runtime.join("lib/libghostty-vt.a");
     println!("cargo:rerun-if-changed={}", archive.display());
