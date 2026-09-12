@@ -80,6 +80,8 @@ fn native_bytes_and_legacy_text_coexist_on_the_same_terminal() {
     let id = created["ok"]["id"].as_str().unwrap();
     assert_eq!(native.data()["bytes"], BASE64.encode(b"READY"));
     assert_eq!(legacy.data()["chunk"], "READY");
+    assert!(native.request(json!({"op":"resize","term":id,"cols":90,"rows":30}))["ok"].is_null());
+    assert!(native.request(json!({"op":"resize","term":id,"cols":0,"rows":30}))["err"].is_string());
     assert!(native.request(json!({"op":"write","term":id,"bytes":"?invalid"}))["err"].is_string());
     assert!(native.request(json!({"op":"write","term":id,"bytes":"QQ==","data":"B"}))["err"].is_string());
     let first = b"A\xff\xf0\x9f";
@@ -89,6 +91,14 @@ fn native_bytes_and_legacy_text_coexist_on_the_same_terminal() {
     assert_eq!(native_first["bytes"], BASE64.encode(first));
     assert_eq!(legacy_first["chunk"], "A\u{fffd}");
     assert_eq!(native_first["seq"], legacy_first["seq"]);
+    // Resize participates in state ordering without creating a gap in legacy
+    // output sequences. Its acknowledgement follows the kernel size change.
+    assert_eq!(native_first["seq"], 2);
+    assert_eq!(native_first["stateSeq"], 3);
+    let resized = native.events.iter().find(|event| event["ev"] == "resize").unwrap();
+    assert_eq!(resized["cols"], 90);
+    assert_eq!(resized["rows"], 30);
+    assert_eq!(resized["stateSeq"], 2);
     // The native attachment includes the incomplete UTF-8 suffix atomically;
     // the legacy decoder holds that suffix until a later read completes it.
     let attached = native.request(json!({"op":"attach","term":id}));

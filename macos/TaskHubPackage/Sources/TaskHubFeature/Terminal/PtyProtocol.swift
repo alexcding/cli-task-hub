@@ -69,6 +69,9 @@ struct PtyEvent: Decodable, Sendable {
     let exitCode: Int?
     let signal: Int?
     var message: String? = nil
+    var stateSeq: UInt64? = nil
+    var cols: UInt16? = nil
+    var rows: UInt16? = nil
 }
 
 struct PtyRequest: Encodable, Sendable {

@@ -49,6 +49,8 @@ use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 mod utf8;
+#[cfg(feature = "terminal-snapshots")]
+mod snapshot;
 
 pub const PROTOCOL: u32 = 2;
 const RING_MAX: usize = 256 * 1024; // per-terminal rolling output tail replayed to (re)attaching clients
@@ -118,11 +120,52 @@ struct Ring {
   len: usize,
   seq: u64,
   truncated: bool,
+  state_seq: u64,
+  cols: u16,
+  rows: u16,
+  #[cfg(feature = "terminal-snapshots")]
+  terminal: Result<taskhub_vt::Terminal, String>,
 }
 
 impl Ring {
+  fn new() -> Result<Self, String> {
+    Ok(Self {
+      chunks: VecDeque::new(), len: 0, seq: 0, truncated: false,
+      state_seq: 0, cols: 80, rows: 24,
+      #[cfg(feature = "terminal-snapshots")]
+      terminal: Ok(taskhub_vt::Terminal::new(80, 24).map_err(|e| e.to_string())?),
+    })
+  }
+
+  #[cfg(feature = "terminal-snapshots")]
+  fn capture(&mut self) -> Result<snapshot::Capture, String> {
+    let terminal = self.terminal.as_mut().map_err(|e| e.clone())?;
+    let bytes = terminal.snapshot().map_err(|e| e.to_string())?;
+    Ok(snapshot::Capture { bytes, seq: self.seq, state_seq: self.state_seq, cols: self.cols, rows: self.rows })
+  }
+
+  fn resized(&mut self, cols: u16, rows: u16) -> Result<u64, String> {
+    self.cols = cols;
+    self.rows = rows;
+    self.state_seq += 1;
+    #[cfg(feature = "terminal-snapshots")]
+    {
+      let result = self.terminal.as_mut().map_err(|e| e.clone())?
+        .resize(cols, rows).map_err(|e| e.to_string());
+      if let Err(error) = result {
+        // The kernel size already changed. Never serve stale VT state as valid.
+        self.terminal = Err(error.clone());
+        return Err(error);
+      }
+    }
+    Ok(self.state_seq)
+  }
+
   fn push(&mut self, bytes: Vec<u8>, text: String) -> u64 {
+    #[cfg(feature = "terminal-snapshots")]
+    if let Ok(terminal) = &mut self.terminal { terminal.feed(&bytes); }
     self.seq += 1;
+    self.state_seq += 1;
     let chunk = OutputChunk { bytes, text };
     self.len += chunk.size();
     self.chunks.push_back(chunk);
@@ -140,7 +183,7 @@ mod ring_tests {
 
   #[test]
   fn truncation_is_reported_at_the_atomic_sequence_boundary() {
-    let mut ring = Ring { chunks: VecDeque::new(), len: 0, seq: 0, truncated: false };
+    let mut ring = Ring::new().unwrap();
     assert_eq!(ring.push(vec![b'a'; RING_MAX / 2], "a".repeat(RING_MAX / 2)), 1);
     assert_eq!(ring.push(vec![b'b'; RING_MAX / 2], "b".repeat(RING_MAX / 2)), 2);
     assert!(!ring.truncated); // exactly full still contains the entire history
@@ -154,7 +197,7 @@ mod ring_tests {
 
   #[test]
   fn invalid_utf8_expansion_cannot_exceed_the_ring_budget() {
-    let mut ring = Ring { chunks: VecDeque::new(), len: 0, seq: 0, truncated: false };
+    let mut ring = Ring::new().unwrap();
     ring.push(vec![0xff; RING_MAX / 2], "\u{fffd}".repeat(RING_MAX / 2));
     assert!(ring.truncated);
     assert_eq!(ring.seq, 1);
@@ -173,8 +216,15 @@ struct Input {
   failure: Option<String>,
 }
 
+struct ResizeRequest {
+  cols: u16,
+  rows: u16,
+  reply: mpsc::SyncSender<Result<(), String>>,
+}
+
 struct Term {
-  master: Box<dyn MasterPty + Send>,
+  master: Arc<Mutex<Box<dyn MasterPty + Send>>>,
+  resizes: Arc<Mutex<VecDeque<ResizeRequest>>>,
   child: Arc<Mutex<Box<dyn Child + Send + Sync>>>,
   input: Arc<Mutex<Input>>,
   wake_w: RawFd, // self-pipe: poke the poll thread (queued input, flow change, kill)
@@ -226,6 +276,14 @@ struct Client {
   owed: Arc<AtomicUsize>,
   progress: Arc<Mutex<Instant>>,
   sock: UnixStream,
+}
+
+#[derive(Default)]
+struct ClientSession {
+  #[cfg(feature = "terminal-snapshots")]
+  snapshots: snapshot::Transfers,
+  #[cfg(feature = "terminal-snapshots")]
+  snapshot_negotiated: bool,
 }
 
 struct Daemon {
@@ -386,17 +444,17 @@ impl Daemon {
   // Encode at most once per representation, regardless of viewer count. Legacy
   // Tauri clients keep their streaming UTF-8 text; native clients receive the
   // exact bytes, with no replacement or incomplete-codepoint delay in the daemon.
-  fn broadcast_output(&self, id: &str, seq: u64, bytes: &[u8], text: &str) {
+  fn broadcast_output(&self, id: &str, seq: u64, state_seq: u64, bytes: &[u8], text: &str) {
     let mut cs = self.clients.lock().unwrap();
     let mut raw_line: Option<Arc<str>> = None;
     let mut text_line: Option<Arc<str>> = None;
     cs.retain(|c| {
       let line = if c.byte_transport {
         raw_line.get_or_insert_with(|| Arc::from(format!("{}\n",
-          json!({ "ev": "data", "id": id, "bytes": BASE64.encode(bytes), "seq": seq }))))
+          json!({ "ev": "data", "id": id, "bytes": BASE64.encode(bytes), "seq": seq, "stateSeq": state_seq }))))
       } else {
         text_line.get_or_insert_with(|| Arc::from(format!("{}\n",
-          json!({ "ev": "data", "id": id, "chunk": text, "seq": seq }))))
+          json!({ "ev": "data", "id": id, "chunk": text, "seq": seq, "stateSeq": state_seq }))))
       };
       self.offer(c, line)
     });
@@ -405,7 +463,7 @@ impl Daemon {
   fn offer(&self, c: &Client, line: &Arc<str>) -> bool {
     let owed = c.owed.load(Ordering::Relaxed);
     let stalled = owed > 0 && c.progress.lock().unwrap().elapsed() > STALL_DROP;
-    if owed > OUTBOX_MAX || stalled {
+    if line.len() > OUTBOX_MAX.saturating_sub(owed) || stalled {
       log(&format!("client {} dropped: owed {owed} bytes{}", c.id, if stalled { ", stalled" } else { "" }));
       let _ = c.sock.shutdown(std::net::Shutdown::Both);
       return false;
@@ -443,6 +501,9 @@ impl Daemon {
       .or_else(|| std::env::var("SHELL").ok())
       .unwrap_or_else(|| "/bin/zsh".into());
 
+    // Allocate the parser before spawning a shell, so a parser failure cannot
+    // orphan a child. It sees every raw output batch, even without a viewer.
+    let ring = Arc::new(Mutex::new(Ring::new()?));
     let pair = native_pty_system()
       .openpty(PtySize { rows: 24, cols: 80, pixel_width: 0, pixel_height: 0 })
       .map_err(|e| e.to_string())?;
@@ -488,7 +549,8 @@ impl Daemon {
       pid,
       created: now_ms(),
     };
-    let ring = Arc::new(Mutex::new(Ring { chunks: VecDeque::new(), len: 0, seq: 0, truncated: false }));
+    let master = Arc::new(Mutex::new(pair.master));
+    let resizes = Arc::new(Mutex::new(VecDeque::<ResizeRequest>::new()));
     let input = Arc::new(Mutex::new(Input { writer, queue: VecDeque::new(), failure: None }));
     let paused = Arc::new(AtomicBool::new(false));
     let killed = Arc::new(AtomicBool::new(false));
@@ -496,7 +558,8 @@ impl Daemon {
     self.terms.lock().unwrap().insert(
       id.clone(),
       Term {
-        master: pair.master,
+        master: master.clone(),
+        resizes: resizes.clone(),
         child: child.clone(),
         input: input.clone(),
         wake_w,
@@ -522,6 +585,19 @@ impl Daemon {
       'io: loop {
         if killed.load(Ordering::Relaxed) {
           break 'io; // kill(): the child was signalled; fall through to reap + announce
+        }
+        // The previous batch is already parsed and sequenced. Apply resizes here,
+        // on the same I/O thread, before reading any output at the new grid size.
+        while let Some(request) = { resizes.lock().unwrap().pop_front() } {
+          let mut state = ring.lock().unwrap();
+          let result = master.lock().unwrap().resize(PtySize {
+            rows: request.rows, cols: request.cols, pixel_width: 0, pixel_height: 0,
+          }).map_err(|e| e.to_string()).and_then(|_| state.resized(request.cols, request.rows));
+          if result.is_ok() {
+            me.broadcast(&json!({ "ev": "resize", "id": id, "cols": state.cols,
+              "rows": state.rows, "seq": state.seq, "stateSeq": state.state_seq }));
+          }
+          let _ = request.reply.send(result.map(|_| ()));
         }
         // Interest: reads unless paused (renderer flow or client backlog); writes while queued.
         let owed = me.max_owed();
@@ -600,8 +676,12 @@ impl Daemon {
             text_pending.extend_from_slice(&bytes);
             let s = utf8::take_text(&mut text_pending, eof);
             if !bytes.is_empty() || !s.is_empty() {
-              let seq = ring.lock().unwrap().push(bytes.clone(), s.clone());
-              me.broadcast_output(&id, seq, &bytes, &s);
+              let (seq, state_seq) = {
+                let mut state = ring.lock().unwrap();
+                let seq = state.push(bytes.clone(), s.clone());
+                (seq, state.state_seq)
+              };
+              me.broadcast_output(&id, seq, state_seq, &bytes, &s);
             }
           }
           if eof {
@@ -650,10 +730,21 @@ impl Daemon {
     Ok(())
   }
 
-  fn resize(&self, id: &str, cols: u16, rows: u16) {
-    if let Some(t) = self.terms.lock().unwrap().get(id) {
-      let _ = t.master.resize(PtySize { rows, cols, pixel_width: 0, pixel_height: 0 });
+  fn resize(&self, id: &str, cols: u16, rows: u16) -> Result<(), String> {
+    if cols == 0 || rows == 0 { return Err("terminal dimensions must be nonzero".into()); }
+    if cols > 4096 || rows > 4096 || u32::from(cols) * u32::from(rows) > 1024 * 1024 {
+      return Err("terminal dimensions exceed the grid limit".into());
     }
+    let (tx, rx) = mpsc::sync_channel(1);
+    {
+      let terms = self.terms.lock().unwrap();
+      let term = terms.get(id).ok_or("terminal no longer exists")?;
+      let mut queue = term.resizes.lock().unwrap();
+      if queue.len() >= 64 { return Err("too many pending terminal resizes".into()); }
+      queue.push_back(ResizeRequest { cols, rows, reply: tx });
+      poke(term.wake_w);
+    }
+    rx.recv().map_err(|_| "terminal exited before resizing".to_string())?
   }
 
   // Renderer-driven flow control: pause PTY reads while its xterm write buffer runs ahead.
@@ -702,7 +793,8 @@ impl Daemon {
   fn foreground(&self, id: &str) -> Value {
     let terms = self.terms.lock().unwrap();
     let Some(t) = terms.get(id) else { return json!({ "process": "", "atShell": true }) };
-    let Some(fd) = t.master.as_raw_fd() else { return json!({ "process": "", "atShell": true }) };
+    let master = t.master.lock().unwrap();
+    let Some(fd) = master.as_raw_fd() else { return json!({ "process": "", "atShell": true }) };
     let pgid = unsafe { libc::tcgetpgrp(fd) };
     if pgid <= 0 {
       return json!({ "process": "", "atShell": true });
@@ -750,7 +842,7 @@ impl Daemon {
     }
   }
 
-  fn handle(self: &Arc<Self>, cid: u64, req: &Value) -> Result<Value, String> {
+  fn handle(self: &Arc<Self>, cid: u64, req: &Value, _session: &mut ClientSession) -> Result<Value, String> {
     let op = req.get("op").and_then(Value::as_str).unwrap_or("");
     let sid = || req.get("term").and_then(Value::as_str).unwrap_or("").to_string();
     match op {
@@ -765,7 +857,21 @@ impl Daemon {
           }
         }
         let encoding = if client.byte_transport { "base64" } else { "utf8" };
-        Ok(json!({ "protocol": PROTOCOL, "pid": std::process::id(), "version": env!("CARGO_PKG_VERSION"), "dataEncoding": encoding, "acknowledgedInput": true }))
+        #[allow(unused_mut)]
+        let mut hello = json!({ "protocol": PROTOCOL, "pid": std::process::id(), "version": env!("CARGO_PKG_VERSION"), "dataEncoding": encoding, "acknowledgedInput": true });
+        #[cfg(feature = "terminal-snapshots")]
+        {
+          _session.snapshot_negotiated = false;
+          _session.snapshots.clear();
+          hello["snapshotRevision"] = json!(taskhub_vt::GHOSTTY_REVISION);
+          if let Some(revision) = req.get("snapshotRevision") {
+            if !client.byte_transport || revision.as_str() != Some(taskhub_vt::GHOSTTY_REVISION) {
+              return Err("snapshots require base64 output and the exact Ghostty revision".into());
+            }
+            _session.snapshot_negotiated = true;
+          }
+        }
+        Ok(hello)
       }
       "create" => {
         let opts: CreateOpts = req.get("opts").cloned().map(serde_json::from_value).transpose().map_err(|e| e.to_string())?.unwrap_or_default();
@@ -785,9 +891,14 @@ impl Daemon {
         Ok(Value::Null)
       }
       "resize" => {
-        let cols = req.get("cols").and_then(Value::as_u64).unwrap_or(80) as u16;
-        let rows = req.get("rows").and_then(Value::as_u64).unwrap_or(24) as u16;
-        self.resize(&sid(), cols, rows);
+        let dimension = |key, default| -> Result<u16, String> {
+          match req.get(key) {
+            None => Ok(default),
+            Some(value) => value.as_u64().and_then(|n| u16::try_from(n).ok()).filter(|n| *n > 0)
+              .ok_or_else(|| format!("invalid terminal {key}")),
+          }
+        };
+        self.resize(&sid(), dimension("cols", 80)?, dimension("rows", 24)?)?;
         Ok(Value::Null)
       }
       "flow" => {
@@ -799,6 +910,26 @@ impl Daemon {
       "list" => Ok(serde_json::to_value(self.list()).unwrap()),
       "attach" => Ok(self.attach(cid, &sid())),
       "foreground" => Ok(self.foreground(&sid())),
+      #[cfg(feature = "terminal-snapshots")]
+      "snapshotBegin" | "snapshotRead" | "snapshotEnd" => {
+        if !_session.snapshot_negotiated { return Err("negotiate the snapshot revision first".into()); }
+        match op {
+          "snapshotBegin" => {
+            _session.snapshots.clear();
+            let ring = self.terms.lock().unwrap().get(&sid()).ok_or("terminal no longer exists")?.ring.clone();
+            let capture = ring.lock().unwrap().capture()?;
+            _session.snapshots.begin(capture)
+          }
+          _ => {
+            let token = req.get("token").and_then(Value::as_u64).ok_or("missing snapshot token")?;
+            if op == "snapshotEnd" { _session.snapshots.end(token) }
+            else {
+              let offset = req.get("offset").and_then(Value::as_u64).ok_or("missing snapshot offset")?;
+              _session.snapshots.read(token, offset)
+            }
+          }
+        }
+      }
       other => Err(format!("unknown op {other:?}")),
     }
   }
@@ -826,6 +957,7 @@ impl Daemon {
       let _ = out.shutdown(std::net::Shutdown::Both);
     });
 
+    let mut session = ClientSession::default();
     let reader = BufReader::new(stream);
     for line in reader.lines() {
       let Ok(line) = line else { break };
@@ -839,7 +971,7 @@ impl Daemon {
           continue;
         }
       };
-      let res = self.handle(cid, &req);
+      let res = self.handle(cid, &req, &mut session);
       if let Some(id) = req.get("id") {
         let resp = match res {
           Ok(v) => json!({ "id": id, "ok": v }),

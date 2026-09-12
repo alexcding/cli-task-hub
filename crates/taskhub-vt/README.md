@@ -1,8 +1,9 @@
 # Headless terminal snapshot runtime
 
 This crate owns a headless Ghostty terminal and exposes binary snapshot capture and
-restore for the detached PTY daemon. It is an integration foundation: the production
-daemon and Metal surface do not consume it yet.
+restore for the detached PTY daemon. The daemon consumes it in builds with the
+`terminal-snapshots` feature. Production builds leave that feature disabled until
+the native Metal surface can import the snapshot.
 
 Build the pinned runtime and run its real-library tests:
 
@@ -29,7 +30,12 @@ decoder revisions must match. Kitty image payloads and glyph registrations are n
 included by upstream; this runtime alone does not establish full terminal fidelity.
 See the [pinned snapshot format source](https://github.com/ghostty-org/ghostty/blob/82938b633ba646db38591d969c3c526332bd7e65/src/terminal/snapshot/terminal.zig).
 
-Next integration steps are daemon-owned parsing of PTY output/resize events, an
-atomic sequence boundary with bounded snapshot transport, and importing state into
-the existing native surface before applying newer output. Those steps must preserve
-the same shell and suppress historical side effects.
+The daemon now parses every output batch, serializes kernel/parser resizes on its
+I/O thread, and captures an atomic sequence boundary. Its connection-owned transfer
+returns at most 128 KiB per read, with one snapshot of at most 32 MiB per connection.
+See [the daemon snapshot protocol](../taskhub-ptyd/SNAPSHOTS.md).
+
+Next is importing state into the existing native surface before applying newer
+output and ordered resizes. That work must preserve the same shell and suppress
+historical side effects. Headless parsing currently emits no terminal replies;
+offline query handling and avoiding duplicate replies remain integration work.

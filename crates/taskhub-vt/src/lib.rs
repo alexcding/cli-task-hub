@@ -112,6 +112,9 @@ fn check(result: i32, message: &'static str) -> Result<(), Error> {
     }
 }
 unsafe extern "C" fn write(userdata: *mut c_void, data: *const u8, len: usize) -> bool {
+    if len == 0 {
+        return true;
+    }
     let bytes = &mut *userdata.cast::<Vec<u8>>();
     if len > SNAPSHOT_LIMIT.saturating_sub(bytes.len()) || bytes.try_reserve(len).is_err() {
         return false;

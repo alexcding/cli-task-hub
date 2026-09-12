@@ -658,6 +658,28 @@ does not).
   [pinned format](https://github.com/ghostty-org/ghostty/blob/82938b633ba646db38591d969c3c526332bd7e65/src/terminal/snapshot/terminal.zig)
   and [snapshot API](https://github.com/ghostty-org/ghostty/blob/82938b633ba646db38591d969c3c526332bd7e65/include/ghostty/vt/snapshot.h).
 
+### M1 daemon snapshot transport — 2026-09-12 (native import pending)
+
+- The `terminal-snapshots` integration feature adds daemon-owned headless Ghostty
+  state from terminal creation. Output and snapshot capture share an atomic lock;
+  kernel/parser resizes now execute on the I/O thread between output batches.
+- Binary captures transfer through connection-owned, revision-negotiated tokens,
+  at most 128 KiB per read and 32 MiB per capture. Legacy output sequences remain
+  contiguous; a separate `stateSeq` orders output and resize events for importing
+  clients. See `crates/taskhub-ptyd/SNAPSHOTS.md` for the contract and limits.
+- The isolated real-PTY test restores older scrollback after tail truncation,
+  primary/alternate state, saved cursor and unfinished SGR, then compares future
+  output after resizing and reconnecting with the same shell PID. Token ownership,
+  chunk bounds, expiry, bad dimensions and legacy byte/text clients are covered.
+- Validation: 12 Rust tests with snapshots enabled, 9 with normal build features,
+  all 73 Swift package tests, and Tauri compilation pass (26 existing vendor
+  warnings). Swift validates the separate output and output/resize sequences
+  against the real normal-build helper.
+- This feature remains off in normal builds until the native surface imports
+  binary state. Native import, offline terminal-query responses, side-effect
+  ownership, Kitty image omissions and the terminal performance benchmark remain
+  open. This phase does not claim the full restoration gate is complete.
+
 ## Why now, and why native
 
 The Tauri shell works, but roughly half of `src-tauri/` exists to work around what a DOM

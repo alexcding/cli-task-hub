@@ -390,7 +390,12 @@ dependencies = [
  "portable-pty",
  "serde",
  "serde_json",
+ "taskhub-vt",
 ]
+
+[[package]]
+name = "taskhub-vt"
+version = "0.1.0"
 
 [[package]]
 name = "thiserror"
