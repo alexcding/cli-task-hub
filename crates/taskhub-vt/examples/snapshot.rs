@@ -4,10 +4,16 @@ use std::io::{Read, Write};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<_> = std::env::args().skip(1).collect();
-    if args.len() != 2 {
-        return Err("usage: snapshot <columns> <rows>".into());
+    if args.len() != 2 && args.len() != 4 {
+        return Err("usage: snapshot <columns> <rows> [cell-width-pixels cell-height-pixels]".into());
     }
     let mut terminal = taskhub_vt::Terminal::new(args[0].parse()?, args[1].parse()?)?;
+    if args.len() == 4 {
+        terminal.resize_geometry(taskhub_vt::Geometry {
+            cols: args[0].parse()?, rows: args[1].parse()?,
+            cell_width: args[2].parse()?, cell_height: args[3].parse()?,
+        })?;
+    }
     let mut input = Vec::new();
     std::io::stdin()
         .take(taskhub_vt::SNAPSHOT_LIMIT as u64 + 1)

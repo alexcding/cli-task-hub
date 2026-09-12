@@ -926,6 +926,33 @@ does not).
   remaining migration gates and the final coordinator/VM/DI pass remain open.
   The Sprint board stays web-based.
 
+### M1 native geometry bridge — 2026-09-12 (app negotiation pending)
+
+- Fresh imports can select geometry response ownership, suppressing size queries,
+  mode 2048 enable notifications and native resize reports while retaining native
+  title policy, clipboard mode reporting and user input. Split queries and reset
+  preserve ownership. Geometry-owned surfaces reject grid-only/invalid resizes;
+  legacy surfaces retain their grid-only API.
+- Fixed snapshot import replacing saved pixel dimensions with local ones. Complete
+  imported metrics are now retained; legacy snapshots retain their prior fallback
+  but cannot claim geometry ownership. Imported pixel sizes beyond the kernel
+  range are rejected by geometry negotiation rather than silently substituted.
+- Added an explicit complete-geometry callback at the engine resize boundary.
+  The old callback carries no cell pixels, and the wrapper's viewport updater is
+  intentionally unused to avoid premature resize dispatch. The new callback
+  reports current grid, content pixels and measured cells under the engine lock;
+  its consumer must enqueue work without re-entering the surface.
+- Real native tests cover backing-scale changes, one-pixel changes within the
+  same grid, suppression across import/resize/reset, native title/input behavior,
+  and legacy/oversized snapshot rejection. Backing-scale font rounding confirms
+  that cell metrics must be measured rather than scaled arithmetically.
+- All 11 native bridge tests and 81 app-package tests pass; the macOS app builds.
+  Next is app-side
+  capability negotiation, complete creation/resize transport and snapshot/event
+  validation. The app still creates identity-owned shells until that wiring lands.
+  Remaining migration gates and coordinator/VM/DI work are open. The Sprint board
+  remains web-based.
+
 ## Why now, and why native
 
 The Tauri shell works, but roughly half of `src-tauri/` exists to work around what a DOM

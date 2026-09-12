@@ -265,6 +265,16 @@ Non-Apple Bash uses Ghostty's ENV startup mechanism; Apple Bash and other unsupp
 shells retain normal startup behavior. These scripts are never written into user
 dotfiles. UI/config-dependent offline queries and snapshot-v1 image/glyph omissions
 still require work; see `crates/taskhub-ptyd/SNAPSHOTS.md`.
+
+The helper and native bridge now support optional `daemon-geometry-v1`; app-side
+negotiation is still pending. Complete imported pixel geometry is retained, and
+geometry-owned native surfaces can suppress size reports while applying ordered
+cell/pixel updates. `InMemoryTerminalSession.enableGeometryCallbacks()` opts into
+engine-ordered measurements including actual cell pixels; consumers must enqueue
+work without re-entering the native surface and leave pixel-only resize suppression
+disabled. The legacy callback has no cell metrics. Native tests cover backing-scale
+rounding, pixel-only changes, split queries/reset and preserved title/input policy.
+
 Rebuilding the helper does not upgrade an already-running daemon; use an isolated
 socket to test the new helper without ending an existing shell. Broader
 lifecycle coverage, links, workflow hooks, IME/mouse/selection checks, and the

@@ -11,6 +11,13 @@ private final class Writes: @unchecked Sendable {
     var bytes: Data { lock.lock(); defer { lock.unlock() }; return data }
 }
 
+private final class Sizes: @unchecked Sendable {
+    private let lock = NSLock()
+    private var values: [InMemoryTerminalViewport] = []
+    func append(_ size: InMemoryTerminalViewport) { lock.lock(); values.append(size); lock.unlock() }
+    var all: [InMemoryTerminalViewport] { lock.lock(); defer { lock.unlock() }; return values }
+}
+
 @MainActor
 private final class Metadata: TerminalSurfaceTitleDelegate, TerminalSurfacePwdDelegate {
     var titles: [String] = []
@@ -28,9 +35,9 @@ private final class SurfaceHarness {
     let metadata = Metadata()
     private let view = NSView(frame: NSRect(x: 0, y: 0, width: 800, height: 500))
 
-    init(controller: TerminalController = TerminalController()) {
+    init(controller: TerminalController = TerminalController(), resize: @escaping @Sendable (InMemoryTerminalViewport) -> Void = { _ in }) {
         let writes = self.writes
-        session = InMemoryTerminalSession(write: { writes.append($0) }, resize: { _ in })
+        session = InMemoryTerminalSession(write: { writes.append($0) }, resize: resize)
         view.wantsLayer = true
         coordinator.delegate = metadata
         coordinator.isAttached = { true }
@@ -49,13 +56,16 @@ private final class SurfaceHarness {
     func feed(_ bytes: Data) { session.receive(bytes); session.waitForPendingOutput() }
     var text: String { session.readViewportText() ?? "" }
 
-    func snapshot(_ input: Data, extraColumn: Bool = false) throws -> Data {
+    func snapshot(_ input: Data, extraColumn: Bool = false, includePixels: Bool = false, cellPixels: (UInt32, UInt32)? = nil) throws -> Data {
         let size = try #require(coordinator.surface?.size())
         var root = URL(fileURLWithPath: #filePath)
         for _ in 0..<5 { root.deleteLastPathComponent() }
         let process = Process()
         process.executableURL = root.appendingPathComponent("crates/taskhub-vt/target/debug/examples/snapshot")
         process.arguments = [String(Int(size.columns) + (extraColumn ? 1 : 0)), String(size.rows)]
+        if includePixels || cellPixels != nil {
+            process.arguments?.append(contentsOf: [String(cellPixels?.0 ?? size.cellWidthPixels), String(cellPixels?.1 ?? size.cellHeightPixels)])
+        }
         let stdin = Pipe(), stdout = Pipe()
         process.standardInput = stdin
         process.standardOutput = stdout
@@ -72,6 +82,114 @@ private final class SurfaceHarness {
 @Suite(.serialized)
 @MainActor
 struct NativeSnapshotTests {
+    @Test func geometryCallbacksIncludeMeasuredCellsAndTrackBackingScaleChanges() async throws {
+        let sizes = Sizes()
+        let harness = SurfaceHarness(resize: { sizes.append($0) })
+        defer { harness.close() }
+        try #require(harness.session.enableGeometryCallbacks())
+        for _ in 0..<100 {
+            if sizes.all.last?.cellWidthPixels ?? 0 > 0 { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        let initial = try #require(sizes.all.last)
+        #expect(initial.cellWidthPixels > 0 && initial.cellHeightPixels > 0)
+        let count = sizes.all.count
+        harness.coordinator.scaleFactor = { 2 }
+        harness.coordinator.synchronizeMetrics()
+        for _ in 0..<100 {
+            if sizes.all.last?.cellWidthPixels ?? 0 > initial.cellWidthPixels { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        let changed = try #require(sizes.all.last)
+        let surface = try #require(harness.coordinator.surface?.size())
+        #expect(changed.columns == surface.columns && changed.rows == surface.rows)
+        // Font rasterization rounds differently at each backing scale; the
+        // callback must carry measured cells, not multiply old metrics by two.
+        #expect(changed.cellWidthPixels > initial.cellWidthPixels)
+        #expect(changed.cellHeightPixels > initial.cellHeightPixels)
+        #expect(changed.cellWidthPixels == surface.cellWidthPixels && changed.cellHeightPixels == surface.cellHeightPixels)
+        #expect(sizes.all.count > count)
+        #expect(sizes.all.dropFirst(count).allSatisfy { $0.cellWidthPixels > 0 && $0.cellHeightPixels > 0 })
+        let paddingWidth = surface.widthPixels - changed.widthPixels
+        let paddingHeight = surface.heightPixels - changed.heightPixels
+        let width = Double(UInt32(changed.columns) * changed.cellWidthPixels + paddingWidth) / 2
+        let height = Double(UInt32(changed.rows) * changed.cellHeightPixels + paddingHeight) / 2
+        harness.coordinator.viewSize = { (width, height) }
+        harness.coordinator.synchronizeMetrics()
+        for _ in 0..<100 {
+            if sizes.all.last?.widthPixels == UInt32(changed.columns) * changed.cellWidthPixels { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        let aligned = try #require(sizes.all.last)
+        harness.coordinator.viewSize = { (width + 0.5, height) } // one physical pixel, same grid
+        harness.coordinator.synchronizeMetrics()
+        for _ in 0..<100 {
+            if sizes.all.last?.widthPixels == aligned.widthPixels + 1 { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        let subcell = try #require(sizes.all.last)
+        #expect(subcell.columns == aligned.columns && subcell.rows == aligned.rows)
+        #expect(subcell.cellWidthPixels == aligned.cellWidthPixels && subcell.cellHeightPixels == aligned.cellHeightPixels)
+        #expect(subcell.widthPixels == aligned.widthPixels + 1)
+    }
+
+    @Test func daemonGeometrySuppressesSizeRepliesButPreservesTitleAndNativeInput() async throws {
+        let harness = SurfaceHarness(controller: TerminalController { $0.withCustom("title-report", "true") })
+        defer { harness.close() }
+        #expect(!harness.session.enableHostGeometryResponses())
+        try #require(harness.session.restoreSnapshot(try harness.snapshot(Data("\u{1B}[?2048h\u{1B}[16".utf8), includePixels: true)))
+        try #require(harness.session.enableHostGeometryResponses())
+        #expect(!harness.session.enableHostIdentityResponses()) // cannot downgrade ownership
+        let surface = try #require(harness.coordinator.surface)
+        let size = try #require(surface.size())
+        #expect(!harness.session.applyHostGridSize(columns: size.columns, rows: size.rows))
+        #expect(!harness.session.applyHostGeometry(columns: size.columns, rows: size.rows, cellWidthPixels: 0, cellHeightPixels: 18))
+        #expect(!harness.session.applyHostGeometry(columns: size.columns, rows: size.rows, cellWidthPixels: .max, cellHeightPixels: 18))
+        try #require(harness.session.applyHostGeometry(columns: size.columns + 3, rows: size.rows + 2,
+            cellWidthPixels: size.cellWidthPixels, cellHeightPixels: size.cellHeightPixels))
+        try #require(harness.session.applyHostGeometry(columns: size.columns + 3, rows: size.rows + 2,
+            cellWidthPixels: size.cellWidthPixels * 2, cellHeightPixels: size.cellHeightPixels * 2))
+        surface.setSize(width: size.widthPixels + 100, height: size.heightPixels + 100)
+        // Complete the split query and keep native title reporting active.
+        harness.feed(Data("t\u{1B}]2;Native title\u{07}\u{1B}[21t".utf8))
+        let title = Data("\u{1B}]lNative title\u{1B}\\".utf8)
+        for _ in 0..<100 {
+            _ = harness.session.flushSnapshotMetadataCallbacks()
+            if harness.writes.bytes.count >= title.count { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(harness.writes.bytes == title)
+        harness.feed(Data("\u{1B}[14t\u{1B}[16t\u{1B}[18t\u{1B}[?2048l\u{1B}[?2048h\u{1B}[c\u{1B}[6n\u{1B}[?5522$p".utf8))
+        let clipboard = Data("\u{1B}[?5522;2$y".utf8)
+        for _ in 0..<100 {
+            if harness.writes.bytes.count >= title.count + clipboard.count { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(harness.writes.bytes == title + clipboard)
+        harness.feed(Data("\u{1B}c\u{1B}[14t\u{1B}[16t\u{1B}[18t\u{1B}[?2048h".utf8))
+        try #require(surface.paste(text: "USER_INPUT"))
+        let expected = title + clipboard + Data("USER_INPUT".utf8)
+        for _ in 0..<100 {
+            if harness.writes.bytes.count >= expected.count { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(harness.writes.bytes == expected)
+        #expect(!harness.session.enableHostGeometryResponses()) // no mid-stream ownership change
+
+        let legacy = SurfaceHarness()
+        defer { legacy.close() }
+        try #require(legacy.session.restoreSnapshot(try legacy.snapshot(Data())))
+        #expect(!legacy.session.enableHostGeometryResponses()) // no invented zero-pixel geometry
+        #expect(!legacy.session.applyHostGeometry(columns: 80, rows: 24, cellWidthPixels: 9, cellHeightPixels: 18))
+        #expect(legacy.session.enableHostIdentityResponses())
+
+        let oversized = SurfaceHarness()
+        defer { oversized.close() }
+        try #require(oversized.session.restoreSnapshot(try oversized.snapshot(Data(), cellPixels: (65535, 18))))
+        #expect(!oversized.session.enableHostGeometryResponses()) // imported metrics were not replaced by local pixels
+        #expect(oversized.session.enableHostIdentityResponses())
+    }
+
     @Test func nativeParserDoesNotAnswerEchoedDeviceRepliesAndReportsANSIModes() async throws {
         let harness = SurfaceHarness()
         defer { harness.close() }
