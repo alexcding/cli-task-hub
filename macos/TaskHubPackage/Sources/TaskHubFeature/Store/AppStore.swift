@@ -52,7 +52,7 @@ public final class AppStore {
         settings = SettingsViewModel(clis: CLISettingsViewModel(copy: {
             NSPasteboard.general.clearContents(); NSPasteboard.general.setString($0, forType: .string)
         }, openBrowser: { NSWorkspace.shared.open($0) }), diagnostics: DiagnosticsViewModel(),
-            loginItem: LoginItemViewModel(service: NativeLoginItemService()), didSave: { [weak self] patch in
+            loginItem: LoginItemViewModel(service: NativeLoginItemService()), fonts: FontSettingsViewModel(catalog: InstalledCodeFontCatalog()), didSave: { [weak self] patch in
             guard let self else { return }
             if patch["jira_base_url"] != nil || patch["jira_api_token"] != nil {
                 for model in projectModels.values { await model.tickets?.invalidateSite() }
@@ -158,7 +158,7 @@ public final class AppStore {
         case .findPage: activeHistory != nil || hasActivePage
         case .zoomIn, .zoomOut, .resetZoom: viewer.active?.activePage != nil
         case .nextPage, .previousPage: (viewer.active?.tabOrder.count ?? 0) > 1
-        case .biggerFont, .smallerFont, .resetFont: terminal?.ready == true
+        case .biggerFont, .smallerFont, .resetFont: fontTarget != nil
         case .refresh: connection == "Connected"
         default: true
         }
@@ -192,11 +192,21 @@ public final class AppStore {
             terminal?.showsSurface = true
             terminal?.surface.requestFocus()
         case .refresh: refresh()
-        case .biggerFont: _ = terminal?.surface.performBindingAction("increase_font_size:1")
-        case .smallerFont: _ = terminal?.surface.performBindingAction("decrease_font_size:1")
-        case .resetFont: _ = terminal?.surface.performBindingAction("reset_font_size")
+        case .biggerFont: if let kind = fontTarget { shell.setFont(kind, size: shell.font(kind).size + 1) }
+        case .smallerFont: if let kind = fontTarget { shell.setFont(kind, size: shell.font(kind).size - 1) }
+        case .resetFont: if let kind = fontTarget { shell.setFont(kind, size: kind.defaultSize) }
         default: break
         }
+    }
+
+    private var fontTarget: CodeFontKind? {
+        if selection == .settings && settings.section == .general { return .diff }
+        if let context = viewer.active {
+            if context.pane == .diff { return .diff }
+            let hasTerminal = context.id == "scratch" || sessions.contains { "task:\($0.id)" == context.id }
+            if context.activeDocument != nil && (!hasTerminal || context.pane == .term) { return .diff }
+        }
+        return terminal?.ready == true && terminal?.showsSurface == true ? .term : nil
     }
 
     func selectTrayTab(_ tab: SavedTab) {

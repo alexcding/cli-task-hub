@@ -1,11 +1,13 @@
 // This surface has no HTTP/file API. Swift supplies one document, validates all
 // writes, and owns confirmation. Remote pages never receive this message handler.
 import { loadMonaco, languageId } from '../lib/monaco-loader.mjs';
+import { codeFontStack } from '../lib/util.js';
 
 const post = body => window.webkit.messageHandlers.editor.postMessage(body);
 const monaco = await loadMonaco();
 let editor, model, savedVersion, readOnly = false, frozen = false, lastDirty;
 let appearance = 'system';
+let font = { fontFamily: codeFontStack(''), fontSize: 12 };
 const media = matchMedia('(prefers-color-scheme: dark)');
 const theme = () => monaco.editor.setTheme(
   (appearance === 'dark' || (appearance === 'system' && media.matches)) ? 'xcode-dark' : 'xcode-light');
@@ -25,7 +27,7 @@ window.nativeEditor = Object.freeze({
     editor = monaco.editor.create(window.document.getElementById('editor'), {
       model, readOnly, automaticLayout: true, minimap: { enabled: false },
       scrollBeyondLastLine: false, tabSize: 2, renderWhitespace: 'selection',
-      fontFamily: 'Menlo, Monaco, monospace', fontSize: 13,
+      ...font,
       ariaLabel: 'Code editor',
     });
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => post({ type: 'save' }));
@@ -40,6 +42,11 @@ window.nativeEditor = Object.freeze({
   acknowledge(version) { savedVersion = version; changed(); return dirty(); },
   unfreeze() { frozen = false; editor.updateOptions({ readOnly }); },
   setTheme(value) { appearance = value; theme(); },
+  setFont({ family, size }) {
+    if (typeof family !== 'string' || family.length > 256 || /[\x00-\x1f\x7f]/.test(family) || !Number.isInteger(size) || size < 9 || size > 24) return;
+    font = { fontFamily: codeFontStack(family), fontSize: size };
+    editor?.updateOptions(font);
+  },
   find() { editor.getAction('actions.find').run(); },
   focus(line = 0, column = 1) {
     if (frozen) return;

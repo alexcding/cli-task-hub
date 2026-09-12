@@ -2,6 +2,7 @@ import SwiftUI
 import GhosttyTerminal
 
 struct TerminalPane: View {
+    @Environment(\.terminalFont) private var font
     let session: TerminalSession
     let reconnect: () -> Void
     var active = true
@@ -22,6 +23,7 @@ struct TerminalPane: View {
             if let error = session.error {
                 Text(error).foregroundStyle(.orange).textSelection(.enabled).padding(10)
             }
+            if let error = session.fontError { Text(error).foregroundStyle(.orange).padding(8) }
             ZStack {
                 TerminalSurfaceView(context: session.surface)
                     .id(session.surfaceGeneration)
@@ -43,7 +45,8 @@ struct TerminalPane: View {
                   window === session.surface.attachedPlatformView?.window else { return }
             session.surface.isSurfaceVisible = active && visible && window.occlusionState.contains(.visible)
         }
-        .task { updateVisibility(); await session.start() }
+        .onChange(of: font) { _, value in session.setFont(value) }
+        .task { session.setFont(font); updateVisibility(); await session.start() }
     }
 
     private func updateVisibility() {

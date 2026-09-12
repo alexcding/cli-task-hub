@@ -434,7 +434,25 @@ Dashboard; the remaining app pages and action parity are tracked under M4.
   fixes that assertion. Tests did not alter real login items. Packaged registration,
   System Settings approval, and logout/login acceptance remain release gates; legacy
   Tauri login items are not migrated or removed automatically. Process/resource usage,
-  fonts, and native memory policy remain implementation work.
+fonts, and native memory policy remain implementation work.
+
+### M4 font preferences — 2026-09-12
+
+- Native Settings enumerates installed monospace families off the UI actor and
+  retains unavailable saved choices. Terminal and code/diff family/size preferences
+  use the existing backend keys, with independent defaults of 13/12 points and a
+  9–24 range. Rapid changes coalesce; pending offline writes remain durable.
+- Mounted terminals update Ghostty configuration in place, retaining the native
+  surface, generation, daemon identity and shell PID. New font metrics flow through
+  the ordered daemon geometry path. Diff CSS and Monaco options update in place,
+  preserving the document buffer, dirty state and undo history.
+- Native menu shortcuts adjust the visible code/diff size or terminal size; General
+  settings routes them to code/diff preferences. Browser page zoom stays separate.
+- Verified: validation/catalog and preference persistence tests; live daemon-backed
+  font resize with unchanged surface/PID and retained viewport; real WebKit editor
+  font changes with unchanged dirty buffer/version; diff updates preserving its DOM;
+  bundled web dependency checks; native Settings family/reset/shortcut/navigation UI.
+  These checks do not replace the outstanding terminal fidelity/performance gates.
 
 Companion docs: `ARCHITECTURE.md` (layers, HTTP-vs-IPC split), `TAURI-PORT.md`
 (the previous shell port — the same boundary makes this one tractable), `CLAUDE.md`

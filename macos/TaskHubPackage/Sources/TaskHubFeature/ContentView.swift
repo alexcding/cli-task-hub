@@ -46,6 +46,8 @@ public struct ContentView: View {
             }
         }
         .frame(minWidth: 760, minHeight: 480)
+        .environment(\.terminalFont, store.shell.font(.term))
+        .environment(\.documentFont, store.shell.font(.diff))
         .overlay(alignment: .topTrailing) {
             ActivityToastView(notifications: store.shell.notifications)
                 .frame(maxWidth: 420).padding(16)

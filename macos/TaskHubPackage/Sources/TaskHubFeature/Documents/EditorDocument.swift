@@ -49,6 +49,7 @@ struct EditorBuffer: Codable, Sendable {
     func acknowledge(version: Int) async throws -> Bool
     func unfreeze() async throws
     func setAppearance(_ value: AppAppearance)
+    func setFont(_ value: CodeFont)
     func focus(line: Int, column: Int)
     func find()
     func dispose()
@@ -77,6 +78,7 @@ struct EditorBuffer: Codable, Sendable {
     @ObservationIgnored private var savingTask: Task<Bool, Never>?
     @ObservationIgnored private var generation = UUID()
     @ObservationIgnored private var appearance = AppAppearance.system
+    @ObservationIgnored private var font = CodeFont(size: 12)
     @ObservationIgnored private var visible = false
     @ObservationIgnored private var pendingLocation: DocumentLocation?
 
@@ -114,6 +116,7 @@ struct EditorBuffer: Codable, Sendable {
                 guard self.generation == generation else { return }
                 revision = value.revision; readOnly = value.readOnly; loaded = true
                 editor.setAppearance(self.appearance)
+                editor.setFont(self.font)
                 if visible, let location = pendingLocation { focus(line: location.line, column: location.column) }
                 if !visible { hide() }
             } catch {
@@ -193,6 +196,7 @@ struct EditorBuffer: Codable, Sendable {
         closing = false
     }
     func setAppearance(_ value: AppAppearance) { appearance = value; surface?.setAppearance(value) }
+    func setFont(_ value: CodeFont) { font = value; surface?.setFont(value) }
     func find() { surface?.find() }
     func focus(line: Int = 1, column: Int = 1) {
         pendingLocation = .init(path: record.path, line: line, column: column)

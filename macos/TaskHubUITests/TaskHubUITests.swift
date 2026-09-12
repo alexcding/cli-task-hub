@@ -221,6 +221,34 @@ final class TaskHubUITests: XCTestCase {
     }
 
     @MainActor
+    func testNativeFontPreferencesAndCodeSizeShortcuts() throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard let base = environment["TASKHUB_UI_BACKEND_URL"],
+              let path = environment["TASKHUB_UI_DATA_DIR"], let socket = environment["TASKHUB_UI_PTY_SOCKET"] else {
+            throw XCTSkip("Run macos/scripts/test-browser-ui.sh to provide the isolated fixture.")
+        }
+        let app = XCUIApplication()
+        app.launchArguments = ["--backend-url", base, "--data-dir", path, "--pty-socket", socket]
+        app.launch()
+        XCTAssertTrue(app.outlines["workspace-sidebar"].waitForExistence(timeout: 10))
+        app.typeKey(",", modifierFlags: .command)
+        app.radioButtons["General"].click()
+        let family = app.popUpButtons["settings-diff-font-family"]
+        XCTAssertTrue(family.waitForExistence(timeout: 5), app.debugDescription)
+        family.click(); app.menuItems["Menlo"].click()
+        app.buttons["Reset Code and diffs Size"].click()
+        app.typeKey("=", modifierFlags: .command)
+        XCTAssertTrue(app.staticTexts["Code and diffs size: 13"].waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(app.staticTexts["Terminal size: 13"].exists)
+        app.typeKey("0", modifierFlags: .command)
+        XCTAssertTrue(app.staticTexts["Code and diffs size: 12"].waitForExistence(timeout: 5))
+        app.typeKey("1", modifierFlags: .command)
+        app.typeKey(",", modifierFlags: .command)
+        let retained = expectation(for: NSPredicate(format: "value == 'Menlo' OR title == 'Menlo'"), evaluatedWith: family)
+        wait(for: [retained], timeout: 5)
+    }
+
+    @MainActor
     func testQuietStartupLoadsTrayAndOpensNativeWindow() throws {
         let environment = ProcessInfo.processInfo.environment
         guard let base = environment["TASKHUB_UI_BACKEND_URL"],

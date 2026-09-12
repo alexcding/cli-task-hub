@@ -18,6 +18,8 @@ final class TerminalSession: Identifiable {
     private(set) var termID: String?
     var agentBusy = false
     private(set) var ready = false
+    private(set) var font = CodeFont(size: 13)
+    private(set) var fontError: String?
     @ObservationIgnored private var pipe: TerminalPipe!
     @ObservationIgnored private var client: PtydClient?
     @ObservationIgnored private var host: PtydHost?
@@ -45,7 +47,7 @@ final class TerminalSession: Identifiable {
         let wasVisible = surface.isSurfaceVisible
         surfaceGeneration = UUID()
         let generation = surfaceGeneration
-        surface = TerminalViewState()
+        surface = TerminalViewState(terminalConfiguration: font.terminalConfiguration)
         surface.isSurfaceVisible = wasVisible
         pipe = TerminalPipe(onError: { [weak self] text in
             Task { @MainActor in
@@ -58,7 +60,7 @@ final class TerminalSession: Identifiable {
                 self.status = "Exited (\(code))"; self.ready = false
             }
         })
-        surface.configuration = .init(backend: .inMemory(pipe.memory), fontSize: 13, resizeThrottleMilliseconds: 80)
+        surface.configuration = .init(backend: .inMemory(pipe.memory), resizeThrottleMilliseconds: 80)
         surface.makePlatformView = { [weak self] in
             let view = WorkspaceTerminalView(frame: .zero)
             view.openLink = { [weak self] raw, directory, external in
@@ -71,6 +73,20 @@ final class TerminalSession: Identifiable {
             guard let self, self.surfaceGeneration == generation else { return }
             self.status = "Exited"; self.ready = false
         }
+    }
+
+    func setFont(_ value: CodeFont) {
+        guard font != value else { return }
+        // Changing surface.configuration would rebuild the emulator. Reconfigure
+        // its controller in place, preserving parser/surface and daemon ownership.
+        guard surface.setTerminalConfiguration(value.terminalConfiguration) else {
+            fontError = surface.controller.lastConfigurationIssue ?? "Could not apply the terminal font."
+            return
+        }
+        font = value; fontError = nil
+        // A prior native zoom action marks the size as manually adjusted; reset
+        // to the newly configured size so future preference updates keep working.
+        _ = surface.performBindingAction("reset_font_size")
     }
 
     func start() async {

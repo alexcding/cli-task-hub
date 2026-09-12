@@ -47,6 +47,7 @@ struct SettingsView: View {
                             if let error = shell.gitClientCommandError { Text(error).foregroundStyle(.orange) }
                         }
                     }
+                    FontSettingsView(model: model.fonts, shell: shell)
                 }.formStyle(.grouped)
                 if let error = shell.settingsError { Text(error).foregroundStyle(.orange) }
             case .connections:

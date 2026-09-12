@@ -21,6 +21,8 @@ import Observation
     private(set) var gitClientCommand: String
     var gitClientCommandDraft: String
     private(set) var gitClientCommandError: String?
+    private(set) var terminalCodeFont: CodeFont
+    private(set) var documentCodeFont: CodeFont
     private(set) var settingsError: String?
     private(set) var acknowledging: Set<String> = []
     @ObservationIgnored private var api: APIClient?
@@ -46,6 +48,11 @@ import Observation
         gitClient = preferences.string(forKey: "native.gitClient") ?? ""
         let command = preferences.string(forKey: "native.gitClientCmd") ?? ""
         gitClientCommand = command; gitClientCommandDraft = command
+        func savedFont(_ kind: CodeFontKind) -> CodeFont {
+            CodeFont(kind, settings: ["\(kind.rawValue)_font_family": preferences.string(forKey: "native.\(kind.rawValue)_font_family") ?? "",
+                                     "\(kind.rawValue)_font_size": preferences.string(forKey: "native.\(kind.rawValue)_font_size") ?? String(kind.defaultSize)])
+        }
+        terminalCodeFont = savedFont(.term); documentCodeFont = savedFont(.diff)
     }
 
     var pendingReviews: [TrayPR] { prs.filter(\.pendingReview) }
@@ -192,7 +199,21 @@ import Observation
     }
     func revertGitClientCommand() { gitClientCommandDraft = gitClientCommand; gitClientCommandError = nil }
 
-    private func saveSetting(_ key: String, value: String) {
+    func font(_ kind: CodeFontKind) -> CodeFont { kind == .term ? terminalCodeFont : documentCodeFont }
+    func setFont(_ kind: CodeFontKind, family: String? = nil, size: Int? = nil) {
+        if let family, !CodeFont.validFamily(family) { settingsError = "The font family contains unsupported characters."; return }
+        let previous = font(kind)
+        let next = CodeFont(family: family ?? previous.family, size: size ?? previous.size)
+        guard previous != next else { return }
+        if kind == .term { terminalCodeFont = next } else { documentCodeFont = next }
+        for (suffix, value, changed) in [("family", next.family, next.family != previous.family), ("size", String(next.size), next.size != previous.size)] where changed {
+            let key = "\(kind.rawValue)_font_\(suffix)"
+            preferences.set(value, forKey: "native.\(key)")
+            saveSetting(key, value: value, debounce: true)
+        }
+    }
+
+    private func saveSetting(_ key: String, value: String, debounce: Bool = false) {
         pendingSettings[key] = value
         preferences.set(pendingSettings, forKey: "native.pendingSettings")
         settingsRevision += 1
@@ -203,6 +224,11 @@ import Observation
             await previous?.value // Preserve rapid user changes in their original order.
             do {
                 try Task.checkCancellation()
+                if debounce {
+                    guard pendingSettings[key] == value else { return }
+                    try await Task.sleep(for: .milliseconds(250))
+                    guard pendingSettings[key] == value else { return }
+                }
                 try await api.setSetting(key, value: value)
                 if pendingSettings[key] == value {
                     pendingSettings.removeValue(forKey: key)
@@ -240,6 +266,16 @@ import Observation
                     let dirty = gitClientCommandDirty
                     gitClientCommand = (settings["gitClientCmd"] ?? nil) ?? ""
                     if !dirty { gitClientCommandDraft = gitClientCommand }
+                }
+                for kind in CodeFontKind.allCases {
+                    let previous = font(kind)
+                    let familyKey = "\(kind.rawValue)_font_family", sizeKey = "\(kind.rawValue)_font_size"
+                    let family = pendingSettings[familyKey] == nil ? (settings[familyKey] ?? nil) ?? "" : previous.family
+                    let size = pendingSettings[sizeKey] == nil ? Int((settings[sizeKey] ?? nil) ?? "") ?? kind.defaultSize : previous.size
+                    let value = CodeFont(family: family, size: size)
+                    if kind == .term { terminalCodeFont = value } else { documentCodeFont = value }
+                    preferences.set(value.family, forKey: "native.\(familyKey)")
+                    preferences.set(String(value.size), forKey: "native.\(sizeKey)")
                 }
                 preferences.set(appearance.rawValue, forKey: "native.theme")
                 preferences.set(usageAgent, forKey: "native.usageAgent")

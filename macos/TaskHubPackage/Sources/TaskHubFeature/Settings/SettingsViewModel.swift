@@ -6,6 +6,7 @@ import Observation
     let clis: CLISettingsViewModel
     let diagnostics: DiagnosticsViewModel
     let loginItem: LoginItemViewModel
+    let fonts: FontSettingsViewModel
     var draft = AppConfigDraft()
     private(set) var loaded = false
     private(set) var saving = false
@@ -20,9 +21,10 @@ import Observation
     @ObservationIgnored private var connection = UUID()
     @ObservationIgnored private let didSave: ([String: String]) async -> Void
 
-    init(clis: CLISettingsViewModel, diagnostics: DiagnosticsViewModel, loginItem: LoginItemViewModel,
+    init(clis: CLISettingsViewModel, diagnostics: DiagnosticsViewModel, loginItem: LoginItemViewModel, fonts: FontSettingsViewModel,
          didSave: @escaping ([String: String]) async -> Void) {
         self.clis = clis; self.diagnostics = diagnostics; self.loginItem = loginItem; self.didSave = didSave
+        self.fonts = fonts
     }
     var dirty: Bool { draft != baseline }
     var canSave: Bool { loaded && dirty && !saving && service != nil && draft.validationError == nil }
@@ -69,6 +71,7 @@ import Observation
     func stop() async {
         connection = UUID(); task?.cancel(); diagnostics.stop()
         await loginItem.stop()
+        await fonts.stop()
         await task?.value; await clis.stop(); service = nil
     }
 }

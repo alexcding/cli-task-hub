@@ -305,6 +305,21 @@ private final class EventLog: @unchecked Sendable {
         try await Task.sleep(for: .milliseconds(10))
     }
     #expect(await first.viewportText()?.contains("SPLIT_🦀") == true)
+    let originalSurface = try #require(first.surface.surface)
+    let originalGeneration = first.surfaceGeneration
+    let beforeFont = try await currentGeometry()
+    first.setFont(CodeFont(family: "Menlo", size: 20))
+    var afterFont = try await currentGeometry()
+    for _ in 0..<100 {
+        if afterFont.cellHeightPixels != beforeFont.cellHeightPixels { break }
+        try await Task.sleep(for: .milliseconds(10))
+        afterFont = try await currentGeometry()
+    }
+    #expect(first.fontError == nil && first.surface.surface === originalSurface)
+    #expect(first.surfaceGeneration == originalGeneration && first.shellPID == term.pid && first.termID == term.id)
+    #expect(afterFont.cellHeightPixels != beforeFont.cellHeightPixels)
+    #expect(await first.viewportText()?.contains("SPLIT_🦀") == true)
+    first.setFont(CodeFont(size: 13))
     await first.stopConnecting()
     firstWindow.contentView = nil
 

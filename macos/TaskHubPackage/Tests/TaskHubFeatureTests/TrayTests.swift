@@ -63,6 +63,8 @@ import Testing
     shell.setGitClient("custom")
     shell.gitClientCommandDraft = #"open -a "Fork" {path}"#
     shell.saveGitClientCommand()
+    shell.setFont(.term, family: "Menlo", size: 16)
+    shell.setFont(.diff, family: "Monaco", size: 14)
     shell.connect(api)
     shell.refreshUsage()
     for _ in 0..<100 {
@@ -74,6 +76,8 @@ import Testing
     #expect(shell.appearance == .dark)
     #expect(!shell.activityNotify && shell.reviewSound == "off")
     #expect(shell.gitClient == "custom" && shell.gitClientCommand == #"open -a "Fork" {path}"#)
+    #expect(shell.font(.term) == CodeFont(family: "Menlo", size: 16))
+    #expect(shell.font(.diff) == CodeFont(family: "Monaco", size: 14))
     #expect(shell.usageLoading && shell.usage == nil) // A blocked usage source cannot block reviews.
     try Data().write(to: directory.appendingPathComponent("release-usage"))
     for _ in 0..<100 {
@@ -115,6 +119,8 @@ import Testing
     shell.revertGitClientCommand()
     #expect(!shell.gitClientCommandDirty && shell.gitClientCommandError == nil)
     shell.setGitClient("tower")
+    for size in 17...24 { shell.setFont(.term, size: size) }
+    shell.setFont(.diff, family: "Menlo", size: 18)
     await shell.stop() // Drains preference writes in order before disconnecting.
     let settings: [String: String] = try await api.get(Routes.SETTINGS)
     #expect(settings["theme"] == "auto")
@@ -122,9 +128,13 @@ import Testing
     #expect(settings["defaultCli"] == "")
     #expect(settings["activityNotify"] == "off" && settings["reviewSound"] == "off")
     #expect(settings["gitClient"] == "tower" && settings["gitClientCmd"] == #"open -a "Fork" {path}"#)
+    #expect(settings["term_font_size"] == "24" && settings["term_font_family"] == "Menlo")
+    #expect(settings["diff_font_size"] == "18" && settings["diff_font_family"] == "Menlo")
     let reopened = ShellStore(preferences: preferences)
     #expect(reopened.appearance == .system && reopened.usageAgent == "codex")
     #expect(!reopened.activityNotify && reopened.reviewSound == "off")
     #expect(reopened.defaultAgent == .shell)
     #expect(reopened.gitClient == "tower" && reopened.gitClientCommand == #"open -a "Fork" {path}"#)
+    #expect(reopened.font(.term) == CodeFont(family: "Menlo", size: 24))
+    #expect(reopened.font(.diff) == CodeFont(family: "Menlo", size: 18))
 }

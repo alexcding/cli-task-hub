@@ -53,6 +53,7 @@ struct APIDiffService: DiffService {
     @ObservationIgnored private var loaded = false
     @ObservationIgnored private var active = false
     @ObservationIgnored private var appearance = AppAppearance.system
+    @ObservationIgnored private var font = CodeFont(size: 12)
 
     @ObservationIgnored private let allowsFileOpening: Bool
     @ObservationIgnored private let openFile: (DocumentLocation) -> Void
@@ -129,6 +130,10 @@ struct APIDiffService: DiffService {
         appearance = value
         if loaded { webView?.evaluateJavaScript("window.nativeDiff.setTheme('\(value.rawValue)')", completionHandler: nil) }
     }
+    func setFont(_ value: CodeFont) {
+        font = value
+        if loaded { webView?.evaluateJavaScript("window.nativeDiff.setFont(\(value.json))", completionHandler: nil) }
+    }
     func reload() { documentError = nil; loadError = nil; loaded = false; webView?.reload(); refresh() }
     private func render() {
         guard loaded, let documentScript else { return }
@@ -162,7 +167,7 @@ struct APIDiffService: DiffService {
         guard message.webView === webView, message.frameInfo.isMainFrame, message.frameInfo.request.url == pageURL,
               let body = message.body as? [String: Any], body.count <= 3 else { return }
         if body["type"] as? String == "ready" {
-            loaded = true; documentError = nil; setAppearance(appearance); render()
+            loaded = true; documentError = nil; setAppearance(appearance); setFont(font); render()
         } else if body["type"] as? String == "error", let text = body["message"] as? String, text.utf8.count <= 4096 {
             documentError = "Could not load changes: \(text)"
         } else if let request = DiscardSelectionMessage.decode(body, revision: snapshot?.revision), active, loaded, !loading, let actions {

@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct EditorDocumentView: View {
+    @Environment(\.documentFont) private var font
     let model: EditorDocumentViewModel
     let appearance: AppAppearance
     let active: Bool
@@ -24,9 +25,10 @@ struct EditorDocumentView: View {
             if let view = model.webView { BrowserSurface(webView: view) }
             else { Color.clear }
         }
-        .onAppear { if active { model.show(appearance: appearance) } }
+        .onAppear { model.setFont(font); if active { model.show(appearance: appearance) } }
         .onChange(of: active) { _, value in if value { model.show(appearance: appearance) } else { model.hide() } }
         .onDisappear { model.hide() }
         .onChange(of: appearance) { _, value in model.setAppearance(value) }
+        .onChange(of: font) { _, value in model.setFont(value) }
     }
 }

@@ -2,7 +2,7 @@
 // file I/O or HTTP API access; native controls own loading and mutations.
 import { parseDiff } from '../lib/diff-parse.mjs';
 import { renderReadOnly, wireDiffCollapse } from '../components/diff.js';
-import { esc } from '../lib/util.js';
+import { esc, codeFontStack } from '../lib/util.js';
 
 const pane = document.getElementById('native-diff');
 wireDiffCollapse(pane);
@@ -43,6 +43,11 @@ window.nativeDiff = {
     currentTheme = theme;
     document.documentElement.dataset.theme = theme === 'system'
       ? (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light') : theme;
+  },
+  setFont({ family, size }) {
+    if (typeof family !== 'string' || family.length > 256 || /[\x00-\x1f\x7f]/.test(family) || !Number.isInteger(size) || size < 9 || size > 24) return;
+    document.documentElement.style.setProperty('--diff-font', codeFontStack(family));
+    document.documentElement.style.setProperty('--diff-font-size', `${size}px`);
   },
 };
 window.webkit?.messageHandlers.diff?.postMessage({ type: 'ready' });

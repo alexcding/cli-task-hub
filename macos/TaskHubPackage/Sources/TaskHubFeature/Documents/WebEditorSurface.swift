@@ -49,6 +49,7 @@ import WebKit
     }
     func unfreeze() async throws { _ = try await evaluate("window.nativeEditor.unfreeze(); true") }
     func setAppearance(_ value: AppAppearance) { command("setTheme('\(value.rawValue)')") }
+    func setFont(_ value: CodeFont) { command("setFont(\(value.json))") }
     func focus(line: Int, column: Int) { command("focus(\(max(1, line)), \(max(1, column)))") }
     func find() { command("find()") }
     private func command(_ call: String) {

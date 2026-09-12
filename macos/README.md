@@ -117,7 +117,12 @@ startup without changing login items. A legacy Tauri login item is separate and 
 not automatically changed by the native app. Real registration and logout/login
 acceptance remain part of packaged-release verification.
 
-Fonts, process/resource usage, and native memory-budget policy remain open.
+**Code fonts** offers installed monospace families and independent terminal and
+code/diff sizes (9–24 points). Preferences share the existing backend keys, retain
+unavailable saved families, and apply immediately to mounted views. Terminal changes
+preserve the native surface and shell; editor changes preserve unsaved text and undo
+state. Saves coalesce rapid size changes and retain pending values while offline.
+Process/resource usage and native memory-budget policy remain open.
 
 ## Native tray and appearance (M2)
 
@@ -144,7 +149,9 @@ Native File/Edit/View/Go/Window menus are owned by AppKit. Copy/paste/undo follo
 the focused responder. Command-1 opens Overview, Command-2 focuses the terminal,
 Control-Command-S focuses the sidebar, and Control-Command-T reveals/focuses the
 current terminal. Command-Q hides the window; only tray Quit tears down the app.
-Terminal font zoom uses Command-plus/minus/zero without recreating its emulator.
+Command-plus/minus/zero changes or resets the visible code/diff font, or the terminal
+font when no code document is visible, without recreating its emulator. In General
+settings these shortcuts change the code/diff size. Page zoom remains separate.
 
 ## Notifications (M2)
 

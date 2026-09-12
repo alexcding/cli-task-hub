@@ -4,6 +4,12 @@ import Testing
 import WebKit
 @testable import TaskHubFeature
 
+private struct FontDiffFixture: DiffService {
+    func load(worktree: String) async throws -> DiffSnapshot {
+        .init(diff: "diff --git a/Example.swift b/Example.swift\n--- a/Example.swift\n+++ b/Example.swift\n@@ -1 +1 @@\n-let value = 1\n+let value = 2\n", untracked: [], branch: "font-test")
+    }
+}
+
 private actor FileFixture: FileDocumentService {
     var writes: [String] = []
     var fails = false
@@ -39,6 +45,7 @@ private actor FileFixture: FileDocumentService {
     func acknowledge(version: Int) async throws -> Bool { saved = version; return self.version != saved }
     func unfreeze() async throws { frozen = false }
     func setAppearance(_ value: AppAppearance) {}
+    func setFont(_ value: CodeFont) {}
     var location: (Int, Int)?
     func focus(line: Int, column: Int) { location = (line, column) }
     func find() {}
@@ -173,6 +180,13 @@ private actor FileFixture: FileDocumentService {
     let surface = try #require(model.surface)
     #expect(try await surface.snapshot(freeze: false).content == original)
     _ = try await view.evaluateJavaScript(#"window.monaco.editor.getModels()[0].applyEdits([{range:{startLineNumber:2,startColumn:1,endLineNumber:2,endColumn:1},text:'// edited\r\n'}]); true"#)
+    let beforeFont = try await surface.snapshot(freeze: false)
+    model.setFont(CodeFont(family: "Menlo", size: 19))
+    let info = try await view.evaluateJavaScript("window.monaco.editor.getEditors()[0].getOption(window.monaco.editor.EditorOption.fontInfo).fontSize")
+    #expect(info as? Int == 19)
+    let afterFont = try await surface.snapshot(freeze: false)
+    #expect(afterFont.content == beforeFont.content && afterFont.version == beforeFont.version && afterFont.dirty)
+    #expect(model.webView === view)
     #expect(await model.save())
     let savedBytes = try Data(contentsOf: file)
     #expect(savedBytes == Data((original + "// edited\r\n").utf8))
@@ -188,6 +202,23 @@ private actor FileFixture: FileDocumentService {
     #expect(try await surface.snapshot(freeze: false).content == "my unsaved content")
     #expect(try String(contentsOf: file, encoding: .utf8) == "external change")
     #expect(model.error != nil)
+
+    let diff = DiffViewModel(worktree: directory.path, baseURL: base, service: FontDiffFixture())
+    defer { diff.disconnect() }
+    diff.setFont(CodeFont(family: "Menlo", size: 20))
+    diff.show(appearance: .dark)
+    let diffView = try #require(diff.webView)
+    var rendered = false
+    for _ in 0..<200 {
+        rendered = (try? await diffView.evaluateJavaScript("document.querySelector('.diff-root') !== null && document.documentElement.style.getPropertyValue('--diff-font-size') === '20px'")) as? Bool == true
+        if rendered { break }
+        try await Task.sleep(for: .milliseconds(25))
+    }
+    #expect(rendered && diff.error == nil)
+    _ = try await diffView.evaluateJavaScript("window.savedDiffRoot = document.querySelector('.diff-root'); true")
+    diff.setFont(CodeFont(family: "Monaco", size: 16))
+    let retained = try await diffView.evaluateJavaScript("window.savedDiffRoot === document.querySelector('.diff-root') && document.documentElement.style.getPropertyValue('--diff-font-size') === '16px'")
+    #expect(retained as? Bool == true)
 }
 
 
