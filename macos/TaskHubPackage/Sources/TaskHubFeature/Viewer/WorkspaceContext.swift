@@ -156,6 +156,17 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
         return context
     }
     func deactivate() { activeContextID = nil }
+    func remove(id: String) async {
+        let context = contexts.removeValue(forKey: id)
+        context?.changed = {}
+        context?.pages.forEach { $0.evict() }
+        if activeContextID == id { activeContextID = nil }
+        await writes[id]?.value
+        writes[id] = nil
+        saved.removeValue(forKey: id); dirty.remove(id); edited.remove(id)
+        cache()
+        if let api { try? await api.setSetting("native.context.\(id)", value: "") }
+    }
     private func activate(_ page: BrowserPage) {
         page.materialize()
         lru.removeAll { $0 == page.id }; lru.append(page.id)

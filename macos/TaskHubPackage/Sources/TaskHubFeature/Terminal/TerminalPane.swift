@@ -5,17 +5,18 @@ struct TerminalPane: View {
     let session: TerminalSession
     let reconnect: () -> Void
     var active = true
+    var title = "Terminal"
     private var visible: Bool { session.showsSurface }
 
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                Label("Terminal", systemImage: "terminal")
-                Text(session.status).foregroundStyle(.secondary)
+                Label(title, systemImage: title == "Build" ? "hammer" : "terminal").labelStyle(.iconOnly).help(title)
+                Text(session.status).foregroundStyle(.secondary).lineLimit(1)
                 if let pid = session.shellPID { Text("PID \(pid)").monospacedDigit().foregroundStyle(.secondary) }
                 Spacer()
-                Toggle("Show terminal", isOn: Binding(get: { visible }, set: { session.showsSurface = $0 })).toggleStyle(.switch)
-                Button("Reattach", action: reconnect)
+                Toggle("Show terminal", isOn: Binding(get: { visible }, set: { session.showsSurface = $0 })).toggleStyle(.switch).labelsHidden().help("Show terminal")
+                Button("Reattach", systemImage: "arrow.triangle.2.circlepath", action: reconnect).labelStyle(.iconOnly).help("Reattach")
             }.font(.callout).padding(12)
             Divider()
             if let error = session.error {

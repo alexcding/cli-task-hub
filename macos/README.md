@@ -44,8 +44,11 @@ with no page it hides the window. Page state is cached locally and synced to SQL
 At most six remote views remain live; suspended pages reload when selected.
 
 Run `bash macos/scripts/test-browser-ui.sh` for the isolated browser UI regression.
-Session removal, build destinations, terminal links, and old tab-state import remain
-under implementation; this does not close the M1 terminal acceptance gate.
+Remove Session previews affected sessions and asks separately before discarding
+uncommitted/untracked work. Orphan folders are retained. Xcode-configured projects
+offer Run Destination and a separate Build pane; Stop interrupts its build PTY.
+Terminal links, PR/Jira-aware creation, and old tab-state import remain under
+implementation; this does not close the M1 terminal acceptance gate.
 
 ## Native tray and appearance (M2)
 

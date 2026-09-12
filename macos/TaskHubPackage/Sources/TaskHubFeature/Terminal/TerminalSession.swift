@@ -121,17 +121,36 @@ final class TerminalSession: Identifiable {
     }
 
     func submit(_ line: String) async throws {
-        struct Foreground: Decodable, Sendable { let atShell: Bool }
         guard ready, let client, let termID else { throw PtyError.closed }
         guard !line.contains("\n"), !line.contains("\r"), !line.contains("\0") else {
             throw PtyError.connection("Terminal commands must contain a single line.")
         }
-        let foreground: Foreground = try await client.request(.init(op: "foreground", term: termID))
-        guard foreground.atShell else { throw PtyError.connection("The terminal is busy. Return to its shell before launching the agent.") }
+        guard try await atShell() else { throw PtyError.connection("The terminal is busy. Return to its shell before launching a command.") }
         try Task.checkCancellation()
         let _: Bool? = try await client.request(.init(op: "write", term: termID, data: line))
         try await Task.sleep(for: .milliseconds(60))
         let _: Bool? = try await client.request(.init(op: "write", term: termID, data: "\r"))
+    }
+
+    func atShell() async throws -> Bool {
+        struct Foreground: Decodable, Sendable { let atShell: Bool }
+        guard ready, let client, let termID else { throw PtyError.closed }
+        let result: Foreground = try await client.request(.init(op: "foreground", term: termID))
+        return result.atShell
+    }
+
+    func interrupt() async throws {
+        guard ready, let client, let termID else { throw PtyError.closed }
+        let _: Bool? = try await client.request(.init(op: "write", term: termID, data: "\u{03}"))
+    }
+
+    func waitUntilReady() async throws {
+        for _ in 0..<100 {
+            if ready { return }
+            if let error { throw PtyError.connection(error) }
+            try await Task.sleep(for: .milliseconds(100))
+        }
+        throw PtyError.connection("The terminal did not become ready. Open its pane and retry.")
     }
 
     func quit() async {

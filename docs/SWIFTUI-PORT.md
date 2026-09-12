@@ -208,7 +208,25 @@ connection/project-list foundation; it is not the completed Dashboard.
   The browser UI test now passes find, navigation, last-page close without terminating
   the session/window, and the native New Session sheet. Xcode reports an internal
   UI-runner QoS warning; no app crash remains in this exercised flow.
-- Still open: removal, PR/Jira-aware session creation, isolated build/Run destinations,
+- Added removal with a native preview of all sessions sharing the worktree and open
+  file holders. Default deletion refuses dirty worktrees; explicit discard warns
+  about uncommitted/untracked loss and Xcode close-without-saving. Orphan sessions
+  can be forgotten without deleting their folders. Session-set changes invalidate
+  an open preview; targeted PTYs are reaped before folder deletion. Failed deletion
+  retains recoverable records. Canonical path comparison fixes macOS `/var` versus
+  `/private/var` worktree ownership checks without permitting foreign-folder deletion.
+- Added Xcode scheme/simulator selection and project destination persistence. Run
+  uses a distinct paired `build:<context URL>` PTY and a single foreground shell group
+  for build/install/launch. Repeated Run is coalesced; an existing foreground build is
+  adopted without typing; Stop interrupts only that build terminal. AppKit retains
+  separate browser, agent, and build hosts while changing pane visibility. Removal
+  invalidates pending builds before stopping their terminals.
+- Latest verification: 28 package tests and 28 backend API tests pass. Added real
+  dirty/shared/orphan removal checks, injected build-terminal coalescing/Stop tests,
+  and shell syntax/quoting checks. The native browser UI regression also verifies
+  Forget Session removes the record and retains its folder. A real Xcode simulator
+  build/launch and build reattachment still need interactive acceptance.
+- Still open: PR/Jira-aware session creation,
   terminal link routing, existing tab-state migration, full login/popup acceptance,
   and the complete end-to-end session acceptance gate. M1/M2 acceptance gaps remain.
 

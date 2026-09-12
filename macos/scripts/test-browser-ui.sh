@@ -20,7 +20,8 @@ for _ in {1..100}; do
   sleep 0.05
 done
 test -f "$QA_DIR/ready"
-ARGS="$(node -e 'const fs=require("fs"); const dir=process.argv[1]; console.log(JSON.stringify({testRunnerEnv:{TASKHUB_UI_BACKEND_URL:fs.readFileSync(dir+"/ready","utf8"),TASKHUB_UI_DATA_DIR:dir}}))' "$QA_DIR")"
+QA_SOCKET="${TMPDIR:-/tmp/}taskhub-bui-$$.sock"
+ARGS="$(node -e 'const fs=require("fs"); const dir=process.argv[1]; console.log(JSON.stringify({testRunnerEnv:{TASKHUB_UI_BACKEND_URL:fs.readFileSync(dir+"/ready","utf8"),TASKHUB_UI_DATA_DIR:dir,TASKHUB_UI_PTY_SOCKET:process.argv[2]}}))' "$QA_DIR" "$QA_SOCKET")"
 xcodebuildmcp macos test --workspace-path "$ROOT/macos/TaskHub.xcworkspace" --scheme TaskHub \
   --configuration Debug --derived-data-path "$ROOT/macos/.build/ui-tests" --json "$ARGS" \
   --extra-args '-only-testing:TaskHubUITests/TaskHubUITests/testContextPageFindNavigationCloseAndNewSessionSheet'

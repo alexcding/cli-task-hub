@@ -9,6 +9,11 @@ private actor Events {
     func receive(_ event: ServerEvent) { if event.type == "sync" { sync = true } }
 }
 
+private actor StoppedSessions {
+    var calls: [Set<String>] = []
+    func stop(_ keys: Set<String>) { calls.append(keys) }
+}
+
 // Starts the real Express routes against temporary data, without the poller or any
 // GitHub/Jira calls. No production database or running TaskHub daemon is touched.
 @Test(.timeLimit(.minutes(1))) func realBackendSnapshotStreamAndOwnership() async throws {
@@ -47,7 +52,7 @@ private actor Events {
     func git(_ arguments: [String]) throws {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
-        process.arguments = ["-C", checkout.path] + arguments
+        process.arguments = ["-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null", "-C", checkout.path] + arguments
         process.standardOutput = FileHandle.nullDevice; process.standardError = FileHandle.nullDevice
         try process.run(); process.waitUntilExit()
         #expect(process.terminationStatus == 0)
@@ -71,6 +76,36 @@ private actor Events {
         _ = try await operations.create(project: project, draft: SessionDraft(branch: "../escape", agent: .shell))
         Issue.record("Accepted an unsafe worktree branch")
     } catch { #expect((error as? BackendError) != nil) }
+    let stopped = StoppedSessions()
+    let removal = SessionRemovalService(api: api, stopTerminals: { await stopped.stop($0) })
+    let shared = WorkspaceSession(id: "shared-checkout", projectId: project.id, workspace: checkout.path,
+        worktree: record.worktree, title: "Shared checkout", branch: record.branch, url: "session:shared", createdAt: nil, pinned: false)
+    let _: OperationOK = try await api.request(Routes.TASKS, method: "POST", body: shared)
+    let beforeRemoval: [WorkspaceSession] = try await api.get(Routes.TASKS)
+    let plan = try await removal.prepare(record: record, projects: [project], sessions: beforeRemoval)
+    #expect(plan.removesWorktree && plan.sessions.count == 2)
+    let dirty = URL(fileURLWithPath: record.worktree).appendingPathComponent("unsaved.txt")
+    try "Keep my work".write(to: dirty, atomically: true, encoding: .utf8)
+    do {
+        try await removal.remove(plan, discardChanges: false)
+        Issue.record("Removed a dirty worktree without the discard choice")
+    } catch { #expect(FileManager.default.fileExists(atPath: dirty.path)) }
+    let retained: [WorkspaceSession] = try await api.get(Routes.TASKS)
+    #expect(retained.count == 2)
+    #expect(await stopped.calls.last == [record.id, shared.id, "build:\(record.url)", "build:\(shared.url)"])
+    try await removal.remove(plan, discardChanges: true)
+    let afterRemoval: [WorkspaceSession] = try await api.get(Routes.TASKS)
+    #expect(afterRemoval.isEmpty)
+    #expect(!FileManager.default.fileExists(atPath: record.worktree))
+    let orphanFolder = directory.appendingPathComponent("orphan")
+    try FileManager.default.createDirectory(at: orphanFolder, withIntermediateDirectories: true)
+    let orphan = WorkspaceSession(id: "orphan", projectId: "deleted-project", workspace: checkout.path,
+        worktree: orphanFolder.path, title: "Orphan", branch: "", url: "session:orphan", createdAt: nil, pinned: false)
+    let _: OperationOK = try await api.request(Routes.TASKS, method: "POST", body: orphan)
+    let orphanPlan = try await removal.prepare(record: orphan, projects: [project], sessions: [orphan])
+    #expect(!orphanPlan.removesWorktree)
+    try await removal.remove(orphanPlan, discardChanges: false)
+    #expect(FileManager.default.fileExists(atPath: orphanFolder.path))
     let events = Events()
     let consumer = Task {
         try await SSEClient().consume(from: base, onConnect: { await events.connect() },

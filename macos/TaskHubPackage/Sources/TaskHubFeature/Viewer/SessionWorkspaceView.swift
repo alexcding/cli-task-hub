@@ -60,10 +60,13 @@ struct SessionWorkspaceView: View {
     let active: Bool
     @State private var addingPage = false
     @State private var restarting = false
+    @State private var removal: SessionRemovalViewModel?
+    @State private var destination: BuildWorkspaceViewModel?
     @State private var address = "https://"
     private var session: WorkspaceSession? { store.sessions.first { "task:\($0.id)" == context.id } }
     private var terminal: TerminalSession? { store.terminals[context.id] }
-    private var showsTerminal: Bool { session != nil && (context.activePage == nil || context.pane == .term) }
+    private var showsBuild: Bool { session != nil && context.pane == .build }
+    private var showsTerminal: Bool { session != nil && (showsBuild || context.activePage == nil || context.pane == .term) }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -84,6 +87,22 @@ struct SessionWorkspaceView: View {
                 }
                 Button("Add Page", systemImage: "plus") { addingPage = true }
                 if session != nil {
+                    if let session, store.projects.first(where: { $0.id == session.projectId })?.ide == "xcode" {
+                        if let model = store.buildModels[context.id], model.running {
+                            Button("Stop Build", systemImage: "stop.fill") { Task { await model.stop() } }
+                        } else {
+                            Button("Run…", systemImage: "play.fill") { destination = store.buildModel(for: session, context: context) }
+                                .disabled(store.changingSessions.contains(session.id))
+                        }
+                    }
+                    if store.terminals["build:\(context.sourceURL)"] != nil {
+                        Button(showsBuild ? "Show Context" : "Show Build", systemImage: "hammer") {
+                            context.setPane(showsBuild ? .term : .build)
+                        }
+                    }
+                    Button("Remove Session", systemImage: "trash") {
+                        if let session { removal = store.removalModel(for: session) }
+                    }.disabled(store.connection != "Connected" || (session.map { store.changingSessions.contains($0.id) } ?? true))
                     if terminal?.agentBusy == true { ProgressView().controlSize(.small).help("Agent working") }
                     Button("Restart Session", systemImage: "arrow.counterclockwise") { restarting = true }
                         .disabled(session.map { store.changingSessions.contains($0.id) } ?? true)
@@ -111,7 +130,8 @@ struct SessionWorkspaceView: View {
             }
             if let error = context.error { Text(error).font(.caption).foregroundStyle(.orange).padding(8) }
             Divider()
-            WorkspaceSplit(showsLeft: context.activePage != nil || session == nil, showsRight: showsTerminal) {
+            WorkspaceSplit(showsLeft: !showsBuild && (context.activePage != nil || session == nil),
+                           showsRight: showsTerminal, showsBuild: showsBuild) {
                 ZStack {
                     if let page = context.activePage { BrowserPane(page: page, context: context).id(page.id) }
                     else if session == nil {
@@ -137,6 +157,11 @@ struct SessionWorkspaceView: View {
                     .opacity(showsTerminal ? 1 : 0).allowsHitTesting(showsTerminal)
                     .accessibilityHidden(!showsTerminal).clipped()
                 }
+            } build: {
+                if let build = store.terminals["build:\(context.sourceURL)"] {
+                    TerminalPane(session: build, reconnect: { store.reattachTerminal(key: "build:\(context.sourceURL)") }, active: active && showsBuild, title: "Build")
+                        .id(build.id).frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
             }.frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .sheet(isPresented: $addingPage) {
@@ -156,6 +181,12 @@ struct SessionWorkspaceView: View {
             Button("Restart Session", role: .destructive) { if let session { store.restartSession(session) } }
         } message: {
             Text("This stops the session’s shell and any command it is running. The worktree is kept. The agent resumes its saved conversation when an ID is available.")
+        }
+        .sheet(isPresented: Binding(get: { removal != nil }, set: { if !$0 { removal = nil } })) {
+            if let removal { SessionRemovalView(model: removal) }
+        }
+        .sheet(isPresented: Binding(get: { destination != nil }, set: { if !$0 { destination = nil } })) {
+            if let destination { BuildDestinationView(model: destination) }
         }
     }
 }

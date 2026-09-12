@@ -36,6 +36,10 @@ public struct Project: Decodable, Identifiable, Equatable, Sendable {
     public let repo: String
     public let color: String?
     public let workspace: String
+    var ide: String? = nil
+    var ideTarget: String? = nil
+    var runScheme: String? = nil
+    var runSim: String? = nil
 }
 
 // Actor isolation keeps response decoding off the UI actor. Only decoded snapshots
@@ -56,11 +60,15 @@ public actor APIClient {
         self.session = session
     }
 
-    public func get<T: Decodable & Sendable>(_ path: String, as type: T.Type = T.self) async throws -> T {
+    public func get<T: Decodable & Sendable>(_ path: String, as type: T.Type = T.self, timeout: TimeInterval = 10) async throws -> T {
         var request = URLRequest(url: try url(path))
-        request.timeoutInterval = 10
+        request.timeoutInterval = timeout
         request.cachePolicy = .reloadIgnoringLocalCacheData
         let (data, response) = try await session.data(for: request)
+        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode),
+           let failure = try? JSONDecoder().decode(Failure.self, from: data), let error = failure.error {
+            throw BackendError.operation(error)
+        }
         try Self.validate(response)
         return try JSONDecoder().decode(T.self, from: data)
     }

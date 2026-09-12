@@ -6,12 +6,12 @@ final class TaskHubUITests: XCTestCase {
     func testContextPageFindNavigationCloseAndNewSessionSheet() throws {
         let environment = ProcessInfo.processInfo.environment
         guard let base = environment["TASKHUB_UI_BACKEND_URL"],
-              let path = environment["TASKHUB_UI_DATA_DIR"] else {
+              let path = environment["TASKHUB_UI_DATA_DIR"], let socket = environment["TASKHUB_UI_PTY_SOCKET"] else {
             throw XCTSkip("Run macos/scripts/test-browser-ui.sh to provide the isolated browser fixture.")
         }
         let directory = URL(fileURLWithPath: path)
         let app = XCUIApplication()
-        app.launchArguments = ["--backend-url", base, "--data-dir", directory.path]
+        app.launchArguments = ["--backend-url", base, "--data-dir", directory.path, "--pty-socket", socket]
         app.launch()
         let session = app.outlines["workspace-sidebar"].staticTexts["sidebar-1"].firstMatch
         XCTAssertTrue(session.waitForExistence(timeout: 10))
@@ -36,6 +36,12 @@ final class TaskHubUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["New Session"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.textFields["session-branch"].exists, app.debugDescription)
         app.buttons["Cancel"].click()
+        app.buttons["Remove Session"].click()
+        XCTAssertTrue(app.buttons["Forget Session"].waitForExistence(timeout: 10))
+        app.buttons["Forget Session"].click()
+        let removed = expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: session)
+        wait(for: [removed], timeout: 10)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: directory.appendingPathComponent("sidebar-1").path))
     }
 
     override func setUpWithError() throws {

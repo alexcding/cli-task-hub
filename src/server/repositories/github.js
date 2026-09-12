@@ -409,6 +409,11 @@ end tell`;
 // branch itself is left intact either way. Never throws — failures come back as { error }.
 async function removeWorktree(workspace, dest, { force = false } = {}) {
   if (!workspace || !dest) return { error: 'workspace and worktree path required' };
+  // Git reports canonical paths (notably /private/var on macOS), while callers
+  // may retain a symlink spelling. Compare the same identity before ownership checks.
+  const canonical = async p => fsp.realpath(p).catch(() => path.resolve(p));
+  workspace = await canonical(workspace);
+  dest = await canonical(dest);
   if (force) {
     // Force still only ever deletes something that IS (or was) a linked worktree of this workspace:
     // git-registered and not the main checkout, or an unregistered folder that is either gone or a

@@ -16,7 +16,9 @@ public final class AppStore {
     private(set) var terminals: [String: TerminalSession] = [:]
     var creatingSession = false
     private(set) var changingSessions: Set<String> = []
+    private(set) var buildModels: [String: BuildWorkspaceViewModel] = [:]
     @ObservationIgnored private var pendingPins: Set<String> = []
+    @ObservationIgnored private var removalLocks: [UUID: Set<String>] = [:]
     @ObservationIgnored private var owner: BackendProcess?
     @ObservationIgnored private var api: APIClient?
     @ObservationIgnored private var streamTask: Task<Void, Never>?
@@ -116,8 +118,62 @@ public final class AppStore {
     func openTerminal() {
         guard let key = activeTerminalKey, terminals[key] == nil else { return }
         if case .session(let id) = selection, let record = sessions.first(where: { $0.id == id }) {
+            guard !changingSessions.contains(id) else { return }
             terminals[key] = makeTerminal(record)
         } else if selection == .terminal { terminals[key] = TerminalSession() }
+    }
+
+    func removalModel(for record: WorkspaceSession) -> SessionRemovalViewModel? {
+        guard let api else { return nil }
+        let operationID = UUID()
+        let service = SessionRemovalService(api: api, stopTerminals: { [weak self] keys in
+            guard let self else { throw BackendError.operation("The workspace closed before removal.") }
+            try await self.stopForRemoval(keys, operationID: operationID)
+        })
+        return SessionRemovalViewModel(service: service, record: record, projects: projects, sessions: sessions,
+            didRemove: { [weak self] removed in
+                guard let self else { return }
+                for record in removed {
+                    let key = "task:\(record.id)"
+                    buildModels.removeValue(forKey: key)?.disconnect()
+                    terminals.removeValue(forKey: "build:\(record.url)")?.disconnect()
+                    terminals.removeValue(forKey: key)?.disconnect()
+                    await viewer.remove(id: key)
+                }
+                sessions.removeAll { record in removed.contains { $0.id == record.id } }
+                select(.overview)
+                refresh()
+            }, finished: { [weak self] in
+                if let self, let ids = removalLocks.removeValue(forKey: operationID) { changingSessions.subtract(ids) }
+                self?.refresh()
+            })
+    }
+
+    func buildModel(for record: WorkspaceSession, context: WorkspaceContext) -> BuildWorkspaceViewModel? {
+        if let existing = buildModels[context.id] { return existing }
+        guard let api, let project = projects.first(where: { $0.id == record.projectId }), project.ide == "xcode" else { return nil }
+        let model = BuildWorkspaceViewModel(api: api, project: project, session: record, terminalFactory: { [unowned self] in
+            let key = "build:\(record.url)"
+            if let terminal = terminals[key] { return terminal }
+            let terminal = TerminalSession(pairKey: key, cwd: record.worktree, paired: true)
+            terminals[key] = terminal
+            return terminal
+        }, reveal: { [weak context] in context?.setPane(.build) })
+        buildModels[context.id] = model
+        return model
+    }
+
+    private func stopForRemoval(_ keys: Set<String>, operationID: UUID) async throws {
+        let ids = Set(sessions.filter { keys.contains($0.id) }.map(\.id))
+        guard changingSessions.isDisjoint(with: ids) else { throw BackendError.operation("A session operation is already in progress.") }
+        changingSessions.formUnion(ids)
+        removalLocks[operationID] = ids
+        for id in ids { buildModels.removeValue(forKey: "task:\(id)")?.disconnect() }
+        for (key, terminal) in terminals where keys.contains(terminal.pairKey) {
+            await terminal.stopConnecting()
+            if terminals[key] === terminal { terminals.removeValue(forKey: key) }
+        }
+        try await PtydHost(configuration: PtydConfiguration.current()).stopPaired(keys: keys)
     }
 
     private func makeTerminal(_ record: WorkspaceSession, fresh: Bool = false) -> TerminalSession {
@@ -163,7 +219,12 @@ public final class AppStore {
     }
 
     func reattachTerminal() {
-        guard let key = activeTerminalKey, let previous = terminals[key] else { return }
+        if let key = activeTerminalKey { reattachTerminal(key: key) }
+    }
+
+    func reattachTerminal(key: String) {
+        guard let previous = terminals[key] else { return }
+        guard !changingSessions.contains(previous.pairKey) else { return }
         Task {
             await previous.stopConnecting()
             if terminals[key] === previous {
@@ -308,6 +369,8 @@ public final class AppStore {
         refreshTask = nil
         await shell.stop()
         await viewer.stop()
+        for model in buildModels.values { model.disconnect() }
+        buildModels.removeAll()
         await owner?.stop()
         api = nil
     }
