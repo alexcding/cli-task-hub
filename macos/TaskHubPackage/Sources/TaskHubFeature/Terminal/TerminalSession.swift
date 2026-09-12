@@ -24,7 +24,7 @@ final class TerminalSession: Identifiable {
     @ObservationIgnored private var started = false
     @ObservationIgnored private var startTask: Task<Void, Never>?
     @ObservationIgnored private var launchTask: Task<Void, Never>?
-    @ObservationIgnored var openLink: (String, String) -> Void = { _, _ in }
+    @ObservationIgnored var openLink: (String, String, Bool) -> Void = { _, _, _ in }
     @ObservationIgnored var onCreated: ((TerminalSession) async throws -> Void)?
 
     init(pairKey: String = "native-terminal-spike", cwd: String = FileManager.default.homeDirectoryForCurrentUser.path, paired: Bool = false) {
@@ -36,9 +36,9 @@ final class TerminalSession: Identifiable {
         surface.configuration = .init(backend: .inMemory(pipe.memory), fontSize: 13, resizeThrottleMilliseconds: 80)
         surface.makePlatformView = { [weak self] in
             let view = WorkspaceTerminalView(frame: .zero)
-            view.openLink = { [weak self] raw, directory in
+            view.openLink = { [weak self] raw, directory, external in
                 guard let self else { return }
-                self.openLink(raw, directory ?? self.cwd)
+                self.openLink(raw, directory ?? self.cwd, external)
             }
             return view
         }

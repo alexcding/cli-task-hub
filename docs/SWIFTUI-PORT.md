@@ -582,6 +582,27 @@ does not).
   remaining M1/M3/M4/M6 gates and the final elevate-ios coordinator/VM/DI pass remain
   open; this increment does not complete the migration.
 
+### M1/M5 link and find routing — 2026-09-12
+
+- Command-F targets the native history search when History is visible, including a
+  session with no browser/file tab. The view model emits the focus request and the
+  rendering view applies focus. The native UI regression types into search using
+  Command-F and passes the older-commit flow.
+- Option-click uses Ghostty's recognized hyperlink at the actual down/up positions.
+  A drag, release away from the link or released Option cancels opening. Ordinary
+  terminal clicks still use the package input path. Ghostty does not activate its
+  normal link action with Option added, so the host uses the public hover callback
+  and surface mouse-position API; it does not synthesize terminal key input.
+- The click intent travels through the terminal session into native routing. Safe
+  HTTP(S) links open in the system browser when Option-clicked; ordinary links use
+  the owning context, and local file links keep their native document destination.
+  Surface detach clears hover/click state. No dependency checkout is modified.
+- Verification extends the real Metal/Ghostty test with AppKit Option-click,
+  Command-Option-click, ordinary Command-click, drag cancellation and release-away
+  cancellation. The existing keyboard/paste/hidden-output checks remain in that test.
+  Plain printed file-path detection, broad IME/focus acceptance, full VT restoration
+  and the terminal performance benchmark remain open.
+
 ## Why now, and why native
 
 The Tauri shell works, but roughly half of `src-tauri/` exists to work around what a DOM

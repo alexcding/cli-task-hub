@@ -126,7 +126,8 @@ private final class PipeEvents: @unchecked Sendable {
     // Exercise Ghostty's real OSC 8 hit testing and native action callback,
     // rather than calling the host delegate directly.
     var opened: String?
-    view.openLink = { raw, _ in opened = raw }
+    var external = false
+    view.openLink = { raw, _, outside in opened = raw; external = outside }
     memory.receive("\u{1b}[2J\u{1b}[H\u{1b}]8;;file:///tmp/fixture.swift#L5C2\u{1b}\\OPEN_FILE\u{1b}]8;;\u{1b}\\")
     memory.waitForPendingOutput()
     let surface = try #require(state.surface)
@@ -137,6 +138,31 @@ private final class PipeEvents: @unchecked Sendable {
         if opened != nil { break }
         try await Task.sleep(for: .milliseconds(20))
     }
-    #expect(opened == "file:///tmp/fixture.swift#L5C2")
+    #expect(opened == "file:///tmp/fixture.swift#L5C2" && !external)
+
+    // Use AppKit mouse events to verify click modifiers survive real hit testing.
+    for flags: NSEvent.ModifierFlags in [[.option], [.command, .option], [.command]] {
+        opened = nil
+        let point = view.convert(NSPoint(x: 10, y: view.bounds.height - 10), to: nil)
+        let down = try #require(NSEvent.mouseEvent(with: .leftMouseDown, location: point, modifierFlags: flags, timestamp: 0, windowNumber: window.windowNumber, context: nil, eventNumber: 1, clickCount: 1, pressure: 1))
+        let up = try #require(NSEvent.mouseEvent(with: .leftMouseUp, location: point, modifierFlags: flags, timestamp: 0.1, windowNumber: window.windowNumber, context: nil, eventNumber: 2, clickCount: 1, pressure: 0))
+        view.mouseDown(with: down); view.mouseUp(with: up)
+        #expect(opened == "file:///tmp/fixture.swift#L5C2")
+        #expect(external == flags.contains(.option))
+    }
+    // An Option drag or a release away from the link must not open anything.
+    for dragging in [false, true] {
+        opened = nil
+        let start = view.convert(NSPoint(x: 10, y: view.bounds.height - 10), to: nil)
+        let end = view.convert(NSPoint(x: 300, y: view.bounds.height - 100), to: nil)
+        let down = try #require(NSEvent.mouseEvent(with: .leftMouseDown, location: start, modifierFlags: .option, timestamp: 1, windowNumber: window.windowNumber, context: nil, eventNumber: 3, clickCount: 1, pressure: 1))
+        let drag = try #require(NSEvent.mouseEvent(with: .leftMouseDragged, location: end, modifierFlags: .option, timestamp: 1.1, windowNumber: window.windowNumber, context: nil, eventNumber: 4, clickCount: 1, pressure: 1))
+        let up = try #require(NSEvent.mouseEvent(with: .leftMouseUp, location: dragging ? start : end, modifierFlags: .option, timestamp: 1.2, windowNumber: window.windowNumber, context: nil, eventNumber: 5, clickCount: 1, pressure: 0))
+        view.mouseDown(with: down)
+        if dragging { view.mouseDragged(with: drag) }
+        view.mouseUp(with: up)
+        #expect(opened == nil)
+    }
+
 
 }

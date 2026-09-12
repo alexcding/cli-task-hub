@@ -5,7 +5,7 @@ import GhosttyTerminal
 // its supported platform-view factory, forwarding every state/lifecycle/input
 // callback the state currently adopts. The emulator and its input path stay intact.
 @MainActor final class WorkspaceTerminalView: TerminalView,
-    TerminalSurfaceOpenURLDelegate, TerminalSurfaceTitleDelegate,
+    TerminalSurfaceOpenURLDelegate, TerminalSurfaceHoverLinkDelegate, TerminalSurfaceTitleDelegate,
     TerminalSurfaceGridResizeDelegate, TerminalSurfaceFocusDelegate,
     TerminalSurfaceCloseDelegate, TerminalSurfaceBellDelegate,
     TerminalSurfaceDesktopNotificationDelegate, TerminalSurfacePwdDelegate,
@@ -13,7 +13,53 @@ import GhosttyTerminal
     TerminalSurfaceLifecycleDelegate, TerminalSurfaceTextSelectionRequestDelegate,
     TerminalSurfaceClipboardConfirmationDelegate {
     private weak var recipient: (any TerminalSurfaceViewDelegate)?
-    var openLink: (String, String?) -> Void = { _, _ in }
+    var openLink: (String, String?, Bool) -> Void = { _, _, _ in }
+    private weak var linkSurface: TerminalSurface?
+    private var hoveredLink: String?
+    private var optionClick: (url: String, point: NSPoint, dragged: Bool)?
+
+    // Ask Ghostty to hit-test the actual click position, not a stale hover. The
+    // Command modifier requests hyperlink recognition even in a mouse-reporting TUI.
+    private func link(at event: NSEvent) -> String? {
+        guard let surface = linkSurface else { return nil }
+        let point = convert(event.locationInWindow, from: nil)
+        surface.sendMousePos(x: -1, y: -1, modifiers: .super_)
+        hoveredLink = nil
+        surface.sendMousePos(x: point.x, y: bounds.height - point.y, modifiers: .super_)
+        return hoveredLink
+    }
+    override func mouseDown(with event: NSEvent) {
+        optionClick = nil
+        if event.modifierFlags.contains(.option), let url = link(at: event) {
+            window?.makeFirstResponder(self)
+            optionClick = (url, event.locationInWindow, false)
+            return
+        }
+        super.mouseDown(with: event)
+    }
+    override func mouseDragged(with event: NSEvent) {
+        if var click = optionClick {
+            if hypot(event.locationInWindow.x - click.point.x, event.locationInWindow.y - click.point.y) > 4 {
+                click.dragged = true; optionClick = click
+            }
+            return
+        }
+        super.mouseDragged(with: event)
+    }
+    override func mouseUp(with event: NSEvent) {
+        if let click = optionClick {
+            optionClick = nil
+            if !click.dragged, event.modifierFlags.contains(.option), link(at: event) == click.url {
+                openLink(click.url, directory, true)
+            }
+            return
+        }
+        super.mouseUp(with: event)
+    }
+    func terminalDidUpdateHoverLink(_ url: String?) {
+        hoveredLink = url
+        (recipient as? any TerminalSurfaceHoverLinkDelegate)?.terminalDidUpdateHoverLink(url)
+    }
     private(set) var directory: String?
 
     override var delegate: (any TerminalSurfaceViewDelegate)? {
@@ -23,7 +69,7 @@ import GhosttyTerminal
     func terminalDidRequestOpenURL(_ url: String, kind: TerminalOpenURLKind) {
         // Returning through this delegate suppresses Ghostty's /usr/bin/open
         // fallback even when the host refuses an unsupported URI scheme.
-        openLink(url, directory)
+        openLink(url, directory, false)
     }
     func terminalDidChangeTitle(_ title: String) { (recipient as? any TerminalSurfaceTitleDelegate)?.terminalDidChangeTitle(title) }
     func terminalDidResize(_ size: TerminalGridMetrics) { (recipient as? any TerminalSurfaceGridResizeDelegate)?.terminalDidResize(size) }
@@ -41,8 +87,8 @@ import GhosttyTerminal
     func terminalDidFinishCommand(exitCode: Int?, durationNanos: UInt64) {
         (recipient as? any TerminalSurfaceCommandFinishedDelegate)?.terminalDidFinishCommand(exitCode: exitCode, durationNanos: durationNanos)
     }
-    func terminalDidAttachSurface(_ surface: TerminalSurface) { (recipient as? any TerminalSurfaceLifecycleDelegate)?.terminalDidAttachSurface(surface) }
-    func terminalDidDetachSurface() { (recipient as? any TerminalSurfaceLifecycleDelegate)?.terminalDidDetachSurface() }
+    func terminalDidAttachSurface(_ surface: TerminalSurface) { linkSurface = surface; (recipient as? any TerminalSurfaceLifecycleDelegate)?.terminalDidAttachSurface(surface) }
+    func terminalDidDetachSurface() { linkSurface = nil; hoveredLink = nil; optionClick = nil; (recipient as? any TerminalSurfaceLifecycleDelegate)?.terminalDidDetachSurface() }
     func terminalDidRequestTextSelection(_ request: TerminalTextSelectionRequest) {
         (recipient as? any TerminalSurfaceTextSelectionRequestDelegate)?.terminalDidRequestTextSelection(request)
     }

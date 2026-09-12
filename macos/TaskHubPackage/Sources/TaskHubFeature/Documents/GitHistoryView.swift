@@ -4,6 +4,7 @@ struct GitHistoryView: View {
     @Bindable var model: GitHistoryViewModel
     let appearance: AppAppearance
     let active: Bool
+    @FocusState private var finding: Bool
     var body: some View {
         VStack(spacing: 0) {
             VStack(spacing: 8) {
@@ -15,7 +16,7 @@ struct GitHistoryView: View {
                 if model.loading { ProgressView().controlSize(.small) }
                 Button("Refresh History", systemImage: "arrow.clockwise", action: model.refresh).labelStyle(.iconOnly).disabled(model.loading)
               }
-              TextField("Search loaded commits", text: Binding(get: { model.search }, set: model.setSearch)).textFieldStyle(.roundedBorder)
+              TextField("Search loaded commits", text: Binding(get: { model.search }, set: model.setSearch)).textFieldStyle(.roundedBorder).focused($finding)
             }.padding(10)
             if let error = model.error { Text(error).font(.callout).foregroundStyle(.orange).padding(.horizontal, 10) }
             VSplitView {
@@ -67,6 +68,7 @@ struct GitHistoryView: View {
                 }.frame(minHeight: 160, maxHeight: .infinity)
             }
         }
+        .onChange(of: model.findRequest) { _, _ in finding = true }
         .onAppear { if active { model.show() } }
         .onChange(of: active) { _, value in if value { model.show() } else { model.hide() } }
         .onDisappear { model.hide() }

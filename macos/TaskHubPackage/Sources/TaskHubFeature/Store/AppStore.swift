@@ -71,6 +71,10 @@ public final class AppStore {
     var terminal: TerminalSession? { activeTerminalKey.flatMap { terminals[$0] } }
     public var hasOpenWork: Bool { !sessions.isEmpty || !tabs.isEmpty }
     public var hasActivePage: Bool { viewer.active?.activeID != nil }
+    var activeHistory: GitHistoryViewModel? {
+        guard let context = viewer.active, context.pane == .diff, context.reviewSection == .history else { return nil }
+        return historyModels[context.id]
+    }
     var sessionOperations: SessionOperations? { api.map { SessionOperations(api: $0) } }
 
     func showChanges(for session: WorkspaceSession, context: WorkspaceContext) {
@@ -149,7 +153,7 @@ public final class AppStore {
         case .forward: viewer.active?.activePage?.canGoForward == true
         case .openFile: viewer.active != nil && connection == "Connected"
         case .saveFile: viewer.active?.activeDocument?.loaded == true && viewer.active?.activeDocument?.readOnly == false
-        case .findPage: hasActivePage
+        case .findPage: activeHistory != nil || hasActivePage
         case .zoomIn, .zoomOut, .resetZoom: viewer.active?.activePage != nil
         case .nextPage, .previousPage: (viewer.active?.tabOrder.count ?? 0) > 1
         case .biggerFont, .smallerFont, .resetFont: terminal?.ready == true
@@ -166,7 +170,8 @@ public final class AppStore {
         case .saveFile: if let document = viewer.active?.activeDocument { Task { await document.save() } }
         case .closePage: if let context = viewer.active, let id = context.activeID, let tab = context.tab(id) { context.close(tab) }
         case .findPage:
-            if let document = viewer.active?.activeDocument { document.find() }
+            if let history = activeHistory { history.find() }
+            else if let document = viewer.active?.activeDocument { document.find() }
             else { viewer.active?.findVisible = true }
         case .back: viewer.active?.activePage?.back()
         case .forward: viewer.active?.activePage?.forward()
@@ -357,10 +362,14 @@ public final class AppStore {
     }
 
     private func wireLinks(_ terminal: TerminalSession, contextID: String) {
-        terminal.openLink = { [weak self] raw, directory in
+        terminal.openLink = { [weak self] raw, directory, external in
             guard let self, let context = viewer.contexts[contextID] else { return }
             guard let link = WorkspaceLink.parse(raw, directory: directory, home: NSHomeDirectory()) else {
                 context.error = "This terminal link is not a supported web or local file address."
+                return
+            }
+            if external, case .web(let url) = link {
+                NSWorkspace.shared.open(url)
                 return
             }
             if contextID == "scratch" { select(.terminal) }

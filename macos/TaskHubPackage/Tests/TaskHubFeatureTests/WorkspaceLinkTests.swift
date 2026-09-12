@@ -48,8 +48,8 @@ import Testing
     _ = NSApplication.shared
     let view = WorkspaceTerminalView(frame: .zero), recipient = LinkDelegateFixture()
     view.delegate = recipient
-    var opened: (String, String?)?
-    view.openLink = { opened = ($0, $1) }
+    var opened: (String, String?, Bool)?
+    view.openLink = { opened = ($0, $1, $2) }
     view.terminalDidChangeTitle("Working")
     view.terminalDidChangeWorkingDirectory("/work/new-directory")
     view.terminalDidRequestOpenURL("file:///work/a.swift#L5", kind: .text)

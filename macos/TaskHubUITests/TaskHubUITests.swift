@@ -25,7 +25,9 @@ final class TaskHubUITests: XCTestCase {
         XCTAssertFalse(app.webViews.buttons["Discard"].exists)
         XCTAssertFalse(app.webViews.buttons["Open History.swift"].exists)
         let search = app.textFields["Search loaded commits"]
-        search.click(); search.typeText("Oldest fixture commit")
+        app.typeKey("f", modifierFlags: .command)
+        app.typeText("Oldest fixture commit")
+        XCTAssertEqual(search.value as? String, "Oldest fixture commit")
         XCTAssertTrue(app.staticTexts["No loaded commits match this search."].waitForExistence(timeout: 5))
         app.buttons["Load Older Commits"].click()
         let oldest = app.staticTexts["Oldest fixture commit"].firstMatch

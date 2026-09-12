@@ -5,6 +5,8 @@ import Observation
     let worktree: String
     private(set) var scope = GitHistoryScope.branchChanges
     private(set) var search = ""
+    private(set) var findRequest = UUID()
+    func find() { findRequest = UUID() }
     private(set) var commits: [GitCommit] = []
     private(set) var selectedSHA: String?
     private(set) var detail: GitCommitDetail?
