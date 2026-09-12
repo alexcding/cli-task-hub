@@ -79,6 +79,16 @@ struct SessionWorkspaceView: View {
                     Button("Reveal Worktree", systemImage: "folder") {
                         NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: session.worktree)])
                     }.labelStyle(.iconOnly)
+                    if let title = store.workspaceLaunch.editorLabel(store.projects.first { $0.id == session.projectId }) {
+                        Button(title, systemImage: "curlybraces") {
+                            Task { await store.workspaceLaunch.openEditor(session: session, project: store.projects.first { $0.id == session.projectId }) }
+                        }.disabled(store.workspaceLaunch.opening.contains(context.id) || store.changingSessions.contains(session.id))
+                    }
+                    if let title = store.workspaceLaunch.gitClientLabel(store.shell.gitClient) {
+                        Button(title, systemImage: "arrow.triangle.branch") {
+                            Task { await store.workspaceLaunch.openGitClient(session: session, id: store.shell.gitClient, custom: store.shell.gitClientCommand) }
+                        }.disabled(store.workspaceLaunch.opening.contains(context.id) || store.changingSessions.contains(session.id))
+                    }
                 } else if context.id == "scratch" {
                     Text("Terminal").font(.headline)
                 } else {
@@ -146,6 +156,10 @@ struct SessionWorkspaceView: View {
                 }.frame(height: 40)
             }
             if let error = context.error { Text(error).font(.caption).foregroundStyle(.orange).padding(8) }
+            if let error = store.workspaceLaunch.errors[context.id] {
+                Text(error).font(.caption).foregroundStyle(.orange).textSelection(.enabled).padding(8)
+                    .accessibilityIdentifier("workspace-launch-error")
+            }
             Divider()
             WorkspaceSplit(showsLeft: showsTerminal, showsRight: showsPage, showsBuild: showsBuild) {
                 if showsTerminal {

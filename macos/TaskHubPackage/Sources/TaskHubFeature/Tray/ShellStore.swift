@@ -17,6 +17,10 @@ import Observation
     public private(set) var appearance: AppAppearance
     private(set) var usageAgent: String
     private(set) var defaultAgent: SessionAgent
+    private(set) var gitClient: String
+    private(set) var gitClientCommand: String
+    var gitClientCommandDraft: String
+    private(set) var gitClientCommandError: String?
     private(set) var settingsError: String?
     private(set) var acknowledging: Set<String> = []
     @ObservationIgnored private var api: APIClient?
@@ -39,6 +43,9 @@ import Observation
         defaultAgent = SessionAgent(rawValue: preferences.string(forKey: "native.defaultCli") ?? "claude") ?? .claude
         activityNotify = preferences.string(forKey: "native.activityNotify") != "off"
         reviewSound = preferences.string(forKey: "native.reviewSound") ?? "system"
+        gitClient = preferences.string(forKey: "native.gitClient") ?? ""
+        let command = preferences.string(forKey: "native.gitClientCmd") ?? ""
+        gitClientCommand = command; gitClientCommandDraft = command
     }
 
     var pendingReviews: [TrayPR] { prs.filter(\.pendingReview) }
@@ -165,6 +172,26 @@ import Observation
         saveSetting("defaultCli", value: value.rawValue)
     }
 
+    var gitClientCommandDirty: Bool { gitClientCommandDraft != gitClientCommand }
+    func setGitClient(_ value: String) {
+        guard value.isEmpty || value == "custom" || ExternalTool.gitClients.contains(where: { $0.id == value }) else { return }
+        gitClient = value
+        preferences.set(value, forKey: "native.gitClient")
+        saveSetting("gitClient", value: value)
+    }
+    func saveGitClientCommand() {
+        do {
+            if !gitClientCommandDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                _ = try WorkspaceLaunchCommand.tokenize(gitClientCommandDraft)
+            }
+            gitClientCommand = gitClientCommandDraft
+            gitClientCommandError = nil
+            preferences.set(gitClientCommand, forKey: "native.gitClientCmd")
+            saveSetting("gitClientCmd", value: gitClientCommand)
+        } catch { gitClientCommandError = error.localizedDescription }
+    }
+    func revertGitClientCommand() { gitClientCommandDraft = gitClientCommand; gitClientCommandError = nil }
+
     private func saveSetting(_ key: String, value: String) {
         pendingSettings[key] = value
         preferences.set(pendingSettings, forKey: "native.pendingSettings")
@@ -208,11 +235,19 @@ import Observation
                 if pendingSettings["activityNotify"] == nil { activityNotify = (settings["activityNotify"] ?? nil) != "off" }
                 if pendingSettings["reviewSound"] == nil { reviewSound = (settings["reviewSound"] ?? nil) ?? "system" }
                 if pendingSettings["defaultCli"] == nil { defaultAgent = SessionAgent(rawValue: (settings["defaultCli"] ?? nil) ?? "claude") ?? .claude }
+                if pendingSettings["gitClient"] == nil { gitClient = (settings["gitClient"] ?? nil) ?? "" }
+                if pendingSettings["gitClientCmd"] == nil {
+                    let dirty = gitClientCommandDirty
+                    gitClientCommand = (settings["gitClientCmd"] ?? nil) ?? ""
+                    if !dirty { gitClientCommandDraft = gitClientCommand }
+                }
                 preferences.set(appearance.rawValue, forKey: "native.theme")
                 preferences.set(usageAgent, forKey: "native.usageAgent")
                 preferences.set(activityNotify ? "on" : "off", forKey: "native.activityNotify")
                 preferences.set(reviewSound, forKey: "native.reviewSound")
                 preferences.set(defaultAgent.rawValue, forKey: "native.defaultCli")
+                preferences.set(gitClient, forKey: "native.gitClient")
+                preferences.set(gitClientCommand, forKey: "native.gitClientCmd")
                 applyAppearance()
                 if pendingSettings.isEmpty { settingsError = nil }
             } catch { if !Task.isCancelled { settingsError = error.localizedDescription } }

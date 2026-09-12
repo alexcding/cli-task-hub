@@ -9,6 +9,7 @@ public final class AppStore {
     private(set) var dashboard: DashboardViewModel!
     private(set) var logs: LogsViewModel!
     private(set) var settings: SettingsViewModel!
+    let workspaceLaunch = WorkspaceLaunchViewModel(launcher: NativeWorkspaceCommandLauncher())
     public private(set) var projects: [Project] = []
     public private(set) var connection = "Connecting"
     public private(set) var error: String?
@@ -332,7 +333,10 @@ public final class AppStore {
             changingSessions.subtract(ids); removalLocks.removeValue(forKey: operationID)
             throw CancellationError()
         }
-        for id in ids { buildModels.removeValue(forKey: "task:\(id)")?.disconnect() }
+        for id in ids {
+            workspaceLaunch.cancel(sessionID: id)
+            buildModels.removeValue(forKey: "task:\(id)")?.disconnect()
+        }
         for (key, terminal) in terminals where keys.contains(terminal.pairKey) {
             await terminal.stopConnecting()
             if terminals[key] === terminal { terminals.removeValue(forKey: key) }
@@ -470,6 +474,7 @@ public final class AppStore {
                 settings.connect(APISettingsService(api: api))
                 settings.clis.connect(APICLISettingsService(api: api))
                 settings.diagnostics.connect(APIDiagnosticsService(api: api))
+                workspaceLaunch.connect(APIWorkspaceTargetService(api: api))
                 if selection == .settings { settings.refresh() }
                 if selection == .settings && settings.section == .clis { settings.clis.refresh() }
             }
@@ -505,7 +510,11 @@ public final class AppStore {
                     let (snapshot, sessionSnapshot, tabSnapshot) = try await (projectRequest, sessionRequest, tabRequest)
                     try Task.checkCancellation()
                     if projects != snapshot { projects = snapshot }
-                    if sessions != sessionSnapshot { sessions = sessionSnapshot }
+                    if sessions != sessionSnapshot {
+                        let retained = Set(sessionSnapshot.map(\.id))
+                        for session in sessions where !retained.contains(session.id) { workspaceLaunch.cancel(sessionID: session.id) }
+                        sessions = sessionSnapshot
+                    }
                     if tabs != tabSnapshot.tabs { tabs = tabSnapshot.tabs }
                     showSelectedContext()
                     if case .project(let id) = selection, let model = projectModels[id], model.section == .prs && model.state == "open" {
@@ -584,6 +593,7 @@ public final class AppStore {
 
     public func stop() async {
         started = false
+        workspaceLaunch.stop()
         for model in diffModels.values { await model.actions?.suspendAndWait() }
         streamTask?.cancel()
         refreshTask?.cancel()

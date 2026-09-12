@@ -221,6 +221,48 @@ final class TaskHubUITests: XCTestCase {
     }
 
     @MainActor
+    func testNativeGitClientPreferencesAndLaunchFailureRecovery() throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard let base = environment["TASKHUB_UI_BACKEND_URL"],
+              let path = environment["TASKHUB_UI_DATA_DIR"], let socket = environment["TASKHUB_UI_PTY_SOCKET"] else {
+            throw XCTSkip("Run macos/scripts/test-browser-ui.sh to provide the isolated fixture.")
+        }
+        let app = XCUIApplication()
+        app.launchArguments = ["--backend-url", base, "--data-dir", path, "--pty-socket", socket]
+        app.launch()
+        XCTAssertTrue(app.outlines["workspace-sidebar"].waitForExistence(timeout: 10))
+        app.typeKey(",", modifierFlags: .command)
+        app.radioButtons["General"].click()
+        let picker = app.popUpButtons["settings-git-client"]
+        XCTAssertTrue(picker.waitForExistence(timeout: 5), app.debugDescription)
+        picker.click(); app.menuItems["Custom"].click()
+        let command = app.textFields["settings-git-client-command"]
+        XCTAssertTrue(command.waitForExistence(timeout: 5))
+        command.click(); app.typeKey("a", modifierFlags: .command); app.typeText("tool 'unfinished")
+        app.buttons["Save Command"].click()
+        XCTAssertTrue(app.staticTexts["Close the quote in the command template."].waitForExistence(timeout: 5))
+        command.click(); app.typeKey("a", modifierFlags: .command); app.typeText("/taskhub-fixture/missing-client {path}")
+        app.buttons["Save Command"].click()
+        let session = app.outlines["workspace-sidebar"].staticTexts["sidebar-1"].firstMatch
+        session.click()
+        let launch = app.buttons["Open in Custom Git Client"]
+        XCTAssertTrue(launch.waitForExistence(timeout: 5), app.debugDescription)
+        launch.click()
+        let failure = app.staticTexts["workspace-launch-error"]
+        XCTAssertTrue(failure.waitForExistence(timeout: 5))
+        XCTAssertEqual(failure.value as? String, "Could not find executable ‘/taskhub-fixture/missing-client’. Check the custom command and PATH.")
+        app.typeKey(",", modifierFlags: .command)
+        command.click(); app.typeKey("a", modifierFlags: .command); app.typeText("/usr/bin/true {path}")
+        app.buttons["Save Command"].click()
+        session.click(); launch.click()
+        let recovered = expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: failure)
+        wait(for: [recovered], timeout: 5)
+        let finished = expectation(for: NSPredicate(format: "enabled == true"), evaluatedWith: launch)
+        wait(for: [finished], timeout: 5)
+        XCTAssertFalse(failure.exists)
+    }
+
+    @MainActor
     func testNativeDiagnosticsInspectSnapshotsAndNavigateBack() throws {
         let environment = ProcessInfo.processInfo.environment
         guard let base = environment["TASKHUB_UI_BACKEND_URL"],

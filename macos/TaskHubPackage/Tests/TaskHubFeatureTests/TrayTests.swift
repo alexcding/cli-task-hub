@@ -60,6 +60,9 @@ import Testing
     shell.setAppearance(.dark) // Offline edit must survive the first server snapshot.
     shell.setActivityNotify(false)
     shell.setReviewSound("off")
+    shell.setGitClient("custom")
+    shell.gitClientCommandDraft = #"open -a "Fork" {path}"#
+    shell.saveGitClientCommand()
     shell.connect(api)
     shell.refreshUsage()
     for _ in 0..<100 {
@@ -70,6 +73,7 @@ import Testing
     #expect(shell.pendingReviewCount == 1)
     #expect(shell.appearance == .dark)
     #expect(!shell.activityNotify && shell.reviewSound == "off")
+    #expect(shell.gitClient == "custom" && shell.gitClientCommand == #"open -a "Fork" {path}"#)
     #expect(shell.usageLoading && shell.usage == nil) // A blocked usage source cannot block reviews.
     try Data().write(to: directory.appendingPathComponent("release-usage"))
     for _ in 0..<100 {
@@ -105,14 +109,22 @@ import Testing
     shell.setUsageAgent("codex")
     shell.setDefaultAgent(.codex)
     shell.setDefaultAgent(.shell)
+    shell.gitClientCommandDraft = "open 'unfinished"
+    shell.saveGitClientCommand()
+    #expect(shell.gitClientCommandError != nil && shell.gitClientCommandDirty)
+    shell.revertGitClientCommand()
+    #expect(!shell.gitClientCommandDirty && shell.gitClientCommandError == nil)
+    shell.setGitClient("tower")
     await shell.stop() // Drains preference writes in order before disconnecting.
     let settings: [String: String] = try await api.get(Routes.SETTINGS)
     #expect(settings["theme"] == "auto")
     #expect(settings["usageAgent"] == "codex")
     #expect(settings["defaultCli"] == "")
     #expect(settings["activityNotify"] == "off" && settings["reviewSound"] == "off")
+    #expect(settings["gitClient"] == "tower" && settings["gitClientCmd"] == #"open -a "Fork" {path}"#)
     let reopened = ShellStore(preferences: preferences)
     #expect(reopened.appearance == .system && reopened.usageAgent == "codex")
     #expect(!reopened.activityNotify && reopened.reviewSound == "off")
     #expect(reopened.defaultAgent == .shell)
+    #expect(reopened.gitClient == "tower" && reopened.gitClientCommand == #"open -a "Fork" {path}"#)
 }

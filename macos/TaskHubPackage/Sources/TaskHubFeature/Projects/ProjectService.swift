@@ -59,11 +59,7 @@ enum ProjectSection: String, CaseIterable, Identifiable {
 struct IDEChoice: Identifiable {
     let id: String
     let title: String
-    static let all: [Self] = [
-        .init(id: "", title: "None"), .init(id: "xcode", title: "Xcode"),
-        .init(id: "vscode", title: "VS Code"), .init(id: "cursor", title: "Cursor"),
-        .init(id: "windsurf", title: "Windsurf"), .init(id: "zed", title: "Zed"),
-        .init(id: "intellij", title: "IntelliJ IDEA"), .init(id: "webstorm", title: "WebStorm"),
-        .init(id: "android", title: "Android Studio"), .init(id: "custom", title: "Custom")
-    ]
+    static let all: [Self] = [.init(id: "", title: "None")]
+        + ExternalTool.editors.map { .init(id: $0.id, title: $0.name) }
+        + [.init(id: "custom", title: "Custom")]
 }

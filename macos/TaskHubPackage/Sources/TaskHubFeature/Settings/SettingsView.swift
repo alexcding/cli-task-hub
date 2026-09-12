@@ -25,6 +25,27 @@ struct SettingsView: View {
                         NotificationPreferencesView(shell: shell, sounds: model.sounds)
                         Button("Preview Sound") { shell.notifications.previewSound(shell.reviewSound) }.disabled(shell.reviewSound == "off")
                     }
+                    Section("External Git client") {
+                        Picker("Git client", selection: Binding(get: { shell.gitClient }, set: shell.setGitClient)) {
+                            Text("None").tag("")
+                            ForEach(ExternalTool.gitClients) { Text($0.name).tag($0.id) }
+                            Text("Custom").tag("custom")
+                            if !shell.gitClient.isEmpty && shell.gitClient != "custom" && !ExternalTool.gitClients.contains(where: { $0.id == shell.gitClient }) {
+                                Text("Unavailable (\(shell.gitClient))").tag(shell.gitClient)
+                            }
+                        }.accessibilityIdentifier("settings-git-client")
+                        if shell.gitClient == "custom" {
+                            TextField("Command template", text: Binding(get: { shell.gitClientCommandDraft }, set: { shell.gitClientCommandDraft = $0 }))
+                                .accessibilityIdentifier("settings-git-client-command").onSubmit(shell.saveGitClientCommand)
+                            Text("Use {path} for the checkout. Quotes group arguments; shell expansion and pipelines are not supported.")
+                                .font(.caption).foregroundStyle(.secondary)
+                            HStack {
+                                Button("Revert Command", action: shell.revertGitClientCommand).disabled(!shell.gitClientCommandDirty)
+                                Button("Save Command", action: shell.saveGitClientCommand).disabled(!shell.gitClientCommandDirty)
+                            }
+                            if let error = shell.gitClientCommandError { Text(error).foregroundStyle(.orange) }
+                        }
+                    }
                 }.formStyle(.grouped)
                 if let error = shell.settingsError { Text(error).foregroundStyle(.orange) }
             case .connections:

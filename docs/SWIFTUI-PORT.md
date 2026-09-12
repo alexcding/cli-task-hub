@@ -388,6 +388,28 @@ Dashboard; the remaining app pages and action parity are tracked under M4.
   first sandboxed run timed out while enabling macOS automation before test execution;
   the outside-sandbox retry passed. Native process/resource usage, login items, fonts,
   git-client actions, and the memory policy remain open.
+- Native session toolbars now open the session's checkout in its configured project
+  IDE or app-level Git client. IDE actions reuse `/api/launch-target` for configured
+  relative targets and Xcode workspace/project discovery; Git clients receive the
+  worktree directory. All eight existing IDE and four Git-client presets are retained,
+  and the IDE picker shares the launch catalog. macOS resolves preset application
+  names, including installations outside `/Applications`; launch failures are visible.
+- General Settings includes Git-client selection and a custom-command draft with
+  explicit save/revert and quote validation. Preferences use the existing ordered,
+  offline-safe local/backend persistence. Custom templates preserve the Tauri grammar:
+  quotes group arguments, backslashes remain literal, and `{path}` substitution happens
+  after tokenization without shell evaluation. Custom processes are handed off after
+  successful spawn, so long-running editors survive TaskHub exit; preset `open` calls
+  are awaited with a bounded timeout to report missing applications.
+- Injected target/launcher services and a workspace launch view model keep process
+  creation off the UI actor, coalesce per-session clicks, and cancel pending lookups
+  on removal/reconnection/shutdown. Snapshot refresh also cancels launches for sessions
+  removed by another client. Six focused Swift tests pass for target choice, literal
+  arguments, failures/recovery, cancellation, and preference persistence. The real
+  target-resolution API test passes, as does the native Settings/command validation/
+  launch failure/recovery UI flow. The first UI attempt used a session title where the
+  sidebar displays its branch; the corrected selector passes. Process/resource usage,
+  login items, fonts, and native memory policy remain open.
 
 Companion docs: `ARCHITECTURE.md` (layers, HTTP-vs-IPC split), `TAURI-PORT.md`
 (the previous shell port — the same boundary makes this one tractable), `CLAUDE.md`
