@@ -54,6 +54,6 @@ struct APISettingsService: SettingsService {
 }
 
 enum SettingsSection: String, CaseIterable, Identifiable {
-    case general = "General", connections = "Connections", clis = "CLIs", diagnostics = "Diagnostics"
+    case general = "General", connections = "Connections", clis = "CLIs", diagnostics = "Diagnostics", resources = "Resources"
     var id: String { rawValue }
 }

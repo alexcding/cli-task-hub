@@ -1082,6 +1082,33 @@ does not).
   page, and was corrected to open two real fixture pages. Resource accounting and the terminal
   performance benchmark remain separate work; this is not a measured memory cap.
 
+### Native resource diagnostics — 2026-09-12
+
+- Resources is a native Settings table with per-process/component PID, resident
+  memory and sampled CPU. Backend health and an existing-daemon hello discover
+  roots, including detached terminals that are outside the app's process subtree.
+  No daemon is started for diagnostics. Root overlap is deduplicated, and descendant
+  parentage is checked during bounded (512-entry) traversal with public libproc APIs.
+- CPU uses Mach counter deltas divided by elapsed Mach ticks, with 100% per core.
+  Process start timestamps prevent recycled PIDs from inheriting a previous CPU
+  baseline. New/reset counters stay unmeasured until a second sample. The counter
+  units were checked against [Apple's recount tests](https://github.com/apple-oss-distributions/xnu/blob/main/tests/recount/recount_perf_tests.c)
+  and the installed SDK; Context7 did not return a relevant libproc reference.
+- Sampling runs off the UI actor on a three-second cadence only while the page is
+  visible and the AppKit app is active. Generation checks reject late requests after
+  navigation/reconnect; failures retain the last sample, and missing process reads
+  are reported. Hidden/inactive periods reset the CPU baseline.
+- Scope is explicit: public APIs do not reliably attribute macOS-managed WebKit/GPU
+  processes outside these trees. Listed totals exclude those processes; resident
+  memory can count shared pages more than once. This is resource visibility, not
+  full process-footprint parity or evidence for the M1 performance gate.
+- Verified six package tests covering CPU units/PID reuse, a real busy child, overlap
+  deduplication, backend/daemon/shell accounting, a missing-daemon read without
+  startup, and visibility/failure/reconnect races. Native UI verifies live app/backend
+  rows, CPU sampling and navigation recovery. The first UI run exposed that this
+  NSHostingView app does not supply an active SwiftUI scenePhase; AppKit activation
+  events fixed sampling. The table's native accessibility role is an outline.
+
 ## Why now, and why native
 
 The Tauri shell works, but roughly half of `src-tauri/` exists to work around what a DOM

@@ -55,6 +55,10 @@ private final class EventLog: @unchecked Sendable {
         try await Task.sleep(for: .milliseconds(20))
     }
     #expect(log.text.contains("PTY_READY"))
+    let resources = try await NativeResourceUsageService(api: nil, pty: config).sample()
+    #expect(resources.processes.contains { $0.pid == hello.pid && $0.group == .terminals })
+    #expect(resources.processes.contains { $0.pid == Int32(terminal.pid) && $0.group == .terminals })
+    #expect(Set(resources.processes.map(\.pid)).count == resources.processes.count)
     let _: String? = try await client.request(.init(op: "write", term: terminal.id, data: "UNICODE_é_日本語_🦀\n"))
     let _: String? = try await client.request(.init(op: "resize", term: terminal.id, cols: 101, rows: 31))
     for _ in 0..<100 {

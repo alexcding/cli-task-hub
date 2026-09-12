@@ -55,7 +55,8 @@ public final class AppStore {
         settings = SettingsViewModel(clis: CLISettingsViewModel(copy: {
             NSPasteboard.general.clearContents(); NSPasteboard.general.setString($0, forType: .string)
         }, openBrowser: { NSWorkspace.shared.open($0) }), diagnostics: DiagnosticsViewModel(),
-            loginItem: LoginItemViewModel(service: NativeLoginItemService()), fonts: FontSettingsViewModel(catalog: InstalledCodeFontCatalog()), didSave: { [weak self] patch in
+            loginItem: LoginItemViewModel(service: NativeLoginItemService()), fonts: FontSettingsViewModel(catalog: InstalledCodeFontCatalog()),
+            resources: ResourceUsageViewModel(), didSave: { [weak self] patch in
             guard let self else { return }
             if patch["jira_base_url"] != nil || patch["jira_api_token"] != nil {
                 for model in projectModels.values { await model.tickets?.invalidateSite() }
@@ -469,6 +470,7 @@ public final class AppStore {
     public func start() async {
         guard !started else { return }
         started = true
+        settings.resources.connect(NativeResourceUsageService(api: nil, pty: try? PtydConfiguration.current()))
         do {
             let config = try BackendConfiguration.current()
             backendAddress = config.baseURL.absoluteString
@@ -488,6 +490,7 @@ public final class AppStore {
                 settings.connect(APISettingsService(api: api))
                 settings.clis.connect(APICLISettingsService(api: api))
                 settings.diagnostics.connect(APIDiagnosticsService(api: api))
+                settings.resources.connect(NativeResourceUsageService(api: api, pty: try? PtydConfiguration.current()))
                 workspaceLaunch.connect(APIWorkspaceTargetService(api: api))
                 if selection == .settings { settings.refresh() }
                 if selection == .settings && settings.section == .clis { settings.clis.refresh() }

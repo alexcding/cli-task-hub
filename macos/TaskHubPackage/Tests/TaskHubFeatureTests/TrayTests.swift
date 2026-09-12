@@ -56,6 +56,9 @@ import Testing
     }
     let base = try #require(URL(string: String(contentsOf: ready, encoding: .utf8)))
     let api = try APIClient(baseURL: base)
+    let resourceSample = try await NativeResourceUsageService(api: api, pty: nil).sample()
+    #expect(resourceSample.processes.contains { $0.pid == process.processIdentifier && $0.group == .backend && $0.residentBytes > 0 })
+    #expect(resourceSample.processes.filter { $0.pid == process.processIdentifier }.count == 1)
     let shell = ShellStore(preferences: preferences)
     shell.setAppearance(.dark) // Offline edit must survive the first server snapshot.
     shell.setActivityNotify(false)

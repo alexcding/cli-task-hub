@@ -12,6 +12,7 @@ struct SettingsView: View {
             switch model.section {
             case .clis: CLISettingsView(model: model.clis)
             case .diagnostics: DiagnosticsView(model: model.diagnostics)
+            case .resources: ResourceUsageView(model: model.resources)
             case .general:
                 Form {
                     LoginItemView(model: model.loginItem)

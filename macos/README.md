@@ -130,7 +130,18 @@ state. Saves coalesce rapid size changes and retain pending values while offline
 The native browser policy uses a page count and OS memory-pressure events, with a
 manual **Suspend Background Pages** action. It uses no private per-webview PID/RSS
 API, does not claim a byte-level cap, and leaves the web app’s `webviewBudgetMb`
-setting untouched. Process/resource usage remains open.
+setting untouched.
+
+**Resources** displays native process CPU and resident memory for the app, connected
+backend, detached PTY helper, and their descendants. It discovers backend/daemon PIDs
+through read-only handshakes; opening this page never starts a missing daemon. CPU
+uses deltas between samples (100% is one core). Sampling runs off the UI actor on a
+three-second cadence while the page is visible and the AppKit app is active.
+Leaving the page, hiding/deactivating the app, and shutdown stop the loop.
+Errors retain the last successful sample; unavailable process reads are reported.
+macOS-managed WebKit/GPU processes outside those trees are excluded, and summed
+resident memory may double-count shared pages. The displayed totals cover the listed
+processes, not the app’s complete memory footprint or the terminal benchmark.
 
 ## Native tray and appearance (M2)
 

@@ -279,6 +279,34 @@ final class TaskHubUITests: XCTestCase {
     }
 
     @MainActor
+    func testNativeResourcesShowAppAndBackendAndResumeAfterNavigation() throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard let base = environment["TASKHUB_UI_BACKEND_URL"],
+              let path = environment["TASKHUB_UI_DATA_DIR"], let socket = environment["TASKHUB_UI_PTY_SOCKET"] else {
+            throw XCTSkip("Run macos/scripts/test-browser-ui.sh to provide the isolated fixture.")
+        }
+        let app = XCUIApplication()
+        app.launchArguments = ["--backend-url", base, "--data-dir", path, "--pty-socket", socket]
+        app.launch()
+        XCTAssertTrue(app.outlines["workspace-sidebar"].waitForExistence(timeout: 10))
+        app.typeKey(",", modifierFlags: .command)
+        app.radioButtons["Resources"].click()
+        let table = app.outlines["resources-processes"]
+        XCTAssertTrue(table.staticTexts["App"].firstMatch.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(table.staticTexts["Backend"].firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["PTY helper is not running."].waitForExistence(timeout: 5))
+        let cpu = app.staticTexts["resources-cpu"]
+        let measured = expectation(for: NSPredicate(format: "value CONTAINS %@", "%"), evaluatedWith: cpu)
+        wait(for: [measured], timeout: 8)
+        app.buttons["Refresh Resources"].click()
+        app.radioButtons["General"].click()
+        XCTAssertFalse(table.exists)
+        app.radioButtons["Resources"].click()
+        XCTAssertTrue(table.staticTexts["Backend"].firstMatch.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.webViews.firstMatch.exists)
+    }
+
+    @MainActor
     func testQuietStartupLoadsTrayAndOpensNativeWindow() throws {
         let environment = ProcessInfo.processInfo.environment
         guard let base = environment["TASKHUB_UI_BACKEND_URL"],
