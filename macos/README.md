@@ -247,8 +247,10 @@ surface, and drains newer output/resize events in daemon order before enabling
 input. History beyond the old 256 KiB tail is retained. Incompatible helpers are
 rejected before shell creation; invalid captures and sequence gaps stop attachment
 without terminating the shell. The capture supplies its logical grid even if a
-physical view resize is still pending. Restored title/cwd publication, offline
-protocol reply ownership, and snapshot-v1 image/glyph omissions still require work.
+physical view resize is still pending. Restored titles and working directories use
+native callbacks; only local working-directory URIs become file-link bases, and
+an empty directory report clears the previous base. Offline protocol reply ownership
+and snapshot-v1 image/glyph omissions still require work.
 Rebuilding the helper does not upgrade an already-running daemon; use an isolated
 socket to test the new helper without ending an existing shell. Broader
 lifecycle coverage, links, workflow hooks, IME/mouse/selection checks, and the

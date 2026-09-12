@@ -1,6 +1,6 @@
 --- a/Sources/GhosttyTerminal/InMemory/InMemoryTerminalSession.swift
 +++ b/Sources/GhosttyTerminal/InMemory/InMemoryTerminalSession.swift
-@@ -91,6 +91,31 @@
+@@ -91,6 +91,49 @@
  
      var currentSurface: ghostty_surface_t? {
          surfaceAccess.currentSurface
@@ -20,6 +20,24 @@
 +                return ghostty_surface_restore_snapshot(surface, pointer, UInt(bytes.count))
 +            }
 +        } ?? false
++    }
++
++    /// Publish imported title/pwd using native validation, without VT replay.
++    /// Call on a worker before feeding live output; the UI must keep ticking.
++    public func publishSnapshotMetadata() -> Bool {
++        surfaceAccess.waitForPendingOutput()
++        return surfaceAccess.withCurrentSurface { surface in
++            ghostty_surface_publish_snapshot_metadata(surface)
++        } ?? false
++    }
++
++    /// Deliver queued metadata outside a surface operation. Callbacks may close
++    /// the surface, so ticking while holding an operation would deadlock teardown.
++    @MainActor
++    public func flushSnapshotMetadataCallbacks() -> Bool {
++        guard let surface = surfaceAccess.currentSurface else { return false }
++        Self.tickApp(surface)
++        return surfaceAccess.currentSurface != nil
 +    }
 +
 +    /// Apply a daemon-ordered grid change after prior host output has drained.

@@ -228,6 +228,11 @@ private final class EventLog: @unchecked Sendable {
     try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: shell.path)
     var text = ""
     for line in 0..<8000 { text += "history \(line) styled \u{1B}[32m日本語🦀\u{1B}[0m line\r\n" }
+    let restoredDirectory = directory.appendingPathComponent("restored worktree")
+    try FileManager.default.createDirectory(at: restoredDirectory, withIntermediateDirectories: true)
+    var uri = URLComponents(url: restoredDirectory, resolvingAgainstBaseURL: false)!
+    uri.host = "localhost"
+    text += "\u{1B}]0;Restored fixture title\u{07}\u{1B}]7;\(uri.string!)\u{07}"
     text += "PRIMARY_MARKER\u{1B}[5;9H\u{1B}7\u{1B}[?1049hALT_MARKER\r\nSPLIT_"
     let startup = Data(text.utf8) + Data([0xf0, 0x9f])
     try startup.write(to: directory.appendingPathComponent("startup"))
@@ -266,6 +271,13 @@ private final class EventLog: @unchecked Sendable {
     await first.start()
     try await first.waitUntilReady()
     #expect(first.shellPID == term.pid && first.termID == term.id)
+    for _ in 0..<100 {
+        if first.surface.title == "Restored fixture title" && first.surface.workingDirectory == restoredDirectory.path { break }
+        try await Task.sleep(for: .milliseconds(10))
+    }
+    #expect(first.surface.title == "Restored fixture title")
+    #expect(first.surface.workingDirectory == restoredDirectory.path)
+    #expect((firstWindow.contentView as? WorkspaceTerminalView)?.directory == restoredDirectory.path)
     #expect(await first.viewportText()?.contains("ALT_MARKER") == true)
     let _: Bool? = try await control.request(.init(op: "write", term: term.id, bytes: Data([0xa6, 0x80])))
     for _ in 0..<100 {
@@ -282,6 +294,13 @@ private final class EventLog: @unchecked Sendable {
     await second.start()
     try await second.waitUntilReady()
     #expect(second.shellPID == term.pid && second.termID == term.id)
+    for _ in 0..<100 {
+        if second.surface.title == "Restored fixture title" && second.surface.workingDirectory == restoredDirectory.path { break }
+        try await Task.sleep(for: .milliseconds(10))
+    }
+    #expect(second.surface.title == "Restored fixture title")
+    #expect(second.surface.workingDirectory == restoredDirectory.path)
+    #expect((secondWindow.contentView as? WorkspaceTerminalView)?.directory == restoredDirectory.path)
     #expect(await second.viewportText()?.contains("SPLIT_🦀") == true)
     let _: Bool? = try await control.request(.init(op: "write", term: term.id,
         data: "\u{1B}[?1049l\u{1B}8AFTER_SAVED_CURSOR"))
@@ -308,6 +327,13 @@ private final class EventLog: @unchecked Sendable {
         try await Task.sleep(for: .milliseconds(10))
     }
     #expect(String(decoding: log.bytes.dropFirst(beforeResize), as: UTF8.self).contains("\u{1B}[2;4R"))
+    let _: Bool? = try await control.request(.init(op: "write", term: term.id, data: "\u{1B}]7;\u{07}"))
+    let restoredView = try #require(secondWindow.contentView as? WorkspaceTerminalView)
+    for _ in 0..<100 {
+        if restoredView.directory == nil { break }
+        try await Task.sleep(for: .milliseconds(10))
+    }
+    #expect(restoredView.directory == nil)
     await second.stopConnecting()
     try await host.stopExisting()
 }

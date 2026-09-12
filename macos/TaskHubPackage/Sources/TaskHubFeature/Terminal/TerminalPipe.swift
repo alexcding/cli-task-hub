@@ -88,7 +88,7 @@ final class TerminalPipe: @unchecked Sendable {
     }
 
     @MainActor
-    func attach(_ snapshot: PtySnapshot, onReady: @escaping @Sendable () -> Void) throws {
+    func attach(_ snapshot: PtySnapshot, onReady: @escaping @Sendable () -> Void) async throws {
         try snapshot.header.validate()
         guard snapshot.bytes.count == snapshot.header.size else {
             throw PtyError.connection("The terminal snapshot is incomplete.")
@@ -96,6 +96,23 @@ final class TerminalPipe: @unchecked Sendable {
         guard memory.restoreSnapshot(snapshot.bytes) else {
             throw PtyError.connection("The terminal snapshot could not be imported. Reattach to retry with a fresh capture; the shell is still running.")
         }
+        let memory = memory!
+        // Metadata uses Ghostty's bounded app mailbox. Keep draining it while
+        // the worker publishes, including when an occluded surface has no ticks.
+        let ticker = Task { @MainActor in
+            while !Task.isCancelled {
+                _ = memory.flushSnapshotMetadataCallbacks()
+                do { try await Task.sleep(for: .milliseconds(10)) }
+                catch { return }
+            }
+        }
+        let published = await Task.detached(operation: { memory.publishSnapshotMetadata() }).value
+        ticker.cancel()
+        guard published,
+              memory.flushSnapshotMetadataCallbacks() else {
+            throw PtyError.connection("The restored terminal metadata could not be published.")
+        }
+        try Task.checkCancellation()
         finishSnapshotAttachment(snapshot.header, onReady: onReady)
     }
 

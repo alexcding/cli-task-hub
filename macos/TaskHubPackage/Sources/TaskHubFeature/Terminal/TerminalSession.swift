@@ -139,7 +139,7 @@ final class TerminalSession: Identifiable {
         try await pipe.synchronizeGrid()
         status = "Restoring terminal"
         let snapshot = try await PtySnapshotDownloader(client: client).fetch(term: info.id)
-        try pipe.attach(snapshot) { [weak self] in
+        try await pipe.attach(snapshot) { [weak self] in
             Task { @MainActor in
                 guard let self, self.started, self.surfaceGeneration == generation, self.error == nil else { return }
                 self.status = "Connected"

@@ -80,7 +80,8 @@ import GhosttyTerminal
         (recipient as? any TerminalSurfaceDesktopNotificationDelegate)?.terminalDidRequestDesktopNotification(title: title, body: body)
     }
     func terminalDidChangeWorkingDirectory(_ path: String) {
-        if path.hasPrefix("/"), !path.contains("\0") { directory = path }
+        if path.isEmpty { directory = nil }
+        else if path.hasPrefix("/"), !path.contains("\0") { directory = path }
         (recipient as? any TerminalSurfacePwdDelegate)?.terminalDidChangeWorkingDirectory(path)
     }
     func terminalDidUpdateScrollbar(_ scrollbar: TerminalScrollbar) { (recipient as? any TerminalSurfaceScrollbarDelegate)?.terminalDidUpdateScrollbar(scrollbar) }

@@ -12,16 +12,27 @@ private final class Writes: @unchecked Sendable {
 }
 
 @MainActor
+private final class Metadata: TerminalSurfaceTitleDelegate, TerminalSurfacePwdDelegate {
+    var titles: [String] = []
+    var directories: [String] = []
+    var onTitle: (() -> Void)?
+    func terminalDidChangeTitle(_ title: String) { titles.append(title); onTitle?() }
+    func terminalDidChangeWorkingDirectory(_ path: String) { directories.append(path) }
+}
+
+@MainActor
 private final class SurfaceHarness {
     let writes = Writes()
     let session: InMemoryTerminalSession
     let coordinator = TerminalSurfaceCoordinator()
+    let metadata = Metadata()
     private let view = NSView(frame: NSRect(x: 0, y: 0, width: 800, height: 500))
 
     init() {
         let writes = self.writes
         session = InMemoryTerminalSession(write: { writes.append($0) }, resize: { _ in })
         view.wantsLayer = true
+        coordinator.delegate = metadata
         coordinator.isAttached = { true }
         coordinator.scaleFactor = { 1 }
         coordinator.viewSize = { (800, 500) }
@@ -61,6 +72,43 @@ private final class SurfaceHarness {
 @Suite(.serialized)
 @MainActor
 struct NativeSnapshotTests {
+    @Test func restoredMetadataValidatesLocalURIsWithoutDisturbingParserContinuation() async throws {
+        for (uri, title, expectedDirectory, expectedTitle) in [
+            ("file://localhost/tmp/restored%20worktree", "Saved title", "/tmp/restored worktree", "Saved title"),
+            ("file://taskhub-remote.invalid/tmp/remote", "Saved title", "", "Saved title"),
+            ("https://localhost/tmp/remote", "Saved title", "", "Saved title"),
+            ("", "Saved title", "", "Saved title"),
+            ("file://localhost/tmp/fallback", "", "/tmp/fallback", "/tmp/fallback"),
+        ] {
+            let harness = SurfaceHarness()
+            defer { harness.close() }
+            let snapshot = try harness.snapshot(Data("\u{1B}]0;\(title)\u{07}\u{1B}]7;\(uri)\u{07}\u{1B}[31".utf8))
+            try #require(harness.session.restoreSnapshot(snapshot))
+            #expect(harness.metadata.titles.isEmpty && harness.metadata.directories.isEmpty)
+            let memory = harness.session
+            try #require(await Task.detached { memory.publishSnapshotMetadata() }.value)
+            try #require(memory.flushSnapshotMetadataCallbacks())
+            #expect(harness.metadata.titles.last == expectedTitle)
+            #expect(harness.metadata.directories.last == expectedDirectory)
+            #expect(harness.writes.bytes.isEmpty)
+            harness.feed(Data("mLIVE_AFTER_METADATA".utf8))
+            #expect(harness.text.contains("LIVE_AFTER_METADATA"))
+            #expect(!memory.publishSnapshotMetadata())
+        }
+    }
+
+    @Test(.timeLimit(.minutes(1))) func metadataCallbackCanCloseTheSurfaceWithoutHoldingAnActiveNativeOperation() async throws {
+        let harness = SurfaceHarness()
+        defer { harness.close() }
+        let snapshot = try harness.snapshot(Data("\u{1B}]0;Close callback\u{07}".utf8))
+        try #require(harness.session.restoreSnapshot(snapshot))
+        let memory = harness.session
+        harness.metadata.onTitle = { [weak harness] in harness?.close() }
+        try #require(await Task.detached { memory.publishSnapshotMetadata() }.value)
+        #expect(!memory.flushSnapshotMetadataCallbacks())
+        #expect(harness.coordinator.surface == nil)
+    }
+
     @Test func capturedGridIsRestoredIndependentlyOfTheCurrentViewGrid() async throws {
         let harness = SurfaceHarness()
         defer { harness.close() }

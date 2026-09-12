@@ -768,6 +768,26 @@ does not).
   lifecycle/interaction acceptance and terminal performance remain open, along
   with the remaining M2–M6 and final coordinator/view-model/DI requirements.
 
+### M1 restored terminal metadata — 2026-09-12
+
+- Snapshot attachment publishes the captured title and working directory through
+  Ghostty's native handlers before live output. OSC 7 URIs use its local-host
+  validation and percent decoding; remote hosts and unsupported schemes never
+  become native file-link bases. Empty directory reports clear the adapter's old
+  base, and an empty explicit title falls back to the validated directory.
+- Metadata is published once on a worker without inserting bytes into the VT
+  parser. The main actor drains the bounded callback mailbox while awaiting the
+  worker, including for hidden surfaces. Callback draining holds no active surface
+  operation, so a callback can close its surface without deadlocking teardown.
+- All 78 app-package tests and six native bridge tests pass, and the macOS app
+  builds. The app test restores title and a directory containing spaces into two
+  fresh surfaces, then verifies a live directory reset. Native tests cover local,
+  remote, unsupported and empty URIs, title fallback, unchanged unfinished SGR,
+  absence of historical terminal replies, and closure during metadata callbacks.
+- Offline query response ownership, image/glyph fidelity, default/config
+  synchronization, broader interaction checks and the performance gate remain
+  open. The remaining M2–M6 and final architecture requirements still apply.
+
 ## Why now, and why native
 
 The Tauri shell works, but roughly half of `src-tauri/` exists to work around what a DOM

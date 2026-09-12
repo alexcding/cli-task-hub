@@ -23,6 +23,15 @@ output, key encoding, paste framing and terminal replies use normal native paths
 Host visual defaults remain configured while explicit terminal color overrides
 and snapshot contents survive.
 
+Before feeding live output, call `publishSnapshotMetadata()` on a worker and
+keep draining `flushSnapshotMetadataCallbacks()` on the main actor. Publication
+uses the native title and OSC 7 handlers, including local-host validation and
+percent decoding. It converts the headless parser's working-directory URI into
+the native path without feeding bytes into an unfinished parser. Publication is
+allowed once, before subsequent output; callback draining holds no native surface
+operation, allowing a callback to close the surface safely. TaskHub's attachment
+pipeline owns this worker/tick lifecycle, including hidden surfaces.
+
 After import, physical view resizes request a host resize without reflowing the
 logical terminal. Apply each daemon resize event with
 `InMemoryTerminalSession.applyHostGridSize(columns:rows:)` in the same serial
@@ -33,7 +42,7 @@ This is a TaskHub extension, not an upstream snapshot compatibility promise. The
 native app consumes the generated local Swift package for download/import and
 ordered live resizes. Transient transport loss reconnects through a fresh surface
 only when input delivery was settled; uncertain input requires manual recovery.
-Restored title/pwd publication, offline query response ownership, native default/config synchronization and
+Offline query response ownership, native default/config synchronization and
 snapshot-v1 omissions (Kitty images and glyph registrations) also remain open.
 
 Build and run the separate real-surface integration suite:
@@ -60,5 +69,7 @@ The tests exercise a real native surface with history beyond the daemon replay
 tail, primary and alternate screens, saved cursor, restored paste/key modes,
 unfinished SGR, split UTF-8, OSC, DCS and APC, and live cursor-query responses.
 They verify that rejected imports preserve the surface and historical queries
-do not send replies to the shell. These tests establish the bridge behavior;
+do not send replies to the shell. Metadata checks cover local/remote URIs, title
+fallback, preserved parser continuation and surface closure during callbacks.
+These tests establish the bridge behavior;
 they do not establish complete app reconnection or the M1 performance gate.
