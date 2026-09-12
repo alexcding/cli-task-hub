@@ -67,4 +67,14 @@ final class TerminalInputQueue: @unchecked Sendable {
     func close() {
         lock.lock(); closed = true; pending.removeAll(); lock.unlock()
     }
+
+    // Atomically freeze delivery before deciding whether a new connection can
+    // enable input. Pending or unacknowledged bytes require manual recovery.
+    func freezeForReconnect() -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        let safe = !closed && pending.isEmpty && inFlight == 0
+        closed = true
+        pending.removeAll()
+        return safe
+    }
 }

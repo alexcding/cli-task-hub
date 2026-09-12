@@ -748,6 +748,26 @@ does not).
   image/glyph fidelity, remaining interaction checks and the performance gate remain
   open. This establishes app attachment; it does not complete M1 acceptance.
 
+### M1 automatic reconnect — 2026-09-12
+
+- Established terminals recover transient transport failures through a fresh native
+  surface and snapshot, with five bounded attempts and increasing delays. Recovery
+  requires the original terminal ID and PID; it never starts a replacement daemon
+  or shell. SwiftUI observes the new surface identity, and old surface callbacks
+  cannot change the replacement's state. Hidden-surface visibility is retained.
+- Reconnect atomically freezes the input queue and requires no pending or
+  unacknowledged input. Keyboard failures and app-issued command/interrupt failures
+  remain manual, preserving the uncertainty warning without replaying bytes.
+  Pane removal and explicit Quit cancel recovery and prevent late readiness.
+- The real SwiftUI pane test uses an isolated Unix-socket proxy to drop transport
+  while retaining the PTY. It checks the same PID, output printed during the gap,
+  surface replacement, no replacement shell after exit, cancellation during
+  backoff, and manual recovery after lost keyboard and interrupt acknowledgements.
+  The complete 78-test Swift suite passes.
+- Restored metadata, offline response ownership, image/glyph fidelity, broader
+  lifecycle/interaction acceptance and terminal performance remain open, along
+  with the remaining M2–M6 and final coordinator/view-model/DI requirements.
+
 ## Why now, and why native
 
 The Tauri shell works, but roughly half of `src-tauri/` exists to work around what a DOM

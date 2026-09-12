@@ -20,10 +20,12 @@ final class TerminalPipe: @unchecked Sendable {
     private var lastSequence: UInt64 = 0
     private var lastStateSequence: UInt64?
     private var ended = false
+    private var inputEnqueues = 0
     private var latestGrid: (UInt16, UInt16)?
     private let error: @Sendable (String) -> Void
     private let exited: @Sendable (Int) -> Void
     private(set) var memory: InMemoryTerminalSession!
+    var isClosed: Bool { lock.withLock { failed } }
 
     init(onError: @escaping @Sendable (String) -> Void, onExit: @escaping @Sendable (Int) -> Void) {
         error = onError
@@ -232,8 +234,10 @@ final class TerminalPipe: @unchecked Sendable {
         // injected into the live shell after the replay has supposedly finished.
         guard !replaying, !failed, !ended, termID != nil else { lock.unlock(); return }
         let input = input
+        inputEnqueues += 1
         lock.unlock()
         input?.enqueue(data)
+        lock.lock(); inputEnqueues -= 1; lock.unlock()
     }
 
     private func resize(columns: UInt16, rows: UInt16) {
@@ -254,5 +258,17 @@ final class TerminalPipe: @unchecked Sendable {
         client?.close()
         client = nil
         lock.unlock()
+    }
+
+    func freezeForReconnect() -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        let idleInput = input?.freezeForReconnect() == true
+        let safe = !failed && !ended && !attaching && inputEnqueues == 0 && idleInput
+        failed = true
+        buffered.removeAll()
+        if paused { flowLocked(false) }
+        client?.close()
+        client = nil
+        return safe
     }
 }

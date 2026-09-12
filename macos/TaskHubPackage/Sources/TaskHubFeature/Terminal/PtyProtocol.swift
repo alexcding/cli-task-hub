@@ -2,6 +2,13 @@ import Foundation
 
 enum PtyError: LocalizedError, Sendable {
     case connection(String), socket(Int32), protocolMismatch(UInt32), timeout, closed, overflow
+    var permitsReconnect: Bool {
+        switch self {
+        case .closed, .timeout: true
+        case .socket(let code): [ENOENT, ECONNREFUSED, ECONNRESET, ENOTCONN, EPIPE].contains(code)
+        default: false
+        }
+    }
     var errorDescription: String? {
         switch self {
         case .connection(let text): text

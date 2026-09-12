@@ -15,10 +15,10 @@ final class PtydClient: @unchecked Sendable {
     private var sequence: UInt64 = 0
     private var pending: [UInt64: CheckedContinuation<Data, Error>] = [:]
     private let event: @Sendable (PtyEvent) -> Void
-    private let disconnected: @Sendable (String) -> Void
+    private let disconnected: @Sendable (PtyError) -> Void
 
     init(onEvent: @escaping @Sendable (PtyEvent) -> Void,
-         onDisconnect: @escaping @Sendable (String) -> Void = { _ in }) {
+         onDisconnect: @escaping @Sendable (PtyError) -> Void = { _ in }) {
         event = onEvent
         disconnected = onDisconnect
     }
@@ -158,7 +158,7 @@ final class PtydClient: @unchecked Sendable {
         let waiters = pending.values
         pending.removeAll()
         for waiter in waiters { waiter.resume(throwing: error) }
-        disconnected(error.localizedDescription)
+        disconnected(error as? PtyError ?? .connection(error.localizedDescription))
     }
 
     private func posixError() -> PtyError { .socket(errno) }

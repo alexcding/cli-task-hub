@@ -24,6 +24,7 @@ struct TerminalPane: View {
             }
             ZStack {
                 TerminalSurfaceView(context: session.surface)
+                    .id(session.surfaceGeneration)
                     .opacity(visible ? 1 : 0)
                     .allowsHitTesting(visible && session.ready)
                 if !visible { Text("Terminal hidden — shell and output parsing continue.").foregroundStyle(.secondary) }
@@ -36,6 +37,7 @@ struct TerminalPane: View {
             if shown && active && session.ready { session.surface.requestFocus() }
         }
         .onChange(of: active) { _, _ in updateVisibility() }
+        .onChange(of: session.surfaceGeneration) { _, _ in updateVisibility() }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didChangeOcclusionStateNotification)) { notification in
             guard let window = notification.object as? NSWindow,
                   window === session.surface.attachedPlatformView?.window else { return }

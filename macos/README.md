@@ -247,12 +247,19 @@ surface, and drains newer output/resize events in daemon order before enabling
 input. History beyond the old 256 KiB tail is retained. Incompatible helpers are
 rejected before shell creation; invalid captures and sequence gaps stop attachment
 without terminating the shell. The capture supplies its logical grid even if a
-physical view resize is still pending. Restored title/cwd publication, offline protocol reply ownership,
-snapshot-v1 image/glyph omissions and automatic reconnect still require work.
+physical view resize is still pending. Restored title/cwd publication, offline
+protocol reply ownership, and snapshot-v1 image/glyph omissions still require work.
 Rebuilding the helper does not upgrade an already-running daemon; use an isolated
-socket to test the new helper without ending an existing shell. Automatic reconnect,
-full lifecycle coverage, links, workflow hooks, IME/mouse/selection checks, and the
+socket to test the new helper without ending an existing shell. Broader
+lifecycle coverage, links, workflow hooks, IME/mouse/selection checks, and the
 ten-minute multi-session performance benchmark remain part of M1's acceptance gate.
+
+An established terminal automatically reconnects after a transient transport loss
+when all input has been acknowledged. It replaces the native surface and restores
+the same terminal ID/PID from a fresh snapshot, using up to five attempts with
+backoff. Reconnect never launches a replacement daemon or shell. Pending or failed
+keyboard input, app-issued commands and interrupts require manual Reattach; bytes
+are never replayed. Removing the pane cancels recovery and rejects stale callbacks.
 
 ## Native editor documents (M5, in progress)
 

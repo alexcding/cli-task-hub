@@ -31,7 +31,8 @@ later output then uses that grid. Input stays gated until attachment completes.
 
 This is a TaskHub extension, not an upstream snapshot compatibility promise. The
 native app consumes the generated local Swift package for download/import and
-ordered live resizes. Automatic reconnect remains under implementation.
+ordered live resizes. Transient transport loss reconnects through a fresh surface
+only when input delivery was settled; uncertain input requires manual recovery.
 Restored title/pwd publication, offline query response ownership, native default/config synchronization and
 snapshot-v1 omissions (Kitty images and glyph registrations) also remain open.
 

@@ -72,3 +72,20 @@ private final class InputErrors: @unchecked Sendable {
     let event = try decoder.decode(PtyEvent.self, from: Data(#"{"ev":"inputError","id":"pty1","message":"write failed"}"#.utf8))
     #expect(event.message == "write failed")
 }
+
+@Test func reconnectFreezeRequiresAnIdleAcknowledgedInputStream() async throws {
+    let receiver = InputReceiver(), errors = InputErrors()
+    let idle = TerminalInputQueue(send: { try await receiver.send($0) }, onError: errors.append)
+    #expect(idle.freezeForReconnect())
+    #expect(!idle.freezeForReconnect())
+    idle.enqueue(Data("ignored".utf8))
+    #expect(await receiver.received.isEmpty)
+    let active = TerminalInputQueue(chunkSize: 2, send: { try await receiver.send($0) }, onError: errors.append)
+    active.enqueue(Data("abcd".utf8))
+    try await receiver.waitFor(1)
+    #expect(!active.freezeForReconnect())
+    await receiver.finish()
+    try await Task.sleep(for: .milliseconds(30))
+    #expect(await receiver.received == [Data("ab".utf8)])
+    #expect(errors.all.isEmpty)
+}
