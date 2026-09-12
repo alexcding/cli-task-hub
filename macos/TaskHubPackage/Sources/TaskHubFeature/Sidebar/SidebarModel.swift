@@ -21,11 +21,24 @@ struct WorkspaceSession: Codable, Identifiable, Equatable, Sendable {
     }
 }
 
-struct SavedTab: Decodable, Identifiable, Equatable, Sendable {
+struct SavedTabContent: Codable, Equatable, Sendable {
+    var kind: String? = nil
+    var url: String? = nil
+    var title: String? = nil
+    var path: String? = nil
+    var active: Bool? = nil
+}
+
+struct SavedTab: Codable, Identifiable, Equatable, Sendable {
     let kind: String
     let title: String
     let url: String
     var category: String? = nil
+    var cur: String? = nil
+    var paneView: String? = nil
+    var pageClosed: Bool? = nil
+    var links: [SavedTabContent]? = nil
+    var history: [SavedTabContent]? = nil
     var id: String { url }
 }
 

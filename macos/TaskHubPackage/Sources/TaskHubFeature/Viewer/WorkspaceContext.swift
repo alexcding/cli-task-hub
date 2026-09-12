@@ -9,6 +9,34 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
     var activeID: String?
     var history: [WebPageRecord] = []
     var pane = "term"
+    var legacyDocuments: [SavedTabContent]? = nil
+    var legacyFileHistory: [SavedTabContent]? = nil
+
+    static func importing(_ tab: SavedTab) -> Self {
+        var result = Self()
+        result.pane = tab.paneView == "off" ? "off" : "term"
+        if tab.pageClosed != true, safeWebURL(tab.url) != nil {
+            let current = tab.cur.flatMap { safeWebURL($0)?.absoluteString } ?? tab.url
+            let page = WebPageRecord(url: current, title: tab.title)
+            result.pages.append(page); result.activeID = page.id
+        }
+        for link in tab.links ?? [] {
+            guard link.kind != "file", let raw = link.url, safeWebURL(raw) != nil else { continue }
+            let page = WebPageRecord(url: raw, title: link.title ?? raw)
+            result.pages.append(page)
+            if link.active == true { result.activeID = page.id }
+        }
+        if result.activeID == nil { result.activeID = result.pages.first?.id }
+        result.history = Array((tab.history ?? []).compactMap { link -> WebPageRecord? in
+            guard link.kind != "file", let raw = link.url, safeWebURL(raw) != nil else { return nil }
+            return WebPageRecord(url: raw, title: link.title ?? raw)
+        }.suffix(100))
+        // Keep saved file entries for the document milestone. They never become
+        // remote WebKit navigations or disappear during the native tab import.
+        result.legacyDocuments = (tab.links ?? []).filter { $0.kind == "file" }
+        result.legacyFileHistory = (tab.history ?? []).filter { $0.kind == "file" }
+        return result
+    }
 }
 
 @MainActor @Observable final class WorkspaceContext: Identifiable {
@@ -21,12 +49,16 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
     var findVisible = false
     var findText = ""
     var error: String?
+    private(set) var legacyDocuments: [SavedTabContent] = []
+    private(set) var legacyFileHistory: [SavedTabContent] = []
     @ObservationIgnored var changed: () -> Void = {}
     @ObservationIgnored var activatePage: (BrowserPage) -> Void = { _ in }
 
     init(id: String, sourceURL: String, title: String, snapshot: ContextSnapshot? = nil) {
         self.id = id; self.sourceURL = sourceURL
         if let snapshot {
+            legacyDocuments = snapshot.legacyDocuments ?? []
+            legacyFileHistory = snapshot.legacyFileHistory ?? []
             var ids: Set<String> = []
             pages = snapshot.pages.filter { safeWebURL($0.url) != nil && ids.insert($0.id).inserted }.map(BrowserPage.init)
             history = Array(snapshot.history.filter { safeWebURL($0.url) != nil }.suffix(100))
@@ -42,10 +74,11 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
 
     var activePage: BrowserPage? { pages.first { $0.id == activeID } }
     var snapshot: ContextSnapshot {
-        .init(pages: pages.map(\.record), activeID: activeID, history: history, pane: pane == .build ? "term" : pane.rawValue)
+        .init(pages: pages.map(\.record), activeID: activeID, history: history, pane: pane == .build ? "term" : pane.rawValue,
+              legacyDocuments: legacyDocuments, legacyFileHistory: legacyFileHistory)
     }
     func setPane(_ value: WorkspacePane) { pane = value; changed() }
-    func select(_ page: BrowserPage) { activeID = page.id; activatePage(page); changed() }
+    func select(_ page: BrowserPage) { activeID = page.id; pane = .term; activatePage(page); changed() }
     func cycle(_ direction: Int) {
         guard !pages.isEmpty else { return }
         let index = pages.firstIndex { $0.id == activeID } ?? 0
@@ -82,6 +115,7 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
         pages.forEach { $0.evict() }
         let restored = WorkspaceContext(id: id, sourceURL: sourceURL, title: "", snapshot: snapshot)
         pages = restored.pages; activeID = restored.activeID; history = restored.history; pane = restored.pane
+        legacyDocuments = restored.legacyDocuments; legacyFileHistory = restored.legacyFileHistory
         pages.forEach(wire)
     }
     private func noteHistory(_ page: WebPageRecord) {
@@ -110,6 +144,8 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
     @ObservationIgnored private var edited: Set<String> = []
     @ObservationIgnored private var writes: [String: Task<Void, Never>] = [:]
     @ObservationIgnored private var loading: Task<Void, Never>?
+    @ObservationIgnored private var restoring = false
+    @ObservationIgnored private var restoreGeneration = UUID()
     @ObservationIgnored private var lru: [String] = []
     private let limit: Int
     private let cacheURL: URL?
@@ -126,7 +162,15 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
     func connect(_ api: APIClient) {
         self.api = api
         loading?.cancel()
+        restoring = true
+        let generation = UUID(); restoreGeneration = generation
         loading = Task {
+            defer {
+                if restoreGeneration == generation {
+                    restoring = false
+                    if !Task.isCancelled, let page = active?.activePage { activate(page) }
+                }
+            }
             do {
                 let values: [String: String?] = try await api.get(Routes.SETTINGS)
                 try Task.checkCancellation()
@@ -138,21 +182,21 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
                     saved[id] = snapshot
                     contexts[id]?.apply(snapshot)
                 }
-                if let page = active?.activePage { activate(page) }
                 cache()
                 for id in dirty { if let snapshot = saved[id] { enqueue(id: id, snapshot: snapshot, api: api) } }
             } catch { if !Task.isCancelled { active?.error = "Could not restore page tabs: \(error.localizedDescription)" } }
         }
     }
-    @discardableResult func select(id: String, url: String, title: String) -> WorkspaceContext {
-        let context = contexts[id] ?? WorkspaceContext(id: id, sourceURL: url, title: title, snapshot: saved[id])
+    @discardableResult func select(id: String, url: String, title: String, legacy: SavedTab? = nil) -> WorkspaceContext {
+        let context = contexts[id] ?? WorkspaceContext(id: id, sourceURL: url, title: title,
+                                                       snapshot: saved[id] ?? legacy.map(ContextSnapshot.importing))
         contexts[id] = context
         context.changed = { [weak self, weak context] in
             if let context { self?.save(context) }
         }
         context.activatePage = { [weak self] in self?.activate($0) }
         activeContextID = id
-        if let page = context.activePage { activate(page) }
+        if !restoring, let page = context.activePage { activate(page) }
         return context
     }
     func deactivate() { activeContextID = nil }

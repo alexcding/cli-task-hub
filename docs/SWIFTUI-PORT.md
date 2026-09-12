@@ -226,8 +226,17 @@ connection/project-list foundation; it is not the completed Dashboard.
   and shell syntax/quoting checks. The native browser UI regression also verifies
   Forget Session removes the record and retains its folder. A real Xcode simulator
   build/launch and build reattachment still need interactive acceptance.
-- Still open: PR/Jira-aware session creation,
-  terminal link routing, existing tab-state migration, full login/popup acceptance,
+- Added PR/Jira-aware creation through an injected NewSessionViewModel. PR lookup
+  checks repository ownership and resolves the head branch; Jira resolves ticket
+  summaries and reuses matching linked worktrees after revalidation. Lookup failures
+  retain the context URL for manual branch entry. Views render state and forward actions.
+- Import existing saved web tabs, active selection, pane visibility, and web history
+  when no native context exists. File entries/history are preserved for the M5 document
+  host. Session terminals occupy the primary pane; hiding context leaves the agent
+  visible, while build mode shows the separate agent and build terminals together.
+- Latest verification: 31 package tests and the browser UI regression pass, including
+  PR creation, Jira worktree reuse, legacy tab import, and the native creation sheet.
+- Still open: terminal link routing, legacy file-tab presentation, full login/popup acceptance,
   and the complete end-to-end session acceptance gate. M1/M2 acceptance gaps remain.
 
 Companion docs: `ARCHITECTURE.md` (layers, HTTP-vs-IPC split), `TAURI-PORT.md`

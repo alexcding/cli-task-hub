@@ -59,7 +59,7 @@ public struct ContentView: View {
                 .frame(maxWidth: 420).padding(16)
         }
         .task { await store.start() }
-        .sheet(isPresented: $store.creatingSession) { NewSessionView(store: store) }
+        .sheet(isPresented: $store.creatingSession) { NewSessionView(model: store.newSessionModel()) }
     }
 
     private var title: String {

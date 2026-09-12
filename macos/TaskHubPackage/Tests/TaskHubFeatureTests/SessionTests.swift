@@ -2,6 +2,60 @@ import Foundation
 import Testing
 @testable import TaskHubFeature
 
+@Test func sessionURLsAndJiraBranchNamesMatchExistingConventions() {
+    #expect(SessionPage.parse("https://github.com/owner/repo/pull/42/files")?.kind == "github")
+    #expect(SessionPage.parse("https://other.test/owner/repo/pull/42") == nil)
+    #expect(SessionPage.parse("https://github.com/owner/repo/pull/-1") == nil)
+    #expect(SessionPage.parse("https://jira.test/browse/record-123")?.key == "RECORD-123")
+    #expect(SessionPage.parse("https://user:secret@jira.test/browse/RECORD-123") == nil)
+    #expect(SessionPage.jiraBranch(key: "RECORD-123", summary: "Fix iOS: Sidebar / navigation") == "RECORD-123-fix-ios-sidebar-navigation")
+    #expect(SessionPage.jiraBranch(key: "RECORD-123", summary: "") == "RECORD-123")
+}
+
+private final class SessionHTTPFixture: URLProtocol, @unchecked Sendable {
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        let path = request.url!.path
+        let body: String
+        switch path {
+        case Routes.GIT_REFS: body = #"{"branches":[{"name":"main"}],"defaultBranch":"main"}"#
+        case Routes.PR_LOOKUP: body = #"{"repo":"fixture/repo","title":"Native sidebar","headRefName":"feature/native"}"#
+        case Routes.JIRA_SEARCH: body = #"{"items":[{"summary":"Native sidebar"}]}"#
+        case Routes.WORKTREE:
+            let query = request.url!.query ?? ""
+            if request.httpMethod == "POST" { body = #"{"path":"/tmp/fixture.worktrees/native"}"# }
+            else if query.contains("RECORD-12") { body = #"{"matched":true,"isWorktree":true,"branch":"RECORD-12-existing","path":"/tmp/existing"}"# }
+            else { body = #"{"matched":false,"isWorktree":false,"branch":"","path":""}"# }
+        default: body = #"{"ok":true}"#
+        }
+        client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Data(body.utf8)); client?.urlProtocolDidFinishLoading(self)
+    }
+    override func stopLoading() {}
+}
+
+@MainActor @Test func sessionModelResolvesPRBeforeCreationAndReusesTicketWorktrees() async throws {
+    let configuration = URLSessionConfiguration.ephemeral
+    configuration.protocolClasses = [SessionHTTPFixture.self]
+    let api = try APIClient(baseURL: URL(string: "http://127.0.0.1:12345")!, session: URLSession(configuration: configuration))
+    let project = Project(id: "fixture", name: "Fixture", repo: "fixture/repo", color: nil, workspace: "/tmp/fixture")
+    let operations = SessionOperations(api: api)
+    var created: WorkspaceSession?
+    let model = NewSessionViewModel(projects: [project], selectedProject: project.id, operations: operations, didCreate: { created = $0 })
+    await model.loadReferences()
+    #expect(model.draft.branch == "worktree1" && model.draft.base == "main")
+    model.draft.agent = .shell
+    model.editBranch("https://github.com/fixture/repo/pull/42")
+    await model.create()
+    #expect(model.completed)
+    #expect(created?.branch == "feature/native" && created?.kind == "github")
+    #expect(created?.url == "https://github.com/fixture/repo/pull/42")
+    let jira = try await operations.resolvePage("https://jira.test/browse/RECORD-12", project: project, draft: SessionDraft())
+    #expect(jira.branch == "RECORD-12-existing" && jira.reuseWorktree == "/tmp/existing" && !jira.createBranch)
+    #expect(jira.jiraKey == "RECORD-12" && jira.title == "RECORD-12 Native sidebar")
+}
+
 @Test func agentCommandsResumeExactIDsAndQuoteShellMetacharacters() {
     #expect(SessionAgent.shell.command(sessionID: nil) == nil)
     #expect(SessionAgent.claude.command(sessionID: "saved") == "claude --resume 'saved'")

@@ -45,6 +45,22 @@ public final class AppStore {
     public var hasActivePage: Bool { viewer.active?.activePage != nil }
     var sessionOperations: SessionOperations? { api.map { SessionOperations(api: $0) } }
 
+    func newSessionModel() -> NewSessionViewModel {
+        let selected: String
+        switch selection {
+        case .project(let id): selected = id
+        case .session(let id): selected = sessions.first { $0.id == id }?.projectId ?? ""
+        default: selected = projects.count == 1 ? projects[0].id : ""
+        }
+        let model = NewSessionViewModel(projects: projects, selectedProject: selected, operations: sessionOperations,
+                                        didCreate: { [weak self] in self?.createdSession($0) })
+        if case .tab(let url) = selection {
+            model.draft.url = url
+            if SessionPage.parse(url) != nil { model.draft.branch = url }
+        }
+        return model
+    }
+
     public func canPerform(_ command: ShellCommand) -> Bool {
         switch command {
         case .newSession: connection == "Connected" && !projects.isEmpty
@@ -107,10 +123,10 @@ public final class AppStore {
         switch selection {
         case .session(let id):
             if let session = sessions.first(where: { $0.id == id }) {
-                viewer.select(id: "task:\(id)", url: session.url, title: session.title)
+                viewer.select(id: "task:\(id)", url: session.url, title: session.title, legacy: tabs.first { $0.url == session.url })
             }
         case .tab(let url):
-            viewer.select(id: "tab:\(url)", url: url, title: tabs.first { $0.url == url }?.title ?? url)
+            viewer.select(id: "tab:\(url)", url: url, title: tabs.first { $0.url == url }?.title ?? url, legacy: tabs.first { $0.url == url })
         default: viewer.deactivate()
         }
     }

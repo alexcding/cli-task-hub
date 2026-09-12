@@ -4,6 +4,26 @@ import Testing
 import WebKit
 @testable import TaskHubFeature
 
+@Test func oldTabImportPreservesOrderActivePageClosedRootAndFileEntries() throws {
+    let tab = SavedTab(kind: "github", title: "PR", url: "https://github.com/fixture/repo/pull/1", cur: "https://example.com/current",
+        paneView: "off", pageClosed: false,
+        links: [.init(kind: "web", url: "https://example.com/one", title: "One"),
+                .init(kind: "file", url: "file:///tmp/file.swift", title: "File", path: "/tmp/file.swift"),
+                .init(kind: "web", url: "https://example.com/two", title: "Two", active: true)],
+        history: [.init(kind: "file", path: "/tmp/old.swift"), .init(kind: "web", url: "https://example.com/history", title: "History")])
+    let snapshot = ContextSnapshot.importing(tab)
+    #expect(snapshot.pages.map(\.url) == ["https://example.com/current", "https://example.com/one", "https://example.com/two"])
+    #expect(snapshot.activeID == snapshot.pages.last?.id)
+    #expect(snapshot.pane == "off")
+    #expect(snapshot.legacyDocuments?.first?.path == "/tmp/file.swift")
+    #expect(snapshot.legacyFileHistory?.first?.path == "/tmp/old.swift")
+    #expect(snapshot.history.first?.title == "History")
+    var closed = tab; closed.pageClosed = true
+    #expect(ContextSnapshot.importing(closed).pages.count == 2)
+    let older = try JSONDecoder().decode(ContextSnapshot.self, from: Data(#"{"pages":[],"history":[],"pane":"term"}"#.utf8))
+    #expect(older.legacyDocuments == nil)
+}
+
 @MainActor @Test func contextTabsKeepOneOrderReopenHistoryAndDoNotPersistBuildMode() throws {
     let context = WorkspaceContext(id: "task:one", sourceURL: "session:one", title: "Bare session")
     #expect(context.pages.isEmpty)

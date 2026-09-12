@@ -66,7 +66,8 @@ struct SessionWorkspaceView: View {
     private var session: WorkspaceSession? { store.sessions.first { "task:\($0.id)" == context.id } }
     private var terminal: TerminalSession? { store.terminals[context.id] }
     private var showsBuild: Bool { session != nil && context.pane == .build }
-    private var showsTerminal: Bool { session != nil && (showsBuild || context.activePage == nil || context.pane == .term) }
+    private var showsTerminal: Bool { session != nil }
+    private var showsPage: Bool { session == nil || (!showsBuild && context.pane == .term && context.activePage != nil) }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -77,7 +78,11 @@ struct SessionWorkspaceView: View {
                     Button("Reveal Worktree", systemImage: "folder") {
                         NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: session.worktree)])
                     }.labelStyle(.iconOnly)
-                } else { Text(context.activePage?.title ?? "Web page").font(.headline).lineLimit(1) }
+                } else {
+                    Text(context.activePage?.title ?? "Web page").font(.headline).lineLimit(1)
+                    Button("Create Session", systemImage: "terminal.badge.plus") { store.creatingSession = true }
+                        .disabled(store.projects.isEmpty || store.connection != "Connected")
+                }
                 Spacer()
                 Menu("History", systemImage: "clock.arrow.circlepath") {
                     if context.history.isEmpty { Text("No closed or visited pages") }
@@ -106,7 +111,7 @@ struct SessionWorkspaceView: View {
                     if terminal?.agentBusy == true { ProgressView().controlSize(.small).help("Agent working") }
                     Button("Restart Session", systemImage: "arrow.counterclockwise") { restarting = true }
                         .disabled(session.map { store.changingSessions.contains($0.id) } ?? true)
-                    Button(showsTerminal ? "Hide Terminal Pane" : "Show Terminal Pane", systemImage: "rectangle.righthalf.inset.filled") {
+                    Button(showsPage ? "Hide Context Pane" : "Show Context Pane", systemImage: "rectangle.righthalf.inset.filled") {
                         context.setPane(context.pane == .term ? .off : .term)
                     }.disabled(context.activePage == nil)
                 }
@@ -130,16 +135,7 @@ struct SessionWorkspaceView: View {
             }
             if let error = context.error { Text(error).font(.caption).foregroundStyle(.orange).padding(8) }
             Divider()
-            WorkspaceSplit(showsLeft: !showsBuild && (context.activePage != nil || session == nil),
-                           showsRight: showsTerminal, showsBuild: showsBuild) {
-                ZStack {
-                    if let page = context.activePage { BrowserPane(page: page, context: context).id(page.id) }
-                    else if session == nil {
-                        ContentUnavailableView("No open pages", systemImage: "globe", description: Text("Add a page or reopen one from History."))
-                    }
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } right: {
+            WorkspaceSplit(showsLeft: showsTerminal, showsRight: showsPage, showsBuild: showsBuild) {
                 if session != nil {
                     ZStack {
                         if let terminal {
@@ -152,11 +148,19 @@ struct SessionWorkspaceView: View {
                             }.frame(maxWidth: .infinity, maxHeight: .infinity)
                         }
                     }
-                    // The view remains mounted when the right pane is hidden.
+                    // The emulator remains mounted across page and build selection.
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .opacity(showsTerminal ? 1 : 0).allowsHitTesting(showsTerminal)
                     .accessibilityHidden(!showsTerminal).clipped()
                 }
+            } right: {
+                ZStack {
+                    if let page = context.activePage { BrowserPane(page: page, context: context).id(page.id) }
+                    else if session == nil {
+                        ContentUnavailableView("No open pages", systemImage: "globe", description: Text("Add a page or reopen one from History."))
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } build: {
                 if let build = store.terminals["build:\(context.sourceURL)"] {
                     TerminalPane(session: build, reconnect: { store.reattachTerminal(key: "build:\(context.sourceURL)") }, active: active && showsBuild, title: "Build")
