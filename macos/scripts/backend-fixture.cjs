@@ -39,6 +39,11 @@ if (process.env.TASKHUB_BOARD_FIXTURE === '1') {
   };
   save();
   const jira = require('../../src/server/repositories/jira');
+  jira.searchLean = async jql => {
+    const key = /^key = ([A-Z0-9_-]+)$/i.exec(jql)?.[1];
+    if (jql.includes('failure')) throw new Error('Fixture search rejected');
+    return items.filter(item => !key || item.key === key);
+  };
   jira.getAuth = async () => ({ email: 'fixture@example.test', site: 'example.test' });
   require('../../src/server/repositories/jira-rest').myself = async () => ({ accountId: 'fixture-me' });
   jira.transitionWorkItem = async (key, status) => {

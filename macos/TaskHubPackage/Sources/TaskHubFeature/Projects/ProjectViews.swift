@@ -81,6 +81,8 @@ struct ProjectPageView: View {
                 ForEach(ProjectSection.allCases) { Text($0.rawValue).tag($0) }
             }.pickerStyle(.segmented)
             switch model.section {
+            case .tickets:
+                if let tickets = model.tickets { JiraTicketsView(model: tickets) }
             case .board:
                 if let board = model.board { WebBoardView(model: board, appearance: appearance) }
             case .settings: ProjectEditorView(model: model.editor)

@@ -5,6 +5,7 @@ import Observation
     private(set) var project: Project
     let editor: ProjectEditorViewModel
     let board: WebBoardViewModel?
+    let tickets: JiraTicketsViewModel?
     var section = ProjectSection.prs
     var state = "open"
     var search = ""
@@ -14,8 +15,8 @@ import Observation
     private(set) var loading = false
     private var service: (any ProjectService)?
     private var generation = UUID()
-    init(project: Project, service: any ProjectService, editor: ProjectEditorViewModel, board: WebBoardViewModel? = nil) {
-        self.project = project; self.service = service; self.editor = editor; self.board = board
+    init(project: Project, service: any ProjectService, editor: ProjectEditorViewModel, board: WebBoardViewModel? = nil, tickets: JiraTicketsViewModel? = nil) {
+        self.project = project; self.service = service; self.editor = editor; self.board = board; self.tickets = tickets
     }
     func connect(_ service: (any ProjectService)?) {
         generation = UUID(); loading = false
@@ -33,7 +34,7 @@ import Observation
     }
     var warnings: [String] { prs.compactMap(\.error) }
     func update(_ project: Project, snapshot: [DashboardPR]? = nil) {
-        self.project = project; editor.update(project)
+        self.project = project; editor.update(project); tickets?.update(project)
         if state == "open", let snapshot { prs = snapshot; loadedState = "open" }
     }
     func refresh() async {

@@ -304,6 +304,22 @@ Dashboard; the remaining app pages and action parity are tracked under M4.
   successfully; its own Node helper serves all 19 board/shared assets in an isolated
   HTTP smoke test, with the full SPA absent. Bundling now runs `npm ci` inside the
   copied package, avoiding the observed `--prefix` installation failure.
+- Added a native project Tickets section with snapshot/SSE loading, saved faceted
+  filters, local text filtering, and explicit keyword/key/JQL search. Swift query
+  interpretation mirrors the shared web helper. Search generations reject late
+  responses and clearing restores the feed; SSE does not reissue live searches.
+- Injected Jira services and a view model own discovery, filtering, search, links,
+  and mutations. Site discovery is independent of snapshot rendering. Status changes
+  are coalesced per ticket; rejection keeps the old state, while successful changes
+  overlay stale snapshots until confirmation or a five-minute expiry. Only successful
+  user mutations trigger the existing explicit sync action. Remote ticket contexts
+  receive no local-document bridge. Filter writes are serialized and retryable.
+- Jira verification: four Swift tests pass for query parity, search races, retained
+  stale data, faceted preferences, rejected/coalesced moves, overlay expiry, and safe
+  links. The native UI test passes ticket rendering without a webview, rejected and
+  successful moves, key search/clear, and embedded ticket opening. Three shared JQL
+  tests and the focused web-asset manifest test also pass. Full Jira parity and the
+  remaining M4 actions are still tracked separately.
 
 Companion docs: `ARCHITECTURE.md` (layers, HTTP-vs-IPC split), `TAURI-PORT.md`
 (the previous shell port — the same boundary makes this one tractable), `CLAUDE.md`

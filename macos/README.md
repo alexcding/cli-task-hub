@@ -64,13 +64,22 @@ Opening a PR selects its existing session or creates a page-only context through
 `POST /api/tabs`, which preserves other tabs and all existing editor state. The
 context menu also opens the browser or copies the link. Agent usage uses the shared
 native panel and refreshes once per minute while Overview is visible.
-Project/Jira/board/settings/logs/workflow/git-action parity remains M4 work.
+Settings, automation, workflow, git actions, and complete parity acceptance remain M4 work.
 
 Project rows now show native Open/Merged/All PR lists and a Settings tab. **New Project**
 opens a native creation sheet. Settings include workspace selection, GitHub remote
 detection, Jira key/JQL, and IDE configuration. Unsaved edits survive snapshot refreshes
 and reconnects. Deleting a project requires confirmation and retains its sessions,
-workspace folders, and terminals. Jira tickets, automation, and workflows are still pending.
+workspace folders, and terminals.
+
+**Tickets** is native SwiftUI. It reads the project's cached Jira feed, with local
+text/facet filtering and saved filter preferences. An explicit search accepts keywords,
+a ticket key, or JQL; SSE refreshes the feed without repeating the search. Status menus
+offer known workflow statuses, and rejected transitions retain the original row.
+Successful moves remain visible across stale snapshots while the existing explicit
+sync action refreshes Jira. Ticket links open native contexts, with browser/copy actions
+in the context menu. Services, search/filter state, and mutations live in an injected
+view model; site discovery does not block the ticket feed.
 
 **Sprint Board** remains web-based for now. Its focused WebKit page reuses the existing
 board's filters, moves, assignment menus, and drag implementation. Ticket links open

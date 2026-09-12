@@ -78,7 +78,11 @@ public final class AppStore {
                 refresh()
             }, didDelete: { [weak self] id in
                 guard let self else { return }
-                projects.removeAll { $0.id == id }; projectModels.removeValue(forKey: id)
+                projects.removeAll { $0.id == id }
+                if let removed = projectModels.removeValue(forKey: id) {
+                    removed.board?.suspend()
+                    Task { await removed.tickets?.stop() }
+                }
                 select(.overview); refresh()
             })
     }
@@ -185,7 +189,13 @@ public final class AppStore {
                         guard let self else { throw BackendError.operation("The workspace has closed.") }
                         try await self.openPage(request)
                     }, openBrowser: { NSWorkspace.shared.open($0) })
-                    projectModels[id] = ProjectPageViewModel(project: project, service: APIProjectService(api: api), editor: editor, board: board)
+                    let tickets = JiraTicketsViewModel(project: project, service: APIJiraService(api: api), openPage: { [weak self] request in
+                        guard let self else { throw BackendError.operation("The workspace has closed.") }
+                        try await self.openPage(request)
+                    }, openBrowser: { NSWorkspace.shared.open($0) }, copy: {
+                        NSPasteboard.general.clearContents(); NSPasteboard.general.setString($0, forType: .string)
+                    })
+                    projectModels[id] = ProjectPageViewModel(project: project, service: APIProjectService(api: api), editor: editor, board: board, tickets: tickets)
                 }
             }
         case .session(let id):
@@ -348,7 +358,10 @@ public final class AppStore {
             api = try await process.start()
             guard started else { await process.stop(); return }
             if let api { shell.connect(api); viewer.connect(api); dashboard.connect(APIDashboardService(api: api)); shell.refreshUsage() }
-            if let api { for model in projectModels.values { model.connect(APIProjectService(api: api)); model.board?.connect(baseURL: api.baseURL) } }
+            if let api { for model in projectModels.values {
+                model.connect(APIProjectService(api: api)); model.board?.connect(baseURL: api.baseURL)
+                model.tickets?.connect(APIJiraService(api: api))
+            } }
             if let api { logs.connect(APILogService(api: api)) }
             startStream(baseURL: config.baseURL)
         } catch {
@@ -364,6 +377,9 @@ public final class AppStore {
         if selection == .activity { logs.refresh() }
         if case .project(let id) = selection, let model = projectModels[id], model.section == .board {
             model.board?.refresh()
+        }
+        if case .project(let id) = selection, let model = projectModels[id], model.section == .tickets {
+            model.tickets?.refresh()
         }
         refreshPending = true
         guard refreshTask == nil, let api else { return }
@@ -464,7 +480,7 @@ public final class AppStore {
         await shell.stop()
         await dashboard.stop()
         await logs.stop()
-        for model in projectModels.values { model.connect(nil); model.board?.pause() }
+        for model in projectModels.values { model.connect(nil); model.board?.pause(); await model.tickets?.stop() }
         await viewer.stop()
         for model in buildModels.values { model.disconnect() }
         buildModels.removeAll()

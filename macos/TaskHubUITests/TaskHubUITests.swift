@@ -3,6 +3,40 @@ import XCTest
 final class TaskHubUITests: XCTestCase {
 
     @MainActor
+    func testNativeJiraTicketsSearchTransitionAndOpen() throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard let base = environment["TASKHUB_UI_BACKEND_URL"],
+              let path = environment["TASKHUB_UI_DATA_DIR"], let socket = environment["TASKHUB_UI_PTY_SOCKET"] else {
+            throw XCTSkip("Run macos/scripts/test-browser-ui.sh to provide the isolated fixture.")
+        }
+        let app = XCUIApplication()
+        app.launchArguments = ["--backend-url", base, "--data-dir", path, "--pty-socket", socket]
+        app.launch()
+        let project = app.outlines["workspace-sidebar"].staticTexts["Native integration fixture"]
+        XCTAssertTrue(project.waitForExistence(timeout: 10))
+        project.click(); app.radioButtons["Tickets"].click()
+        let ticket = app.descendants(matching: .any)["jira-ticket-REC-1"].firstMatch
+        XCTAssertTrue(ticket.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertFalse(app.webViews.firstMatch.exists)
+        let status = app.descendants(matching: .any)["jira-status-REC-1"].firstMatch
+        XCTAssertTrue(status.waitForExistence(timeout: 5), app.debugDescription)
+        status.click(); app.menuItems["Blocked"].click()
+        XCTAssertTrue(app.staticTexts["Fixture transition rejected"].waitForExistence(timeout: 5))
+        status.click(); app.menuItems["Done"].click()
+        let changed = expectation(for: NSPredicate(format: "title == 'Done'"), evaluatedWith: status)
+        wait(for: [changed], timeout: 5)
+        let query = app.textFields["jira-query"]
+        query.click(); app.typeText("rec-2"); app.buttons["Search Jira"].click()
+        XCTAssertTrue(app.staticTexts["Search results: rec-2"].waitForExistence(timeout: 5))
+        XCTAssertFalse(ticket.exists)
+        XCTAssertTrue(app.descendants(matching: .any)["jira-ticket-REC-2"].firstMatch.exists)
+        app.buttons["Clear Search"].click()
+        XCTAssertTrue(ticket.waitForExistence(timeout: 5))
+        ticket.click()
+        XCTAssertTrue(app.webViews.staticTexts["Native ticket fixture"].waitForExistence(timeout: 10))
+    }
+
+    @MainActor
     func testWebSprintBoardMovesAssignsAndOpensNativeTicketContext() throws {
         let environment = ProcessInfo.processInfo.environment
         guard let base = environment["TASKHUB_UI_BACKEND_URL"],
