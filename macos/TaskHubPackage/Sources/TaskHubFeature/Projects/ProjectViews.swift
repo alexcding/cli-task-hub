@@ -86,6 +86,8 @@ struct ProjectPageView: View {
             case .board:
                 if let board = model.board { WebBoardView(model: board, appearance: appearance) }
             case .settings: ProjectEditorView(model: model.editor)
+            case .automation:
+                if let automation = model.automation { AutomationView(model: automation) }
             case .workflows:
                 if let workflows = model.workflows { WorkflowEditorView(model: workflows) }
             case .prs:

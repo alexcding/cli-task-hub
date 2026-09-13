@@ -354,6 +354,50 @@ final class TaskHubUITests: XCTestCase {
     }
 
     @MainActor
+    func testNativeAutomationPreviewSaveAndDraftRecovery() throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard let base = environment["TASKHUB_UI_BACKEND_URL"],
+              let path = environment["TASKHUB_UI_DATA_DIR"], let socket = environment["TASKHUB_UI_PTY_SOCKET"] else {
+            throw XCTSkip("Run macos/scripts/test-browser-ui.sh to provide the isolated fixture.")
+        }
+        let app = XCUIApplication()
+        app.launchArguments = ["--backend-url", base, "--data-dir", path, "--pty-socket", socket]
+        app.launch()
+        XCTAssertTrue(app.outlines["workspace-sidebar"].waitForExistence(timeout: 10))
+        let project = app.outlines["workspace-sidebar"].staticTexts["Native integration fixture"]
+        XCTAssertTrue(project.waitForExistence(timeout: 10)); project.click()
+        app.radioButtons["Automation"].click()
+        XCTAssertTrue(app.staticTexts["Add a GitHub repository in Settings to forward events."].waitForExistence(timeout: 5))
+        app.descendants(matching: .any)["automation-fix-version"].firstMatch.click()
+        let prefix = app.textFields["automation-prefix"]
+        XCTAssertTrue(prefix.waitForExistence(timeout: 5))
+        prefix.click(); app.typeKey("a", modifierFlags: .command); app.typeText("ios-")
+        let script = app.textFields["automation-script"]
+        script.click(); app.typeKey("a", modifierFlags: .command); app.typeText("return 123;")
+        app.scrollViews["automation-form"].scroll(byDeltaX: 0, deltaY: -300)
+        app.buttons["Preview Version"].click()
+        XCTAssertTrue(app.staticTexts["script must return a non-empty string"].waitForExistence(timeout: 5), app.debugDescription)
+        script.click(); app.typeKey("a", modifierFlags: .command); app.typeText("return '1.2.3';")
+        app.buttons["Preview Version"].click()
+        XCTAssertTrue(app.staticTexts["Preview: ios-1.2.3 (already exists)"].waitForExistence(timeout: 5))
+        let transition = app.textFields["automation-transition"]
+        transition.click(); app.typeText("Ready for QA")
+        app.buttons["Save Automation"].click()
+        XCTAssertTrue(app.staticTexts["Automation saved"].waitForExistence(timeout: 5))
+        let screenshot = app.screenshot()
+        let screenshotURL = FileManager.default.temporaryDirectory.appendingPathComponent("taskhub-automation.png")
+        try screenshot.pngRepresentation.write(to: screenshotURL)
+        print("Automation screenshot: " + screenshotURL.path)
+        let attachment = XCTAttachment(screenshot: screenshot); attachment.lifetime = .keepAlways; add(attachment)
+        transition.click(); app.typeKey("a", modifierFlags: .command); app.typeText("Done")
+        app.typeKey("1", modifierFlags: .command); project.click()
+        XCTAssertEqual(transition.value as? String, "Done")
+        app.buttons["Revert Automation"].click()
+        XCTAssertEqual(transition.value as? String, "Ready for QA")
+        XCTAssertFalse(app.webViews.firstMatch.exists)
+    }
+
+    @MainActor
     func testQuietStartupLoadsTrayAndOpensNativeWindow() throws {
         let environment = ProcessInfo.processInfo.environment
         guard let base = environment["TASKHUB_UI_BACKEND_URL"],

@@ -68,7 +68,7 @@ Opening a PR selects its existing session or creates a page-only context through
 `POST /api/tabs`, which preserves other tabs and all existing editor state. The
 context menu also opens the browser or copies the link. Agent usage uses the shared
 native panel and refreshes once per minute while Overview is visible.
-Settings, automation, workflow, git actions, and complete parity acceptance remain M4 work.
+Complete workflow execution and action-parity acceptance remain M4 work.
 
 Project rows now show native Open/Merged/All PR lists and a Settings tab. **New Project**
 opens a native creation sheet. Settings include workspace selection, GitHub remote
@@ -81,7 +81,14 @@ goals, literal placeholder previews, and Save/Revert. Drafts survive navigation 
 snapshot updates; failed saves keep the draft, and external recipe changes are
 reported before replacement. Legacy `commands` arrays remain readable. Only the
 `workflows` project field is sent on save, preserving automation and Xcode settings.
-The native terminal workflow runner and merge-automation editor remain in progress.
+The native terminal workflow runner remains in progress.
+
+**Automation** is native too: forward GitHub events, set a Fix Version, then transition
+linked Jira tickets when a PR merges. Its injected view model preserves drafts and
+saves only automation fields. Preview Version evaluates the unsaved prefix/script
+through the existing backend using a sample PR and reports existing version names;
+it does not create a Jira version. Stale preview responses are discarded after edits,
+navigation or reconnect. Actual merge actions still run through the existing backend.
 
 **Tickets** is native SwiftUI. It reads the project's cached Jira feed, with local
 text/facet filtering and saved filter preferences. An explicit search accepts keywords,

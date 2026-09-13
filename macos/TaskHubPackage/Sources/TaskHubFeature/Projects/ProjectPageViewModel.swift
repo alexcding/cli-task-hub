@@ -7,6 +7,7 @@ import Observation
     let board: WebBoardViewModel?
     let tickets: JiraTicketsViewModel?
     let workflows: WorkflowEditorViewModel?
+    let automation: AutomationViewModel?
     var section = ProjectSection.prs
     var state = "open"
     var search = ""
@@ -17,9 +18,9 @@ import Observation
     private var service: (any ProjectService)?
     private var generation = UUID()
     init(project: Project, service: any ProjectService, editor: ProjectEditorViewModel, board: WebBoardViewModel? = nil, tickets: JiraTicketsViewModel? = nil,
-         workflows: WorkflowEditorViewModel? = nil) {
+         workflows: WorkflowEditorViewModel? = nil, automation: AutomationViewModel? = nil) {
         self.project = project; self.service = service; self.editor = editor; self.board = board; self.tickets = tickets
-        self.workflows = workflows
+        self.workflows = workflows; self.automation = automation
     }
     func connect(_ service: (any ProjectService)?) {
         generation = UUID(); loading = false
@@ -38,7 +39,7 @@ import Observation
     var warnings: [String] { prs.compactMap(\.error) }
     func update(_ project: Project, snapshot: [DashboardPR]? = nil) {
         self.project = project; editor.update(project); tickets?.update(project)
-        workflows?.update(project)
+        workflows?.update(project); automation?.update(project)
         if state == "open", let snapshot { prs = snapshot; loadedState = "open" }
     }
     func refresh() async {

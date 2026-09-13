@@ -52,7 +52,7 @@ struct APIProjectService: ProjectService {
 }
 
 enum ProjectSection: String, CaseIterable, Identifiable {
-    case prs = "Pull Requests", tickets = "Tickets", board = "Sprint Board", workflows = "Workflows", settings = "Settings"
+    case prs = "Pull Requests", tickets = "Tickets", board = "Sprint Board", workflows = "Workflows", automation = "Automation", settings = "Settings"
     var id: String { rawValue }
 }
 

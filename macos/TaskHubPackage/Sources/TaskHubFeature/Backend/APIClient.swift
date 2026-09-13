@@ -44,6 +44,11 @@ public struct Project: Decodable, Identifiable, Equatable, Sendable {
     var jql: String? = nil
     var ideCmd: String? = nil
     var workflows: [WorkflowRecipe]? = nil
+    var forwardWebhooks: Bool? = nil
+    var mergeTransition: String? = nil
+    var fixVersionEnabled: Bool? = nil
+    var fixVersionPrefix: String? = nil
+    var fixVersionScript: String? = nil
 }
 
 // Actor isolation keeps response decoding off the UI actor. Only decoded snapshots

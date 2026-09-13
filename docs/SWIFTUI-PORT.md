@@ -1134,6 +1134,30 @@ does not).
   Native workflow execution, hook sequencing/advisory analysis, and the merge-
   automation editor remain separate work.
 
+### M4 native project automation — 2026-09-12
+
+- Native Automation configures event forwarding, Fix Version creation/assignment,
+  and the subsequent Jira ticket transition. Draft state and asynchronous work live
+  in an injected view model. Saves send only the five automation fields and preserve
+  workflow recipes, project configuration, and Xcode run destinations.
+- Explicit Preview Version evaluates the unsaved prefix/script through the existing
+  backend evaluator, with its sample PR and existing Jira version list. It performs
+  no Jira writes. Edits, navigation, Jira-project changes and reconnects invalidate
+  stale replies; errors are recoverable without dropping the draft.
+- Forwarding status distinguishes observed process state from saved intent because
+  the backend starts/stops forwarding asynchronously. Refresh checks actual status;
+  projects without a repository explain the prerequisite. Existing backend polling
+  and merge execution retain ownership of CLI calls and Jira mutations.
+- Ten focused Swift tests pass, including the real backend preview evaluator,
+  non-string script rejection, scoped persistence, external changes, save failures,
+  coalescing, reconnects and shutdown draining. The isolated fixture now explicitly
+  disables project-write sync/forwarder starts and supplies sample Jira versions.
+  The native UI test passes scrolling to controls, script-error recovery, existing-
+  version preview, save, navigation with an unsaved transition and Revert. The saved
+  screen was visually checked. No real Jira versions or transitions were created.
+- Native workflow execution, terminal acceptance gates, release validation and the
+  final coordinator/VM/DI refactor remain open. Sprint Board stays web-based.
+
 ## Why now, and why native
 
 The Tauri shell works, but roughly half of `src-tauri/` exists to work around what a DOM

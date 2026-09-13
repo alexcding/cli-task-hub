@@ -62,6 +62,19 @@ private actor StoppedSessions {
     let preserved: PreservedProjectSettings = try await api.get(Routes.project(projects[0].id))
     #expect(preserved.runSim == "existing-simulator" && preserved.mergeTransition == "Ready for QA")
     #expect(preserved.fixVersionEnabled && preserved.fixVersionPrefix == "ios-" && preserved.fixVersionScript == "return '1';")
+    let automation = APIAutomationService(api: api)
+    var automationDraft = AutomationDraft(workflowProject)
+    automationDraft.forwardWebhooks = false; automationDraft.mergeTransition = "  Done  "
+    automationDraft.fixVersionPrefix = " ios- "; automationDraft.fixVersionScript = "return '1.2.3';"
+    let automationProject = try await automation.save(projectID: workflowProject.id, draft: automationDraft)
+    #expect(automationProject.workflows == [workflow] && automationProject.runScheme == "Existing scheme" && automationProject.runSim == "existing-simulator")
+    #expect(automationProject.forwardWebhooks == false && automationProject.mergeTransition == "Done" && automationProject.fixVersionPrefix == "ios-")
+    let preview = try await automation.preview(projectID: workflowProject.id, prefix: "ios-", script: "return '1.2.3';")
+    #expect(preview.version == "ios-1.2.3" && preview.exists)
+    do {
+        _ = try await automation.preview(projectID: workflowProject.id, prefix: "ios-", script: "return 123;")
+        Issue.record("Expected the actual backend script evaluator to reject a non-string result")
+    } catch { #expect(error.localizedDescription.contains("non-empty string")) }
     let checkout = directory.appendingPathComponent("repo")
     try FileManager.default.createDirectory(at: checkout, withIntermediateDirectories: true)
     func git(_ arguments: [String]) throws {

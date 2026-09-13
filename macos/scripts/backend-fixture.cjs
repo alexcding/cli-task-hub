@@ -6,6 +6,11 @@ process.env.TASKHUB_DATA_DIR ||= fs.mkdtempSync(path.join(os.tmpdir(), 'taskhub-
 const { app } = require('../../src/server/app');
 const db = require('../../src/server/database/db');
 const sse = require('../../src/server/routes/sse');
+// Project writes exercise real validation/storage without starting external syncs.
+const fixturePoller = require('../../src/server/services/poller');
+fixturePoller.syncProject = fixturePoller.syncProjectJira = fixturePoller.syncProjectBoard = async () => {};
+require('../../src/server/services/webhook-forwarder').sync = () => {};
+require('../../src/server/repositories/jira').listVersions = async () => [{ name: 'ios-1.2.3' }];
 if (process.env.TASKHUB_CLI_FIXTURE === '1') {
   require('../../src/server/services/cli-tools').detect = async () => ({
     claude: { present: true }, codex: { present: false }, gh: { present: true, authed: false }, acli: { present: true, authed: null },
