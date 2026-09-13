@@ -161,17 +161,17 @@ import Testing
     context.configureWorkspace(factory: NativeWorkspaceFeatureFactory(), service: runtime)
     let workspace = try #require(context.workspaceViewModel), first = try #require(context.activePage)
     workspace.setActive(true)
-    #expect(first.dialogs.active)
+    #expect(first.dialogs.active && first.controls.active)
     var responses: [BrowserDialogViewModel.Response] = []
     first.dialogs.begin(.confirm("Pending"), origin: "example.test") { responses.append($0) }
     let second = try #require(context.open("https://example.test/two"))
-    #expect(!first.dialogs.active && second.dialogs.active && responses == [.cancel])
+    #expect(!first.dialogs.active && !first.controls.active && second.dialogs.active && second.controls.active && responses == [.cancel])
     second.dialogs.begin(.confirm("Second"), origin: "example.test") { responses.append($0) }
     context.restoring = true
-    #expect(!second.dialogs.active && responses == [.cancel, .cancel])
+    #expect(!second.dialogs.active && !second.controls.active && responses == [.cancel, .cancel])
     context.restoring = false
-    #expect(second.dialogs.active)
+    #expect(second.dialogs.active && second.controls.active)
     second.dialogs.begin(.confirm("Third"), origin: "example.test") { responses.append($0) }
     workspace.setActive(false)
-    #expect(!second.dialogs.active && responses.count == 3 && !dialogs.isPresenting)
+    #expect(!second.dialogs.active && !second.controls.active && responses.count == 3 && !dialogs.isPresenting)
 }

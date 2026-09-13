@@ -135,7 +135,9 @@ enum WorkspaceOperation: Equatable {
         state.history?.presentation = .init(active: reviewing && context?.reviewSection == .history,
                                             appearance: state.appearance, font: state.documentFont)
         for page in context?.pages ?? [] {
-            page.dialogs.active = visible && showsPage && !showsChanges && page === context?.activePage
+            let activePage = visible && showsPage && !showsChanges && page === context?.activePage
+            page.controls.active = activePage
+            page.dialogs.active = activePage
         }
         for document in context?.documents ?? [] {
             document.presentation = .init(active: visible && showsPage && !showsChanges && document === context?.activeDocument,

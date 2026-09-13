@@ -199,12 +199,12 @@ public final class AppStore {
         switch command {
         case .newProject: connection == "Connected" && coordinator.canPresent
         case .newSession: connection == "Connected" && coordinator.canPresent && !projects.isEmpty && pageWorkflowRuns[viewer.activeContextID ?? ""]?.running != true
-        case .back: viewer.active?.activePage?.canGoBack == true
-        case .forward: viewer.active?.activePage?.canGoForward == true
+        case .back: coordinator.canPresent && viewer.active?.activePage?.controls.canGoBack == true
+        case .forward: coordinator.canPresent && viewer.active?.activePage?.controls.canGoForward == true
         case .openFile: viewer.active != nil && connection == "Connected"
         case .saveFile: viewer.active?.activeDocument?.loaded == true && viewer.active?.activeDocument?.readOnly == false
         case .findPage: activeHistory != nil || hasActivePage
-        case .zoomIn, .zoomOut, .resetZoom: viewer.active?.activePage != nil
+        case .zoomIn, .zoomOut, .resetZoom: coordinator.canPresent && viewer.active?.activePage?.controls.active == true
         case .nextPage, .previousPage: (viewer.active?.tabOrder.count ?? 0) > 1
         case .biggerFont, .smallerFont, .resetFont: fontTarget != nil
         case .refresh: connection == "Connected"
@@ -229,13 +229,13 @@ public final class AppStore {
             if let history = activeHistory { history.find() }
             else if let document = viewer.active?.activeDocument { document.find() }
             else { viewer.active?.findVisible = true }
-        case .back: viewer.active?.activePage?.back()
-        case .forward: viewer.active?.activePage?.forward()
+        case .back: viewer.active?.activePage?.controls.back()
+        case .forward: viewer.active?.activePage?.controls.forward()
         case .nextPage: viewer.active?.cycle(1)
         case .previousPage: viewer.active?.cycle(-1)
-        case .zoomIn: viewer.active?.activePage?.zoom(0.1)
-        case .zoomOut: viewer.active?.activePage?.zoom(-0.1)
-        case .resetZoom: viewer.active?.activePage?.zoom(nil)
+        case .zoomIn: viewer.active?.activePage?.controls.zoom(0.1)
+        case .zoomOut: viewer.active?.activePage?.controls.zoom(-0.1)
+        case .resetZoom: viewer.active?.activePage?.controls.zoom(nil)
         case .overview: select(.overview)
         case .activity: select(.activity)
         case .settings: select(.settings)

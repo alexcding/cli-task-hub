@@ -126,14 +126,21 @@ XcodeBuildMCP log directory; this is not recorded as a passing UI check.
 
 Each `BrowserPage` owns one `BrowserControlsViewModel`. The controls weakly reference
 the page, so a retained action cannot keep a closed WebKit page alive. Address
-drafts, URL validation, Stop/Reload selection, find actions, external-browser
-opening and failure-specific retry are implemented in the model. The view retains
-focus state and forwards focus, appearance and URL-change events. Redirects do not
-overwrite the address while the user is editing it; external opening uses the
-committed page URL, not the address draft.
+drafts, URL validation, Stop/Reload selection and failure-specific retry are
+implemented in the model. Navigation, find, zoom and external opening emit typed
+actions to an injected `BrowserControlsCoordinator`. The view retains focus state;
+the page's URL observer synchronizes the model. Redirects preserve an address being
+edited; external opening uses the committed page URL.
 
-`BrowserPageFactory` carries injected `DesktopActions` through `ViewerStore`, new
-contexts, saved-snapshot restoration, newly opened pages and popup creation.
+`BrowserPageFactory` carries the controls coordinator and injected `DesktopActions`
+through `ViewerStore`, new contexts, saved-snapshot restoration, newly opened pages
+and popup creation. The controls and page models no longer own desktop services.
+Before dispatch, the coordinator checks the current binding, page ownership,
+model activity and shared presentation availability. Retained callbacks from an
+old binding or removed page cannot navigate, reload or launch an external browser.
+Workspace model changes own controls activation; guarded deactivation ends address
+editing and resynchronizes the committed URL. Back/Forward and zoom menu commands
+use the same controls/coordinator path as the toolbar.
 `NativeDesktopActions` implements browser opening and Finder reveal. The app's
 Dashboard, CLI/Jira/board links, terminal external links, tray reviews and worktree
 reveal share this dependency. Tray opening/acknowledgment ordering and tab grouping

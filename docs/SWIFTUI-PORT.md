@@ -2313,6 +2313,33 @@ does not).
   authentication/relaunch retention, build/run workflows and the broader M1–M6
   gates remain required.
 
+### Browser controls coordinator and command ownership — 2026-09-13
+
+- Browser controls now emit typed actions for navigation, Back/Forward, Stop/Reload,
+  zoom, find and external opening. The injected coordinator dispatches to the page
+  and desktop adapter only for a current binding, owned active page and available
+  presentation. Page and controls models no longer construct or retain desktop
+  services. External opening continues to use the committed URL and retains retry
+  feedback on failure.
+- Workspace model updates drive controls activity alongside dialog activity.
+  Guarded deactivation ends address editing without a rendering-view observer.
+  Back/Forward and zoom menu commands now follow the same coordinator path.
+- **21 model tests and one native AppKit presenter test pass to completion**:
+  `swift_package_test_2026-09-13T22-16-52-180Z_pid60291_6759380e.log`.
+  Coverage includes callback replacement, hidden/removed pages, missing owners,
+  competing presentations, URL validation, zoom and retained controls that cannot
+  rematerialize a replaced page.
+- The native browser/session UI regression passes (63.4 seconds including build):
+  `test_macos_2026-09-13T22-17-20-905Z_pid60584_9d908b63.log`.
+  It verifies Add Page validation, find, link navigation and command Back, tab close,
+  cancelled/reopened session creation, and cancelled/confirmed session removal.
+  Sidebar selection queries the row containing its text; text input targets its
+  actual field, resolving the earlier selection/typing failures in this workflow.
+- This establishes normal browser navigation acceptance for the current change.
+  The separate JavaScript prompt/file-upload XCUITest still has the sheet-query
+  limitation recorded above; real browser authentication and the remaining M1–M6
+  gates remain open.
+
 ## Why now, and why native
 
 The Tauri shell works, but roughly half of `src-tauri/` exists to work around what a DOM

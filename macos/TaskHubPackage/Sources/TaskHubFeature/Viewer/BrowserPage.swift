@@ -23,11 +23,10 @@ struct WebPageRecord: Codable, Identifiable, Equatable, Sendable {
     @ObservationIgnored var changed: () -> Void = {}
     @ObservationIgnored var openPopup: ((URL, WKWebViewConfiguration) -> WKWebView?)?
     @ObservationIgnored private var observations: [NSKeyValueObservation] = []
-    @ObservationIgnored private let desktop: any DesktopActions
-    @ObservationIgnored lazy var controls = BrowserControlsViewModel(page: self, desktop: desktop)
+    @ObservationIgnored lazy var controls = BrowserControlsViewModel(page: self)
 
-    init(_ record: WebPageRecord, desktop: any DesktopActions) {
-        id = record.id; url = record.url; title = record.title; self.desktop = desktop; super.init()
+    init(_ record: WebPageRecord) {
+        id = record.id; url = record.url; title = record.title; super.init()
     }
     var record: WebPageRecord { .init(id: id, url: url, title: title) }
 

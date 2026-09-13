@@ -1099,7 +1099,7 @@ final class TaskHubUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["--backend-url", base, "--data-dir", directory.path, "--pty-socket", socket]
         app.launch()
-        let session = app.outlines["workspace-sidebar"].staticTexts["sidebar-1"].firstMatch
+        let session = app.outlines["workspace-sidebar"].outlineRows.containing(.staticText, identifier: "sidebar-1").element(boundBy: 0)
         XCTAssertTrue(session.waitForExistence(timeout: 10))
         session.click()
         XCTAssertTrue(app.webViews.firstMatch.waitForExistence(timeout: 10))
@@ -1107,9 +1107,9 @@ final class TaskHubUITests: XCTestCase {
         app.buttons["Add Page"].click()
         let newAddress = app.textFields["HTTP or HTTPS address"]
         XCTAssertTrue(newAddress.waitForExistence(timeout: 5))
-        newAddress.click(); app.typeKey("a", modifierFlags: .command); app.typeText("file:///tmp/private")
+        newAddress.click(); newAddress.typeKey("a", modifierFlags: .command); newAddress.typeText("file:///tmp/private")
         XCTAssertFalse(app.sheets.buttons["Open"].isEnabled)
-        newAddress.click(); app.typeKey("a", modifierFlags: .command); app.typeText(base + "/fixture/next?coordinator=1")
+        newAddress.click(); newAddress.typeKey("a", modifierFlags: .command); newAddress.typeText(base + "/fixture/next?coordinator=1")
         app.sheets.buttons["Open"].click()
         XCTAssertTrue(app.webViews.staticTexts["Next page"].waitForExistence(timeout: 10))
         XCTAssertFalse(app.sheets.firstMatch.exists)
@@ -1118,7 +1118,7 @@ final class TaskHubUITests: XCTestCase {
         app.typeKey("f", modifierFlags: .command)
         XCTAssertTrue(app.textFields["Find in page"].waitForExistence(timeout: 5))
         app.textFields["Find in page"].click()
-        app.typeText("quokka\n")
+        app.textFields["Find in page"].typeText("quokka\n")
         XCTAssertFalse(app.staticTexts["No match"].exists)
         app.buttons["Close Find"].click()
         app.webViews.links["Next page"].click()
@@ -1136,7 +1136,7 @@ final class TaskHubUITests: XCTestCase {
         XCTAssertTrue(sessionTitle.waitForExistence(timeout: 5))
         let editableTitle = expectation(for: NSPredicate(format: "enabled == true"), evaluatedWith: sessionTitle)
         wait(for: [editableTitle], timeout: 5)
-        sessionTitle.click(); app.typeText("Cancelled session")
+        sessionTitle.click(); sessionTitle.typeText("Cancelled session")
         app.buttons["Cancel"].click()
         let dismissed = expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: app.sheets.firstMatch)
         wait(for: [dismissed], timeout: 5)
