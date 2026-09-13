@@ -57,14 +57,14 @@ struct ProjectEditorView: View {
 }
 
 struct NewProjectSheet: View {
-    @Environment(\.dismiss) private var dismiss
-    @State var model: ProjectEditorViewModel
+    @Bindable var model: ProjectEditorViewModel
+    let cancel: () -> Void
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack {
                 Text("New Project").font(.title2.bold())
                 Spacer()
-                Button("Cancel") { dismiss() }.disabled(model.busy).keyboardShortcut(.cancelAction)
+                Button("Cancel", action: cancel).disabled(model.busy).keyboardShortcut(.cancelAction)
             }
             ProjectEditorView(model: model)
         }.padding(24).frame(width: 600, height: 560).interactiveDismissDisabled(model.busy)

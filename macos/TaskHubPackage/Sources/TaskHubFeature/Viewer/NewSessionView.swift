@@ -1,8 +1,8 @@
 import SwiftUI
 
 struct NewSessionView: View {
-    @State var model: NewSessionViewModel
-    @Environment(\.dismiss) private var dismiss
+    @Bindable var model: NewSessionViewModel
+    let cancel: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -32,7 +32,7 @@ struct NewSessionView: View {
             if let reused = model.draft.reuseWorktree { Text("Reusing \(reused)").font(.caption).textSelection(.enabled) }
             if let error = model.error { Text(error).foregroundStyle(.orange).textSelection(.enabled) }
             HStack {
-                Button("Cancel", role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction).disabled(model.creating)
+                Button("Cancel", role: .cancel, action: cancel).keyboardShortcut(.cancelAction).disabled(model.creating)
                 Spacer()
                 if model.busy { ProgressView().controlSize(.small) }
                 Button(model.creating ? "Creating…" : "Create Session") { Task { await model.create() } }
@@ -42,6 +42,5 @@ struct NewSessionView: View {
         }.padding(24).frame(width: 520)
         .interactiveDismissDisabled(model.creating)
         .task(id: model.projectID) { await model.loadReferences() }
-        .onChange(of: model.completed) { _, completed in if completed { dismiss() } }
     }
 }

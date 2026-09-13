@@ -36,8 +36,8 @@ public struct ContentView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .navigationTitle("TaskHub")
             .toolbar {
-                Button("New Project", systemImage: "folder.badge.plus") { store.creatingProject = true }
-                    .disabled(store.connection != "Connected")
+                Button("New Project", systemImage: "folder.badge.plus") { store.perform(.newProject) }
+                    .disabled(!store.canPerform(.newProject))
                 Button("New Session", systemImage: "plus") { store.perform(.newSession) }
                     .disabled(!store.canPerform(.newSession))
                 Button("Reviews & Usage", systemImage: "menubar.rectangle", action: showTray)
@@ -52,9 +52,10 @@ public struct ContentView: View {
             ActivityToastView(notifications: store.shell.notifications)
                 .frame(maxWidth: 420).padding(16)
         }
-        .sheet(isPresented: $store.creatingSession) { NewSessionView(model: store.newSessionModel()) }
-        .sheet(isPresented: $store.creatingProject) {
-            if let model = store.projectEditor() { NewProjectSheet(model: model) }
+        .sheet(item: Binding(get: { store.coordinator.sheet }, set: { value in
+            if value == nil, let sheet = store.coordinator.sheet { store.coordinator.dismissSheet(id: sheet.id) }
+        })) { sheet in
+            AppCoordinatorSheetView(sheet: sheet, cancel: { store.coordinator.dismissSheet(id: sheet.id) })
         }
     }
 

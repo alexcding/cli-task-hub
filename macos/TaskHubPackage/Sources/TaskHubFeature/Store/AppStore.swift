@@ -6,6 +6,8 @@ import Observation
 public final class AppStore {
     public let shell = ShellStore()
     let viewer: ViewerStore
+    let coordinator: AppCoordinator
+    @ObservationIgnored private let creationFactory: any CreationFlowFactory
     private(set) var dashboard: DashboardViewModel!
     private(set) var logs: LogsViewModel!
     private(set) var settings: SettingsViewModel!
@@ -19,8 +21,6 @@ public final class AppStore {
     private(set) var tabs: [SavedTab] = []
     private(set) var selection: SidebarDestination = .overview
     private(set) var terminals: [String: TerminalSession] = [:]
-    var creatingSession = false
-    var creatingProject = false
     private(set) var projectModels: [String: ProjectPageViewModel] = [:]
     private(set) var changingSessions: Set<String> = []
     private(set) var buildModels: [String: BuildWorkspaceViewModel] = [:]
@@ -39,7 +39,11 @@ public final class AppStore {
     @ObservationIgnored private var refreshPending = false
     @ObservationIgnored private var started = false
 
-    public init() {
+    public convenience init() { self.init(creationFactory: NativeCreationFlowFactory()) }
+
+    init(creationFactory: any CreationFlowFactory) {
+        self.creationFactory = creationFactory
+        coordinator = AppCoordinator(factory: creationFactory)
         viewer = ViewerStore(cacheURL: try? PtydConfiguration.current().directory.appendingPathComponent("page-tabs.json"),
                              memoryPressure: NativeMemoryPressureMonitor())
         viewer.setPageLimit(shell.remotePageLimit)
@@ -116,21 +120,10 @@ public final class AppStore {
         }
     }
 
-    func projectEditor(for project: Project? = nil) -> ProjectEditorViewModel? {
+    func projectEditor(for project: Project) -> ProjectEditorViewModel? {
         guard let api else { return nil }
-        return ProjectEditorViewModel(project: project, service: APIProjectService(api: api), chooseFolder: NativeFolderPicker.choose,
-            didSave: { [weak self] project in
-                guard let self else { return }
-                if let index = projects.firstIndex(where: { $0.id == project.id }) { projects[index] = project }
-                else { projects.append(project) }
-                projectModels[project.id]?.update(project)
-                for session in sessions where session.projectId == project.id {
-                    buildModels.removeValue(forKey: "task:\(session.id)")?.disconnect()
-                }
-                creatingProject = false
-                select(.project(project.id))
-                refresh()
-            }, didDelete: { [weak self] id in
+        return creationFactory.projectEditor(project: project, service: APIProjectService(api: api),
+            didSave: { [weak self] in self?.savedProject($0) }, didDelete: { [weak self] id in
                 guard let self else { return }
                 projects.removeAll { $0.id == id }
                 if let removed = projectModels.removeValue(forKey: id) {
@@ -141,27 +134,32 @@ public final class AppStore {
             })
     }
 
-    func newSessionModel() -> NewSessionViewModel {
+    private func savedProject(_ project: Project) {
+        if let index = projects.firstIndex(where: { $0.id == project.id }) { projects[index] = project }
+        else { projects.append(project) }
+        projectModels[project.id]?.update(project)
+        for session in sessions where session.projectId == project.id {
+            buildModels.removeValue(forKey: "task:\(session.id)")?.disconnect()
+        }
+        select(.project(project.id))
+        refresh()
+    }
+
+    private var sessionCreationRequest: SessionCreationRequest {
         let selected: String
         switch selection {
         case .project(let id): selected = id
         case .session(let id): selected = sessions.first { $0.id == id }?.projectId ?? ""
         default: selected = projects.count == 1 ? projects[0].id : ""
         }
-        let model = NewSessionViewModel(projects: projects, selectedProject: selected, operations: sessionOperations,
-                                        didCreate: { [weak self] in self?.createdSession($0) })
-        model.draft.agent = shell.defaultAgent
-        if case .tab(let url) = selection {
-            model.draft.url = url
-            if SessionPage.parse(url) != nil { model.draft.branch = url }
-        }
-        return model
+        let pageURL: String? = if case .tab(let url) = selection { url } else { nil }
+        return SessionCreationRequest(projects: projects, selectedProject: selected, agent: shell.defaultAgent, pageURL: pageURL)
     }
 
     public func canPerform(_ command: ShellCommand) -> Bool {
         switch command {
-        case .newProject: connection == "Connected"
-        case .newSession: connection == "Connected" && !projects.isEmpty && pageWorkflowRuns[viewer.activeContextID ?? ""]?.running != true
+        case .newProject: connection == "Connected" && coordinator.sheet == nil
+        case .newSession: connection == "Connected" && coordinator.sheet == nil && !projects.isEmpty && pageWorkflowRuns[viewer.activeContextID ?? ""]?.running != true
         case .back: viewer.active?.activePage?.canGoBack == true
         case .forward: viewer.active?.activePage?.canGoForward == true
         case .openFile: viewer.active != nil && connection == "Connected"
@@ -177,8 +175,13 @@ public final class AppStore {
 
     public func perform(_ command: ShellCommand) {
         switch command {
-        case .newProject: creatingProject = true
-        case .newSession: if canPerform(.newSession) { creatingSession = true }
+        case .newProject:
+            guard canPerform(.newProject), let api else { return }
+            coordinator.presentNewProject(service: APIProjectService(api: api), didSave: { [weak self] in self?.savedProject($0) })
+        case .newSession:
+            guard canPerform(.newSession) else { return }
+            coordinator.presentNewSession(request: sessionCreationRequest, operations: sessionOperations,
+                                           didCreate: { [weak self] in self?.createdSession($0) })
         case .openFile: if let context = viewer.active { viewer.openFile(in: context) }
         case .saveFile: if let document = viewer.active?.activeDocument { Task { await document.save() } }
         case .closePage: if let context = viewer.active, let id = context.activeID, let tab = context.tab(id) { context.close(tab) }
@@ -570,7 +573,6 @@ public final class AppStore {
         if !sessions.contains(where: { $0.id == session.id }) { sessions.append(session) }
         select(.session(session.id))
         terminals["task:\(session.id)"] = makeTerminal(session, fresh: true)
-        creatingSession = false
         refresh()
     }
 

@@ -9,6 +9,11 @@ screen has a Cocoa sidebar with project/session selection, Pinned mirrors, saved
 Tabs, native terminal panes, and a native SwiftUI Dashboard.
 See [the port plan](../docs/SWIFTUI-PORT.md).
 
+The [coordinator and DI extraction](../docs/NATIVE-ARCHITECTURE.md) follows the
+`elevate-ios` responsibility split. Creation sheets now receive stable models from
+an injected factory and an application coordinator; remaining view and runtime
+boundaries are tracked there.
+
 ## Cocoa sidebar (M2)
 
 The sidebar is an AppKit `NSOutlineView`, hosted through `NSViewRepresentable`.

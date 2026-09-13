@@ -1445,6 +1445,30 @@ does not).
   clean-Mac/signed installation, other migration gates and the final requested
   coordinator/VM/DI architecture pass remain open. Sprint Board stays web-based.
 
+### Coordinator/VM/DI extraction: creation flows — 2026-09-13
+
+- Inspected the `elevate-ios` coordinator, destination-view, ViewModel and DI
+  registrations. The first extraction uses the same responsibility split with
+  explicit injected factories. See `NATIVE-ARCHITECTURE.md` for source references
+  and the remaining architecture scope.
+- An application coordinator now owns identified project/session sheets and their
+  models. Root rendering no longer constructs these models. Toolbar and menu
+  commands share presentation rules; cancellation, success and repeated/late
+  callbacks preserve the correct draft and presentation lifetime.
+- Project and session sheets bind the coordinator-owned models and forward events;
+  persistence and preparation stay in ViewModels/services. The live factory's
+  folder picker can be replaced without invoking native UI in tests.
+- Five focused Swift tests pass, covering duplicate routes, stale completion,
+  save-time dismissal, retained failures/retry, factory injection and existing
+  project/session business behavior. The native Debug app and UI test target
+  compile. The project UI run and one retry both fail before any assertion because
+  macOS times out enabling automation mode. Project and session cancel/reopen
+  assertions are added, but UI execution remains pending; the session UI run was
+  deferred after the repeated runner initialization failure.
+- This starts the architecture extraction while externally verifiable migration
+  acceptance remains open; it does not close those gates or complete the full
+  architecture pass. Sprint Board remains web-based.
+
 ## Why now, and why native
 
 The Tauri shell works, but roughly half of `src-tauri/` exists to work around what a DOM
