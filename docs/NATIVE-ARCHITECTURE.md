@@ -94,6 +94,27 @@ a completion flag. Their button/task closures forward events to model/coordinato
 methods. Project validation, persistence, session preparation and error state stay
 in their existing ViewModels and services.
 
+Factories construct creation models; the coordinator installs typed `onAction`
+handlers for project saves, session creation and page opening. Closing or completing
+an identified creation sheet permanently retires its model, clears its callback
+and disables future operations. A retained editor cannot be revived by reconnecting
+its service. Successful creation is also single-use without a coordinator; ordinary
+existing-project editing remains reusable until deletion or snapshot removal.
+
+Session preparation uses an injected `SessionCreating` service. A guarded
+`projectID.didSet` invalidates pending resolution, and a response must match both
+its generation and draft before creation may proceed. Dismissed models reject
+late lookup results and cannot restart reference loading. Failure preserves an
+active draft for retry. These checks prevent new obsolete operations; they do not
+roll back a backend write that already started. Busy writes still block dismissal.
+Build models are cached runtime features, while removal models carry operation
+cleanup callbacks. Their presentation lifetimes are a separate extraction; this
+phase does not retire either when its sheet closes.
+
+The lifetime follow-up passes 24 focused tests and native UI checks for project
+create/edit/delete, browser/session creation and removal, and cold/warm deeplinks
+with an open draft. Current evidence is recorded in `SWIFTUI-PORT.md`.
+
 Five focused Swift tests passed in the first phase. The Debug app and UI target compiled. The initial project UI
 test and its retry stopped before assertions with XCTest's “Timed out while
 enabling automation mode” initialization error. The added project/session
@@ -339,8 +360,9 @@ The architecture extraction remains in progress:
 - Expand factories to settings and document feature assembly;
   `AppStore` still constructs several concrete services and models. Complete
   child presentation ownership/model retirement and project PR/Jira/board action
-  forwarding as the remaining shared action services are extracted. Audit retained
-  dismissed creation models so stale commands cannot start another backend write.
+  forwarding as the remaining shared action services are extracted. Add separate
+  presentation lifetimes for cached build models and removal operations, and move
+  project deletion confirmation into its child coordinator.
 - Separate application runtime/backend lifecycle from feature navigation without
   changing ownership, cancellation, detached-shell retention or update shutdown.
 - Audit every rendering view and web/AppKit adapter for remaining business rules.

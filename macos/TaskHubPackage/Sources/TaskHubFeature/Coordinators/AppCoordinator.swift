@@ -15,6 +15,16 @@ import Observation
         let id: UUID
         let destination: Destination
 
+        @MainActor func retireCreation() {
+            switch destination {
+            case .newProject(let model): model.retire()
+            case .newSession(let model): model.retire()
+            case .addPage(let model): model.retire()
+            // Build runtime and removal cleanup have separate operation lifetimes.
+            case .removal, .build: break
+            }
+        }
+
         @MainActor var canDismiss: Bool {
             switch destination {
             case .newProject(let model): !model.busy
@@ -69,7 +79,10 @@ import Observation
         let model = factory.addPage(openPage: { [weak self] address in
             guard self?.sheet?.id == id else { return false }
             return openPage(address)
-        }, didOpen: { [weak self] in _ = self?.complete(id) })
+        })
+        model.onAction = { [weak self] action in
+            switch action { case .opened: _ = self?.complete(id) }
+        }
         sheet = Sheet(id: id, destination: .addPage(model))
     }
 
@@ -84,21 +97,21 @@ import Observation
         sheet = Sheet(id: id, destination: .newProject(model))
     }
 
-    func presentNewSession(request: SessionCreationRequest, operations: SessionOperations?,
+    func presentNewSession(request: SessionCreationRequest, operations: (any SessionCreating)?,
                            didCreate: @escaping (WorkspaceSession) -> Void) {
         guard canPresent else { return }
         let id = UUID()
-        let model = factory.newSession(request: request, operations: operations, didCreate: { [weak self] session in
-            guard self?.complete(id) == true else { return }
+        let model = factory.newSession(request: request, operations: operations)
+        model.onAction = { [weak self] action in
+            guard case .created(let session) = action, self?.complete(id) == true else { return }
             didCreate(session)
-        })
+        }
         sheet = Sheet(id: id, destination: .newSession(model))
     }
 
     func dismissSheet(id: UUID) {
         guard sheet?.id == id, sheet?.canDismiss == true else { return }
-        sheet = nil
-        schedulePendingDeepLink()
+        _ = complete(id)
     }
 
     func presentRemoval(_ makeModel: () -> SessionRemovalViewModel?) {
@@ -132,8 +145,9 @@ import Observation
     }
 
     private func complete(_ id: UUID) -> Bool {
-        guard sheet?.id == id else { return false }
-        sheet = nil
+        guard let sheet, sheet.id == id else { return false }
+        self.sheet = nil
+        sheet.retireCreation()
         schedulePendingDeepLink()
         return true
     }

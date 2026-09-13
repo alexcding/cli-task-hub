@@ -102,18 +102,18 @@ private actor CreationProjectService: ProjectService {
     let native = NativeCreationFlowFactory(chooseFolder: { "/tmp/injected-folder" })
     var projectCompletions: [(Project) -> Void] = []
     var sessionCompletions: [(WorkspaceSession) -> Void] = []
-    func addPage(openPage: @escaping (String) -> Bool, didOpen: @escaping () -> Void) -> AddPageViewModel {
-        native.addPage(openPage: openPage, didOpen: didOpen)
+    func addPage(openPage: @escaping (String) -> Bool) -> AddPageViewModel {
+        native.addPage(openPage: openPage)
     }
     func projectEditor(project: Project?, service: any ProjectService) -> ProjectEditorViewModel {
         let model = native.projectEditor(project: project, service: service)
         projectCompletions.append { [weak model] in model?.onAction(.saved($0)) }
         return model
     }
-    func newSession(request: SessionCreationRequest, operations: SessionOperations?,
-                    didCreate: @escaping (WorkspaceSession) -> Void) -> NewSessionViewModel {
-        sessionCompletions.append(didCreate)
-        return native.newSession(request: request, operations: operations, didCreate: didCreate)
+    func newSession(request: SessionCreationRequest, operations: (any SessionCreating)?) -> NewSessionViewModel {
+        let model = native.newSession(request: request, operations: operations)
+        sessionCompletions.append { [weak model] in model?.onAction(.created($0)) }
+        return model
     }
 }
 

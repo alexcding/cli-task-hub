@@ -26,7 +26,7 @@ struct GitReferences: Decodable, Sendable {
     let defaultBranch: String
 }
 
-struct SessionDraft: Sendable {
+struct SessionDraft: Equatable, Sendable {
     var branch = ""
     var base = ""
     var createBranch = true
@@ -40,7 +40,13 @@ struct SessionDraft: Sendable {
 
 // Local git operations and durable records stay in the existing backend. A failed
 // record write reports the created checkout so it is recoverable, never deleted.
-struct SessionOperations: Sendable {
+protocol SessionCreating: Sendable {
+    func references(_ project: Project) async throws -> GitReferences
+    func resolvePage(_ raw: String, project: Project, draft: SessionDraft, workflow: Bool) async throws -> SessionDraft
+    func create(project: Project, draft: SessionDraft, requireExactBranch: Bool) async throws -> WorkspaceSession
+}
+
+struct SessionOperations: SessionCreating {
     let api: APIClient
     func references(_ project: Project) async throws -> GitReferences {
         try await api.get(APIClient.query(Routes.GIT_REFS, ["path": project.workspace]))

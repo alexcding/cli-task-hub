@@ -1684,6 +1684,37 @@ does not).
   gates remain tracked in `NATIVE-ARCHITECTURE.md` and this plan. Existing terminal
   mount and WebKit QoS warnings remain open.
 
+### Creation model lifetime and stale preparation — 2026-09-13
+
+- Creation factories now only assemble models. New Session and Add Page emit typed
+  `onAction` completions installed by the coordinator, matching project editors.
+  Closing or completing a creation sheet permanently retires its model and clears
+  its callback. Retained dismissed models cannot start backend operations; a
+  successful creation is single-use even without a coordinator. Existing project
+  editors remain reusable until deletion or removal from the snapshot.
+- New Session receives a protocol-based `SessionCreating` dependency. Guarded
+  project-selection observers invalidate pending resolution. Both the lookup and
+  the handoff to creation validate the current request, project generation and
+  draft. A stale response or failure cannot overwrite a newer draft or start a
+  worktree creation. Retired models cannot restart branch loading. Project folder
+  and repository responses also reject retired/disconnected lifetimes.
+- Busy writes still prevent dismissal, and failures retain their drafts for retry.
+  These guards prevent new operations; they do not roll back backend writes that
+  already started. Build runtime and removal cleanup lifetimes remain a separate
+  phase. No view observers or legacy observation APIs were introduced.
+- Twenty-four focused tests pass in
+  `swift_package_test_2026-09-13T16-11-04-443Z_pid41611_28b91b3a.log`, covering
+  held lookup success/failure, project switching, dismissal, retry, repeated
+  creation, deleted editor reuse, late folder responses and coordinator/deeplink
+  regressions. Native browser/session creation and removal pass in
+  `test_macos_2026-09-13T16-09-20-520Z_pid40814_6d507304.log`; native project
+  create/edit/delete passes in
+  `test_macos_2026-09-13T16-11-26-169Z_pid41845_fad21986.log`. Cold/warm
+  deeplinks and open-draft preservation pass in
+  `test_macos_2026-09-13T16-12-24-530Z_pid42292_e79519fa.log`.
+- Remaining coordinator/runtime extraction and terminal/release acceptance gates
+  remain open. The existing WebKit QoS warning is still emitted by native UI tests.
+
 ## Why now, and why native
 
 The Tauri shell works, but roughly half of `src-tauri/` exists to work around what a DOM

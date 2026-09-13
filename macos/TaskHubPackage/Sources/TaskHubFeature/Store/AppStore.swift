@@ -145,6 +145,7 @@ public final class AppStore {
     }
 
     private func retireProject(_ model: ProjectPageViewModel) {
+        model.editor.retire()
         model.connect(nil); model.board?.suspend()
         Task { await model.automation?.stop(); await model.workflows?.stop(); await model.tickets?.stop() }
     }

@@ -45,7 +45,8 @@ private final class SessionHTTPFixture: URLProtocol, @unchecked Sendable {
     let project = Project(id: "fixture", name: "Fixture", repo: "fixture/repo", color: nil, workspace: "/tmp/fixture")
     let operations = SessionOperations(api: api)
     var created: WorkspaceSession?
-    let model = NewSessionViewModel(projects: [project], selectedProject: project.id, operations: operations, didCreate: { created = $0 })
+    let model = NewSessionViewModel(projects: [project], selectedProject: project.id, operations: operations)
+    model.onAction = { if case .created(let session) = $0 { created = session } }
     await model.loadReferences()
     #expect(model.draft.branch == "worktree1" && model.draft.base == "main")
     model.draft.agent = .shell
@@ -64,7 +65,7 @@ private final class SessionHTTPFixture: URLProtocol, @unchecked Sendable {
     configuration.protocolClasses = [SessionHTTPFixture.self]
     let api = try APIClient(baseURL: URL(string: "http://127.0.0.1:12345")!, session: URLSession(configuration: configuration))
     let project = Project(id: "fixture", name: "Fixture", repo: "fixture/repo", color: nil, workspace: "/tmp/fixture")
-    let model = NewSessionViewModel(projects: [project], selectedProject: "", operations: SessionOperations(api: api), didCreate: { _ in })
+    let model = NewSessionViewModel(projects: [project], selectedProject: "", operations: SessionOperations(api: api))
     model.draft.branch = "Keep my branch"
     model.draft.base = "old-base"; model.draft.reuseWorktree = "/tmp/old-worktree"
     model.projectID = project.id
