@@ -30,6 +30,7 @@ struct ProjectFeatureServices {
         let workflows = WorkflowEditorViewModel(project: project, service: services.workflows)
         let automation = AutomationViewModel(project: project, service: services.automation)
         return ProjectPageViewModel(project: project, service: services.projects, editor: editor, board: board,
-                                    tickets: tickets, workflows: workflows, automation: automation)
+                                    tickets: tickets, workflows: workflows, automation: automation,
+                                    pageActions: NativePageActionService(open: openPage, desktop: desktop, copy: copy))
     }
 }

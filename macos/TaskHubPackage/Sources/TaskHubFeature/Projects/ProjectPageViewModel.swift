@@ -2,9 +2,11 @@ import Foundation
 import Observation
 
 @MainActor @Observable final class ProjectPageViewModel {
+    enum PullRequestAction: Equatable { case open(String), openBrowser(String), copy(String) }
     enum Action: Equatable {
         case selectSection(ProjectSection), saved(Project, ProjectSaveSource), deleted(String)
         case requestDeletion(ProjectEditorViewModel.DeletionRequest)
+        case pullRequest(PullRequestAction)
     }
     @ObservationIgnored var onAction: (Action) -> Void = { _ in } {
         didSet {
@@ -38,25 +40,85 @@ import Observation
     private(set) var loadedState: String?
     private(set) var error: String?
     private(set) var loading = false
+    private(set) var opening: Set<String> = []
+    private(set) var actionError: String?
+    private(set) var retired = false
     private var service: (any ProjectService)?
+    private let pageActions: (any PageActionServing)?
     private var generation = UUID()
+    private var actionGeneration = UUID()
+    private var actionErrorGeneration = UUID()
     @ObservationIgnored private var stateTask: Task<Void, Never>? { didSet { oldValue?.cancel() } }
+    @ObservationIgnored private var actionTask: Task<Void, Never>? { didSet { oldValue?.cancel() } }
     init(project: Project, service: any ProjectService, editor: ProjectEditorViewModel, board: WebBoardViewModel? = nil, tickets: JiraTicketsViewModel? = nil,
-         workflows: WorkflowEditorViewModel? = nil, automation: AutomationViewModel? = nil) {
+         workflows: WorkflowEditorViewModel? = nil, automation: AutomationViewModel? = nil,
+         pageActions: (any PageActionServing)? = nil) {
         self.project = project; self.service = service; self.editor = editor; self.board = board; self.tickets = tickets
         self.workflows = workflows; self.automation = automation
+        self.pageActions = pageActions
     }
     func connect(_ service: (any ProjectService)?) {
+        guard !retired else { return }
         cancelRefresh()
+        if service == nil { cancelActions() }
         self.service = service; editor.connect(service)
     }
+    func retire() {
+        retired = true; service = nil; onAction = { _ in }
+        cancelRefresh(); cancelActions(); editor.retire()
+    }
     func selectSection(_ section: ProjectSection) { onAction(.selectSection(section)) }
-    func setSection(_ section: ProjectSection) { self.section = section }
+    func setSection(_ section: ProjectSection) {
+        if self.section != section { cancelActions(); self.section = section }
+    }
     private func requestRefresh() {
+        guard !retired else { return }
+        cancelActions()
         loading = service != nil
         stateTask = Task { [weak self] in await self?.refresh() }
     }
     func cancelRefresh() { stateTask = nil; generation = UUID(); loading = false }
+    func cancelActions() { actionTask = nil; actionGeneration = UUID(); opening = [] }
+    func open(_ row: DashboardRow) { request(.open(row.id)) }
+    func openExternally(_ row: DashboardRow) { request(.openBrowser(row.id)) }
+    func copyLink(_ row: DashboardRow) { request(.copy(row.id)) }
+    private func request(_ action: PullRequestAction) {
+        guard !retired, pageActions != nil else { return }
+        onAction(.pullRequest(action))
+    }
+    func performPullRequestAction(_ action: PullRequestAction) {
+        guard !retired, let pageActions else { return }
+        let id: String
+        switch action { case .open(let value), .openBrowser(let value), .copy(let value): id = value }
+        guard let row = rows.first(where: { $0.id == id }) else { return }
+        switch action {
+        case .open:
+            guard !opening.contains(id) else { return }
+            let generation = UUID(), errorGeneration = UUID()
+            actionGeneration = generation; actionErrorGeneration = errorGeneration
+            opening = [id]; actionError = nil
+            let request = row.openPageRequest
+            actionTask = Task { [weak self] in
+                defer {
+                    if self?.actionGeneration == generation { self?.opening = []; self?.actionTask = nil }
+                }
+                do {
+                    try Task.checkCancellation()
+                    try await pageActions.openPage(request)
+                } catch {
+                    if !Task.isCancelled && self?.actionGeneration == generation && self?.actionErrorGeneration == errorGeneration {
+                        self?.actionError = "Could not open pull request: \(error.localizedDescription)"
+                    }
+                }
+            }
+        case .openBrowser:
+            actionErrorGeneration = UUID()
+            actionError = pageActions.openBrowser(row.url) ? nil : "macOS could not open the browser."
+        case .copy:
+            actionErrorGeneration = UUID(); actionError = nil
+            pageActions.copyLink(row.url.absoluteString)
+        }
+    }
     var rows: [DashboardRow] {
         guard loadedState == state else { return [] }
         var seen: Set<String> = []
@@ -69,12 +131,13 @@ import Observation
     }
     var warnings: [String] { prs.compactMap(\.error) }
     func update(_ project: Project, snapshot: [DashboardPR]? = nil) {
+        guard !retired else { return }
         self.project = project; editor.update(project); tickets?.update(project)
         workflows?.update(project); automation?.update(project)
         if state == "open", let snapshot { prs = snapshot; loadedState = "open" }
     }
     func refresh() async {
-        guard !Task.isCancelled, let service else { return }
+        guard !retired, !Task.isCancelled, let service else { return }
         let generation = UUID(); self.generation = generation
         let requestedState = state
         loading = true; error = nil

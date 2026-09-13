@@ -1786,6 +1786,39 @@ does not).
   platform/runtime extraction and the terminal/release gates remain open. The
   native project test still emits the existing WebKit QoS warning.
 
+### Project PR actions and cancellable page opening — 2026-09-13
+
+- Project PR rendering and the root project destination no longer depend on the
+  Dashboard model. Opening state and action errors belong to the project model.
+  Typed open/browser/copy callbacks pass through the child coordinator's ownership
+  and presentation guards, then use an injected `PageActionServing` dependency.
+  The native project factory supplies page, desktop and clipboard operations.
+- Opens of the same row coalesce; newer opens replace older tasks using `didSet`
+  cancellation. Section/state changes, navigation, new dialogs, disconnect and
+  retirement cancel pending project PR actions. Late errors cannot overwrite newer
+  action feedback. Retired project models cannot reconnect or restart operations.
+- `AppStore.openPage` checks cancellation before navigation and after awaited tab
+  persistence. A tab already saved is retained, but its cancelled response cannot
+  redirect navigation or replace the current tab inventory. Project/Dashboard
+  metadata conversion preserves Mine/Review/Other, including review-orbit overrides;
+  the narrow tray notification category is unchanged.
+- Twenty-six focused tests pass in
+  `swift_package_test_2026-09-13T16-51-58-475Z_pid55084_e0ceff6d.log`, covering local
+  failures/retry, injected effects, duplicate/superseding opens, lifecycle/ownership
+  checks and classification. Native delayed-response cancellation and retry pass
+  in `test_macos_2026-09-13T16-50-41-264Z_pid54662_b9a0d8b4.log`: the real fixture
+  tab write completes before its response is held, a new-project draft is opened,
+  and releasing the response leaves that draft and the project navigation intact.
+  Retrying opens the native page with Review metadata.
+  Native Dashboard filtering/opening passes in
+  `test_macos_2026-09-13T16-52-59-246Z_pid55432_45eafaad.log`; web Sprint Board
+  move/assign/native ticket opening passes in
+  `test_macos_2026-09-13T16-54-26-167Z_pid55911_99dcab9c.log`.
+- The existing Merged/All project PR endpoint still calls the CLI directly. Moving
+  those scopes under background snapshot sync is the next backend correction to
+  meet the repository's SWR rule. Jira/board actions, remaining factories/runtime
+  extraction and terminal/release acceptance also remain open.
+
 ## Why now, and why native
 
 The Tauri shell works, but roughly half of `src-tauri/` exists to work around what a DOM

@@ -782,6 +782,53 @@ final class TaskHubUITests: XCTestCase {
     }
 
     @MainActor
+    func testNativeProjectPullRequestCancelsLateNavigationAndRetriesWithReviewMetadata() async throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard let base = environment["TASKHUB_UI_BACKEND_URL"],
+              let path = environment["TASKHUB_UI_DATA_DIR"], let socket = environment["TASKHUB_UI_PTY_SOCKET"] else {
+            throw XCTSkip("Run macos/scripts/test-browser-ui.sh with its isolated project action fixture.")
+        }
+        let app = XCUIApplication()
+        app.launchArguments = ["--backend-url", base, "--data-dir", path, "--pty-socket", socket]
+        app.launch()
+        let project = app.outlines["workspace-sidebar"].staticTexts["Native integration fixture"].firstMatch
+        XCTAssertTrue(project.waitForExistence(timeout: 10)); project.click()
+        let review = app.buttons["dashboard-pr-2"]
+        XCTAssertTrue(review.waitForExistence(timeout: 10), app.debugDescription)
+        var arm = URLRequest(url: URL(string: base + "/fixture/arm-project-open")!)
+        arm.httpMethod = "POST"
+        _ = try await URLSession.shared.data(for: arm)
+        review.click()
+        var held = false
+        for _ in 0..<100 {
+            let (data, _) = try await URLSession.shared.data(from: URL(string: base + "/fixture/project-opens")!)
+            held = (try JSONSerialization.jsonObject(with: data) as? [String: Any])?["held"] as? Bool == true
+            if held { break }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        XCTAssertTrue(held)
+        app.buttons["New Project"].click()
+        let draft = app.sheets.textFields["project-name"]
+        XCTAssertTrue(draft.waitForExistence(timeout: 5))
+        draft.click(); app.typeText("Keep pending-open draft")
+        var release = URLRequest(url: URL(string: base + "/fixture/release-project-open")!)
+        release.httpMethod = "POST"
+        _ = try await URLSession.shared.data(for: release)
+        XCTAssertEqual(draft.value as? String, "Keep pending-open draft")
+        app.sheets.buttons["Cancel"].click()
+        XCTAssertTrue(app.textFields["Search project pull requests"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.webViews.staticTexts["Native browser fixture"].exists)
+        XCTAssertTrue(review.isEnabled); review.click()
+        XCTAssertTrue(app.webViews.staticTexts["Native browser fixture"].waitForExistence(timeout: 10))
+        let (tabData, _) = try await URLSession.shared.data(from: URL(string: base + "/api/tabs")!)
+        let tabs = (try JSONSerialization.jsonObject(with: tabData) as? [String: Any])?["tabs"] as? [[String: Any]]
+        let saved = try XCTUnwrap(tabs?.first { ($0["url"] as? String)?.hasSuffix("?pr=2") == true })
+        XCTAssertEqual(saved["category"] as? String, "review")
+        let (openData, _) = try await URLSession.shared.data(from: URL(string: base + "/fixture/project-opens")!)
+        XCTAssertEqual((try JSONSerialization.jsonObject(with: openData) as? [String: Any])?["opens"] as? Int, 2)
+    }
+
+    @MainActor
     func testNativeDashboardFiltersAndOpensContextPage() throws {
         let environment = ProcessInfo.processInfo.environment
         guard let base = environment["TASKHUB_UI_BACKEND_URL"],

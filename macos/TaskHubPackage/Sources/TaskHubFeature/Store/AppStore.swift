@@ -145,8 +145,7 @@ public final class AppStore {
     }
 
     private func retireProject(_ model: ProjectPageViewModel) {
-        model.editor.retire()
-        model.connect(nil); model.board?.suspend()
+        model.retire(); model.board?.suspend()
         Task { await model.automation?.stop(); await model.workflows?.stop(); await model.tickets?.stop() }
     }
 
@@ -269,6 +268,7 @@ public final class AppStore {
     var trayTabGroups: [TrayTabGroup] { TrayTabGroup.make(tabs: tabs, prs: shell.prs) }
 
     func openPage(_ request: OpenPageRequest) async throws {
+        try Task.checkCancellation()
         guard safeWebURL(request.url) != nil else { throw BackendError.operation("Invalid page address.") }
         if let session = sessions.first(where: { $0.url == request.url }) {
             select(.session(session.id))
@@ -277,6 +277,7 @@ public final class AppStore {
         }
         guard let api else { throw BackendError.operation("Connect before opening a page.") }
         let saved: SavedTabs = try await api.request(Routes.TABS, method: "POST", body: request)
+        try Task.checkCancellation()
         tabs = saved.tabs
         select(.tab(request.url))
         viewer.active?.open(request.url, title: request.title)

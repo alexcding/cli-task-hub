@@ -2,11 +2,10 @@ import SwiftUI
 
 struct ProjectCoordinatorView: View {
     @Bindable var coordinator: ProjectCoordinator
-    let actions: DashboardViewModel
     let appearance: AppAppearance
 
     var body: some View {
-        ProjectPageView(model: coordinator.model, actions: actions, appearance: appearance)
+        ProjectPageView(model: coordinator.model, appearance: appearance)
             .sheet(item: Binding(get: { coordinator.deletionConfirmation }, set: { value in
                 if value == nil, let request = coordinator.deletionConfirmation { coordinator.cancelDeletion(id: request.id) }
             })) { request in

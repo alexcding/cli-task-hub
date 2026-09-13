@@ -46,6 +46,11 @@ struct DashboardRow: Identifiable, Equatable {
     var number: String { pr.number.map { "#\($0)" } ?? "PR" }
     var inReviewGroup: Bool { pr.awaitingMyReview ?? (pr.category == "review") }
     var isMine: Bool { pr.category == "mine" }
+    var openPageRequest: OpenPageRequest {
+        OpenPageRequest(url: url.absoluteString, kind: "github", title: "\(number) \(title)",
+            repo: pr.repo ?? "", branch: pr.headRefName ?? "",
+            category: isMine ? "mine" : inReviewGroup ? "review" : "other", login: pr.author?.login ?? "")
+    }
     var ciRunning: Bool { ["queued", "in_progress"].contains(pr.ci?.status ?? "") }
     var ciLabel: String {
         if ciRunning { return "CI running" }

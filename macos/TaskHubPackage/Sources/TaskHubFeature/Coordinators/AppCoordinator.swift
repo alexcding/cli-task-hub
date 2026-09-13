@@ -81,6 +81,7 @@ import Observation
 
     func presentAddPage(openPage: @escaping (String) -> Bool) {
         guard canPresent else { return }
+        projectCoordinator?.model.cancelActions()
         let id = UUID()
         let model = factory.addPage(openPage: { [weak self] address in
             guard self?.sheet?.id == id else { return false }
@@ -94,6 +95,7 @@ import Observation
 
     func presentNewProject(service: any ProjectService, didSave: @escaping (Project) -> Void) {
         guard canPresent else { return }
+        projectCoordinator?.model.cancelActions()
         let id = UUID()
         let model = factory.projectEditor(project: nil, service: service)
         model.onAction = { [weak self] action in
@@ -106,6 +108,7 @@ import Observation
     func presentNewSession(request: SessionCreationRequest, operations: (any SessionCreating)?,
                            didCreate: @escaping (WorkspaceSession) -> Void) {
         guard canPresent else { return }
+        projectCoordinator?.model.cancelActions()
         let id = UUID()
         let model = factory.newSession(request: request, operations: operations)
         model.onAction = { [weak self] action in
@@ -122,6 +125,7 @@ import Observation
 
     func presentRemoval(_ makeModel: () -> SessionRemovalViewModel?) {
         guard canPresent, let model = makeModel(), !model.retired, !model.completed else { return }
+        projectCoordinator?.model.cancelActions()
         let id = UUID()
         model.onAction = { [weak self] action in
             guard let self, case .removed(let sessions) = action, complete(id) else { return }
@@ -136,6 +140,7 @@ import Observation
         guard canPresent, let runtime = makeModel() else { return }
         let model = workspaceFactory.buildDestination(runtime: runtime)
         guard !model.retired else { return }
+        projectCoordinator?.model.cancelActions()
         let id = UUID()
         model.onAction = { [weak self] action in
             switch action { case .started: _ = self?.complete(id) }
@@ -145,6 +150,7 @@ import Observation
 
     func presentRestart(perform: @escaping () -> Void) {
         guard canPresent else { return }
+        projectCoordinator?.model.cancelActions()
         restartConfirmation = RestartConfirmation(perform: perform)
     }
 

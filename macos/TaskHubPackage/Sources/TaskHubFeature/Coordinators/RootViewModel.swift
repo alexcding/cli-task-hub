@@ -27,7 +27,7 @@ import Observation
     }
     enum Destination {
         case dashboard(DashboardViewModel), activity(LogsViewModel), settings(SettingsViewModel)
-        case project(ProjectPageViewModel, DashboardViewModel)
+        case project(ProjectPageViewModel)
         case terminal, session(WorkspaceSession), tab(String, URL?), unavailable(String)
     }
     struct Workspace: Identifiable {
@@ -83,10 +83,10 @@ import Observation
             return state.settings.map(Destination.settings) ?? .unavailable("Connect to load settings.")
         case .terminal: return .terminal
         case .project(let id):
-            guard let project = state.projectModels[id], let dashboard = state.dashboard else {
+            guard let project = state.projectModels[id] else {
                 return .unavailable("Connect to load this project.")
             }
-            return .project(project, dashboard)
+            return .project(project)
         case .session(let id):
             return state.sessions.first { $0.id == id }.map(Destination.session) ?? .unavailable("Session is not available.")
         case .tab(let url):

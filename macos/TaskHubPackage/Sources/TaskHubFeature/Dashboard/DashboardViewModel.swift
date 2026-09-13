@@ -85,8 +85,7 @@ import Observation
         guard opening.insert(row.id).inserted else { return }
         defer { opening.remove(row.id) }
         do {
-            try await openPage(OpenPageRequest(url: row.url.absoluteString, kind: "github", title: "\(row.number) \(row.title)",
-                repo: row.pr.repo ?? "", branch: row.pr.headRefName ?? "", category: row.inReviewGroup ? "review" : "mine", login: row.pr.author?.login ?? ""))
+            try await openPage(row.openPageRequest)
             error = nil
         } catch { self.error = "Could not open pull request: \(error.localizedDescription)" }
     }

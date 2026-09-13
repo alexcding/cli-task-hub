@@ -36,7 +36,11 @@ import Observation
             onAction(.deleted(id))
         case .requestDeletion(let request):
             guard !isPresenting, canPresent(), model.editor.canDelete(request) else { return }
+            model.cancelActions()
             deletionConfirmation = request
+        case .pullRequest(let action):
+            guard !isPresenting, canPresent() else { return }
+            model.performPullRequestAction(action)
         }
     }
 
@@ -55,6 +59,7 @@ import Observation
 
     /// Leaving the screen ends its presentation; an already started write finishes.
     func endPresentation() {
+        model.cancelActions()
         guard deletionConfirmation != nil else { return }
         deletionConfirmation = nil
         onAction(.presentationEnded)
@@ -63,7 +68,7 @@ import Observation
     func retire() {
         retired = true; deletionConfirmation = nil
         onAction = { _ in }; canPresent = { false }; isOwned = { false }
-        model.onAction = { _ in }; model.editor.retire(); model.connect(nil)
+        model.retire()
     }
 
     @discardableResult func navigate(to deepLink: DeepLink) -> Bool {

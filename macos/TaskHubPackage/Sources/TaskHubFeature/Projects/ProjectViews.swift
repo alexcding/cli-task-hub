@@ -67,7 +67,6 @@ struct NewProjectSheet: View {
 
 struct ProjectPageView: View {
     @Bindable var model: ProjectPageViewModel
-    let actions: DashboardViewModel
     let appearance: AppAppearance
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -96,7 +95,7 @@ struct ProjectPageView: View {
                     Text(error).foregroundStyle(.orange).textSelection(.enabled)
                     Button("Retry pull requests") { Task { await model.refresh() } }
                 }
-                if let error = actions.error { Text(error).foregroundStyle(.orange).textSelection(.enabled) }
+                if let error = model.actionError { Text(error).foregroundStyle(.orange).textSelection(.enabled) }
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
                         ForEach(Array(model.warnings.enumerated()), id: \.offset) { _, message in
@@ -107,9 +106,9 @@ struct ProjectPageView: View {
                                 .foregroundStyle(.secondary).padding(.vertical, 20)
                         }
                         ForEach(model.rows) { row in
-                            DashboardCard(row: row, opening: actions.opening.contains(row.id),
-                                          open: { Task { await actions.open(row) } },
-                                          external: { actions.openExternally(row) }, copy: { actions.copyLink(row) })
+                            DashboardCard(row: row, opening: model.opening.contains(row.id),
+                                          open: { model.open(row) },
+                                          external: { model.openExternally(row) }, copy: { model.copyLink(row) })
                             Divider()
                         }
                     }

@@ -26,6 +26,27 @@ if (process.env.TASKHUB_BUILD_FIXTURE === '1') {
   };
 }
 const { app } = require('../../src/server/app');
+if (process.env.TASKHUB_PROJECT_ACTION_FIXTURE === '1') {
+  // Persist through the real route, but hold its first response until the UI
+  // explicitly releases it. This exercises cancellation after a tab was saved.
+  const { ROUTES } = require('../../src/shared/routes.mjs');
+  const sendJSON = app.response.json;
+  let held = null, opens = 0, armed = false;
+  app.response.json = function (body) {
+    if (armed && this.req.method === 'POST' && this.req.path === ROUTES.TABS && this.req.body?.url?.endsWith('?pr=2')) {
+      opens += 1;
+      if (opens === 1) { held = { response: this, body }; return this; }
+    }
+    return sendJSON.call(this, body);
+  };
+  app.get('/fixture/project-opens', (_req, res) => res.json({ held: held !== null, opens }));
+  app.post('/fixture/arm-project-open', (_req, res) => { armed = true; opens = 0; res.json({ ok: true }); });
+  app.post('/fixture/release-project-open', (_req, res) => {
+    const pending = held; held = null;
+    if (pending && !pending.response.destroyed) sendJSON.call(pending.response, pending.body);
+    res.json({ ok: true });
+  });
+}
 const db = require('../../src/server/database/db');
 const sse = require('../../src/server/routes/sse');
 // Project writes exercise real validation/storage without starting external syncs.
@@ -66,6 +87,7 @@ if (!db.getProjects().length) {
   db.addProject({ name: 'Native integration fixture', repo: '', color: '#64748b', workspace: process.env.TASKHUB_FIXTURE_WORKSPACE || '/tmp' });
 }
 if (process.env.TASKHUB_BUILD_FIXTURE === '1') db.updateProject(db.getProjects()[0].id, { ide: 'xcode' });
+if (process.env.TASKHUB_PROJECT_ACTION_FIXTURE === '1') db.updateProject(db.getProjects()[0].id, { repo: 'fixture/taskhub' });
 if (process.env.TASKHUB_BOARD_FIXTURE === '1') {
   const project = db.getProjects()[0];
   db.updateProject(project.id, { jiraProjectKey: 'REC' });

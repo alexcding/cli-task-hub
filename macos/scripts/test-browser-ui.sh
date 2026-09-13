@@ -7,6 +7,8 @@ QA_DIR="$(mktemp -d "${TMPDIR:-/tmp}/taskhub-browser-ui.XXXXXX")"
 QA_TEST="${1:-TaskHubUITests}"
 QA_BUILD_FIXTURE=0
 if [[ "$QA_TEST" == "TaskHubUITests" || "$QA_TEST" == "TaskHubUITests/TaskHubUITests" || "$QA_TEST" == *testNativeBuildDestination* ]]; then QA_BUILD_FIXTURE=1; fi
+QA_PROJECT_ACTION_FIXTURE=0
+if [[ "$QA_TEST" == "TaskHubUITests" || "$QA_TEST" == "TaskHubUITests/TaskHubUITests" || "$QA_TEST" == *testNativeProjectPullRequest* ]]; then QA_PROJECT_ACTION_FIXTURE=1; fi
 # XCTest runs a copied app outside the checkout. Supply its PTY helper explicitly
 # instead of relying on source-tree discovery from that copied bundle.
 cargo build --locked --manifest-path "$ROOT/crates/taskhub-ptyd/Cargo.toml" --features terminal-snapshots
@@ -25,7 +27,7 @@ cleanup() {
   exit "$status"
 }
 trap cleanup EXIT
-TASKHUB_DATA_DIR="$QA_DIR" TASKHUB_READY_FILE="$QA_DIR/ready" TASKHUB_SIDEBAR_FIXTURE=1 TASKHUB_BROWSER_FIXTURE=1 TASKHUB_TRAY_FIXTURE=1 TASKHUB_LOGS_FIXTURE=1 TASKHUB_BOARD_FIXTURE=1 TASKHUB_CLI_FIXTURE=1 TASKHUB_DIFF_FIXTURE=1 TASKHUB_EDITOR_FIXTURE=1 TASKHUB_HISTORY_FIXTURE=1 TASKHUB_BUILD_FIXTURE="$QA_BUILD_FIXTURE" PORT=0 \
+TASKHUB_DATA_DIR="$QA_DIR" TASKHUB_READY_FILE="$QA_DIR/ready" TASKHUB_SIDEBAR_FIXTURE=1 TASKHUB_BROWSER_FIXTURE=1 TASKHUB_TRAY_FIXTURE=1 TASKHUB_LOGS_FIXTURE=1 TASKHUB_BOARD_FIXTURE=1 TASKHUB_CLI_FIXTURE=1 TASKHUB_DIFF_FIXTURE=1 TASKHUB_EDITOR_FIXTURE=1 TASKHUB_HISTORY_FIXTURE=1 TASKHUB_BUILD_FIXTURE="$QA_BUILD_FIXTURE" TASKHUB_PROJECT_ACTION_FIXTURE="$QA_PROJECT_ACTION_FIXTURE" PORT=0 \
   node "$ROOT/macos/scripts/backend-fixture.cjs" >"$QA_DIR/backend.log" 2>&1 &
 BACKEND_PID=$!
 for _ in {1..100}; do

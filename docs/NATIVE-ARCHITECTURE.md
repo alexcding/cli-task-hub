@@ -411,6 +411,36 @@ unrelated navigation and deferred links. Native project create/edit/delete and
 warm deeplink deferral through deletion confirmation also pass. Evidence is
 recorded in `SWIFTUI-PORT.md`; broader migration acceptance remains open.
 
+## Implemented: project PR action ownership
+
+Project PR rendering no longer receives `DashboardViewModel`, and the root project
+destination no longer depends on a Dashboard model being available. The project
+model owns its opening state, errors and replaceable operation task. It emits
+typed open/browser/copy actions; the child coordinator checks ownership and
+presentation availability before delegating those operations to the model's
+injected `PageActionServing` service. The native factory supplies page opening,
+desktop and clipboard dependencies.
+
+Concurrent opens of one row coalesce; a newer row supersedes the earlier request.
+Changing section/state, leaving the project, opening a dialog, disconnecting or
+retiring cancels pending PR navigation. Late failures cannot replace a newer
+action's error. Retired project models cannot reconnect or resume operations.
+`AppStore.openPage` checks cancellation before selecting an existing session and
+after an awaited tab save. A cancelled save may have persisted its tab; it cannot
+subsequently navigate or overwrite the current inventory with that response.
+
+Dashboard and project requests share the row's metadata conversion. Authored PRs
+remain Mine, review-orbit PRs remain Review, and unrelated project PRs use Other.
+An explicit `awaitingMyReview: false` overrides a raw review category. The strict
+tray notification classification is unchanged.
+
+Focused tests cover local errors, retry, injected dependencies, coalescing,
+supersession, ownership, lifecycle cancellation and classification. A native UI
+test holds the real tab-save response, opens a project draft, releases the response,
+and verifies the draft and original navigation survive before retrying the PR.
+Twenty-six focused tests and native project, Dashboard and web Sprint Board
+opening checks pass. Current evidence is recorded in `SWIFTUI-PORT.md`.
+
 ## Remaining extraction
 
 The architecture extraction remains in progress:
@@ -423,13 +453,16 @@ The architecture extraction remains in progress:
   actions behind injected dependencies.
 - Expand factories to settings and document feature assembly;
   `AppStore` still constructs several concrete services and models. Complete
-  child presentation ownership/model retirement and project PR/Jira/board action
+  child presentation ownership/model retirement and Jira/board action
   forwarding as the remaining shared action services are extracted.
 - Separate application runtime/backend lifecycle from feature navigation without
   changing ownership, cancellation, detached-shell retention or update shutdown.
 - Audit every rendering view and web/AppKit adapter for remaining business rules.
   AppKit representable coordinators remain UI adapters; they are distinct from
   application navigation coordinators.
+- Move the existing project Merged/All PR reads in `src/server/routes/prs.js` from
+  direct CLI fetching into background snapshot sync, as required by the repository
+  SWR rule. Open PR reads already use snapshots; the other state scopes still do not.
 
 The migration's outstanding release, hardware and interactive terminal acceptance
 gates remain tracked in `SWIFTUI-PORT.md`. Starting this extraction does not mark
