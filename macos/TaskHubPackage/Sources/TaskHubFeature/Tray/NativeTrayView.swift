@@ -1,22 +1,17 @@
 import SwiftUI
 
 public struct NativeTrayView: View {
-    let store: AppStore
-    let openWindow: () -> Void
-    let dismiss: () -> Void
-    let quit: () -> Void
+    let model: TrayViewModel
 
-    public init(store: AppStore, openWindow: @escaping () -> Void, dismiss: @escaping () -> Void, quit: @escaping () -> Void) {
-        self.store = store; self.openWindow = openWindow; self.dismiss = dismiss; self.quit = quit
-    }
+    public init(model: TrayViewModel) { self.model = model }
 
     public var body: some View {
         VStack(spacing: 0) {
             HStack {
                 Text("TaskHub").font(.headline)
                 Spacer()
-                Text(store.connection).font(.caption).foregroundStyle(.secondary)
-                Button("Refresh", systemImage: "arrow.clockwise") { store.refresh(); store.shell.refreshUsage() }
+                Text(model.connection).font(.caption).foregroundStyle(.secondary)
+                Button("Refresh", systemImage: "arrow.clockwise", action: model.refresh)
                     .labelStyle(.iconOnly).help("Refresh reviews and usage")
             }.padding(16)
             Divider()
@@ -24,23 +19,24 @@ public struct NativeTrayView: View {
                 VStack(alignment: .leading, spacing: 18) {
                     reviews
                     openTabs
-                    RecentActivityView(notifications: store.shell.notifications)
+                    RecentActivityView(notifications: model.shell.notifications)
                     Divider()
-                    UsagePanel(shell: store.shell)
+                    UsagePanel(shell: model.shell)
                     Divider()
-                    Picker("Appearance", selection: Binding(get: { store.shell.appearance }, set: store.shell.setAppearance)) {
+                    Picker("Appearance", selection: Binding(get: { model.shell.appearance }, set: model.shell.setAppearance)) {
                         ForEach(AppAppearance.allCases) { Text($0.title).tag($0) }
                     }.pickerStyle(.segmented)
-                    if let error = store.shell.settingsError { Text(error).font(.caption).foregroundStyle(.orange) }
+                    if let error = model.shell.settingsError { Text(error).font(.caption).foregroundStyle(.orange) }
                     Divider()
-                    NotificationPreferencesView(shell: store.shell)
+                    NotificationPreferencesView(shell: model.shell)
                 }.padding(16)
             }
+            if let error = model.actionError { Text(error).font(.caption).foregroundStyle(.orange).padding(.horizontal, 12) }
             Divider()
             HStack {
-                Button("Open TaskHub", action: openWindow)
+                Button("Open TaskHub", action: model.openWindow)
                 Spacer()
-                Button("Quit TaskHub", action: quit)
+                Button("Quit TaskHub", action: model.quit)
             }.padding(12)
         }
         .frame(width: 380, height: 580)
@@ -50,20 +46,20 @@ public struct NativeTrayView: View {
     private var reviews: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Review requested").font(.headline)
-            if let error = store.shell.trayError {
+            if let error = model.shell.trayError {
                 Text("Showing last available reviews. \(error)").font(.caption).foregroundStyle(.orange)
             }
-            if store.shell.trayLoading && store.shell.trayUpdated == nil {
+            if model.shell.trayLoading && model.shell.trayUpdated == nil {
                 ProgressView("Loading reviews…").controlSize(.small)
-            } else if store.shell.trayUpdated == nil {
+            } else if model.shell.trayUpdated == nil {
                 Text("Connect to load review requests").foregroundStyle(.secondary).font(.callout)
-            } else if store.shell.pendingReviews.isEmpty {
-                Text(store.shell.trayError == nil ? "No pending review requests" : "Reviews unavailable")
+            } else if model.pendingReviews.isEmpty {
+                Text(model.shell.trayError == nil ? "No pending review requests" : "Reviews unavailable")
                     .foregroundStyle(.secondary).font(.callout)
             }
-            ForEach(store.shell.pendingReviews) { pr in
+            ForEach(model.pendingReviews) { pr in
                 Button {
-                    store.openTrayReview(pr, dismiss: dismiss)
+                    model.openReview(pr)
                 } label: {
                     HStack(alignment: .top, spacing: 8) {
                         Image(systemName: ciSymbol(pr)).foregroundStyle(ciColor(pr))
@@ -75,24 +71,23 @@ public struct NativeTrayView: View {
                         Spacer(minLength: 0)
                     }.padding(.vertical, 4).contentShape(Rectangle())
                 }.buttonStyle(.plain)
-                    .disabled(pr.webURL == nil || store.shell.acknowledging.contains(pr.id))
+                    .disabled(!model.canOpen(pr))
                     .help("Open in browser and mark this review request opened")
             }
         }
     }
 
     private var openTabs: some View {
-        ForEach(store.trayTabGroups) { group in
+        ForEach(model.tabGroups) { group in
             VStack(alignment: .leading, spacing: 6) {
                 Text(group.title).font(.headline)
                 ForEach(group.tabs) { tab in
                     Button {
-                        store.selectTrayTab(tab)
-                        openWindow()
+                        model.openTab(tab)
                     } label: {
                         Label(tab.title.isEmpty ? tab.url : tab.title, systemImage: tab.kind == "jira" ? "checklist" : "globe")
                             .lineLimit(2).frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
-                    }.buttonStyle(.plain).padding(.vertical, 3)
+                    }.buttonStyle(.plain).padding(.vertical, 3).disabled(!model.canNavigate)
                 }
             }
         }

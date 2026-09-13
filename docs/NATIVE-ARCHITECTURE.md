@@ -644,6 +644,27 @@ documents synchronously before yielding. The viewer repeats its batch scan to
 include a file picker that completed while confirmation awaited. A failed save
 preserves the buffer and returns a fresh prompt with its error for retry.
 
+## Implemented: tray model and coordinator
+
+`NativeTrayView` renders an injected `TrayViewModel` and its existing shell/usage/
+notification models. Refresh, review, saved-tab, window and Quit buttons emit typed
+callbacks. The root owns the factory-created tray coordinator; replacing it retires
+the old model and rejects stale callbacks. Runtime references are weak and window/
+popover/Quit operations are injected by the AppKit host.
+
+The tray model owns activation-driven refresh, review eligibility and saved-tab
+resolution against current inventory. Matching sessions retain their existing
+workspace; otherwise a valid saved web tab is selected. Competing root or AppKit
+presentations disable internal tab navigation. The coordinator opens the browser,
+dispatches the resolved destination and invokes host presentation callbacks. Only a
+successful browser open acknowledges a review and dismisses the tray; failure keeps
+the tray open with an action error that survives refresh.
+
+Popover open/close events update model activation. Guarded activation ignores
+duplicate open inputs, and successful window/dismiss/Quit actions deactivate before
+calling the host, rejecting repeated or hidden actions. Explicit Quit still passes
+through the existing termination coordinator and its document/PTY safeguards.
+
 ## Remaining extraction
 
 The architecture extraction remains in progress:

@@ -1199,8 +1199,12 @@ final class TaskHubUITests: XCTestCase {
 
     @MainActor
     func testTrayOpensOfflineAndEscapeDismisses() throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard let path = environment["TASKHUB_UI_DATA_DIR"], let socket = environment["TASKHUB_UI_PTY_SOCKET"] else {
+            throw XCTSkip("Run macos/scripts/test-browser-ui.sh with isolated storage.")
+        }
         let app = XCUIApplication()
-        app.launchArguments = ["--backend-url", "http://127.0.0.1:1"]
+        app.launchArguments = ["--backend-url", "http://127.0.0.1:1", "--data-dir", path, "--pty-socket", socket]
         app.launch()
         XCTAssertTrue(app.buttons["Reviews & Usage"].waitForExistence(timeout: 5))
         app.buttons["Reviews & Usage"].click()
@@ -1211,6 +1215,48 @@ final class TaskHubUITests: XCTestCase {
         let dismissed = expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: app.buttons["Quit TaskHub"])
         wait(for: [dismissed], timeout: 5)
         XCTAssertTrue(app.buttons["Reviews & Usage"].exists)
+        app.buttons["Reviews & Usage"].click()
+        XCTAssertTrue(app.buttons["Open TaskHub"].waitForExistence(timeout: 5))
+        app.buttons["Open TaskHub"].click()
+        XCTAssertFalse(app.buttons["Quit TaskHub"].exists)
+    }
+
+    @MainActor
+    func testNativeTrayResolvesSessionTabsAndPreservesOpenDraft() throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard let base = environment["TASKHUB_UI_BACKEND_URL"], let path = environment["TASKHUB_UI_DATA_DIR"],
+              let socket = environment["TASKHUB_UI_PTY_SOCKET"] else {
+            throw XCTSkip("Run macos/scripts/test-browser-ui.sh with the isolated fixture.")
+        }
+        let app = XCUIApplication()
+        app.launchArguments = ["--backend-url", base, "--data-dir", path, "--pty-socket", socket]
+        app.launch()
+        XCTAssertTrue(app.buttons["Reviews & Usage"].waitForExistence(timeout: 10))
+        app.buttons["Reviews & Usage"].click()
+        let sessionTab = app.buttons["Browser fixture"].firstMatch
+        XCTAssertTrue(sessionTab.waitForExistence(timeout: 10), app.debugDescription)
+        sessionTab.click()
+        XCTAssertTrue(app.webViews.staticTexts["Native browser fixture"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["Restart Session"].exists, "A saved tab matching a session must select the retained session.")
+        XCTAssertFalse(app.buttons["Quit TaskHub"].exists)
+        app.buttons["New Project"].click()
+        let draft = app.sheets.textFields["project-name"]
+        XCTAssertTrue(draft.waitForExistence(timeout: 5))
+        draft.click(); app.typeText("Keep this tray draft")
+        let status = app.descendants(matching: .any)["taskhub-status-item"].firstMatch
+        status.click()
+        let next = app.buttons["Next page"].firstMatch
+        XCTAssertTrue(next.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertFalse(next.isEnabled)
+        app.typeKey(.escape, modifierFlags: [])
+        XCTAssertTrue(draft.waitForExistence(timeout: 5))
+        XCTAssertEqual(draft.value as? String, "Keep this tray draft")
+        app.sheets.buttons["Cancel"].click()
+        app.buttons["Reviews & Usage"].click()
+        XCTAssertTrue(next.waitForExistence(timeout: 5))
+        XCTAssertTrue(next.isEnabled); next.click()
+        XCTAssertTrue(app.webViews.staticTexts["Next page"].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.buttons["Restart Session"].exists)
     }
 
     @MainActor

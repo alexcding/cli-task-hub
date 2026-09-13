@@ -4,11 +4,12 @@ import TaskHubFeature
 import Observation
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverDelegate {
     private let store = AppStore()
     private var window: NSWindow?
     private var statusItem: NSStatusItem?
     private let popover = NSPopover()
+    private var tray: TrayCoordinator?
     private var updater: AppUpdater?
     private lazy var termination = AppTerminationCoordinator(prepare: { [weak self] reason in
         guard let self else { throw CancellationError() }
@@ -61,11 +62,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         item.button?.action = #selector(toggleTray)
         statusItem = item
         popover.behavior = .transient
+        popover.delegate = self
         popover.contentSize = NSSize(width: 380, height: 580)
-        popover.contentViewController = NSHostingController(rootView: NativeTrayView(
-            store: store, openWindow: { [weak self] in self?.showWindow() },
+        let tray = store.makeTray(openWindow: { [weak self] in self?.showWindow() },
             dismiss: { [weak self] in self?.popover.performClose(nil) },
-            quit: { [weak self] in self?.quitFromTray() }))
+            quit: { [weak self] in self?.quitFromTray() })
+        self.tray = tray
+        popover.contentViewController = NSHostingController(rootView: NativeTrayView(model: tray.model))
         observeStatus()
         updater = AppUpdater()
         menus = NativeMenus(perform: { [weak self] command in self?.perform(command) },
@@ -112,10 +115,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     @objc private func toggleTray() {
         if popover.isShown { popover.performClose(nil); return }
         guard let button = statusItem?.button else { return }
-        store.trayWillOpen()
+        tray?.setActive(true)
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         popover.contentViewController?.view.window?.makeKey()
     }
+
+    func popoverDidClose(_ notification: Notification) { tray?.setActive(false) }
 
     private func observeStatus() {
         withObservationTracking {

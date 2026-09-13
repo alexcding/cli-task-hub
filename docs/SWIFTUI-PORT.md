@@ -2123,6 +2123,39 @@ does not).
   warning remains open. Remaining platform/runtime extraction and M1–M6 acceptance
   requirements continue separately.
 
+### Tray view model, coordinator and host injection — 2026-09-13
+
+- The tray now renders a factory-created `@Observable` model. Refresh, review,
+  saved-tab, window and Quit actions use typed callbacks. The root owns the tray
+  coordinator, which calls injected browser/window/popover/Quit dependencies;
+  `AppDelegate` forwards popover lifecycle events instead of starting refreshes.
+- Guarded model activation refreshes once per open transition. Hidden, unowned or
+  retired models reject actions; replacement retires old callbacks and retains no
+  runtime/root cycle. Review actions re-resolve current pending rows, acknowledge
+  only after browser success and keep failure feedback through refresh. Rendering
+  each review row avoids rescanning the full review list.
+- Tab resolution uses current inventory and prefers an existing matching session.
+  Competing root/AppKit presentations prevent internal tray navigation. Successful
+  presentation actions deactivate before invoking the host. Explicit Quit continues
+  through the existing termination/document/PTY ownership path.
+- Twenty-seven focused tray/workspace/deeplink tests pass in
+  `swift_package_test_2026-09-13T19-08-26-137Z_pid3026_b7703701.log`, including factory
+  replacement, released owners, stale rows, invalid URLs, browser failures,
+  acknowledgment guards, current session resolution and retained tray data.
+- Native quiet startup and opening the main window pass in
+  `test_macos_2026-09-13T19-07-37-813Z_pid2593_10f54a2f.log` (existing WebKit QoS warning).
+  Native session-tab selection, disabled navigation during a project draft, draft
+  retention and subsequent plain-tab opening pass in
+  `test_macos_2026-09-13T19-08-58-111Z_pid3268_f923dba6.log`.
+  Offline Escape dismissal/reopen passes in
+  `test_macos_2026-09-13T19-10-01-230Z_pid3693_3a688559.log`; this test now requires
+  temporary fixture storage explicitly. Terminal retention, keyboard focus,
+  confirmed restart and explicit tray Quit pass in
+  `test_macos_2026-09-13T19-10-42-017Z_pid3994_469a0fb7.log`, with the existing terminal
+  mount publication warning still open.
+- Settings/platform child callbacks, shared notification actions and runtime
+  extraction continue, along with the remaining M1–M6 acceptance gates.
+
 ## Why now, and why native
 
 The Tauri shell works, but roughly half of `src-tauri/` exists to work around what a DOM

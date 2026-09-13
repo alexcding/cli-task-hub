@@ -61,6 +61,7 @@ import Observation
     var dashboardCoordinator: DashboardCoordinator?
     var logsCoordinator: LogsCoordinator?
     var settingsCoordinator: SettingsCoordinator?
+    var trayCoordinator: TrayCoordinator?
     let documentCloseCoordinator: EditorCloseCoordinator
     @ObservationIgnored var pendingDeepLink: DeepLink?
     @ObservationIgnored var routingReady = false

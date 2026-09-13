@@ -13,6 +13,7 @@ public final class AppStore {
     @ObservationIgnored private let workspaceFactory: any WorkspaceFeatureFactory
     @ObservationIgnored private let projectFactory: any ProjectFeatureFactory
     @ObservationIgnored private let documentFactory: any DocumentFeatureFactory
+    @ObservationIgnored private let trayFactory: any TrayFeatureFactory
     @ObservationIgnored private let copy: (String) -> Void
     var dashboard: DashboardViewModel? { coordinator.dashboardCoordinator?.model }
     var logs: LogsViewModel? { coordinator.logsCoordinator?.model }
@@ -58,6 +59,7 @@ public final class AppStore {
          settingsFactory: (any SettingsFeatureFactory)? = nil,
          documentFactory: any DocumentFeatureFactory = NativeDocumentFeatureFactory(),
          documentClosePresenter: any EditorClosePresenting = NativeEditorClosePresenter(),
+         trayFactory: any TrayFeatureFactory = NativeTrayFeatureFactory(),
          selectionStore: any SidebarSelectionPersisting = UserDefaultsSidebarSelectionStore(),
          router: any DeepLinkRouting = TaskHubRouter(),
          projectFactory: (any ProjectFeatureFactory)? = nil,
@@ -66,6 +68,7 @@ public final class AppStore {
         self.desktop = desktop
         self.workspaceFactory = workspaceFactory
         self.documentFactory = documentFactory
+        self.trayFactory = trayFactory
         self.copy = copy
         self.projectFactory = projectFactory ?? NativeProjectFeatureFactory(creation: creationFactory, desktop: desktop, copy: copy)
         let documentCloser = EditorCloseCoordinator(factory: documentFactory, presenter: documentClosePresenter)
@@ -255,11 +258,6 @@ public final class AppStore {
         return terminal?.ready == true && terminal?.showsSurface == true ? .term : nil
     }
 
-    func selectTrayTab(_ tab: SavedTab) {
-        if let session = sessions.first(where: { $0.url == tab.url }) { select(.session(session.id)) }
-        else { select(.tab(tab.url)) }
-    }
-
     func revealWorktree(_ session: WorkspaceSession) {
         desktop.reveal(URL(fileURLWithPath: session.worktree))
     }
@@ -270,14 +268,6 @@ public final class AppStore {
             return context.open(address) != nil
         })
     }
-
-    func openTrayReview(_ pr: TrayPR, dismiss: () -> Void) {
-        guard !shell.acknowledging.contains(pr.id), let url = pr.webURL, desktop.openBrowser(url) else { return }
-        shell.acknowledge(pr)
-        dismiss()
-    }
-
-    var trayTabGroups: [TrayTabGroup] { TrayTabGroup.make(tabs: tabs, prs: shell.prs) }
 
     func openPage(_ request: OpenPageRequest) async throws {
         try Task.checkCancellation()
@@ -295,11 +285,9 @@ public final class AppStore {
         viewer.active?.open(request.url, title: request.title)
     }
 
-    public func trayWillOpen() {
-        shell.notifications.refreshAuthorization()
-        refresh()
-        shell.refreshUsage()
-        shell.loadSettings()
+    public func makeTray(openWindow: @escaping () -> Void, dismiss: @escaping () -> Void, quit: @escaping () -> Void) -> TrayCoordinator {
+        coordinator.makeTray(factory: trayFactory, runtime: self, shell: shell, desktop: desktop,
+                             presentation: TrayPresentation(openWindow: openWindow, dismiss: dismiss, quit: quit))
     }
 
     func select(_ destination: SidebarDestination) {
