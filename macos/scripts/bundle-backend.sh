@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 APP="${1:?usage: bash macos/scripts/bundle-backend.sh /absolute/path/TaskHub.app}"
 test -d "$APP/Contents/MacOS"
+python3 "$ROOT/macos/scripts/check-runtime-frameworks.py" "$APP"
 if [[ -n "${TASKHUB_NODE_SIDECAR:-}" ]]; then
   NODE_SIDECAR="$TASKHUB_NODE_SIDECAR"
   NODE_LICENSE="${TASKHUB_NODE_LICENSE:?Provide the corresponding LICENSE for a custom Node runtime}"

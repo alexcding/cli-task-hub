@@ -14,6 +14,14 @@ The [coordinator and DI extraction](../docs/NATIVE-ARCHITECTURE.md) follows the
 an injected factory and an application coordinator; remaining view and runtime
 boundaries are tracked there.
 
+Embedded frameworks must resolve from `Contents/Frameworks` in standalone launches.
+The shared build configuration adds `@loader_path/../Frameworks` to inherited
+runtime search paths for Debug and Release.
+`macos/scripts/check-runtime-frameworks.py APP_PATH` checks the arm64 executable's
+direct `@rpath` dependencies against files inside its bundle; backend bundling runs
+this check before copying resources. This catches missing runtime search paths,
+which build and code-signature verification alone do not detect.
+
 ## Cocoa sidebar (M2)
 
 The sidebar is an AppKit `NSOutlineView`, hosted through `NSViewRepresentable`.
