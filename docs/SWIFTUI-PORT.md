@@ -1180,6 +1180,44 @@ does not).
   advisory analysis are still in progress; this phase supplies their completion
   clock and fixes the native busy-state event boundary.
 
+### M4 native session workflow execution — 2026-09-12
+
+- Existing native session workspaces now offer saved recipe selection, Run/Stop,
+  step status, advisory summary/error and an Open CLI Settings action when hooks
+  are absent. The Cocoa sidebar displays step progress. Recipe edits during a run
+  do not replace its captured commands; duplicate Run requests cannot overlap.
+- The injected runner checks both hooks, prepares or reuses the session terminal,
+  persists the selected CLI/conversation, resolves context placeholders, waits for
+  matching turn completion, and allows one retry per step. Advisory stop/retry
+  exhaustion reports a stopped outcome rather than incorrectly reporting completion.
+  Analyzer failures retain the established Stop-hook → proceed fallback and show
+  the failure. New turns invalidate analysis before it can advance the workflow.
+- The daemon adds foreground process-group ID and executable path to its existing
+  response. The native adapter checks that identity before input, Enter and analysis
+  continuation. Node-hosted Claude requires the exact identity recorded by this
+  app's launch; arbitrary Node processes are rejected. Older helpers lacking this
+  metadata fail clearly instead of accepting unverified workflow input.
+- Commands are bounded after expansion and reject terminal control characters;
+  multi-line commands use bracketed paste and a separately acknowledged Enter.
+  Stop cancels the waiter and sends Escape only to its retained foreground/surface.
+  Removal, restart, reattachment and app shutdown stop the associated run. Shells
+  remain recoverable when preparation or delivery fails.
+- Runner tests cover frozen recipes, retries, attention stops, duplicate Run,
+  cancellation, missing hooks, analyzer failure and changed turns. A real native
+  Ghostty surface and isolated daemon verify exact multi-line paste/Enter bytes,
+  Escape delivery and refusing input after the fixture process exits. The fixture
+  is a locally compiled echo executable; no real coding agent is invoked.
+  Sixteen focused Swift tests and eighteen daemon Rust tests pass. The native UI
+  test verifies saved recipe controls and that missing hooks prevent terminal
+  preparation while leaving Run available for recovery.
+  The focused runner UI test seeds its recipe through the real fixture API and
+  verifies navigation to CLI settings; its screenshot was visually checked.
+  Startup preparation rereads session metadata after automatic launch so a newly
+  saved conversation ID is preserved. The focused Swift checks pass after this fix.
+- Direct workflow preparation from a taskless PR/Jira page, actual Claude/Codex
+  startup/interaction acceptance, and the remaining M1–M6/final architecture gates
+  are still open. Sprint Board remains web-based.
+
 ## Why now, and why native
 
 The Tauri shell works, but roughly half of `src-tauri/` exists to work around what a DOM

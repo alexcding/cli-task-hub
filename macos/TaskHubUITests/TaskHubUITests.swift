@@ -398,6 +398,45 @@ final class TaskHubUITests: XCTestCase {
     }
 
     @MainActor
+    func testNativeWorkflowRunnerRequiresHooksBeforeOpeningTerminal() async throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard let base = environment["TASKHUB_UI_BACKEND_URL"],
+              let path = environment["TASKHUB_UI_DATA_DIR"], let socket = environment["TASKHUB_UI_PTY_SOCKET"] else {
+            throw XCTSkip("Run macos/scripts/test-browser-ui.sh to provide the isolated fixture.")
+        }
+        // Seed through the real API so this runner test is independent of editor
+        // keyboard focus. The separate editor test covers typing and saving.
+        let projectsURL = try XCTUnwrap(URL(string: base + "/api/projects"))
+        let (data, _) = try await URLSession.shared.data(from: projectsURL)
+        let projects = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [[String: Any]])
+        let id = try XCTUnwrap(projects.first(where: { $0["name"] as? String == "Native integration fixture" })?["id"] as? String)
+        var request = URLRequest(url: projectsURL.appendingPathComponent(id))
+        request.httpMethod = "PUT"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["workflows": [
+            ["id": "native-runner", "name": "Native review", "cli": "claude", "steps": [["command": "/review", "title": "Review complete"]]]
+        ]])
+        let (_, response) = try await URLSession.shared.data(for: request)
+        XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
+        let app = XCUIApplication()
+        app.launchArguments = ["--backend-url", base, "--data-dir", path, "--pty-socket", socket]
+        app.launch()
+        XCTAssertTrue(app.outlines["workspace-sidebar"].waitForExistence(timeout: 10))
+        app.outlines["workspace-sidebar"].staticTexts["sidebar-2"].click()
+        XCTAssertTrue(app.buttons["Run Workflow"].waitForExistence(timeout: 5))
+        app.buttons["Run Workflow"].click()
+        XCTAssertTrue(app.staticTexts["Install Claude hooks in Settings → CLIs before running a workflow."].waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(app.buttons["Open Terminal"].exists)
+        XCTAssertTrue(app.buttons["Run Workflow"].isEnabled)
+        XCTAssertFalse(app.webViews.firstMatch.exists)
+        let screenshot = app.screenshot()
+        try screenshot.pngRepresentation.write(to: FileManager.default.temporaryDirectory.appendingPathComponent("taskhub-workflow-runner.png"))
+        let attachment = XCTAttachment(screenshot: screenshot); attachment.lifetime = .keepAlways; add(attachment)
+        app.buttons["Open CLI Settings"].click()
+        XCTAssertTrue(app.buttons["hook-toggle-claude"].waitForExistence(timeout: 5))
+    }
+
+    @MainActor
     func testQuietStartupLoadsTrayAndOpensNativeWindow() throws {
         let environment = ProcessInfo.processInfo.environment
         guard let base = environment["TASKHUB_UI_BACKEND_URL"],

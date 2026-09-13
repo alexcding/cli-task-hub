@@ -138,6 +138,9 @@ struct SessionWorkspaceView: View {
                     }.disabled(context.activeID == nil)
                 }
             }.labelStyle(.iconOnly).padding(12)
+            if let session, let workflow = store.workflowRuns[session.id], !workflow.recipes.isEmpty || workflow.running {
+                WorkflowRunView(model: workflow, openHookSettings: store.openWorkflowHookSettings)
+            }
             if !context.tabs.isEmpty {
                 ScrollView(.horizontal) {
                     HStack(spacing: 6) {

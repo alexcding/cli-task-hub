@@ -14,6 +14,83 @@ private final class EventLog: @unchecked Sendable {
     var text: String { String(decoding: bytes, as: UTF8.self) }
 }
 
+@MainActor @Test(.timeLimit(.minutes(1))) func nativeWorkflowDeliversPasteThenEnterAndStopsOnlyItsForeground() async throws {
+    _ = NSApplication.shared
+    var root = URL(fileURLWithPath: #filePath)
+    for _ in 0..<5 { root.deleteLastPathComponent() }
+    let directory = URL(fileURLWithPath: "/tmp/th-workflow-\(UUID().uuidString.prefix(10))")
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let shell = directory.appendingPathComponent("fixture-shell")
+    try "#!/bin/sh\nexec /bin/bash --noprofile --norc -i\n".write(to: shell, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: shell.path)
+    let agent = directory.appendingPathComponent("claude")
+    let compiler = Process()
+    compiler.executableURL = URL(fileURLWithPath: "/usr/bin/cc")
+    compiler.arguments = [root.appendingPathComponent("macos/scripts/workflow-echo-fixture.c").path, "-o", agent.path]
+    compiler.standardOutput = FileHandle.nullDevice; compiler.standardError = FileHandle.nullDevice
+    try compiler.run(); compiler.waitUntilExit()
+    try #require(compiler.terminationStatus == 0)
+    let config = PtydConfiguration(executable: root.appendingPathComponent("crates/taskhub-ptyd/target/debug/taskhub-ptyd"),
+        directory: directory, socketPath: directory.appendingPathComponent("daemon.sock").path)
+    let host = PtydHost(configuration: config), log = EventLog()
+    let control = PtydClient(onEvent: log.append)
+    let hello = try await host.connect(client: control)
+    defer { control.close(); _ = kill(hello.pid, SIGTERM) }
+    let term: PtyInfo = try await control.request(.init(op: "create", opts: .init(cwd: directory.path, shell: shell.path,
+        pairKey: "workflow", stateResponseOwner: PtyHello.stateResponseOwnerVersion)))
+    defer { _ = kill(Int32(term.pid), SIGTERM) }
+    let session = TerminalSession(pairKey: "workflow", cwd: directory.path, configuration: config)
+    let view = WorkspaceTerminalView(frame: NSRect(x: 0, y: 0, width: 800, height: 400))
+    view.delegate = session.surface; view.controller = session.surface.controller; view.configuration = session.surface.configuration
+    let window = NSWindow(contentRect: view.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+    window.isReleasedWhenClosed = false; window.contentView = view; view.layoutSubtreeIfNeeded(); view.setSurfaceVisible(false)
+    defer { session.disconnect(); window.contentView = nil; window.close() }
+    await session.start(); try await session.waitUntilReady()
+    session.agentTurns.setStreamAvailable(true)
+    // This private executable echoes bytes; no real coding agent is launched.
+    try await session.submit("/bin/stty raw -echo; " + SessionAgent.quote(agent.path))
+    var foreground = try await session.workflowForeground()
+    for _ in 0..<100 {
+        if foreground.process == "claude" { break }
+        try await Task.sleep(for: .milliseconds(20)); foreground = try await session.workflowForeground()
+    }
+    try #require(foreground.process == "claude")
+    var observedFile = stat(), fixtureFile = stat()
+    let executablePath = try #require(foreground.processPath)
+    try #require(stat(executablePath, &observedFile) == 0 && stat(agent.path, &fixtureFile) == 0)
+    #expect(observedFile.st_dev == fixtureFile.st_dev && observedFile.st_ino == fixtureFile.st_ino)
+    try #require(foreground.pgid != nil)
+    let adapter = try await NativeWorkflowTerminal(terminal: session, cli: .claude, sessionID: "fixture")
+    let command = "/check\nSecond line 🦀"
+    let running = Task { try await adapter.execute(command) }
+    let expected = try NativeWorkflowTerminal.paste(command) + "\r"
+    for _ in 0..<100 { if log.text.contains(expected) { break }; try await Task.sleep(for: .milliseconds(20)) }
+    try #require(log.text.contains(expected))
+    for type in ["agent-turn-start", "agent-turn-done"] {
+        session.agentTurns.receive(ServerEvent(type: type, projectId: nil, id: nil, runId: term.id, cli: "claude", sessionId: "fixture"))
+    }
+    let revision = try await running.value
+    try await adapter.validate(after: revision)
+    let long = Task { try await adapter.execute("/long-step") }
+    for _ in 0..<100 {
+        if log.text.contains("/long-step\u{1b}[201~\r") { break }
+        try await Task.sleep(for: .milliseconds(20))
+    }
+    try #require(log.text.contains("/long-step\u{1b}[201~\r"))
+    session.agentTurns.receive(ServerEvent(type: "agent-turn-start", projectId: nil, id: nil, runId: term.id, cli: "claude", sessionId: "fixture"))
+    long.cancel(); try await adapter.stopStep()
+    do { _ = try await long.value; Issue.record("Cancelled step must not complete") } catch { #expect(error is CancellationError) }
+    for _ in 0..<100 { if log.text.hasSuffix("\u{1b}") { break }; try await Task.sleep(for: .milliseconds(10)) }
+    #expect(log.text.hasSuffix("\u{1b}") && !session.agentBusy)
+    _ = kill(try #require(foreground.pgid), SIGTERM)
+    for _ in 0..<100 { if try await session.atShell() { break }; try await Task.sleep(for: .milliseconds(20)) }
+    do { _ = try await adapter.execute("MUST_NOT_REACH_SHELL"); Issue.record("Changed foreground must reject workflow input") }
+    catch { #expect(error.localizedDescription.contains("foreground program changed")) }
+    #expect(!log.text.contains("MUST_NOT_REACH_SHELL"))
+    await session.stopConnecting(); try await host.stopExisting()
+}
+
 @Test func ptyFramesPreserveSplitUTF8AndBoundMemory() throws {
     var framer = PtyFramer()
     var frames: [Data] = []

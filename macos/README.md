@@ -81,7 +81,12 @@ goals, literal placeholder previews, and Save/Revert. Drafts survive navigation 
 snapshot updates; failed saves keep the draft, and external recipe changes are
 reported before replacement. Legacy `commands` arrays remain readable. Only the
 `workflows` project field is sent on save, preserving automation and Xcode settings.
-The native terminal workflow runner remains in progress.
+Saved recipes can run from native session workspaces. Run/Stop controls show the
+current step and advisory summary; the Cocoa sidebar shows step progress. The runner
+requires installed hooks, freezes the recipe for each run, allows one retry per step,
+and halts on conversation/foreground/connection changes. Multi-line commands use
+bracketed paste followed by a separate Enter. Workflow launch directly from a PR/Jira
+page without an existing session and real-agent acceptance checks remain in progress.
 
 **Automation** is native too: forward GitHub events, set a Fix Version, then transition
 linked Jira tickets when a PR merges. Its injected view model preserves drafts and

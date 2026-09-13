@@ -106,6 +106,11 @@ import Observation
         // Cancellation stops waiting. Only a hook or confirmed interrupt clears busy.
     }
 
+    func interrupted() {
+        invalidate("The workflow was interrupted.")
+        busy = false
+    }
+
     func invalidate(_ message: String) {
         revision &+= 1
         guard let current = pending else { return }

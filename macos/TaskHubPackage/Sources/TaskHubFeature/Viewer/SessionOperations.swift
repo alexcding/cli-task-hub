@@ -116,6 +116,14 @@ struct SessionOperations: Sendable {
         struct Payload: Encodable, Sendable { let sessionId: String }
         let _: OperationOK = try await api.request(Routes.task(session.id), method: "PATCH", body: Payload(sessionId: id))
     }
+    func configureAgent(_ cli: WorkflowCLI, session: WorkspaceSession) async throws -> WorkspaceSession {
+        var result = session
+        if result.cli != cli.rawValue { result.cli = cli.rawValue; result.sessionId = "" }
+        struct Payload: Encodable, Sendable { let cli: String; let sessionId: String }
+        let _: OperationOK = try await api.request(Routes.task(session.id), method: "PATCH",
+            body: Payload(cli: cli.rawValue, sessionId: result.sessionId ?? ""))
+        return result
+    }
     private func safeSessionURL(_ value: String) -> Bool {
         guard let url = URL(string: value), ["http", "https"].contains(url.scheme?.lowercased() ?? ""),
               url.host != nil, url.user == nil, url.password == nil else { return false }

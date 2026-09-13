@@ -71,14 +71,14 @@ struct SidebarEntry: Equatable {
 
     var isGroup: Bool { destination == nil }
 
-    static func make(projects: [Project], sessions: [WorkspaceSession], tabs: [SavedTab]) -> [Self] {
+    static func make(projects: [Project], sessions: [WorkspaceSession], tabs: [SavedTab], workflowProgress: [String: String] = [:]) -> [Self] {
         let ordered = sessions.sorted {
             if ($0.createdAt ?? "") != ($1.createdAt ?? "") { return ($0.createdAt ?? "") < ($1.createdAt ?? "") }
             if $0.label != $1.label { return $0.label.localizedStandardCompare($1.label) == .orderedAscending }
             return $0.id < $1.id
         }
         func row(_ session: WorkspaceSession, pinned: Bool = false) -> Self {
-            Self(id: "\(pinned ? "pin" : "session"):\(session.id)", title: session.label,
+            Self(id: "\(pinned ? "pin" : "session"):\(session.id)", title: session.label + (workflowProgress[session.id].map { " · \($0)" } ?? ""),
                  symbol: pinned ? "pin" : "terminal", detail: session.worktree,
                  destination: .session(session.id))
         }

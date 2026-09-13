@@ -26,6 +26,7 @@ public final class AppStore {
     private(set) var buildModels: [String: BuildWorkspaceViewModel] = [:]
     private(set) var historyModels: [String: GitHistoryViewModel] = [:]
     private(set) var diffModels: [String: DiffViewModel] = [:]
+    private(set) var workflowRuns: [String: WorkflowRunViewModel] = [:]
     @ObservationIgnored private var pendingPins: Set<String> = []
     @ObservationIgnored private var removalLocks: [UUID: Set<String>] = [:]
     @ObservationIgnored private var owner: BackendProcess?
@@ -66,7 +67,10 @@ public final class AppStore {
            let saved = try? JSONDecoder().decode(SidebarDestination.self, from: data) { selection = saved }
     }
 
-    var sidebarEntries: [SidebarEntry] { SidebarEntry.make(projects: projects, sessions: sessions, tabs: tabs) }
+    var sidebarEntries: [SidebarEntry] {
+        SidebarEntry.make(projects: projects, sessions: sessions, tabs: tabs,
+            workflowProgress: workflowRuns.filter { $0.value.running }.mapValues { "\($0.step)/\($0.total)" })
+    }
     var activeTerminalKey: String? {
         switch selection {
         case .terminal: "scratch"
@@ -281,6 +285,7 @@ public final class AppStore {
         case .session(let id):
             if let session = sessions.first(where: { $0.id == id }) {
                 viewer.select(id: "task:\(id)", url: session.url, title: session.title, legacy: tabs.first { $0.url == session.url })
+                _ = workflowRunModel(for: session)
             }
         case .terminal:
             viewer.select(id: "scratch", url: "", title: "Terminal")
@@ -300,6 +305,61 @@ public final class AppStore {
             wireLinks(terminal, contextID: "scratch")
             terminals[key] = terminal
         }
+    }
+
+    private func workflowRunModel(for record: WorkspaceSession) -> WorkflowRunViewModel? {
+        guard let api, let project = projects.first(where: { $0.id == record.projectId }) else { return nil }
+        if let existing = workflowRuns[record.id] { existing.update(project.workflows ?? []); return existing }
+        let model = WorkflowRunViewModel(recipes: project.workflows ?? [], service: APIWorkflowRunService(api: api), context: { [weak self] in
+            let latest = self?.sessions.first { $0.id == record.id } ?? record
+            let project = self?.projects.first { $0.id == record.projectId } ?? project
+            return WorkflowRunContext.values(project: project, session: latest)
+        }, prepare: { [weak self] cli in
+            guard let self else { throw BackendError.operation("The workspace closed.") }
+            return try await prepareWorkflowTerminal(sessionID: record.id, cli: cli)
+        })
+        workflowRuns[record.id] = model
+        return model
+    }
+
+    func openWorkflowHookSettings() {
+        settings.section = .clis; select(.settings); settings.clis.refresh()
+    }
+
+    private func prepareWorkflowTerminal(sessionID: String, cli: WorkflowCLI) async throws -> any WorkflowTerminal {
+        guard let operations = sessionOperations, var record = sessions.first(where: { $0.id == sessionID }),
+              !record.worktree.isEmpty, changingSessions.insert(sessionID).inserted else {
+            throw BackendError.operation("The session is unavailable or another session operation is in progress.")
+        }
+        defer { changingSessions.remove(sessionID) }
+        let key = "task:\(sessionID)"
+        if let existing = terminals[key] {
+            try await existing.waitForAutomaticLaunch()
+            guard let latest = sessions.first(where: { $0.id == sessionID }) else {
+                throw BackendError.operation("The session was removed during agent startup.")
+            }
+            record = latest
+            if try await !existing.atShell(), record.cli != cli.rawValue {
+                throw BackendError.operation("Another agent is running. Return to the shell before switching to \(cli.title).")
+            }
+        }
+        try Task.checkCancellation()
+        record = try await operations.configureAgent(cli, session: record)
+        if let index = sessions.firstIndex(where: { $0.id == record.id }) { sessions[index] = record }
+        try Task.checkCancellation()
+        let terminal: TerminalSession
+        if let existing = terminals[key] { terminal = existing }
+        else { terminal = makeTerminal(record); terminals[key] = terminal }
+        // Retained native panes mount the new surface even if navigation changes.
+        await terminal.start()
+        try await terminal.waitForAutomaticLaunch()
+        if try await terminal.atShell() {
+            try await launchAgent(terminal, record: record, fresh: false)
+        }
+        try await Task.sleep(for: .seconds(2))
+        try Task.checkCancellation()
+        let latest = sessions.first { $0.id == sessionID } ?? record
+        return try await NativeWorkflowTerminal(terminal: terminal, cli: cli, sessionID: latest.sessionId)
     }
 
     func removalModel(for record: WorkspaceSession) -> SessionRemovalViewModel? {
@@ -362,6 +422,7 @@ public final class AppStore {
             throw CancellationError()
         }
         for id in ids {
+            await workflowRuns.removeValue(forKey: id)?.stop()
             workspaceLaunch.cancel(sessionID: id)
             buildModels.removeValue(forKey: "task:\(id)")?.disconnect()
         }
@@ -378,20 +439,35 @@ public final class AppStore {
         wireLinks(terminal, contextID: "task:\(record.id)")
         terminal.onCreated = { [weak self] terminal in
             guard let self else { return }
-            let latest = self.sessions.first { $0.id == record.id } ?? record
-            let agent = SessionAgent(rawValue: latest.cli ?? "") ?? .shell
-            var id = latest.sessionId
-            var firstLaunch = fresh
-            if agent == .claude && (id == nil || id == "") {
-                guard let operations = self.sessionOperations else { throw BackendError.operation("Connect before starting the agent.") }
-                let newID = UUID().uuidString.lowercased()
-                try await operations.saveAgentID(newID, session: latest)
-                id = newID; firstLaunch = true
-                if let index = self.sessions.firstIndex(where: { $0.id == latest.id }) { self.sessions[index].sessionId = newID }
-            }
-            if let command = agent.command(sessionID: id, fresh: firstLaunch) { try await terminal.submit(command) }
+            try await launchAgent(terminal, record: record, fresh: fresh)
         }
         return terminal
+    }
+
+    private func launchAgent(_ terminal: TerminalSession, record: WorkspaceSession, fresh: Bool) async throws {
+        let latest = self.sessions.first { $0.id == record.id } ?? record
+        let agent = SessionAgent(rawValue: latest.cli ?? "") ?? .shell
+        var id = latest.sessionId
+        var firstLaunch = fresh
+        if agent == .claude && (id == nil || id == "") {
+            guard let operations = self.sessionOperations else { throw BackendError.operation("Connect before starting the agent.") }
+            let newID = UUID().uuidString.lowercased()
+            try await operations.saveAgentID(newID, session: latest)
+            id = newID; firstLaunch = true
+            if let index = self.sessions.firstIndex(where: { $0.id == latest.id }) { self.sessions[index].sessionId = newID }
+        }
+        if let command = agent.command(sessionID: id, fresh: firstLaunch) {
+            try await terminal.submit(command)
+            terminal.launchedAgent = WorkflowCLI(rawValue: agent.rawValue)
+            terminal.launchedAgentForeground = nil
+            for _ in 0..<100 {
+                let foreground = try await terminal.workflowForeground()
+                if !foreground.atShell {
+                    terminal.launchedAgentForeground = foreground; break
+                }
+                try await Task.sleep(for: .milliseconds(20))
+            }
+        }
     }
 
     private func wireLinks(_ terminal: TerminalSession, contextID: String) {
@@ -429,6 +505,7 @@ public final class AppStore {
             defer { changingSessions.remove(record.id) }
             do {
                 let key = "task:\(record.id)"
+                await workflowRuns.removeValue(forKey: record.id)?.stop()
                 await terminals[key]?.stopConnecting()
                 let host = PtydHost(configuration: try PtydConfiguration.current())
                 try await host.stopPaired(keys: [record.id])
@@ -445,6 +522,7 @@ public final class AppStore {
         guard let previous = terminals[key] else { return }
         guard !changingSessions.contains(previous.pairKey) else { return }
         Task {
+            await workflowRuns.removeValue(forKey: previous.pairKey)?.stop()
             await previous.stopConnecting()
             if terminals[key] === previous {
                 if let record = sessions.first(where: { $0.id == previous.pairKey }) { terminals[key] = makeTerminal(record) }
@@ -474,6 +552,7 @@ public final class AppStore {
         for action in actions { await action.suspendAndWait() }
         defer { actions.forEach { $0.resume() } }
         guard await viewer.closeDocuments() else { throw CancellationError() }
+        for model in workflowRuns.values { await model.stop() }
         for terminal in terminals.values { await terminal.stopConnecting() }
         let host = PtydHost(configuration: try PtydConfiguration.current())
         try await host.stopExisting()
@@ -545,7 +624,10 @@ public final class AppStore {
                     if projects != snapshot { projects = snapshot }
                     if sessions != sessionSnapshot {
                         let retained = Set(sessionSnapshot.map(\.id))
-                        for session in sessions where !retained.contains(session.id) { workspaceLaunch.cancel(sessionID: session.id) }
+                        for session in sessions where !retained.contains(session.id) {
+                            workspaceLaunch.cancel(sessionID: session.id)
+                            await workflowRuns.removeValue(forKey: session.id)?.stop()
+                        }
                         sessions = sessionSnapshot
                     }
                     if tabs != tabSnapshot.tabs { tabs = tabSnapshot.tabs }
@@ -628,6 +710,8 @@ public final class AppStore {
 
     public func stop() async {
         started = false
+        for model in workflowRuns.values { await model.stop() }
+        workflowRuns.removeAll()
         terminals.values.forEach { $0.agentTurns.setStreamAvailable(false) }
         workspaceLaunch.stop()
         for model in diffModels.values { await model.actions?.suspendAndWait() }

@@ -396,14 +396,13 @@ fn log(msg: &str) {
 }
 
 // The executable name of a pid (macOS proc_pidpath), "" when it can't be read.
-fn proc_name(pid: libc::pid_t) -> String {
+fn proc_path(pid: libc::pid_t) -> String {
   let mut buf = vec![0u8; libc::PROC_PIDPATHINFO_MAXSIZE as usize];
   let n = unsafe { libc::proc_pidpath(pid, buf.as_mut_ptr() as *mut libc::c_void, buf.len() as u32) };
   if n <= 0 {
     return String::new();
   }
-  let path = String::from_utf8_lossy(&buf[..n as usize]).into_owned();
-  path.rsplit('/').next().unwrap_or("").to_string()
+  String::from_utf8_lossy(&buf[..n as usize]).trim_end_matches('\0').to_string()
 }
 
 fn set_nonblocking(fd: RawFd) {
@@ -993,8 +992,9 @@ impl Daemon {
       return json!({ "process": "", "atShell": true });
     }
     let at_shell = pgid as u32 == t.info.pid;
-    let process = if at_shell { String::new() } else { proc_name(pgid) };
-    json!({ "process": process, "atShell": at_shell })
+    let process_path = if at_shell { String::new() } else { proc_path(pgid) };
+    let process = process_path.rsplit('/').next().unwrap_or("");
+    json!({ "process": process, "processPath": process_path, "pgid": pgid, "atShell": at_shell })
   }
 
   // Attach: the ring for replay. A renderer flow pause belongs to the client that asked for it;

@@ -34,6 +34,8 @@ final class TerminalSession: Identifiable {
     @ObservationIgnored private let configuration: PtydConfiguration?
     @ObservationIgnored var openLink: (String, String, Bool) -> Void = { _, _, _ in }
     @ObservationIgnored var onCreated: ((TerminalSession) async throws -> Void)?
+    @ObservationIgnored var launchedAgent: WorkflowCLI?
+    @ObservationIgnored var launchedAgentForeground: WorkflowForeground?
 
     init(pairKey: String = "native-terminal-spike", cwd: String = FileManager.default.homeDirectoryForCurrentUser.path, paired: Bool = false,
          configuration: PtydConfiguration? = nil) {
@@ -300,6 +302,40 @@ final class TerminalSession: Identifiable {
         guard ready, let client, let termID else { throw PtyError.closed }
         let result: Foreground = try await client.request(.init(op: "foreground", term: termID))
         return result.atShell
+    }
+
+    struct WorkflowForeground: Decodable, Equatable, Sendable {
+        let atShell: Bool
+        let process: String
+        var processPath: String?
+        var pgid: Int32?
+    }
+    func workflowForeground() async throws -> WorkflowForeground {
+        guard ready, let client, let termID else { throw PtyError.closed }
+        return try await client.request(.init(op: "foreground", term: termID))
+    }
+    func waitForAutomaticLaunch() async throws {
+        try await waitUntilReady()
+        let launch = launchTask
+        await withTaskCancellationHandler {
+            if Task.isCancelled { launch?.cancel() }
+            await launch?.value
+        } onCancel: { launch?.cancel() }
+        if launch != nil { try await Task.sleep(for: .seconds(2)) }
+        try Task.checkCancellation()
+        if let error { throw BackendError.operation(error) }
+    }
+    func writeWorkflowInput(_ data: String) async throws {
+        guard ready, let client, let termID else { throw PtyError.closed }
+        guard commandWrites == 0 else { throw BackendError.operation("Another terminal command is being delivered.") }
+        commandWrites += 1
+        defer { commandWrites -= 1 }
+        do {
+            let _: Bool? = try await client.request(.init(op: "write", term: termID, data: data))
+        } catch {
+            setError("Workflow input delivery was interrupted. Earlier input may have been sent. Check the terminal before restarting.", prefer: true)
+            throw error
+        }
     }
 
     func interrupt() async throws {
