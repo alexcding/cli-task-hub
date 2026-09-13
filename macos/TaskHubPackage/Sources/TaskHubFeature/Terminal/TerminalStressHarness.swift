@@ -12,6 +12,7 @@ private struct TerminalStressSample: Codable {
     let daemonTreeCPUPercent: Double?
     let activeWindowVisible: Bool
     let floodPausedByObserver: Bool
+    let submittedFrames: [UInt64]
     let terminals: [TerminalPipe.Diagnostics]
 }
 private struct TerminalStressReport: Encodable {
@@ -31,6 +32,7 @@ private struct TerminalStressReport: Encodable {
     let logicalCPUs: Int
     let seconds: Double
     let p95InputToParsedOutputMS: Double
+    let initialSubmittedFrames: [UInt64]
     let samples: [TerminalStressSample]
 }
 private func elapsed(_ value: Duration) -> Double {
@@ -102,6 +104,19 @@ public enum TerminalStressHarness {
             let controlInfo: [PtyInfo] = try await control.request(.init(op: "list"))
             try stressRequire(controlInfo.count == 10)
             try stressRequire(controlInfo.allSatisfy { $0.geometryResponseOwner == PtyHello.geometryResponseOwnerVersion })
+            func submittedFrames() throws -> [UInt64] {
+                try sessions.enumerated().map { index, session in
+                    guard let count = session.surface.surface?.submittedFrameCount else {
+                        throw BackendError.operation("Missing native render diagnostics for terminal \(index)")
+                    }
+                    return count
+                }
+            }
+            // Visibility reaches the renderer through its mailbox. Exclude mount
+            // frames and allow in-flight work to settle before measuring inactivity.
+            try await Task.sleep(for: .seconds(2))
+            let initialSubmittedFrames = try submittedFrames()
+            try stressRequire(initialSubmittedFrames[0] > 0, "The visible surface has not submitted a native render frame")
             let sampler = NativeProcessResourceSampler()
             let roots = [ResourceRoot(pid: hello.pid, group: .terminals), ResourceRoot(pid: getpid(), group: .app)]
             var previous = try await sampler.sample(roots: roots)
@@ -144,6 +159,11 @@ public enum TerminalStressHarness {
                 let app = resources.processes.filter { $0.group == .app }
                 let daemon = resources.processes.filter { $0.group == .terminals }
                 let stats = sessions.map(\.outputDiagnostics)
+                let frames = try submittedFrames()
+                for index in 1..<10 {
+                    try stressRequire(frames[index] == initialSubmittedFrames[index],
+                        "Hidden terminal \(index) submitted native render frames: \(initialSubmittedFrames[index]) → \(frames[index])")
+                }
                 if let priorSample = samples.last {
                     for index in 2..<10 {
                         try stressRequire(stats[index].receivedBytes > priorSample.terminals[index].receivedBytes,
@@ -156,7 +176,7 @@ public enum TerminalStressHarness {
                     hostCPUPercent: app.compactMap { $0.cpuPercent(since: prior[$0.id]) }.reduce(0, +),
                     daemonTreeResidentBytes: daemon.reduce(0) { $0 + $1.residentBytes },
                     daemonTreeCPUPercent: daemon.compactMap { $0.cpuPercent(since: prior[$0.id]) }.reduce(0, +),
-                    activeWindowVisible: windows[0].occlusionState.contains(.visible), floodPausedByObserver: pauseOwner != nil, terminals: stats))
+                    activeWindowVisible: windows[0].occlusionState.contains(.visible), floodPausedByObserver: pauseOwner != nil, submittedFrames: frames, terminals: stats))
                 previous = resources
                 if sequence % 15 == 0 { print("Terminal stress: \(Int(elapsed(started.duration(to: clock.now))))s, \(sequence) input samples") }
                 try await Task.sleep(for: .seconds(2))
@@ -168,10 +188,12 @@ public enum TerminalStressHarness {
             }
             let sorted = samples.map(\.inputToParsedOutputMS).sorted()
             try stressRequire(samples.allSatisfy { $0.activeWindowVisible }, "Occluded samples cannot prove the visible-terminal workload")
+            let finalSubmittedFrames = try submittedFrames()
+            try stressRequire(finalSubmittedFrames[0] > initialSubmittedFrames[0], "The visible surface stopped submitting render frames")
             let report = TerminalStressReport(helperConfiguration: config.executable.deletingLastPathComponent().lastPathComponent,
                 machine: machineModel(), operatingSystem: ProcessInfo.processInfo.operatingSystemVersionString,
                 memoryBytes: ProcessInfo.processInfo.physicalMemory, logicalCPUs: ProcessInfo.processInfo.processorCount,
-                seconds: elapsed(started.duration(to: clock.now)), p95InputToParsedOutputMS: sorted[max(0, Int(ceil(Double(sorted.count) * 0.95)) - 1)], samples: samples)
+                seconds: elapsed(started.duration(to: clock.now)), p95InputToParsedOutputMS: sorted[max(0, Int(ceil(Double(sorted.count) * 0.95)) - 1)], initialSubmittedFrames: initialSubmittedFrames, samples: samples)
             try FileManager.default.createDirectory(at: reportURL.deletingLastPathComponent(), withIntermediateDirectories: true)
             let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
             try encoder.encode(report).write(to: reportURL, options: .atomic)

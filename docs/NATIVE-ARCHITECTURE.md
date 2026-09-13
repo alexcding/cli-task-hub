@@ -740,6 +740,19 @@ publication warnings, preserving the shell through navigation and hide/show,
 keyboard focus, cancelled/confirmed restart and explicit Quit. The native archive
 hash is unchanged. Broader hardware, fidelity and performance gates remain open.
 
+## Native terminal render measurements
+
+The pinned native renderer exposes an atomic submitted-frame count through a
+read-only Swift surface property. It counts actual encoded-frame submissions from
+both renderer-thread and host draws, without scheduling work on a diagnostic read.
+The standalone stress harness records all ten counters after mount/occlusion has
+settled, rejects any later hidden-surface submissions and requires visible rendering
+and continued hidden output. This is a terminal rendering measurement, not physical
+key-to-display latency or a full-app/Tauri performance comparison. See
+`macos/patches/ghostty/README.md` for the exact instrumentation boundary and
+[the ten-minute measurement](measurements/native-terminal-render-stress-2026-09-13.md)
+for results and remaining acceptance limits.
+
 ## Remaining extraction
 
 The architecture extraction remains in progress:

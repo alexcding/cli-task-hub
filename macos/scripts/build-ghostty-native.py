@@ -47,8 +47,11 @@ def main():
     swift_patch = patches / "0002-swift-snapshot-import.patch"
     query_patch = patches / "0003-terminal-query-validation.patch"
     appearance_patch = patches / "0004-appkit-appearance-publication.patch"
+    render_patch = patches / "0005-native-render-diagnostics.patch"
+    swift_render_patch = patches / "0006-swift-render-diagnostics.patch"
     fingerprint = hashlib.sha256(lock_bytes + native_patch.read_bytes() + swift_patch.read_bytes() + query_patch.read_bytes()
-                                 + appearance_patch.read_bytes()).hexdigest()
+                                 + appearance_patch.read_bytes() + render_patch.read_bytes()
+                                 + swift_render_patch.read_bytes()).hexdigest()
     root = (args.build_root or macos / ".build" / "ghostty-native").resolve()
     root.mkdir(parents=True, exist_ok=True)
     zig = (args.zig or macos / ".build" / "ghostty-vt" / "tools" /
@@ -85,7 +88,8 @@ def main():
         run("git", "diff", "--exit-code", "HEAD", "--", cwd=source)
         run("git", "diff", "--exit-code", "HEAD", "--", cwd=package)
         run("zsh", package / "Script" / "apply-patches.sh", source, cwd=package, env=env)
-        for directory, patch in [(source, native_patch), (source, query_patch), (package, swift_patch), (package, appearance_patch)]:
+        for directory, patch in [(source, native_patch), (source, query_patch), (package, swift_patch), (package, appearance_patch),
+                                 (source, render_patch), (package, swift_render_patch)]:
             run("git", "apply", "--check", patch, cwd=directory)
             run("git", "apply", patch, cwd=directory)
         shutil.copy2(package / "Package.local.swift", package / "Package.swift")

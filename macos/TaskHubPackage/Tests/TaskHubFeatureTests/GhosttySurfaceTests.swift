@@ -268,7 +268,8 @@ private final class LinkMetrics: @unchecked Sendable {
     #expect(!screen.contains("DUPLICATE_MUST_NOT_RENDER"))
 }
 
-// A real Metal-backed terminal in an unshown window. No simulated text renderer and
+// A real Metal-backed terminal, shown briefly to verify the render counter before hiding.
+// No simulated text renderer and
 // no shell/clipboard side effects: host callbacks collect the actual encoded input.
 @MainActor @Test(.timeLimit(.minutes(1))) func ghosttyParsesHiddenOutputAndEncodesKeysAndPaste() async throws {
     _ = NSApplication.shared
@@ -288,8 +289,23 @@ private final class LinkMetrics: @unchecked Sendable {
         if state.surface != nil { break }
         try await Task.sleep(for: .milliseconds(50))
     }
-    #expect(state.surface != nil)
+    let measuredSurface = try #require(state.surface)
+    let beforeDraw = try #require(measuredSurface.submittedFrameCount)
+    window.makeKeyAndOrderFront(nil)
+    view.setSurfaceVisible(true)
+    memory.receive("RENDER_COUNTER_CONTROL")
+    for _ in 0..<100 {
+        if (measuredSurface.submittedFrameCount ?? 0) > beforeDraw { break }
+        try await Task.sleep(for: .milliseconds(20))
+    }
+    #expect(try #require(measuredSurface.submittedFrameCount) > beforeDraw,
+            "The counter must observe an actual native frame submission")
     view.setSurfaceVisible(false)
+    window.orderOut(nil)
+    // Native visibility is delivered through a renderer mailbox. Drain mounting
+    // and occlusion before asserting steady-state hidden work.
+    try await Task.sleep(for: .milliseconds(300))
+    let hiddenFrames = try #require(measuredSurface.submittedFrameCount)
     memory.receive("\u{1b}[2J\u{1b}[HBASE_é_日本語_🦀")
     memory.waitForPendingOutput()
     #expect(memory.readViewportText()?.contains("BASE_é_日本語_🦀") == true)
@@ -367,4 +383,8 @@ private final class LinkMetrics: @unchecked Sendable {
     }
 
 
+    try await Task.sleep(for: .milliseconds(300))
+    #expect(state.surface === measuredSurface)
+    #expect(measuredSurface.submittedFrameCount == hiddenFrames,
+            "Hidden output and input must not submit render frames")
 }

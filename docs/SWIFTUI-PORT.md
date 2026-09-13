@@ -2253,6 +2253,30 @@ does not).
   broader M1 hardware/input/fidelity/performance acceptance and M2–M6 release and
   runtime work remain open.
 
+### Native hidden-render measurement — 2026-09-13
+
+- Added maintained native/Swift patches `0005`/`0006` exposing a read-only atomic
+  submitted-frame counter. It covers actual encoded-frame submissions from native
+  renderer-thread and embedded host draws; reads do not schedule rendering.
+- The stress harness excludes mount/occlusion warmup, records ten counters with
+  each resource sample, rejects hidden frame submissions and checks visible rendering
+  alongside existing output progress, bounded queues and PID/surface identity.
+- Nine focused native terminal tests passed, including a real visible-frame positive
+  control followed by zero additional frames while hidden input/output continued.
+  Log: `swift_package_test_2026-09-13T20-08-48-588Z_pid24595_e7982d5b.log`.
+  The final managed rebuild also passed all nine tests:
+  `swift_package_test_2026-09-13T20-23-36-817Z_pid29269_14bdecda.log`.
+- The release ten-session workload completed **600.50 seconds / 292 samples**.
+  All nine hidden counters remained zero; the visible count advanced 14 → 1,664.
+  Every ticker progressed, all window samples were visible, and fixture cleanup
+  completed. Peak queued output was 60,672 bytes; parser latency p95 was 19.55 ms.
+  [Measurement and limits](measurements/native-terminal-render-stress-2026-09-13.md)
+  includes the raw samples and build provenance.
+- Host RSS grew 128.94 → 174.78 MiB and daemon-tree RSS grew 32.66 → 73.95 MiB.
+  No memory plateau or cause is established. This measures hidden native frame
+  submissions; it does not complete full-app/Tauri CPU/GPU/RSS comparison, physical
+  key-to-display latency, hardware/agent fidelity or the full M1 acceptance gate.
+
 ## Why now, and why native
 
 The Tauri shell works, but roughly half of `src-tauri/` exists to work around what a DOM

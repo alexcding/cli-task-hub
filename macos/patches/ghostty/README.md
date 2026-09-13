@@ -2,9 +2,10 @@
 
 These patches extend the exact Ghostty and Swift wrapper revisions in
 `macos/scripts/ghostty-vt.lock.json`. Apply the wrapper's own patch stack first,
-then `0001-native-snapshot-import.patch` to Ghostty and
-`0002-swift-snapshot-import.patch` and `0004-appkit-appearance-publication.patch`
-to the wrapper. The maintained build script
+then `0001-native-snapshot-import.patch`, `0003-terminal-query-validation.patch`
+and `0005-native-render-diagnostics.patch` to Ghostty; apply
+`0002-swift-snapshot-import.patch`, `0004-appkit-appearance-publication.patch` and
+`0006-swift-render-diagnostics.patch` to the wrapper. The maintained build script
 does this in generated checkouts; do not edit SwiftPM dependency checkouts.
 
 `ghostty_surface_restore_snapshot` / `InMemoryTerminalSession.restoreSnapshot`
@@ -92,3 +93,26 @@ output, resize or focus callbacks, replace the emulator, or alter the native arc
 and SwiftUI mounts, final appearance after rapid changes, detached-view cancellation
 and surface identity across reattachment. It observes the pinned wrapper's Combine
 publisher only in tests; TaskHub application models continue to use `@Observable`.
+
+## Native render diagnostics
+
+The `0005`/`0006` patches expose `TerminalSurface.submittedFrameCount`, an atomic,
+read-only count tied to `renderer/generic.zig`'s actual frame completion/submission
+call. On the pinned Metal backend that call commits an encoded command buffer.
+Both the native renderer thread and the embedded host draw entry reach this path;
+wrapper display-link ticks or refresh requests alone do not increment it. Reading
+the count does not acquire the render mutex, tick, refresh or draw. A released Swift
+surface returns `nil`; every replacement surface starts its own count at zero.
+
+The counter measures submitted frames, not individual GPU draw calls, GPU duration,
+GPU completion or physical display presentation. It adds one relaxed atomic increment
+per submitted frame and makes no scheduling or visibility changes. Metal's unchanged
+`presentLastTarget` path is a no-op, so it does not submit uncounted redraws.
+
+`ghosttyParsesHiddenOutputAndEncodesKeysAndPaste` first checks that showing the real
+surface advances the count, then verifies stable counts while the same hidden surface
+parses Unicode/alternate-screen output and handles native keyboard, paste and links.
+`TerminalStressHarness` allows two seconds for mount/occlusion work to settle, records
+all ten initial counters and includes them in every resource sample. Any hidden
+counter advancing fails the workload; the visible counter must advance, hidden
+output must progress, and existing PID/surface identity checks remain in force.
