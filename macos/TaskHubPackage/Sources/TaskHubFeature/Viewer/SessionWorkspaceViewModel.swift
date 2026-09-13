@@ -22,17 +22,19 @@ import Observation
     var reviewBase: String?
 }
 
-enum WorkspaceAction: Equatable {
+enum WorkspaceOperation: Equatable {
     case reveal, openEditor, openGitClient, createSession, openFile, addPage
-    case changes, run, remove, restart, openTerminal, reconnectTerminal, reconnectBuild, hookSettings, prepareChanges
+    case changes, openTerminal, reconnectTerminal, reconnectBuild, hookSettings, prepareChanges
 }
 
 @MainActor protocol WorkspaceServing: AnyObject {
     func workspaceState(in context: WorkspaceContext) -> SessionWorkspaceState
-    func performWorkspaceAction(_ action: WorkspaceAction, in context: WorkspaceContext)
 }
 
 @MainActor @Observable final class SessionWorkspaceViewModel {
+    enum Action: Equatable {
+        case operation(WorkspaceOperation), run, remove, restart
+    }
     struct ReviewInputs: Equatable {
         let pane: WorkspacePane?
         let section: ReviewSection?
@@ -41,6 +43,7 @@ enum WorkspaceAction: Equatable {
     }
     @ObservationIgnored private weak var context: WorkspaceContext?
     @ObservationIgnored private weak var service: (any WorkspaceServing)?
+    @ObservationIgnored var onAction: (Action) -> Void = { _ in }
     private(set) var active = false
 
     init(context: WorkspaceContext, service: any WorkspaceServing) {
@@ -98,9 +101,9 @@ enum WorkspaceAction: Equatable {
     func openFile() { perform(.openFile) }
     func addPage() { if state.canPresent { perform(.addPage) } }
     func toggleChanges() { if canShowChanges { perform(.changes) } }
-    func run() { if canRun { perform(.run) } }
-    func remove() { if canRemove { perform(.remove) } }
-    func restart() { if canRestart { perform(.restart) } }
+    func run() { if canRun { onAction(.run) } }
+    func remove() { if canRemove { onAction(.remove) } }
+    func restart() { if canRestart { onAction(.restart) } }
     func openTerminal() { if showsTerminal { perform(.openTerminal) } }
     func reconnectTerminal() { perform(.reconnectTerminal) }
     func reconnectBuild() { perform(.reconnectBuild) }
@@ -114,8 +117,8 @@ enum WorkspaceAction: Equatable {
         case .file(let file): context?.openFile(file.path)
         }
     }
-    private func perform(_ action: WorkspaceAction) {
-        guard let context else { return }
-        service?.performWorkspaceAction(action, in: context)
+    private func perform(_ operation: WorkspaceOperation) {
+        guard context != nil else { return }
+        onAction(.operation(operation))
     }
 }

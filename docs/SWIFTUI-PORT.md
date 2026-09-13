@@ -1569,6 +1569,31 @@ does not).
   explicit application-layer rule. Remaining migration/architecture work continues;
   Sprint Board remains web-based.
 
+### Root presentation and coordinator action callbacks — 2026-09-13
+
+- Root and workspace ViewModels emit typed `onAction` callbacks. The coordinator
+  binds them before rendering, rejects obsolete roots/unowned contexts, owns
+  presentations and delegates operational work to injected runtime services.
+  ViewModels do not reference their coordinator; all remain `@Observable`.
+- Sidebar selection and existing JSON persistence now belong to the coordinator.
+  Native menus, sidebar and programmatic navigation share that entry point.
+  The root model supplies titles, action gates and model-bearing destinations;
+  rendering retains all prepared workspace identities and the native terminal.
+  A missing session deactivates the previous workspace.
+- Inspected `record-ios` action callbacks, typed routes, parser/printer handlers,
+  immutable route chains and deferred startup dispatch. The reference and planned
+  TaskHub boundaries are recorded in `NATIVE-ARCHITECTURE.md`; inbound deeplink
+  handling is the next phase.
+- Twelve focused Swift tests pass in
+  `swift_package_test_2026-09-13T15-02-35-685Z_pid19289_6e8f8907.log`.
+  Real-shell navigation/input/restart/Quit passes in
+  `test_macos_2026-09-13T15-03-34-868Z_pid19630_5f0a3436.log`;
+  native Dashboard in `test_macos_2026-09-13T15-04-51-531Z_pid20191_f9ad11b8.log`;
+  web Sprint Board in `test_macos_2026-09-13T15-05-27-521Z_pid20434_80865c13.log`;
+  Settings/menu navigation in `test_macos_2026-09-13T15-10-27-107Z_pid21836_d0f8851c.log`.
+  Existing terminal publication and WebKit QoS warnings remain open, along with
+  broader architecture and migration acceptance. Sprint Board remains web-based.
+
 ## Why now, and why native
 
 The Tauri shell works, but roughly half of `src-tauri/` exists to work around what a DOM

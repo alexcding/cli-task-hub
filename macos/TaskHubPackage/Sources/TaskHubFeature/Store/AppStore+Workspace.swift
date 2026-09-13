@@ -1,6 +1,6 @@
 import Foundation
 
-extension AppStore: WorkspaceServing {
+extension AppStore: WorkspaceCoordinating {
     func workspaceState(in context: WorkspaceContext) -> SessionWorkspaceState {
         guard viewer.contexts[context.id] === context else { return SessionWorkspaceState() }
         let session = sessions.first { "task:\($0.id)" == context.id }
@@ -17,8 +17,28 @@ extension AppStore: WorkspaceServing {
             reviewBase: base)
     }
 
-    func performWorkspaceAction(_ action: WorkspaceAction, in context: WorkspaceContext) {
-        guard viewer.contexts[context.id] === context, viewer.active === context else { return }
+    func ownsWorkspace(_ context: WorkspaceContext) -> Bool {
+        viewer.contexts[context.id] === context && viewer.active === context
+    }
+
+    func makeWorkspaceBuild(in context: WorkspaceContext) -> BuildWorkspaceViewModel? {
+        guard ownsWorkspace(context), let session = workspaceState(in: context).session else { return nil }
+        return buildModel(for: session, context: context)
+    }
+
+    func makeWorkspaceRemoval(in context: WorkspaceContext) -> SessionRemovalViewModel? {
+        guard ownsWorkspace(context), let session = workspaceState(in: context).session else { return nil }
+        return removalModel(for: session)
+    }
+
+    func restartWorkspaceSession(_ id: String, in context: WorkspaceContext) {
+        guard viewer.contexts[context.id] === context,
+              let current = sessions.first(where: { $0.id == id }), !changingSessions.contains(id) else { return }
+        restartSession(current)
+    }
+
+    func performWorkspaceOperation(_ action: WorkspaceOperation, in context: WorkspaceContext) {
+        guard ownsWorkspace(context) else { return }
         let state = workspaceState(in: context)
         switch action {
         case .reveal: if let session = state.session { revealWorktree(session) }
@@ -34,19 +54,6 @@ extension AppStore: WorkspaceServing {
         case .openFile: viewer.openFile(in: context)
         case .addPage: addPage(in: context)
         case .changes: if let session = state.session { showChanges(for: session, context: context) }
-        case .run:
-            if let session = state.session { coordinator.presentBuild { buildModel(for: session, context: context) } }
-        case .remove:
-            if let session = state.session { coordinator.presentRemoval { removalModel(for: session) } }
-        case .restart:
-            if let session = state.session {
-                coordinator.presentRestart { [weak self, weak context] in
-                    guard let self, let context, viewer.contexts[context.id] === context,
-                          let current = sessions.first(where: { $0.id == session.id }),
-                          !changingSessions.contains(current.id) else { return }
-                    restartSession(current)
-                }
-            }
         case .openTerminal: openTerminal()
         case .reconnectTerminal: reattachTerminal(key: context.id)
         case .reconnectBuild: reattachTerminal(key: "build:\(context.sourceURL)")

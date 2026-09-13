@@ -34,8 +34,21 @@ import Observation
     private(set) var restartConfirmation: RestartConfirmation?
     var canPresent: Bool { sheet == nil && restartConfirmation == nil }
     @ObservationIgnored private let factory: any CreationFlowFactory
+    private(set) var selection: SidebarDestination
+    @ObservationIgnored let selectionStore: any SidebarSelectionPersisting
+    @ObservationIgnored weak var rootRuntime: (any RootCoordinating)?
+    @ObservationIgnored var rootBindingID = UUID()
 
-    init(factory: any CreationFlowFactory) { self.factory = factory }
+    init(factory: any CreationFlowFactory, selectionStore: any SidebarSelectionPersisting = TransientSidebarSelectionStore()) {
+        self.factory = factory; self.selectionStore = selectionStore
+        selection = selectionStore.load() ?? .overview
+    }
+
+    func navigate(to destination: SidebarDestination) {
+        selection = destination
+        selectionStore.save(destination)
+        rootRuntime?.activateRootDestination()
+    }
 
     func presentAddPage(openPage: @escaping (String) -> Bool) {
         guard canPresent else { return }

@@ -2,6 +2,55 @@ import Foundation
 import Testing
 @testable import TaskHubFeature
 
+@MainActor private final class WorkspaceCoordinatorFixture: WorkspaceCoordinating {
+    var state = SessionWorkspaceState()
+    var owns = true
+    var operations: [WorkspaceOperation] = []
+    var buildRequests = 0
+    var removalRequests = 0
+    var restarts: [String] = []
+    func workspaceState(in context: WorkspaceContext) -> SessionWorkspaceState { state }
+    func ownsWorkspace(_ context: WorkspaceContext) -> Bool { owns }
+    func performWorkspaceOperation(_ operation: WorkspaceOperation, in context: WorkspaceContext) { operations.append(operation) }
+    func makeWorkspaceBuild(in context: WorkspaceContext) -> BuildWorkspaceViewModel? { buildRequests += 1; return nil }
+    func makeWorkspaceRemoval(in context: WorkspaceContext) -> SessionRemovalViewModel? { removalRequests += 1; return nil }
+    func restartWorkspaceSession(_ id: String, in context: WorkspaceContext) { if owns { restarts.append(id) } }
+}
+
+@MainActor @Test func workspaceActionsAreHandledByCoordinatorAndRejectUnownedContexts() throws {
+    let context = WorkspaceContext(id: "task:fixture", sourceURL: "", title: "Fixture")
+    let runtime = WorkspaceCoordinatorFixture()
+    runtime.state.session = WorkspaceSession(id: "fixture", projectId: "p", workspace: "/tmp", worktree: "/tmp/fixture",
+        title: "Fixture", branch: "fixture", url: "", createdAt: nil, pinned: false)
+    runtime.state.project = Project(id: "p", name: "Project", repo: "", color: nil, workspace: "/tmp", ide: "xcode")
+    runtime.state.canPresent = true; runtime.state.connected = true
+    let model = SessionWorkspaceViewModel(context: context, service: runtime)
+    var coordinator: AppCoordinator? = AppCoordinator(factory: NativeCreationFlowFactory(chooseFolder: { nil }))
+    coordinator?.bindWorkspace(model, context: context, runtime: runtime)
+    model.openTerminal()
+    #expect(runtime.operations == [.openTerminal])
+    model.restart()
+    let request = try #require(coordinator?.restartConfirmation)
+    model.run(); model.remove()
+    #expect(runtime.buildRequests == 0 && runtime.removalRequests == 0)
+    coordinator?.confirmRestart(id: request.id)
+    #expect(runtime.restarts == ["fixture"])
+    model.run(); model.remove()
+    #expect(runtime.buildRequests == 1 && runtime.removalRequests == 1)
+    runtime.owns = false
+    model.openTerminal(); model.restart(); model.run()
+    #expect(runtime.operations == [.openTerminal] && coordinator?.restartConfirmation == nil && runtime.buildRequests == 1)
+    runtime.owns = true
+    model.restart()
+    let stale = try #require(coordinator?.restartConfirmation)
+    runtime.owns = false
+    coordinator?.confirmRestart(id: stale.id)
+    #expect(runtime.restarts == ["fixture"])
+    runtime.owns = true; coordinator = nil
+    model.openTerminal(); model.restart()
+    #expect(runtime.operations == [.openTerminal])
+}
+
 @MainActor @Test func workspaceRestartConfirmationBlocksOtherFlowsAndRejectsCancelledOrDuplicateActions() throws {
     let coordinator = AppCoordinator(factory: NativeCreationFlowFactory(chooseFolder: { nil }))
     var restarts = 0, factories = 0

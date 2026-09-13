@@ -32,6 +32,33 @@ TaskHub uses explicit initializer injection and protocol-based factories for the
 first extraction. It does not need the reference application's global container,
 navigation-stack library or iOS-specific dependencies to preserve these boundaries.
 
+The additional reference `/Users/accedo/Workspace/record-ios` was inspected for
+action callbacks and deeplinks:
+
+- `Record/Coordinators/Abstractions/Action.swift` separates ViewModel intent from
+  navigation routes. `Record/Coordinators/Search/SearchCoordinator.swift` installs
+  `viewModel.action = { [weak self] in self?.handle($0) }`, handles owned actions and
+  forwards other domains to its parent.
+- `Record/Coordinators/Abstractions/Route.swift` is the shared typed route model.
+  `Coordinators/Abstractions/Router/DeepLink.swift` carries an ordered route chain with `first` and
+  `droppingFirst()`; coordinators consume their segment and forward the remainder.
+- `Coordinators/Abstractions/Router/Router.swift` uses injected handlers for URL parsing and printing.
+  Its adjacent `Routable.swift` assembles the default handlers. URL handling does not
+  live in rendering views or content ViewModels.
+- `Record/Coordinators/App/AppCoordinator+Routing.swift` is the common entry for
+  resolved external links and queues protected links until startup/profile state
+  allows navigation. Its platform app only forwards incoming URLs.
+- `Record/Services/DeepLinking/RecordDeepLinkRouter.swift` and
+  `RecordDeepLinkResolver.swift` validate external destinations, bound resolution
+  and deduplication, and suppress stale asynchronous resolutions. The OneLink and
+  authentication details are specific to Record and are not TaskHub dependencies.
+
+TaskHub's root and workspace ViewModels now emit typed action callbacks, bound to
+the coordinator before rendering. Future external links should resolve through
+injected parsers to the same navigation routes, queue while backend state is not
+ready, and preserve busy operation dialogs and terminal identity. Native inbound
+URL handling and route-chain consumption have not yet been implemented.
+
 ## Implemented: creation flows
 
 `AppCoordinator` owns one identified sheet destination containing its ViewModel.
@@ -101,8 +128,10 @@ and the packaging correction are recorded in `SWIFTUI-PORT.md`.
 `SessionWorkspaceViewModel` computes pane visibility, toolbar availability,
 workspace titles, review refresh inputs and history reopening. It receives a
 `WorkspaceServing` dependency; the live `AppStore` adapter supplies current session,
-project and feature models and routes commands to existing services. Retained
-actions are checked against the viewer's current context before they can act.
+project and feature models. The model emits typed actions through `onAction`.
+`AppCoordinator` handles build/removal/restart presentations and delegates operations
+to the runtime service. Retained actions are checked against the viewer's current
+context before they can act.
 
 `WorkspaceFeatureFactory` creates workspace, build and removal models. The viewer
 configures each context once, before rendering, and the context owns its workspace
@@ -156,12 +185,40 @@ the wrapper's theme adoption and nested hosting updates did not remove it and we
 reverted; neither Ghostty's patch set nor split geometry changes in this phase.
 The warning's origin and terminal hardware/performance acceptance remain open.
 
+## Implemented: root presentation and coordinator action callbacks
+
+`AppCoordinator` owns sidebar selection and its injected persistence service, using
+the existing `sidebar.selection` JSON format. Sidebar, menu and programmatic
+navigation use the same selection entry point. A missing session deactivates the
+previous workspace instead of leaving an unrelated terminal visible.
+
+`RootFeatureFactory` supplies one `RootViewModel`. It computes titles, pin state,
+model-bearing rendering destinations and the list of all prepared workspaces,
+preserving the existing context IDs and mounted terminal hierarchy. Root actions
+are emitted through `onAction` and handled by the coordinator; an obsolete root
+callback cannot navigate a replacement root. Neither the root nor workspace
+ViewModel references its coordinator. The injected runtime services own operations.
+
+`ContentView` is the public scene entry and `AppCoordinatorView` renders the supplied
+models and coordinator presentations. The rendering code no longer looks up
+projects/sessions, computes sidebar pin membership, parses tab URLs, chooses an
+operation's target or assembles feature models. It retains the Cocoa sidebar,
+native Dashboard and focused web Sprint Board.
+
+Twelve focused Swift tests pass for callback dispatch, stale root/context rejection,
+factory injection, selection persistence and retained workspace identity. Native UI
+tests pass for the Dashboard, web Sprint Board, Settings/menu navigation and actual
+shell navigation, keyboard input, cancelled/confirmed restart and Quit. The existing
+terminal mount publication warning and WebKit QoS warning remain unresolved.
+
 ## Remaining extraction
 
 The architecture extraction remains in progress:
 
-- Move sidebar/root destinations and titles out of root rendering code. Preserve
-  stable session/context IDs and mounted terminal surfaces across navigation.
+- Add typed URL parsing and route-chain dispatch using the inspected `record-ios`
+  pattern, including backend-readiness deferral and native AppKit URL delivery.
+- Extend the typed action-callback pattern to the remaining feature/completion
+  flows and child coordinators as their runtime dependencies are extracted.
 - Complete the remaining terminal/UI-adapter audit, including the mount warning,
   while retaining native input and emulator ownership.
 - Finish tray navigation/window coordination and move any remaining platform

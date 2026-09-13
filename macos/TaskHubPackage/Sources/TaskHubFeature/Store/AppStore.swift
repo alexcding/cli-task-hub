@@ -7,6 +7,7 @@ public final class AppStore {
     public let shell = ShellStore()
     let viewer: ViewerStore
     let coordinator: AppCoordinator
+    private(set) var root: RootViewModel!
     @ObservationIgnored private let creationFactory: any CreationFlowFactory
     @ObservationIgnored private let desktop: any DesktopActions
     @ObservationIgnored private let workspaceFactory: any WorkspaceFeatureFactory
@@ -21,7 +22,7 @@ public final class AppStore {
     public private(set) var backendAddress = ""
     private(set) var sessions: [WorkspaceSession] = []
     private(set) var tabs: [SavedTab] = []
-    private(set) var selection: SidebarDestination = .overview
+    var selection: SidebarDestination { coordinator.selection }
     private(set) var terminals: [String: TerminalSession] = [:]
     private(set) var projectModels: [String: ProjectPageViewModel] = [:]
     private(set) var changingSessions: Set<String> = []
@@ -44,11 +45,13 @@ public final class AppStore {
     public convenience init() { self.init(creationFactory: NativeCreationFlowFactory()) }
 
     init(creationFactory: any CreationFlowFactory, desktop: any DesktopActions = NativeDesktopActions(),
-         workspaceFactory: any WorkspaceFeatureFactory = NativeWorkspaceFeatureFactory()) {
+         workspaceFactory: any WorkspaceFeatureFactory = NativeWorkspaceFeatureFactory(),
+         rootFactory: any RootFeatureFactory = NativeRootFeatureFactory(),
+         selectionStore: any SidebarSelectionPersisting = UserDefaultsSidebarSelectionStore()) {
         self.creationFactory = creationFactory
         self.desktop = desktop
         self.workspaceFactory = workspaceFactory
-        coordinator = AppCoordinator(factory: creationFactory)
+        coordinator = AppCoordinator(factory: creationFactory, selectionStore: selectionStore)
         viewer = ViewerStore(cacheURL: try? PtydConfiguration.current().directory.appendingPathComponent("page-tabs.json"),
                              memoryPressure: NativeMemoryPressureMonitor(), pageFactory: BrowserPageFactory(desktop: desktop))
         viewer.setPageLimit(shell.remotePageLimit)
@@ -75,12 +78,12 @@ public final class AppStore {
                 for model in projectModels.values { await model.tickets?.invalidateSite() }
             }
         })
-        if let data = UserDefaults.standard.data(forKey: "sidebar.selection"),
-           let saved = try? JSONDecoder().decode(SidebarDestination.self, from: data) { selection = saved }
         viewer.prepareContext = { [weak self] context in
             guard let self else { return }
             context.configureWorkspace(factory: workspaceFactory, service: self)
+            if let model = context.workspaceViewModel { coordinator.bindWorkspace(model, context: context, runtime: self) }
         }
+        root = coordinator.makeRoot(factory: rootFactory, runtime: self, shell: shell, viewer: viewer)
     }
 
     var sidebarEntries: [SidebarEntry] {
@@ -278,10 +281,11 @@ public final class AppStore {
     }
 
     func select(_ destination: SidebarDestination) {
-        selection = destination
-        showSelectedContext()
-        if let data = try? JSONEncoder().encode(destination) { UserDefaults.standard.set(data, forKey: "sidebar.selection") }
+        coordinator.navigate(to: destination)
     }
+
+    func activateRootDestination() { showSelectedContext() }
+    func openRootBrowser(_ url: URL) { _ = desktop.openBrowser(url) }
 
     private func showSelectedContext() {
         switch selection {
@@ -320,7 +324,7 @@ public final class AppStore {
             if let session = sessions.first(where: { $0.id == id }) {
                 viewer.select(id: "task:\(id)", url: session.url, title: session.title, legacy: tabs.first { $0.url == session.url })
                 _ = workflowRunModel(for: session)
-            }
+            } else { viewer.deactivate() }
         case .terminal:
             viewer.select(id: "scratch", url: "", title: "Terminal")
         case .tab(let url):

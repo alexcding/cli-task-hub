@@ -5,10 +5,10 @@ import Testing
 
 @MainActor @Observable private final class WorkspaceFixture: WorkspaceServing {
     var state = SessionWorkspaceState()
-    var actions: [WorkspaceAction] = []
+    var actions: [SessionWorkspaceViewModel.Action] = []
     var contextIDs: [String] = []
     func workspaceState(in context: WorkspaceContext) -> SessionWorkspaceState { state }
-    func performWorkspaceAction(_ action: WorkspaceAction, in context: WorkspaceContext) {
+    func record(_ action: SessionWorkspaceViewModel.Action, in context: WorkspaceContext) {
         actions.append(action); contextIDs.append(context.id)
     }
 }
@@ -32,6 +32,9 @@ import Testing
 @MainActor @Test func workspaceModelComputesPaneVisibilityAndGatesOperationsAgainstCurrentState() throws {
     let context = WorkspaceContext(id: "task:one", sourceURL: "", title: "")
     let service = WorkspaceFixture(), model = SessionWorkspaceViewModel(context: context, service: service)
+    model.onAction = { [weak service, weak context] action in
+        if let context { service?.record(action, in: context) }
+    }
     #expect(!model.showsTerminal && model.showsPage && !model.canRemove)
     service.state.session = WorkspaceSession(id: "one", projectId: "p", workspace: "/tmp", worktree: "/tmp/one", title: "One",
                                              branch: "one", url: "", createdAt: nil, pinned: false)
@@ -49,7 +52,7 @@ import Testing
     service.state.editorLabel = "Open Xcode"; service.state.gitClientLabel = "Open Fork"
     #expect(model.canRun && model.canRemove && model.canRestart && model.canOpenExternal)
     model.openEditor(); model.openGitClient(); model.run(); model.remove(); model.restart()
-    #expect(service.actions == [.openEditor, .openGitClient, .run, .remove, .restart])
+    #expect(service.actions == [.operation(.openEditor), .operation(.openGitClient), .run, .remove, .restart])
     service.state.changingSession = true
     model.openEditor(); model.openGitClient(); model.run(); model.remove(); model.restart()
     #expect(service.actions.count == 5 && !model.canRun && !model.canRemove)
@@ -62,7 +65,12 @@ import Testing
 
 @MainActor @Test func workspaceModelRefreshesOnlyVisibleReviewsAndRetainsIdentityThroughPromotion() throws {
     let service = WorkspaceFixture(), factory = CountingWorkspaceFactory(), viewer = ViewerStore()
-    viewer.prepareContext = { $0.configureWorkspace(factory: factory, service: service) }
+    viewer.prepareContext = { [service] context in
+        context.configureWorkspace(factory: factory, service: service)
+        context.workspaceViewModel?.onAction = { [weak service, weak context] action in
+            if let context { service?.record(action, in: context) }
+        }
+    }
     let context = viewer.select(id: "page", url: "", title: "Page")
     let model = try #require(context.workspaceViewModel)
     let document = try #require(context.openFile("/tmp/Workspace.swift"))
@@ -76,7 +84,7 @@ import Testing
                                              title: "Prepared", branch: "prepared", url: "", createdAt: nil, pinned: false)
     context.setPane(.diff)
     model.prepareChanges(); #expect(service.actions.isEmpty)
-    model.setActive(true); #expect(service.actions == [.prepareChanges] && service.contextIDs == ["task:prepared"])
+    model.setActive(true); #expect(service.actions == [.operation(.prepareChanges)] && service.contextIDs == ["task:prepared"])
     let inputs = model.reviewInputs
     service.state.reviewBase = "main"
     #expect(model.reviewInputs != inputs)
@@ -84,7 +92,7 @@ import Testing
     model.setActive(false); model.prepareChanges(); #expect(service.actions.count == 2)
     context.setPane(.term); model.setActive(true); #expect(service.actions.count == 2)
     model.reconnectTerminal(); model.reconnectBuild()
-    #expect(service.actions.suffix(2) == [.reconnectTerminal, .reconnectBuild])
+    #expect(service.actions.suffix(2) == [.operation(.reconnectTerminal), .operation(.reconnectBuild)])
     #expect(service.contextIDs.suffix(2) == ["task:prepared", "task:prepared"])
 }
 
