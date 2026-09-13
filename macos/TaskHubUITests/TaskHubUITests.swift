@@ -680,6 +680,51 @@ final class TaskHubUITests: XCTestCase {
     }
 
     @MainActor
+    func testNativeProjectTicketOpenCancelsAcrossSectionChanges() async throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard let base = environment["TASKHUB_UI_BACKEND_URL"],
+              let path = environment["TASKHUB_UI_DATA_DIR"], let socket = environment["TASKHUB_UI_PTY_SOCKET"] else {
+            throw XCTSkip("Run macos/scripts/test-browser-ui.sh with its isolated project action fixture.")
+        }
+        func post(_ route: String) async throws {
+            var request = URLRequest(url: URL(string: base + route)!); request.httpMethod = "POST"
+            _ = try await URLSession.shared.data(for: request)
+        }
+        let app = XCUIApplication()
+        app.launchArguments = ["--backend-url", base, "--data-dir", path, "--pty-socket", socket]
+        app.launch()
+        let project = app.outlines["workspace-sidebar"].staticTexts["Native integration fixture"].firstMatch
+        XCTAssertTrue(project.waitForExistence(timeout: 10)); project.click()
+        app.radioButtons["Tickets"].click()
+        let ticket = app.descendants(matching: .any)["jira-ticket-REC-1"].firstMatch
+        XCTAssertTrue(ticket.waitForExistence(timeout: 10), app.debugDescription)
+        let query = app.textFields["jira-query"]
+        query.click(); app.typeText("Keep ticket query")
+        try await post("/fixture/arm-ticket-open")
+        ticket.click()
+        var held = false
+        for _ in 0..<100 {
+            let (data, _) = try await URLSession.shared.data(from: URL(string: base + "/fixture/project-opens")!)
+            held = (try JSONSerialization.jsonObject(with: data) as? [String: Any])?["held"] as? Bool == true
+            if held { break }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        XCTAssertTrue(held)
+        app.radioButtons["Sprint Board"].click()
+        XCTAssertTrue(app.webViews.staticTexts["Native board integration"].waitForExistence(timeout: 10))
+        try await post("/fixture/release-project-open")
+        XCTAssertFalse(app.webViews.staticTexts["Native ticket fixture"].exists)
+        app.radioButtons["Tickets"].click()
+        XCTAssertEqual(query.value as? String, "Keep ticket query")
+        app.radioButtons["Sprint Board"].click()
+        XCTAssertTrue(app.webViews.links["REC-1"].waitForExistence(timeout: 10))
+        app.webViews.links["REC-1"].click()
+        XCTAssertTrue(app.webViews.staticTexts["Native ticket fixture"].waitForExistence(timeout: 10))
+        let (data, _) = try await URLSession.shared.data(from: URL(string: base + "/fixture/project-opens")!)
+        XCTAssertEqual((try JSONSerialization.jsonObject(with: data) as? [String: Any])?["opens"] as? Int, 2)
+    }
+
+    @MainActor
     func testWebSprintBoardMovesAssignsAndOpensNativeTicketContext() throws {
         let environment = ProcessInfo.processInfo.environment
         guard let base = environment["TASKHUB_UI_BACKEND_URL"],

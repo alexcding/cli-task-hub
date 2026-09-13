@@ -39,8 +39,14 @@ import Observation
             model.cancelActions()
             deletionConfirmation = request
         case .pullRequest(let action):
-            guard !isPresenting, canPresent() else { return }
+            guard !isPresenting, canPresent(), model.section == .prs else { return }
             model.performPullRequestAction(action)
+        case .jiraTicket(let action):
+            guard !isPresenting, canPresent(), model.section == .tickets else { return }
+            model.tickets?.perform(action)
+        case .boardTicket(let action):
+            guard !isPresenting, canPresent(), model.section == .board else { return }
+            model.board?.perform(action)
         }
     }
 

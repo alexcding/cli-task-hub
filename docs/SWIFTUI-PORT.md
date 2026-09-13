@@ -1861,6 +1861,42 @@ does not).
   acceptance remain open. The arbitrary pasted-PR lookup retains its existing
   on-demand resolution contract; this phase covers project PR list reads.
 
+### Jira and web board navigation ownership — 2026-09-13
+
+- Jira open/browser/copy and board ticket links now emit typed callbacks through
+  the project model. The coordinator verifies project ownership, active section
+  and presentation availability before dispatch. Native factory injection supplies
+  the same page/browser/clipboard service contract to all three project surfaces.
+- Each ticket surface owns a separate `PageActionViewModel`. Duplicate opens
+  coalesce; newer opens cancel older tasks. Navigation, section changes, dialogs,
+  disconnect and retirement cancel pending navigation without clearing drafts or
+  cancelling independent ticket edits. Filter/site changes and board suspension
+  also cancel pending opens. Error feedback is separate from Jira data errors and
+  board loading failures; late failures cannot overwrite newer feedback.
+- Ticket actions resolve their key against current visible rows. Board callbacks
+  retain trusted main-frame/document/URL checks and reject obsolete webview senders,
+  suspended/disconnected state and retired models. Retired children cannot reconnect
+  or resume operations. Views emit synchronous navigation actions and render state.
+- Sixteen focused tests (including parameterized lifecycle cases) pass in
+  `swift_package_test_2026-09-13T17-27-37-002Z_pid68626_d66e30f6.log`. They cover
+  ownership, dialogs, hidden sections, obsolete keys, duplicate/superseding opens,
+  error isolation, retained drafts, cancellation and permanent retirement. An
+  explicit All filter still wins over delayed stored preferences, even when the
+  provisional selection was already empty.
+- Native held-response cancellation passes in
+  `test_macos_2026-09-13T17-24-35-842Z_pid67238_ed593216.log`: a ticket tab is persisted,
+  switching to the board cancels its pending navigation, and releasing the response
+  preserves the board and ticket search draft. A subsequent board click opens the
+  ticket through the coordinator. The first test run used the wrong accessibility
+  element type; the passing run uses the existing Jira link selector.
+  Native search, failed/successful status transitions and ticket opening pass in
+  `test_macos_2026-09-13T17-25-32-417Z_pid67640_b36ceb1b.log`.
+  Web board failed/successful moves, assignment, native ticket opening and return
+  pass in `test_macos_2026-09-13T17-26-31-209Z_pid67979_41b70c2f.log`.
+- Dashboard callbacks, remaining settings/document/platform factories and runtime
+  extraction remain open, along with terminal and release acceptance. The Sprint
+  Board remains web-based.
+
 ## Why now, and why native
 
 The Tauri shell works, but roughly half of `src-tauri/` exists to work around what a DOM

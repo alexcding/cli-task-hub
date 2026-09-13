@@ -31,16 +31,17 @@ if (process.env.TASKHUB_PROJECT_ACTION_FIXTURE === '1') {
   // explicitly releases it. This exercises cancellation after a tab was saved.
   const { ROUTES } = require('../../src/shared/routes.mjs');
   const sendJSON = app.response.json;
-  let held = null, opens = 0, armed = false;
+  let held = null, opens = 0, armed = false, suffix = '?pr=2';
   app.response.json = function (body) {
-    if (armed && this.req.method === 'POST' && this.req.path === ROUTES.TABS && this.req.body?.url?.endsWith('?pr=2')) {
+    if (armed && this.req.method === 'POST' && this.req.path === ROUTES.TABS && this.req.body?.url?.endsWith(suffix)) {
       opens += 1;
       if (opens === 1) { held = { response: this, body }; return this; }
     }
     return sendJSON.call(this, body);
   };
   app.get('/fixture/project-opens', (_req, res) => res.json({ held: held !== null, opens }));
-  app.post('/fixture/arm-project-open', (_req, res) => { armed = true; opens = 0; res.json({ ok: true }); });
+  app.post('/fixture/arm-project-open', (_req, res) => { armed = true; opens = 0; suffix = '?pr=2'; res.json({ ok: true }); });
+  app.post('/fixture/arm-ticket-open', (_req, res) => { armed = true; opens = 0; suffix = '/browse/REC-1'; res.json({ ok: true }); });
   app.post('/fixture/release-project-open', (_req, res) => {
     const pending = held; held = null;
     if (pending && !pending.response.destroyed) sendJSON.call(pending.response, pending.body);

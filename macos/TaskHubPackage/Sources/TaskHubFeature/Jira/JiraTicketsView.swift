@@ -28,6 +28,7 @@ struct JiraTicketsView: View {
                 }
             }
             if let error = model.error { Text(error).foregroundStyle(.orange).textSelection(.enabled) }
+            if let error = model.navigation.error { Text(error).foregroundStyle(.orange).textSelection(.enabled) }
             if let error = model.snapshotError { Text(error).foregroundStyle(.orange).textSelection(.enabled) }
             if let error = model.source?.error { Text(error).foregroundStyle(.orange).textSelection(.enabled) }
             if let error = model.preferenceError { Text("Filter preferences: \(error)").foregroundStyle(.orange) }
@@ -37,10 +38,13 @@ struct JiraTicketsView: View {
                     if model.rows.isEmpty && !model.loading { Text(model.emptyMessage).foregroundStyle(.secondary).padding(.vertical, 20) }
                     ForEach(model.rows) { ticket in
                         HStack(alignment: .top, spacing: 16) {
-                            Button(ticket.key) { Task { await model.open(ticket) } }
+                            Button(ticket.key) { model.open(ticket) }
                                 .buttonStyle(.link).frame(width: 100, alignment: .leading)
                                 .accessibilityIdentifier("jira-ticket-\(ticket.key)")
                                 .disabled(model.ticketURL(ticket) == nil)
+                            if model.navigation.opening == model.ticketURL(ticket)?.absoluteString && model.navigation.opening != nil {
+                                ProgressView().controlSize(.small)
+                            }
                             VStack(alignment: .leading, spacing: 5) {
                                 Text(ticket.summary ?? "").font(.body.weight(.medium)).textSelection(.enabled)
                                 Text([ticket.type, ticket.priority, ticket.assignee].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
@@ -54,7 +58,7 @@ struct JiraTicketsView: View {
                                 .accessibilityIdentifier("jira-status-\(ticket.key)")
                         }.padding(.vertical, 12)
                             .contextMenu {
-                                Button("Open Ticket") { Task { await model.open(ticket) } }
+                                Button("Open Ticket") { model.open(ticket) }
                                 Button("Open in Browser") { model.external(ticket) }
                                 Button("Copy Link") { model.copyLink(ticket) }
                             }
@@ -63,5 +67,6 @@ struct JiraTicketsView: View {
                 }
             }
         }.onAppear { model.refresh() }
+            .onDisappear(perform: model.cancelActions)
     }
 }

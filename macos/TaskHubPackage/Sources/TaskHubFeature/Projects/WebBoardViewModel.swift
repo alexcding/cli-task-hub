@@ -19,20 +19,21 @@ struct BoardTicketLink: Decodable, Equatable {
 }
 
 @MainActor @Observable final class WebBoardViewModel: NSObject, WKNavigationDelegate {
+    enum Action: Equatable { case openTicket(BoardTicketLink) }
+    @ObservationIgnored var onAction: (Action) -> Void = { _ in }
+    let navigation: PageActionViewModel
+    private(set) var retired = false
     let projectID: String
     private(set) var webView: WKWebView?
     private(set) var error: String?
     private var baseURL: URL
     private var appearance = AppAppearance.system
-    private var active = false
-    private var connected = true
-    private let openPage: (OpenPageRequest) async throws -> Void
-    private let openBrowser: (URL) -> Bool
+    private var active = false { didSet { if oldValue != active && !active { cancelActions() } } }
+    private var connected = true { didSet { if oldValue != connected && !connected { cancelActions() } } }
 
-    init(projectID: String, baseURL: URL, openPage: @escaping (OpenPageRequest) async throws -> Void,
-         openBrowser: @escaping (URL) -> Bool) {
+    init(projectID: String, baseURL: URL, pageActions: any PageActionServing) {
         self.projectID = projectID; self.baseURL = baseURL
-        self.openPage = openPage; self.openBrowser = openBrowser
+        navigation = PageActionViewModel(service: pageActions)
         super.init()
     }
     var pageURL: URL {
@@ -42,14 +43,17 @@ struct BoardTicketLink: Decodable, Equatable {
         return parts.url!
     }
     func connect(baseURL: URL) {
+        guard !retired else { return }
         connected = true
         if self.baseURL != baseURL {
+            cancelActions()
             self.baseURL = baseURL
             webView?.load(URLRequest(url: pageURL))
         } else { applyState() }
     }
     func pause() { connected = false; applyState() }
     func materialize() -> WKWebView {
+        guard !retired else { return WKWebView() }
         if let webView { return webView }
         let config = WKWebViewConfiguration()
         config.websiteDataStore = .nonPersistent()
@@ -62,6 +66,7 @@ struct BoardTicketLink: Decodable, Equatable {
         return view
     }
     func show(appearance: AppAppearance) {
+        guard !retired else { return }
         active = true; self.appearance = appearance
         _ = materialize(); applyState()
     }
@@ -71,7 +76,9 @@ struct BoardTicketLink: Decodable, Equatable {
         webView?.evaluateJavaScript(command, completionHandler: nil)
     }
     func refresh() { webView?.evaluateJavaScript("window.nativeBoard?.refresh()", completionHandler: nil) }
-    func reload() { error = nil; materialize().reload() }
+    func reload() { guard !retired else { return }; cancelActions(); error = nil; materialize().reload() }
+    func cancelActions() { navigation.cancel() }
+    func retire() { retired = true; onAction = { _ in }; connected = false; suspend() }
     func suspend() {
         active = false
         webView?.evaluateJavaScript("window.nativeBoard?.setActive(false)", completionHandler: nil)
@@ -82,16 +89,22 @@ struct BoardTicketLink: Decodable, Equatable {
         webView = nil
     }
     fileprivate func receive(_ message: WKScriptMessage) {
+        guard !retired, active, connected, message.webView === webView else { return }
         guard let link = BoardTicketLink.parse(message.body, source: message.frameInfo.request.url,
-                                              expected: pageURL, mainFrame: message.frameInfo.isMainFrame),
-              let url = safeWebURL(link.url) else { return }
-        if link.external {
-            if !openBrowser(url) { error = "macOS could not open the browser." }
-            return
-        }
-        Task {
-            do { try await openPage(OpenPageRequest(url: link.url, kind: "jira", title: link.title)) }
-            catch { self.error = error.localizedDescription }
+                                              expected: pageURL, mainFrame: message.frameInfo.isMainFrame) else { return }
+        request(link)
+    }
+    func request(_ link: BoardTicketLink) {
+        guard !retired, active, connected else { return }
+        onAction(.openTicket(link))
+    }
+    func perform(_ action: Action) {
+        guard !retired, active, connected else { return }
+        switch action {
+        case .openTicket(let link):
+            guard link.type == "openTicket", SessionPage.parse(link.url)?.kind == "jira", let url = safeWebURL(link.url) else { return }
+            if link.external { navigation.external(url) }
+            else { navigation.open(OpenPageRequest(url: link.url, kind: "jira", title: link.title)) }
         }
     }
     func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction,

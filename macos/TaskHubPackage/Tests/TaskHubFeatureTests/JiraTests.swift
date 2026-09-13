@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import TaskHubFeature
 
-private actor JiraFixture: JiraService {
+actor JiraFixture: JiraService {
     var fails = false
     var rejectMove = false
     var reads = 0
@@ -51,10 +51,17 @@ private actor JiraFixture: JiraService {
     }
 }
 
+@MainActor private struct JiraFixturePageActions: PageActionServing {
+    let open: (OpenPageRequest) async throws -> Void
+    func openPage(_ request: OpenPageRequest) async throws { try await open(request) }
+    func openBrowser(_ url: URL) -> Bool { true }
+    func copyLink(_ value: String) {}
+}
+
 @MainActor private func jiraModel(_ service: JiraFixture, now: @escaping () -> Date = Date.init,
                                  open: @escaping (OpenPageRequest) async throws -> Void = { _ in }) -> JiraTicketsViewModel {
     JiraTicketsViewModel(project: Project(id: "p", name: "Native", repo: "", color: nil, workspace: "/tmp", jiraProjectKey: "REC"),
-                         service: service, openPage: open, openBrowser: { _ in true }, copy: { _ in }, now: now)
+                         service: service, pageActions: JiraFixturePageActions(open: open), now: now)
 }
 
 @MainActor private func waitForJira(_ condition: () -> Bool) async throws {
@@ -113,6 +120,17 @@ private actor JiraFixture: JiraService {
     await model.stop()
 }
 
+@MainActor @Test func jiraExplicitAllFilterWinsOverDelayedStoredPreference() async throws {
+    let model = jiraModel(JiraFixture())
+    model.refresh()
+    // Choosing All while settings are loading is still an explicit intent, even
+    // though the provisional selection also looks empty.
+    model.setFilter(.project, "")
+    try await waitForJira { model.baseURL != nil }
+    #expect(model.filters["project"] == nil && model.rows.count == 3)
+    await model.stop()
+}
+
 @MainActor @Test func jiraMovesRejectFailuresCoalesceAndSurviveStaleSnapshotsUntilExpiry() async throws {
     let service = JiraFixture()
     var date = Date()
@@ -135,7 +153,9 @@ private actor JiraFixture: JiraService {
     model.refresh()
     try await waitForJira { !model.loading && model.baseURL != nil }
     #expect(model.items.first?.status == "To Do")
-    await model.open(ticket)
+    model.setFilter(.project, "")
+    model.onAction = { [weak model] in model?.perform($0) }
+    model.open(ticket); await model.navigation.waitForOpen()
     #expect(opened?.url == "https://jira.example.test/browse/REC-1")
     #expect(model.ticketURL(JiraTicket(key: "../secret")) == nil)
     await model.stop()

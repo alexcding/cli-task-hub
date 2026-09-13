@@ -2,9 +2,13 @@ import Foundation
 import Observation
 
 @MainActor @Observable final class JiraTicketsViewModel {
+    enum Action: Equatable { case open(String), external(String), copy(String) }
+    @ObservationIgnored var onAction: (Action) -> Void = { _ in }
+    let navigation: PageActionViewModel
+    private(set) var retired = false
     private(set) var project: Project
     var query = ""
-    var filterText = ""
+    var filterText = "" { didSet { if oldValue != filterText { cancelActions() } } }
     private(set) var filters: [String: String] = [:]
     private(set) var snapshot: JiraSnapshot?
     private(set) var searchResult: JiraSnapshot?
@@ -32,22 +36,23 @@ import Observation
     @ObservationIgnored private var filterRevision = 0
     @ObservationIgnored private var searchGeneration = UUID()
     @ObservationIgnored private var connectionGeneration = UUID()
-    @ObservationIgnored private let openPage: (OpenPageRequest) async throws -> Void
-    @ObservationIgnored private let openBrowser: (URL) -> Bool
-    @ObservationIgnored private let copy: (String) -> Void
     @ObservationIgnored private let now: () -> Date
 
-    init(project: Project, service: any JiraService, openPage: @escaping (OpenPageRequest) async throws -> Void,
-         openBrowser: @escaping (URL) -> Bool, copy: @escaping (String) -> Void, now: @escaping () -> Date = Date.init) {
-        self.project = project; self.service = service; self.openPage = openPage
-        self.openBrowser = openBrowser; self.copy = copy; self.now = now
+    init(project: Project, service: any JiraService, pageActions: any PageActionServing, now: @escaping () -> Date = Date.init) {
+        self.project = project; self.service = service; self.now = now
+        navigation = PageActionViewModel(service: pageActions)
     }
-    func update(_ project: Project) { self.project = project }
+    func update(_ project: Project) {
+        guard !retired else { return }
+        if self.project.jiraProjectKey != project.jiraProjectKey || self.project.jql != project.jql { cancelActions() }
+        self.project = project
+    }
     func invalidateSite() async {
+        cancelActions()
         discoveryTask?.cancel(); await discoveryTask?.value
         baseURL = nil
     }
-    func connect(_ service: any JiraService) { self.service = service; persistFilters() }
+    func connect(_ service: any JiraService) { guard !retired else { return }; self.service = service; persistFilters() }
     var source: JiraSnapshot? { searchResult ?? snapshot }
     var items: [JiraTicket] {
         (source?.items ?? []).map { ticket in
@@ -77,10 +82,13 @@ import Observation
     }
     func count(_ value: String, facet: JiraFacet) -> Int { items.filter { matching($0, except: facet) && facet.value($0) == value }.count }
     func setFilter(_ facet: JiraFacet, _ value: String) {
+        guard !retired else { return }
+        cancelActions()
         filters[facet.rawValue] = value.isEmpty ? nil : value
         filterRevision += 1; preferencesDirty = true; persistFilters()
     }
     func refresh() {
+        guard !retired else { return }
         discover()
         refreshPending = true
         guard refreshTask == nil, let service else { return }
@@ -153,6 +161,8 @@ import Observation
         }
     }
     func search() async {
+        guard !retired else { return }
+        cancelActions()
         let typed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         if typed.isEmpty { clearSearch(); return }
         guard let service else { error = "Connect to search Jira."; return }
@@ -166,7 +176,7 @@ import Observation
             searchResult = result; searchedQuery = typed; remember(result)
         } catch { if searchGeneration == generation && !Task.isCancelled { self.error = error.localizedDescription } }
     }
-    func clearSearch() { searchGeneration = UUID(); searching = false; query = ""; searchResult = nil; searchedQuery = nil; error = nil }
+    func clearSearch() { cancelActions(); searchGeneration = UUID(); searching = false; query = ""; searchResult = nil; searchedQuery = nil; error = nil }
     func nextStatuses(_ ticket: JiraTicket) -> [String] { statuses.filter { !$0.isEmpty && $0 != ticket.status }.sorted() }
     func transition(_ ticket: JiraTicket, to status: String) async {
         guard !busy.contains(ticket.key), let service, nextStatuses(ticket).contains(status) else { return }
@@ -203,21 +213,31 @@ import Observation
         guard ticket.key.range(of: #"^[A-Z][A-Z0-9_]*-\d+$"#, options: [.regularExpression, .caseInsensitive]) != nil else { return nil }
         return baseURL?.appendingPathComponent("browse").appendingPathComponent(ticket.key)
     }
-    func open(_ ticket: JiraTicket) async {
+    func open(_ ticket: JiraTicket) { if !retired { onAction(.open(ticket.key)) } }
+    func external(_ ticket: JiraTicket) { if !retired { onAction(.external(ticket.key)) } }
+    func copyLink(_ ticket: JiraTicket) { if !retired { onAction(.copy(ticket.key)) } }
+    func perform(_ action: Action) {
+        guard !retired, service != nil else { return }
+        let key: String
+        switch action { case .open(let value), .external(let value), .copy(let value): key = value }
+        guard let ticket = rows.first(where: { $0.key == key }) else { return }
         guard let url = ticketURL(ticket) else { siteError = "Configure the Jira site to open ticket links."; return }
-        do { try await openPage(OpenPageRequest(url: url.absoluteString, kind: "jira", title: "\(ticket.key) \(ticket.summary ?? "")")) }
-        catch { self.error = error.localizedDescription }
+        switch action {
+        case .open: navigation.open(OpenPageRequest(url: url.absoluteString, kind: "jira", title: "\(ticket.key) \(ticket.summary ?? "")"))
+        case .external: navigation.external(url)
+        case .copy: navigation.copy(url)
+        }
     }
-    func external(_ ticket: JiraTicket) {
-        guard let url = ticketURL(ticket) else { return }
-        if !openBrowser(url) { error = "macOS could not open the browser." }
-    }
-    func copyLink(_ ticket: JiraTicket) { if let url = ticketURL(ticket) { copy(url.absoluteString) } }
+    func cancelActions() { navigation.cancel() }
+    func retire() { retired = true; onAction = { _ in }; disconnect() }
     func retry() { error = nil; preferenceError = nil; siteError = nil; persistFilters(); refresh() }
-    func stop() async {
+    private func disconnect() {
+        cancelActions(); service = nil; baseURL = nil
         connectionGeneration = UUID(); searchGeneration = UUID(); searching = false
         refreshTask?.cancel(); discoveryTask?.cancel(); preferenceTask?.cancel(); syncTask?.cancel()
+    }
+    func stop() async {
+        disconnect()
         await refreshTask?.value; await discoveryTask?.value; await preferenceTask?.value; await syncTask?.value
-        service = nil; baseURL = nil
     }
 }

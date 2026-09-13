@@ -441,6 +441,30 @@ and verifies the draft and original navigation survive before retrying the PR.
 Twenty-six focused tests and native project, Dashboard and web Sprint Board
 opening checks pass. Current evidence is recorded in `SWIFTUI-PORT.md`.
 
+## Implemented: ticket and board navigation callbacks
+
+Native Jira tickets and the web Sprint Board emit typed actions through the project
+model's callback to its coordinator. Ownership, the active section and presentation
+availability are checked before operations reach the injected page-action service.
+Ticket actions resolve the current visible key; board messages retain their frame,
+document and URL checks and must come from the currently mounted webview.
+
+Each surface has its own `PageActionViewModel` for opening, cancellation and error
+feedback. Duplicate opens coalesce and newer opens supersede earlier tasks. Leaving,
+changing sections, opening a dialog, disconnecting or retiring cancels navigation.
+Board suspension and ticket filter/site changes also cancel it. Ticket mutations and
+search/project drafts remain independent. Retired children cannot reconnect or open
+pages; stopped ticket discovery cannot later clear a replacement connection.
+
+The native factory injects page, browser and clipboard operations into all project
+surfaces. Views render navigation feedback and emit synchronous open actions; they
+do not create page-opening tasks. Focused model/coordinator tests and held-response
+native acceptance are recorded in `SWIFTUI-PORT.md`.
+
+Project PR lists now use snapshots for every state, with background revalidation
+and explicit status metadata. Merged/Closed/All remain a latest-30 history cache
+separate from complete open snapshots and merge automation.
+
 ## Remaining extraction
 
 The architecture extraction remains in progress:
@@ -453,16 +477,13 @@ The architecture extraction remains in progress:
   actions behind injected dependencies.
 - Expand factories to settings and document feature assembly;
   `AppStore` still constructs several concrete services and models. Complete
-  child presentation ownership/model retirement and Jira/board action
+  child presentation ownership/model retirement and Dashboard action
   forwarding as the remaining shared action services are extracted.
 - Separate application runtime/backend lifecycle from feature navigation without
   changing ownership, cancellation, detached-shell retention or update shutdown.
 - Audit every rendering view and web/AppKit adapter for remaining business rules.
   AppKit representable coordinators remain UI adapters; they are distinct from
   application navigation coordinators.
-- Move the existing project Merged/All PR reads in `src/server/routes/prs.js` from
-  direct CLI fetching into background snapshot sync, as required by the repository
-  SWR rule. Open PR reads already use snapshots; the other state scopes still do not.
 
 The migration's outstanding release, hardware and interactive terminal acceptance
 gates remain tracked in `SWIFTUI-PORT.md`. Starting this extraction does not mark

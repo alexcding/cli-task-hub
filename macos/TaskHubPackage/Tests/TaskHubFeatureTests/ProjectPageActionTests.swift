@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import TaskHubFeature
 
-private actor ProjectPageGate {
+actor ProjectPageGate {
     private var continuation: CheckedContinuation<Void, any Error>?
     private var started: CheckedContinuation<Void, Never>?
     func wait() async throws {
@@ -19,7 +19,7 @@ private actor ProjectPageGate {
     }
 }
 
-@MainActor private final class ProjectPageActions: PageActionServing, DesktopActions {
+@MainActor final class ProjectPageActions: PageActionServing, DesktopActions {
     var opened: [OpenPageRequest] = [], navigated: [String] = [], copied: [String] = [], browsers: [URL] = []
     var browserSucceeds = true, failOpen = false
     var gate: ProjectPageGate?
@@ -35,7 +35,7 @@ private actor ProjectPageGate {
     func reveal(_ url: URL) {}
 }
 
-private struct ProjectPageService: ProjectService {
+struct ProjectPageService: ProjectService {
     func load(_ id: String) throws -> Project { throw CancellationError() }
     func save(_ draft: ProjectDraft, id: String?) throws -> Project { throw CancellationError() }
     func delete(_ id: String) {}
@@ -43,7 +43,7 @@ private struct ProjectPageService: ProjectService {
     func pullRequests(_ id: String, state: String, force: Bool) -> ProjectPRSnapshot { .init() }
 }
 
-@MainActor private final class ProjectPageRuntime: ProjectCoordinating {
+@MainActor final class ProjectPageRuntime: ProjectCoordinating {
     var owns = true
     func ownsProject(_ id: String) -> Bool { owns }
     func applyProjectSave(_ project: Project, source: ProjectSaveSource) {}

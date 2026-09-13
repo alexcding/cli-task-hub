@@ -7,6 +7,7 @@ import Observation
         case selectSection(ProjectSection), saved(Project, ProjectSaveSource), deleted(String)
         case requestDeletion(ProjectEditorViewModel.DeletionRequest)
         case pullRequest(PullRequestAction)
+        case jiraTicket(JiraTicketsViewModel.Action), boardTicket(WebBoardViewModel.Action)
     }
     @ObservationIgnored var onAction: (Action) -> Void = { _ in } {
         didSet {
@@ -25,6 +26,8 @@ import Observation
             automation?.onAction = { [onAction] action in
                 if case .saved(let project) = action { onAction(.saved(project, .automation)) }
             }
+            tickets?.onAction = { [onAction] in onAction(.jiraTicket($0)) }
+            board?.onAction = { [onAction] in onAction(.boardTicket($0)) }
         }
     }
     private(set) var project: Project
@@ -67,6 +70,7 @@ import Observation
     func retire() {
         retired = true; service = nil; onAction = { _ in }
         cancelRefresh(); cancelActions(); editor.retire()
+        tickets?.retire(); board?.retire()
     }
     func selectSection(_ section: ProjectSection) { onAction(.selectSection(section)) }
     func setSection(_ section: ProjectSection) {
@@ -81,7 +85,10 @@ import Observation
     }
     func cancelRefresh() { stateTask = nil; generation = UUID(); loading = false; refreshing = false }
     func retry() { stateTask = Task { [weak self] in await self?.refresh(force: true) } }
-    func cancelActions() { actionTask = nil; actionGeneration = UUID(); opening = [] }
+    func cancelActions() {
+        actionTask = nil; actionGeneration = UUID(); opening = []
+        tickets?.cancelActions(); board?.cancelActions()
+    }
     func open(_ row: DashboardRow) { request(.open(row.id)) }
     func openExternally(_ row: DashboardRow) { request(.openBrowser(row.id)) }
     func copyLink(_ row: DashboardRow) { request(.copy(row.id)) }
