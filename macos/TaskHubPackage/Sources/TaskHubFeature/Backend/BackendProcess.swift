@@ -71,8 +71,9 @@ public actor BackendProcess {
         }
         guard process == nil else { throw BackendError.startup("The backend is already starting or running.") }
         guard case let .owned(node, script, directory) = configuration.mode else { throw BackendError.incompatible }
+        let entry = configuration.packaged ? script.deletingLastPathComponent().appendingPathComponent("native-launcher.js") : script
         guard FileManager.default.isExecutableFile(atPath: node.path),
-              FileManager.default.fileExists(atPath: script.path) else {
+              FileManager.default.fileExists(atPath: script.path), FileManager.default.fileExists(atPath: entry.path) else {
             throw BackendError.startup("Backend resources are missing. Use --backend-url for an existing server or bundle the Node backend.")
         }
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -83,7 +84,7 @@ public actor BackendProcess {
         let child = Process()
         let instanceID = UUID().uuidString
         child.executableURL = node
-        child.arguments = [script.path]
+        child.arguments = [entry.path]
         child.currentDirectoryURL = script.deletingLastPathComponent()
         var environment = ProcessInfo.processInfo.environment
         environment["PORT"] = String(configuration.baseURL.port ?? 3000)
@@ -101,7 +102,9 @@ public actor BackendProcess {
         process = child
         logHandle = log
         do {
-            let deadline = ContinuousClock.now + .seconds(12)
+            // Packaged startup checkpoints existing data before loading any
+            // application store. It runs in this owned child, off the UI actor.
+            let deadline = ContinuousClock.now + .seconds(configuration.packaged ? 120 : 12)
             while ContinuousClock.now < deadline {
                 try Task.checkCancellation()
                 guard child.isRunning else { throw BackendError.startup("Backend exited (\(child.terminationStatus)). See \(logURL.path).") }

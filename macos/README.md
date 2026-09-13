@@ -455,7 +455,11 @@ acceptance remain release gates.
 The bundled backend includes a standalone SQLite backup/verify/restore tool. It
 preserves the durable database, optional activity logs and pending native page
 metadata without executing application schema migrations. Restore only creates a
-new data directory. See [data recovery](../docs/DATA-RECOVERY.md) for commands, the
+new data directory. Packaged startup checkpoints existing data before opening its
+application stores when adopting data or changing releases. Failed/corrupt
+checkpoints stop startup; repeated launches reuse and verify the original checkpoint.
+The host waits up to two minutes and can cancel its owned preflight process.
+See [data recovery](../docs/DATA-RECOVERY.md) for commands, the
 state inventory, online-backup limits and the remaining upgrade/rollback gates.
 
 ## Verify

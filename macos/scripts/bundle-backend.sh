@@ -28,6 +28,7 @@ while IFS= read -r asset || [[ -n "$asset" ]]; do
   cp "$ROOT/src/renderer/$asset" "$BACKEND/src/renderer/$asset"
 done < "$ROOT/macos/web-assets.txt"
 cp "$ROOT/package.json" "$ROOT/package-lock.json" "$BACKEND/"
+python3 "$ROOT/macos/scripts/backend-release.py" "$BACKEND" "$APP/Contents/Info.plist"
 # Resolve the copied package from its own directory. npm's --prefix path can
 # otherwise mix the caller's package root with the bundle's directory name.
 (

@@ -13,6 +13,11 @@ const FILES = new Map([
 ]);
 const MAX_JSON = 16 * 1024 * 1024;
 
+function syncPath(file) {
+  const descriptor = fs.openSync(file, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
+  try { fs.fsyncSync(descriptor); } finally { fs.closeSync(descriptor); }
+}
+
 function directory(value) {
   const root = fs.realpathSync(value);
   if (!fs.statSync(root).isDirectory()) throw new Error('Expected an existing directory.');
@@ -119,11 +124,15 @@ async function createSnapshot(dataDirectory, destination) {
       if (name.includes('/')) await fsp.mkdir(path.dirname(output), { mode: 0o700 });
       if (FILES.get(name) === 'sqlite') await snapshotDatabase(input, output);
       else await fsp.writeFile(output, readJSON(input).bytes, { flag: 'wx', mode: 0o600 });
+      syncPath(output);
+      if (name.includes('/')) syncPath(path.dirname(output));
       entries.push({ path: name, kind: FILES.get(name), ...await digest(output) });
     }
     const manifest = { format: FORMAT, createdAt: new Date().toISOString(), node: process.version, files: entries };
     // Publish last: an interrupted backup cannot masquerade as a completed one.
     await fsp.writeFile(path.join(target, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
+    syncPath(path.join(target, 'manifest.json'));
+    syncPath(target); syncPath(path.dirname(target));
     return manifest;
   });
 }
@@ -171,7 +180,7 @@ async function restoreSnapshot(snapshotDirectory, destination) {
   });
 }
 
-module.exports = { createSnapshot, verifySnapshot, restoreSnapshot };
+module.exports = { createSnapshot, verifySnapshot, restoreSnapshot, syncPath };
 
 if (require.main === module) {
   const [command, source, destination, ...extra] = process.argv.slice(2);

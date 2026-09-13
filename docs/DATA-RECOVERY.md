@@ -54,7 +54,43 @@ commands, adopt existing PTYs, or write to your original data directory's databa
 Use the **pre-upgrade** snapshot when rolling the app back. Starting a newer backend
 may change its database schema, so copying a post-upgrade database to an older app
 is not a rollback guarantee. Keep the original data and old app until acceptance
-passes. This tool does not yet run automatically before a Sparkle installation.
+passes.
+
+## Automatic packaged startup checkpoint
+
+The packaged native app now runs `native-launcher.js` before importing any backend
+application stores. On first adoption of existing data, and whenever the packaged
+release identity changes, it creates and verifies a checkpoint under
+`DATA_DIR/native-backups/checkpoint-<UUID>`. This also protects the first backend
+launch after a Sparkle restart: the app binary has already been installed, but its
+database-opening/schema code has not run yet. It is not a backup of the old app binary.
+
+The release identity includes packaged backend/document source files and dependency manifests,
+the app's bundle identifier/version/build, and the running Node version. Re-bundling
+identical inputs keeps the identity stable. Distribution builds must increment
+`CFBundleVersion`; compiled Swift changes are identified through that app metadata.
+The `last-launch.json` receipt records
+the prepared identity and checkpoint only after snapshot files and metadata have
+been flushed. A repeated launch re-verifies the same checkpoint. A new transition,
+including returning to a previously used version, gets a new directory so previous
+rollback copies are retained. Fresh installations record their identity without an
+empty snapshot. Backups are not pruned automatically.
+
+Backup failure or damaged/missing state stops startup before loading application
+stores. A damaged previous checkpoint is not silently replaced with a backup of
+already-upgraded data. Preserve the `native-backups` directory and inspect the
+reported error in `native-backend.log`; recovery uses a new data directory as above.
+The native host allows up to two minutes for checkpoint preparation plus backend
+readiness, and cancellation stops only its owned child. Incomplete checkpoint
+directories may remain for inspection after cancellation or a crash.
+
+A separate SQLite transaction in `native-backups/owner.db` serializes packaged
+native owners for the lifetime of their backend process. Normal exit and process
+death release its OS lock; the lock file is never deleted or replaced. This guards
+native packaged instances, not old Tauri or standalone backend processes, which do
+not participate. Stop those processes before a native upgrade, or use native
+external-backend mode for deliberate shared-backend development. External and
+unpackaged development launches do not run this checkpoint gate.
 
 ## State inventory
 
@@ -93,7 +129,18 @@ packaged Node helper and recovery script outside the checkout and exercises the
 documented backup/verify/restore commands. Its isolated legacy schema is preserved
 and the source database checksum is unchanged.
 
+`test/native-checkpoint.test.js` verifies startup ordering before a destructive
+fixture migration, repeat launch, successive upgrades/rollback, failure refusal,
+and interprocess ownership with recovery after a killed owner. A Swift integration
+test runs the real launcher with fixture application code, checks readiness ordering,
+and cancels an injected slow checkpoint before the application module loads.
+`test/native-launcher-lifetime.test.js` forces garbage collection after startup and
+verifies a competing process remains excluded; this reproduced and then verified
+the fix for a prematurely released ownership handle.
+The packaged recovery smoke test also runs copied launcher/checkpoint resources
+with a no-network fixture application module: first adoption creates a checkpoint,
+repeat launch reuses it, and corruption prevents the fixture module from loading.
+
 This proves snapshot and restoration behavior for those fixtures. Real previous
-release binaries, clean-Mac installation, signed Sparkle updates, automatic
-pre-upgrade checkpoints, browser authentication, and native UserDefaults migration
-remain release acceptance work.
+release binaries, clean-Mac installation, signed Sparkle updates, browser
+authentication, and native UserDefaults migration remain release acceptance work.

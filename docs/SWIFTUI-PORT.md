@@ -1412,6 +1412,39 @@ does not).
   clean-Mac/signed update acceptance, other migration gates and the final requested
   coordinator/VM/DI architecture pass remain open. Sprint Board stays web-based.
 
+### M6 automatic startup checkpoint — 2026-09-13
+
+- Packaged native startup now enters a dedicated Node launcher before importing
+  backend application stores. First adoption and release changes create and verify
+  a private checkpoint. Fresh installs record their release without an empty backup;
+  repeats verify the same checkpoint. Returning to an earlier release creates a new
+  checkpoint while retaining all prior rollback copies. Broken checkpoints stop
+  startup instead of being replaced by a snapshot of already-upgraded data.
+- A separate SQLite transaction holds native data ownership for the backend's
+  lifetime. Competing packaged native owners fail before schema loading. Process
+  death releases the lock; no PID-based ownership or lock-file deletion is used.
+  Standalone/Tauri backends do not participate and must be stopped before upgrading
+  shared data, or used deliberately through external-backend mode.
+- Bundling generates a deterministic identity from app version/build metadata and
+  packaged backend/document source/dependency inputs; startup also incorporates
+  Node's version. Distribution builds must increment `CFBundleVersion`. Snapshot
+  files/directories and the checkpoint receipt are flushed before schema startup.
+  The Swift host uses the packaged launcher with a two-minute readiness window;
+  cancelling preparation terminates only its owned child.
+- Thirteen Node recovery/checkpoint/lifetime tests pass, including destructive fixture-schema
+  ordering, repeat/change/rollback, corruption refusal and a killed lock owner.
+  A forced-GC regression first reproduced premature lock release after startup;
+  retaining the launcher lease fixes it and keeps competitors excluded.
+  The release identity test and Swift packaged-startup/cancellation integration test
+  pass. The arm64 Release app builds/bundles with deep/strict ad-hoc signature
+  verification. Its recorded identity matches final bundled inputs. Copied packaged
+  recovery/launcher resources pass outside the checkout with fixture application
+  code, including rejection before loading after checkpoint corruption.
+- The checkpoint precedes the new backend's data opening, including after Sparkle
+  relaunch; it does not save the previous app binary. Real old-release rollback,
+  clean-Mac/signed installation, other migration gates and the final requested
+  coordinator/VM/DI architecture pass remain open. Sprint Board stays web-based.
+
 ## Why now, and why native
 
 The Tauri shell works, but roughly half of `src-tauri/` exists to work around what a DOM
