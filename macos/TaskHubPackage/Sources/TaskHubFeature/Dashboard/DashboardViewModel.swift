@@ -2,28 +2,38 @@ import Foundation
 import Observation
 
 @MainActor @Observable final class DashboardViewModel {
-    private(set) var projects: [DashboardProject] = [] { didSet { if oldValue != projects { snapshotChanged() } } }
+    enum Action: Equatable { case open(String), external(String), copy(String) }
+    @ObservationIgnored var onAction: (Action) -> Void = { _ in }
+    let navigation: PageActionViewModel
+    private(set) var retired = false
+    private(set) var projects: [DashboardProject] = [] {
+        didSet {
+            if oldValue != projects {
+                snapshotChanged()
+                if let url = navigation.opening, !visibleRows.contains(where: { $0.url.absoluteString == url }) { cancelActions() }
+            }
+        }
+    }
     @ObservationIgnored var snapshotChanged: () -> Void = {}
     private(set) var loading = false
     private(set) var updated: Date?
     private(set) var error: String?
-    private(set) var opening: Set<String> = []
-    var search = ""
-    var projectID = ""
-    var filter = DashboardFilter.all
+    var search = "" { didSet { if oldValue != search { cancelActions() } } }
+    var projectID = "" { didSet { if oldValue != projectID { cancelActions() } } }
+    var filter = DashboardFilter.all { didSet { if oldValue != filter { cancelActions() } } }
     @ObservationIgnored private var service: (any DashboardService)?
     @ObservationIgnored private var refreshTask: Task<Void, Never>?
     @ObservationIgnored private var refreshPending = false
-    @ObservationIgnored private let openPage: (OpenPageRequest) async throws -> Void
-    @ObservationIgnored private let openBrowser: (URL) -> Bool
-    @ObservationIgnored private let copy: (String) -> Void
+    @ObservationIgnored private var connectionGeneration = UUID()
 
-    init(openPage: @escaping (OpenPageRequest) async throws -> Void,
-         openBrowser: @escaping (URL) -> Bool, copy: @escaping (String) -> Void) {
-        self.openPage = openPage; self.openBrowser = openBrowser; self.copy = copy
+    init(pageActions: any PageActionServing) {
+        navigation = PageActionViewModel(service: pageActions, failureDescription: "Could not open pull request")
     }
 
-    func connect(_ service: any DashboardService) { self.service = service; refresh() }
+    func connect(_ service: any DashboardService) {
+        guard !retired else { return }
+        cancelRefresh(); cancelActions(); self.service = service; refresh()
+    }
 
     var rows: [DashboardRow] {
         var seen: Set<String> = []
@@ -63,40 +73,54 @@ import Observation
     }
 
     func refresh() {
+        guard !retired, let service else { return }
         refreshPending = true
-        guard refreshTask == nil, let service else { return }
+        guard refreshTask == nil else { return }
+        let generation = connectionGeneration
         loading = true
         refreshTask = Task {
-            defer { refreshTask = nil; loading = false }
-            while refreshPending && !Task.isCancelled {
+            defer { if connectionGeneration == generation { refreshTask = nil; loading = false } }
+            while refreshPending && !Task.isCancelled && connectionGeneration == generation {
                 refreshPending = false
                 do {
                     let snapshot = try await service.snapshot()
                     try Task.checkCancellation()
+                    guard connectionGeneration == generation else { return }
                     if projects != snapshot { projects = snapshot }
                     if !projectID.isEmpty && !projects.contains(where: { $0.id == projectID }) { projectID = "" }
                     updated = Date(); error = nil
-                } catch { if !Task.isCancelled { self.error = error.localizedDescription } }
+                } catch { if !Task.isCancelled && connectionGeneration == generation { self.error = error.localizedDescription } }
             }
         }
     }
 
-    func open(_ row: DashboardRow) async {
-        guard opening.insert(row.id).inserted else { return }
-        defer { opening.remove(row.id) }
-        do {
-            try await openPage(row.openPageRequest)
-            error = nil
-        } catch { self.error = "Could not open pull request: \(error.localizedDescription)" }
+    func open(_ row: DashboardRow) { if !retired { onAction(.open(row.id)) } }
+    func openExternally(_ row: DashboardRow) { if !retired { onAction(.external(row.id)) } }
+    func copyLink(_ row: DashboardRow) { if !retired { onAction(.copy(row.id)) } }
+    func perform(_ action: Action) {
+        guard !retired else { return }
+        let id: String
+        switch action { case .open(let value), .external(let value), .copy(let value): id = value }
+        guard let row = visibleRows.first(where: { $0.id == id }) else { return }
+        switch action {
+        case .open:
+            guard service != nil else { navigation.reject("Connect to open pull requests in TaskHub."); return }
+            navigation.open(row.openPageRequest)
+        case .external: navigation.external(row.url)
+        case .copy: navigation.copy(row.url)
+        }
     }
-
-    func openExternally(_ row: DashboardRow) {
-        if !openBrowser(row.url) { error = "macOS could not open the browser." }
+    func cancelActions() { navigation.cancel() }
+    private func cancelRefresh() {
+        connectionGeneration = UUID(); refreshTask?.cancel(); refreshTask = nil; refreshPending = false; loading = false
     }
-    func copyLink(_ row: DashboardRow) { copy(row.url.absoluteString) }
-
+    func retire() {
+        retired = true; onAction = { _ in }; snapshotChanged = {}; service = nil
+        cancelActions(); cancelRefresh()
+    }
     func stop() async {
-        refreshTask?.cancel(); await refreshTask?.value
-        refreshTask = nil; service = nil
+        let pending = refreshTask
+        cancelActions(); cancelRefresh(); service = nil
+        await pending?.value
     }
 }

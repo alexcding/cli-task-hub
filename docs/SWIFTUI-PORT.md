@@ -1897,6 +1897,35 @@ does not).
   extraction remain open, along with terminal and release acceptance. The Sprint
   Board remains web-based.
 
+### Dashboard coordinator and factory — 2026-09-13
+
+- A Dashboard feature factory injects page/browser/clipboard operations. The root
+  coordinator owns the child/model, and `AppStore` reads that model through the
+  coordinator instead of retaining a separate copy. Replacement retires old models.
+- Open/browser/copy use typed callbacks. The child accepts only current visible
+  rows while owned, selected and free of competing presentations. The shared page
+  action model owns duplicate/superseding opens, cancellation and navigation errors.
+  Snapshot reads no longer clear navigation feedback or conflate it with data errors.
+- Navigation and accepted dialogs cancel pending Dashboard opens. Guarded model
+  setters for search/project/filter and snapshot removal also cancel obsolete opens.
+  Views render state and issue synchronous actions. Connection generations prevent
+  stale snapshot application and old cleanup from clearing a replacement connection.
+- Twenty-four focused tests pass in
+  `swift_package_test_2026-09-13T17-38-48-846Z_pid72490_d9246ad5.log`, including
+  ownership, hidden rows, preserved errors, repeated/superseding opens, parameterized
+  navigation/dialog/filter lifetimes, snapshot removal, retirement, released
+  coordinators and reconnect. Cached browser/copy actions remain available offline;
+  native opens show connection feedback until reconnected.
+- Native held-response cancellation and retry pass in
+  `test_macos_2026-09-13T17-36-04-944Z_pid71498_9e55afeb.log`: a saved Dashboard tab's
+  delayed response cannot redirect a new-project draft, and retry opens it after
+  cancellation. The initial build exposed one workspace lookup still assuming a
+  non-optional Dashboard; it now reads through the coordinator safely.
+  Existing native Dashboard filtering, review grouping and context opening pass in
+  `test_macos_2026-09-13T17-40-05-322Z_pid72940_22f99948.log`.
+- Activity actions/clear confirmation, remaining settings/document/platform factories
+  and runtime extraction remain open, along with terminal and release acceptance.
+
 ## Why now, and why native
 
 The Tauri shell works, but roughly half of `src-tauri/` exists to work around what a DOM

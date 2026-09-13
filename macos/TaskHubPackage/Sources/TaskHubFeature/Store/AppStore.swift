@@ -13,7 +13,7 @@ public final class AppStore {
     @ObservationIgnored private let workspaceFactory: any WorkspaceFeatureFactory
     @ObservationIgnored private let projectFactory: any ProjectFeatureFactory
     @ObservationIgnored private let copy: (String) -> Void
-    private(set) var dashboard: DashboardViewModel!
+    var dashboard: DashboardViewModel? { coordinator.dashboardCoordinator?.model }
     private(set) var logs: LogsViewModel!
     private(set) var settings: SettingsViewModel!
     let workspaceLaunch = WorkspaceLaunchViewModel(launcher: NativeWorkspaceCommandLauncher())
@@ -50,6 +50,7 @@ public final class AppStore {
     init(creationFactory: any CreationFlowFactory, desktop: any DesktopActions = NativeDesktopActions(),
          workspaceFactory: any WorkspaceFeatureFactory = NativeWorkspaceFeatureFactory(),
          rootFactory: any RootFeatureFactory = NativeRootFeatureFactory(),
+         dashboardFactory: any DashboardFeatureFactory = NativeDashboardFeatureFactory(),
          selectionStore: any SidebarSelectionPersisting = UserDefaultsSidebarSelectionStore(),
          router: any DeepLinkRouting = TaskHubRouter(),
          projectFactory: (any ProjectFeatureFactory)? = nil,
@@ -67,15 +68,15 @@ public final class AppStore {
                              memoryPressure: NativeMemoryPressureMonitor(), pageFactory: BrowserPageFactory(desktop: desktop))
         viewer.setPageLimit(shell.remotePageLimit)
         shell.remotePageLimitChanged = { [weak viewer] in viewer?.setPageLimit($0) }
-        dashboard = DashboardViewModel(openPage: { [weak self] request in
+        _ = coordinator.makeDashboard(factory: dashboardFactory, pageActions: NativePageActionService(open: { [weak self] request in
             guard let self else { throw BackendError.operation("The workspace has closed.") }
             try await self.openPage(request)
-        }, openBrowser: { desktop.openBrowser($0) }, copy: copy)
+        }, desktop: desktop, copy: copy))
         logs = LogsViewModel(openPage: { [weak self] request in
             guard let self else { throw BackendError.operation("The workspace has closed.") }
             try await self.openPage(request)
         }, copy: copy)
-        dashboard.snapshotChanged = { [weak self] in self?.updateWorkspaceReviewState() }
+        dashboard?.snapshotChanged = { [weak self] in self?.updateWorkspaceReviewState() }
         settings = SettingsViewModel(clis: CLISettingsViewModel(copy: copy, openBrowser: { desktop.openBrowser($0) }), diagnostics: DiagnosticsViewModel(),
             loginItem: LoginItemViewModel(service: NativeLoginItemService()), fonts: FontSettingsViewModel(catalog: InstalledCodeFontCatalog()),
             resources: ResourceUsageViewModel(), didSave: { [weak self] patch in
@@ -120,7 +121,7 @@ public final class AppStore {
 
     func prepareChanges(for session: WorkspaceSession, context: WorkspaceContext) {
         if context.reviewSection == .history, let api {
-            let base = dashboard.projects.flatMap(\.prs).first(where: { $0.url == session.url })?.baseRefName
+            let base = dashboard?.projects.flatMap(\.prs).first(where: { $0.url == session.url })?.baseRefName
             if let history = historyModels[context.id] { if let base { history.updateBase(base) } }
             else {
                 historyModels[context.id] = GitHistoryViewModel(worktree: session.worktree, baseURL: api.baseURL, base: base ?? "",
@@ -683,7 +684,7 @@ public final class AppStore {
             owner = process
             api = try await process.start()
             guard started else { await process.stop(); return }
-            if let api { shell.connect(api); viewer.connect(api); dashboard.connect(APIDashboardService(api: api)); shell.refreshUsage() }
+            if let api { shell.connect(api); viewer.connect(api); dashboard?.connect(APIDashboardService(api: api)); shell.refreshUsage() }
             if let api { for model in projectModels.values {
                 model.connect(APIProjectService(api: api)); model.board?.connect(baseURL: api.baseURL)
                 model.tickets?.connect(APIJiraService(api: api))
@@ -713,7 +714,7 @@ public final class AppStore {
     public func refresh() {
         refreshRequestID = UUID()
         shell.refresh()
-        dashboard.refresh()
+        dashboard?.refresh()
         if selection == .activity { logs.refresh() }
         if case .project(let id) = selection, let model = projectModels[id], model.section == .board {
             model.board?.refresh()
@@ -847,7 +848,7 @@ public final class AppStore {
         streamTask = nil
         refreshTask = nil
         await shell.stop()
-        await dashboard.stop()
+        await dashboard?.stop()
         await logs.stop()
         await settings.stop()
         for model in projectModels.values {

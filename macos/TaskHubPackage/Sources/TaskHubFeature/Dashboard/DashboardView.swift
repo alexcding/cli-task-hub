@@ -34,6 +34,9 @@ struct DashboardView: View {
                     Label(error, systemImage: "exclamationmark.triangle").foregroundStyle(.orange).textSelection(.enabled)
                     Button("Retry dashboard", action: model.refresh)
                 }
+                if let error = model.navigation.error {
+                    Label(error, systemImage: "exclamationmark.triangle").foregroundStyle(.orange).textSelection(.enabled)
+                }
                 ForEach(Array(model.warnings.enumerated()), id: \.offset) { _, message in
                     Label(message, systemImage: "exclamationmark.triangle").font(.callout).foregroundStyle(.orange)
                 }
@@ -48,6 +51,7 @@ struct DashboardView: View {
             }.padding(.bottom, 20)
         }.accessibilityIdentifier("native-dashboard")
         .task { await shell.watchUsage() }
+        .onDisappear(perform: model.cancelActions)
     }
 
     private func section(_ title: String, rows: [DashboardRow], empty: String) -> some View {
@@ -56,8 +60,8 @@ struct DashboardView: View {
             if rows.isEmpty { Text(empty).font(.callout).foregroundStyle(.secondary).padding(.vertical, 12) }
             LazyVStack(spacing: 0) {
                 ForEach(rows) { row in
-                    DashboardCard(row: row, opening: model.opening.contains(row.id),
-                                  open: { Task { await model.open(row) } },
+                    DashboardCard(row: row, opening: model.navigation.opening == row.url.absoluteString,
+                                  open: { model.open(row) },
                                   external: { model.openExternally(row) }, copy: { model.copyLink(row) })
                     Divider()
                 }

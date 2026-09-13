@@ -465,6 +465,27 @@ Project PR lists now use snapshots for every state, with background revalidation
 and explicit status metadata. Merged/Closed/All remain a latest-30 history cache
 separate from complete open snapshots and merge automation.
 
+## Implemented: Dashboard coordinator and factory
+
+`DashboardFeatureFactory` assembles the observable model with its injected page
+action service. `AppCoordinator` installs and owns its child coordinator, and
+`AppStore` reads the current model through that coordinator. Replacing the child
+retires the old model and clears its callbacks and pending operations.
+
+Dashboard open/browser/copy callbacks resolve current visible rows after ownership,
+active-destination and presentation checks. Per-surface navigation uses the shared
+action model; failures remain separate from snapshot errors. Selection changes and
+accepted creation/build/removal/restart presentations cancel pending page opens.
+Search/project/filter setters cancel them too, and a removed row is invalidated by
+the incoming snapshot. Repeated values and rejected presentations preserve the
+current intent. Views render feedback and invoke synchronous model actions.
+
+Connection generations protect snapshot state and task cleanup during reconnect.
+An older asynchronous stop cannot clear a replacement connection. Cached browser
+and clipboard actions remain available offline; native opens show connection feedback.
+Focused tests
+and native Dashboard acceptance are recorded in `SWIFTUI-PORT.md`.
+
 ## Remaining extraction
 
 The architecture extraction remains in progress:
@@ -477,7 +498,7 @@ The architecture extraction remains in progress:
   actions behind injected dependencies.
 - Expand factories to settings and document feature assembly;
   `AppStore` still constructs several concrete services and models. Complete
-  child presentation ownership/model retirement and Dashboard action
+  child presentation ownership/model retirement and Activity action
   forwarding as the remaining shared action services are extracted.
 - Separate application runtime/backend lifecycle from feature navigation without
   changing ownership, cancellation, detached-shell retention or update shutdown.

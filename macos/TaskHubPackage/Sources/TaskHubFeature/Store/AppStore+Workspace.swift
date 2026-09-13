@@ -9,7 +9,7 @@ extension AppStore: WorkspaceCoordinating {
         guard viewer.contexts[context.id] === context else { return SessionWorkspaceState() }
         let session = sessions.first { "task:\($0.id)" == context.id }
         let project = session.flatMap { session in projects.first { $0.id == session.projectId } }
-        let base = session.flatMap { session in dashboard.projects.flatMap(\.prs).first { $0.url == session.url }?.baseRefName }
+        let base = session.flatMap { session in dashboard?.projects.flatMap(\.prs).first { $0.url == session.url }?.baseRefName }
         return SessionWorkspaceState(session: session, project: project, terminal: terminals[context.id],
             buildTerminal: terminals["build:\(context.sourceURL)"], build: buildModels[context.id],
             history: historyModels[context.id], diff: diffModels[context.id], workflow: workflowModel(in: context),
