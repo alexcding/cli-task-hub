@@ -14,6 +14,14 @@ Combine observation API; that dependency implementation is not the application's
 ViewModel pattern. An audit of `TaskHubPackage/Sources` and `TaskHub` on 2026-09-13
 found no legacy observation declarations in TaskHub-owned Swift code.
 
+State-driven work belongs in the owning ViewModel's guarded `didSet` observers or
+explicit model methods. Views must not use `.onChange` (or `.task(id:)`) to drive
+filter requests, dependent data loading or synchronization of model state.
+`record-ios/Record/Scenes/Search/SearchViewModel.swift` demonstrates this with
+`query.didSet` starting search and `searchTask.didSet` cancelling the old task.
+View-only focus, environment and AppKit lifecycle events may still be forwarded
+to models/adapters; the rendering layer must not decide their business behavior.
+
 ## Reference inspected
 
 The reference checkout is `/Users/accedo/Workspace/elevate-ios`. These files informed
@@ -53,11 +61,10 @@ action callbacks and deeplinks:
   and deduplication, and suppress stale asynchronous resolutions. The OneLink and
   authentication details are specific to Record and are not TaskHub dependencies.
 
-TaskHub's root and workspace ViewModels now emit typed action callbacks, bound to
-the coordinator before rendering. Future external links should resolve through
-injected parsers to the same navigation routes, queue while backend state is not
-ready, and preserve busy operation dialogs and terminal identity. Native inbound
-URL handling and route-chain consumption have not yet been implemented.
+TaskHub's root and workspace ViewModels emit typed action callbacks, bound to
+the coordinator before rendering. External links resolve through injected parsers
+to typed navigation routes, queue while backend state is not ready, and preserve
+operation dialogs and terminal identity. Implementation details follow below.
 
 ## Implemented: creation flows
 
@@ -211,12 +218,46 @@ tests pass for the Dashboard, web Sprint Board, Settings/menu navigation and act
 shell navigation, keyboard input, cancelled/confirmed restart and Quit. The existing
 terminal mount publication warning and WebKit QoS warning remain unresolved.
 
+## Implemented: native deeplink routing
+
+`TaskHubRouter` parses and prints the `taskhub://app` origin using injected root,
+project and session handlers. `DeepLink` is an immutable ordered chain. The root
+coordinator selects an existing destination and forwards a project section to its
+factory-created `ProjectCoordinator`, retaining the existing project model.
+
+Supported paths are `/overview`, `/activity`, `/settings`, `/terminal`,
+`/sessions/<id>` and `/projects/<id>` with an optional `/prs`, `/tickets`, `/board`,
+`/workflows`, `/automation` or `/settings` section. IDs use ASCII unreserved
+characters, up to 256 bytes. Credentials, ports, queries, fragments, escaped or
+empty path segments, unknown sections and oversized URLs are rejected. URLs do
+not accept commands, file paths, arbitrary web destinations or session creation.
+Selecting a session/terminal does not itself open a shell.
+
+The AppKit delegate forwards URL events and brings the window forward, including
+quiet launches. `CFBundleURLTypes` registers the scheme. The coordinator retains
+the latest valid link until a complete project/session/tab snapshot has loaded;
+stop, reconnect and failed refresh suspend dispatch. It revalidates IDs against the
+current snapshot and reports a missing target without replacing the current view.
+
+External links wait for coordinator presentations and native sheets/modal windows.
+They never dismiss a draft or redirect a confirmation's original operation.
+Completion and AppKit sheet-end events retry dispatch after the originating
+callbacks run. Explicit sidebar/main-menu navigation cancels an older queued link.
+
+Twelve focused Swift tests pass, including URL round trips and malformed URLs,
+handler/factory injection, readiness, removed targets, child lifetime, latest-link
+replacement and presentation ordering. Native UI verification passes for actual
+cold and warm URL delivery, a quiet launch opening its session, draft preservation,
+deferred navigation after cancellation, project tickets and missing targets. The
+test verifies warm delivery stays in the same process; selecting the session leaves
+its shell unopened. Broader terminal and release acceptance remain separate gates.
+
 ## Remaining extraction
 
 The architecture extraction remains in progress:
 
-- Add typed URL parsing and route-chain dispatch using the inspected `record-ios`
-  pattern, including backend-readiness deferral and native AppKit URL delivery.
+- Move remaining state-change effects out of rendering views into the owning
+  ViewModels, following Record's `didSet` and task-cancellation pattern.
 - Extend the typed action-callback pattern to the remaining feature/completion
   flows and child coordinators as their runtime dependencies are extracted.
 - Complete the remaining terminal/UI-adapter audit, including the mount warning,

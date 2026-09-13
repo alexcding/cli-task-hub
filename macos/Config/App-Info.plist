@@ -2,6 +2,17 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleURLName</key>
+            <string>tv.accedo.taskhub.navigation</string>
+            <key>CFBundleURLSchemes</key>
+            <array><string>taskhub</string></array>
+            <key>CFBundleTypeRole</key>
+            <string>Viewer</string>
+        </dict>
+    </array>
     <!-- Empty values leave Sparkle inactive. Release builds supply the real feed
          and public key through build settings; private keys never enter the app. -->
     <key>SUFeedURL</key>

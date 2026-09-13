@@ -1594,6 +1594,31 @@ does not).
   Existing terminal publication and WebKit QoS warnings remain open, along with
   broader architecture and migration acceptance. Sprint Board remains web-based.
 
+### Typed native deeplinks from the Record pattern — 2026-09-13
+
+- Added injected URL parsing/printing handlers and immutable route chains for
+  native root screens, existing projects/sections and existing sessions. The root
+  coordinator forwards project sections to a factory-created child coordinator.
+  The AppKit delegate only forwards URL events and manages window activation.
+- The `taskhub://app` scheme waits for a complete backend snapshot, revalidates
+  destination IDs and preserves open sheets, drafts and confirmation targets.
+  New valid links replace older queued links. Unsupported paths and URL payloads
+  are rejected; links cannot execute commands or create/open a shell.
+  The supported grammar and lifecycle rules are in `NATIVE-ARCHITECTURE.md`.
+- Twelve focused tests pass in
+  `swift_package_test_2026-09-13T15-23-10-313Z_pid25978_0d097e81.log`.
+  Actual cold/warm URL delivery passes in
+  `test_macos_2026-09-13T15-21-58-861Z_pid25611_beb25a29.log`, including quiet launch,
+  draft preservation, deferred Settings navigation, project tickets and missing
+  sessions. Warm delivery targets the verified XCTest product and asserts its PID
+  stays unchanged. XCTest's own `open` method relaunches; the initial test was
+  corrected to use Launch Services for warm delivery. The runner also forbids
+  spawning `ps`, so verification uses AppKit's foreground app and test-product path.
+- Inspected Record's `query.didSet` and replacement-task cancellation pattern and
+  recorded the rule: model state changes must not trigger business work through
+  rendering-view `.onChange` or `.task(id:)`. That extraction is next. Migration
+  acceptance and remaining coordinator/DI work remain open; Sprint Board stays web-based.
+
 ## Why now, and why native
 
 The Tauri shell works, but roughly half of `src-tauri/` exists to work around what a DOM

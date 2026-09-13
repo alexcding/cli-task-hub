@@ -23,6 +23,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         self?.showTerminationError(error)
     })
     private var menus: NativeMenus?
+    private var receivedLaunchURL = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let quiet = AppLaunchContext.startsQuietly
@@ -42,6 +43,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         window.setFrameAutosaveName("TaskHubNativeMain")
         window.center()
         self.window = window
+        NotificationCenter.default.addObserver(self, selector: #selector(sheetDidEnd),
+            name: NSWindow.didEndSheetNotification, object: nil)
         store.shell.notifications.isMainWindowFocused = { [weak self] in self?.window?.isKeyWindow == true }
         store.shell.notifications.configureNativeDelivery(openURL: { [weak self] url, repo, number in
             guard NSWorkspace.shared.open(url) else { return }
@@ -73,8 +76,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         })
         menus?.install()
         Task { await store.start() }
-        if !quiet { showWindow() }
+        if !quiet || receivedLaunchURL { showWindow() }
     }
+
+    func application(_ application: NSApplication, open urls: [URL]) {
+        var handled = false
+        for url in urls { if store.handleOpenURL(url) { handled = true } }
+        guard handled else { return }
+        receivedLaunchURL = true
+        if window != nil { showWindow() }
+    }
+
+    @objc private func sheetDidEnd(_ notification: Notification) { store.resumePendingDeepLink() }
 
     private func perform(_ command: ShellCommand) {
         switch command {

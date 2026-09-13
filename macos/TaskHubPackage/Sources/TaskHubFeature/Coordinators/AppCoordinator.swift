@@ -38,13 +38,27 @@ import Observation
     @ObservationIgnored let selectionStore: any SidebarSelectionPersisting
     @ObservationIgnored weak var rootRuntime: (any RootCoordinating)?
     @ObservationIgnored var rootBindingID = UUID()
+    @ObservationIgnored let router: any DeepLinkRouting
+    @ObservationIgnored let projectCoordinatorFactory: any ProjectCoordinatorFactory
+    @ObservationIgnored let canOpenExternalRoute: () -> Bool
+    @ObservationIgnored var projectCoordinator: ProjectCoordinator?
+    @ObservationIgnored var pendingDeepLink: DeepLink?
+    @ObservationIgnored var routingReady = false
+    var routingError: String?
 
-    init(factory: any CreationFlowFactory, selectionStore: any SidebarSelectionPersisting = TransientSidebarSelectionStore()) {
+    init(factory: any CreationFlowFactory, selectionStore: any SidebarSelectionPersisting = TransientSidebarSelectionStore(),
+         router: any DeepLinkRouting = TaskHubRouter(),
+         projectCoordinatorFactory: any ProjectCoordinatorFactory = NativeProjectCoordinatorFactory(),
+         canOpenExternalRoute: @escaping () -> Bool = { true }) {
         self.factory = factory; self.selectionStore = selectionStore
+        self.router = router; self.projectCoordinatorFactory = projectCoordinatorFactory
+        self.canOpenExternalRoute = canOpenExternalRoute
         selection = selectionStore.load() ?? .overview
     }
 
     func navigate(to destination: SidebarDestination) {
+        routingError = nil
+        if let child = projectCoordinator, destination != .project(child.model.project.id) { projectCoordinator = nil }
         selection = destination
         selectionStore.save(destination)
         rootRuntime?.activateRootDestination()
@@ -84,6 +98,7 @@ import Observation
     func dismissSheet(id: UUID) {
         guard sheet?.id == id, sheet?.canDismiss == true else { return }
         sheet = nil
+        schedulePendingDeepLink()
     }
 
     func presentRemoval(_ makeModel: () -> SessionRemovalViewModel?) {
@@ -106,18 +121,20 @@ import Observation
     }
 
     func dismissRestart(id: UUID) {
-        if restartConfirmation?.id == id { restartConfirmation = nil }
+        if restartConfirmation?.id == id { restartConfirmation = nil; schedulePendingDeepLink() }
     }
 
     func confirmRestart(id: UUID) {
         guard let confirmation = restartConfirmation, confirmation.id == id else { return }
         restartConfirmation = nil
         confirmation.perform()
+        schedulePendingDeepLink()
     }
 
     private func complete(_ id: UUID) -> Bool {
         guard sheet?.id == id else { return false }
         sheet = nil
+        schedulePendingDeepLink()
         return true
     }
 }

@@ -47,11 +47,15 @@ public final class AppStore {
     init(creationFactory: any CreationFlowFactory, desktop: any DesktopActions = NativeDesktopActions(),
          workspaceFactory: any WorkspaceFeatureFactory = NativeWorkspaceFeatureFactory(),
          rootFactory: any RootFeatureFactory = NativeRootFeatureFactory(),
-         selectionStore: any SidebarSelectionPersisting = UserDefaultsSidebarSelectionStore()) {
+         selectionStore: any SidebarSelectionPersisting = UserDefaultsSidebarSelectionStore(),
+         router: any DeepLinkRouting = TaskHubRouter()) {
         self.creationFactory = creationFactory
         self.desktop = desktop
         self.workspaceFactory = workspaceFactory
-        coordinator = AppCoordinator(factory: creationFactory, selectionStore: selectionStore)
+        coordinator = AppCoordinator(factory: creationFactory, selectionStore: selectionStore, router: router,
+            canOpenExternalRoute: {
+                NSApplication.shared.modalWindow == nil && !NSApplication.shared.windows.contains { $0.attachedSheet != nil }
+            })
         viewer = ViewerStore(cacheURL: try? PtydConfiguration.current().directory.appendingPathComponent("page-tabs.json"),
                              memoryPressure: NativeMemoryPressureMonitor(), pageFactory: BrowserPageFactory(desktop: desktop))
         viewer.setPageLimit(shell.remotePageLimit)
@@ -186,6 +190,7 @@ public final class AppStore {
     }
 
     public func perform(_ command: ShellCommand) {
+        if [.overview, .activity, .settings, .terminal].contains(command) { coordinator.discardQueuedDeepLink() }
         switch command {
         case .newProject:
             guard canPerform(.newProject), let api else { return }
@@ -685,6 +690,7 @@ public final class AppStore {
 
     public func start() async {
         guard !started else { return }
+        coordinator.setRoutingReady(false)
         started = true
         settings.resources.connect(NativeResourceUsageService(api: nil, pty: try? PtydConfiguration.current()))
         do {
@@ -762,8 +768,9 @@ public final class AppStore {
                        pageWorkflowRuns[viewer.activeContextID ?? ""]?.running != true { select(.overview) }
                     lastUpdate = Date()
                     error = nil
+                    coordinator.setRoutingReady(started && connection == "Connected")
                 } catch {
-                    if !Task.isCancelled { self.error = error.localizedDescription }
+                    if !Task.isCancelled { self.error = error.localizedDescription; coordinator.setRoutingReady(false) }
                 }
             }
         }
@@ -792,6 +799,7 @@ public final class AppStore {
                 }
                 self?.terminals.values.forEach { $0.agentTurns.setStreamAvailable(false) }
                 self?.connection = "Reconnecting"
+                self?.coordinator.setRoutingReady(false)
                 do { try await Task.sleep(for: .seconds(delay)) } catch { break }
                 delay = min(delay * 2, 15)
             }
@@ -834,6 +842,7 @@ public final class AppStore {
 
     public func stop() async {
         started = false
+        coordinator.setRoutingReady(false)
         for model in pageWorkflowRuns.values { await model.stop() }
         pageWorkflowRuns.removeAll()
         pageWorkflowTargets.removeAll()

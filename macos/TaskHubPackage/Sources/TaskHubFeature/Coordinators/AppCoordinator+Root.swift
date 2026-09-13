@@ -25,7 +25,7 @@ extension AppCoordinator {
 
     func handle(_ action: RootViewModel.Action) {
         switch action {
-        case .select(let destination): navigate(to: destination)
+        case .select(let destination): discardQueuedDeepLink(); navigate(to: destination)
         case .command(let command): rootRuntime?.performRootCommand(command)
         case .togglePin(let id): rootRuntime?.togglePin(id)
         case .reconnect: Task { [weak rootRuntime] in await rootRuntime?.reconnect() }

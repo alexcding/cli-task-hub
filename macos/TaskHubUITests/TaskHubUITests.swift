@@ -1,6 +1,55 @@
 import XCTest
+import AppKit
 
 final class TaskHubUITests: XCTestCase {
+
+    @MainActor
+    func testNativeDeepLinksDeferStartupAndPreserveOpenDraft() async throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard let base = environment["TASKHUB_UI_BACKEND_URL"],
+              let path = environment["TASKHUB_UI_DATA_DIR"], let socket = environment["TASKHUB_UI_PTY_SOCKET"] else {
+            throw XCTSkip("Run macos/scripts/test-browser-ui.sh to provide the isolated fixture.")
+        }
+        let app = XCUIApplication()
+        app.launchArguments = ["--backend-url", base, "--data-dir", path, "--pty-socket", socket, "--autostart"]
+        app.open(URL(string: "taskhub://app/sessions/sidebar-2")!)
+        XCTAssertTrue(app.buttons["Show Changes"].waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(app.buttons["Open Terminal"].exists)
+        let running = try XCTUnwrap(NSWorkspace.shared.frontmostApplication)
+        XCTAssertEqual(running.bundleIdentifier, "tv.accedo.taskhub.native")
+        let applicationURL = try XCTUnwrap(running.bundleURL)
+        guard applicationURL.path.contains(".xctestproducts/") || applicationURL.path.contains("/.build/ui-tests/") else {
+            XCTFail("URL delivery target is outside the test products: \(applicationURL.path)"); return
+        }
+        // XCTest.open deliberately relaunches the app. Use Launch Services against
+        // this verified app path to exercise warm delivery without losing its draft.
+        func deliver(_ address: String) async throws {
+            let configuration = NSWorkspace.OpenConfiguration()
+            configuration.arguments = app.launchArguments
+            configuration.addsToRecentItems = false
+            let opened = try await NSWorkspace.shared.open([URL(string: address)!], withApplicationAt: applicationURL, configuration: configuration)
+            XCTAssertEqual(opened.processIdentifier, running.processIdentifier)
+        }
+        app.buttons["New Project"].click()
+        let draft = app.sheets.textFields["project-name"]
+        XCTAssertTrue(draft.waitForExistence(timeout: 5))
+        draft.click(); app.typeText("Keep deeplink draft")
+        try await deliver("taskhub://app/settings")
+        XCTAssertEqual(draft.value as? String, "Keep deeplink draft")
+        app.sheets.buttons["Cancel"].click()
+        XCTAssertTrue(app.radioButtons["Connections"].waitForExistence(timeout: 5))
+        let (data, _) = try await URLSession.shared.data(from: URL(string: base + "/api/projects")!)
+        let projects = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [[String: Any]])
+        let projectID = try XCTUnwrap(projects.first?["id"] as? String)
+        try await deliver("taskhub://app/projects/\(projectID)/tickets")
+        XCTAssertTrue(app.descendants(matching: .any)["jira-ticket-REC-1"].firstMatch.waitForExistence(timeout: 10))
+        try await deliver("taskhub://app/sessions/removed")
+        XCTAssertTrue(app.staticTexts["The linked session is no longer available."].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["jira-ticket-REC-1"].firstMatch.exists)
+        try await deliver("taskhub://app/sessions/sidebar-2")
+        XCTAssertTrue(app.buttons["Show Changes"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["Open Terminal"].exists, "Selecting a linked session must not spawn a shell")
+    }
 
     @MainActor
     func testNativeHistoryLoadsOlderCommitsAndKeepsPatchesReadOnly() throws {
