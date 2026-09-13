@@ -23,11 +23,14 @@ import Observation
     private(set) var gitClientCommand: String
     var gitClientCommandDraft: String
     private(set) var gitClientCommandError: String?
-    private(set) var terminalCodeFont: CodeFont
+    private(set) var terminalCodeFont: CodeFont {
+        didSet { if oldValue != terminalCodeFont { terminalStyleChanged() } }
+    }
     private(set) var documentCodeFont: CodeFont {
         didSet { if oldValue != documentCodeFont { documentStyleChanged() } }
     }
     @ObservationIgnored var documentStyleChanged: () -> Void = {}
+    @ObservationIgnored var terminalStyleChanged: () -> Void = {}
     private(set) var remotePageLimit: Int
     @ObservationIgnored var remotePageLimitChanged: (Int) -> Void = { _ in }
     private(set) var settingsError: String?

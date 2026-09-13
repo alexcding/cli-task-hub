@@ -3,7 +3,6 @@ import WebKit
 
 struct WebBoardView: View {
     let model: WebBoardViewModel
-    let appearance: AppAppearance
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             if let error = model.navigation.error { Text(error).foregroundStyle(.orange).textSelection(.enabled) }
@@ -13,9 +12,7 @@ struct WebBoardView: View {
                 Button("Reload Board", action: model.reload)
             }
             BoardSurface(model: model)
-        }.onAppear { model.show(appearance: appearance) }
-            .onDisappear { model.suspend() }
-            .onChange(of: appearance) { model.setAppearance(appearance) }
+        }
     }
 }
 

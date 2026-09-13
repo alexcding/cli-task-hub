@@ -23,7 +23,7 @@ struct AppCoordinatorView: View {
                     // Keep every opened emulator mounted. Selection changes only
                     // visibility, never the PTY identity or parser state.
                     ForEach(model.workspaces) { workspace in
-                        SessionWorkspaceView(context: workspace.context, model: workspace.model, active: workspace.active)
+                        SessionWorkspaceView(context: workspace.context, model: workspace.model)
                             .opacity(workspace.active ? 1 : 0).allowsHitTesting(workspace.active).accessibilityHidden(!workspace.active)
                     }
                     if model.showsDestination { selectedContent }
@@ -82,7 +82,7 @@ struct AppCoordinatorView: View {
             }
         case .project:
             if let child = coordinator.projectCoordinator {
-                ProjectCoordinatorView(coordinator: child, appearance: model.shell.appearance).id(child.model.project.id)
+                ProjectCoordinatorView(coordinator: child).id(child.model.project.id)
             }
         case .session(let session):
                 VStack(alignment: .leading, spacing: 16) {

@@ -12,6 +12,7 @@ import Observation
     var workflow: WorkflowRunViewModel?
     var appearance: AppAppearance = .system
     var documentFont = CodeFont(size: 12)
+    var terminalFont = CodeFont(size: 13)
     var connected = false
     var changingSession = false
     var openingExternal = false
@@ -49,6 +50,8 @@ enum WorkspaceOperation: Equatable {
     @ObservationIgnored private var previousReviewInputs: ReviewInputs?
     @ObservationIgnored private weak var presentedDiff: DiffViewModel?
     @ObservationIgnored private weak var presentedHistory: GitHistoryViewModel?
+    @ObservationIgnored private weak var presentedTerminal: TerminalPaneViewModel?
+    @ObservationIgnored private weak var presentedBuildTerminal: TerminalPaneViewModel?
     private(set) var active = false {
         didSet { if oldValue != active { reviewStateChanged(force: true) } }
     }
@@ -107,6 +110,16 @@ enum WorkspaceOperation: Equatable {
             prepareChanges()
         }
         documentStateChanged()
+        terminalStateChanged()
+    }
+    func terminalStateChanged() {
+        let state = state
+        let terminal = state.terminal?.presentation, build = state.buildTerminal?.presentation
+        if presentedTerminal !== terminal { presentedTerminal?.presentation.active = false }
+        if presentedBuildTerminal !== build { presentedBuildTerminal?.presentation.active = false }
+        presentedTerminal = terminal; presentedBuildTerminal = build
+        terminal?.presentation = .init(active: active && showsTerminal, font: state.terminalFont)
+        build?.presentation = .init(active: active && showsBuild, font: state.terminalFont)
     }
     func documentStateChanged() {
         let state = state

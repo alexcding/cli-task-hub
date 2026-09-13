@@ -12,9 +12,19 @@ import Observation
 
 /// Owns presentation policy without owning or stopping the detached shell.
 @MainActor @Observable final class TerminalPaneViewModel {
+    struct Presentation: Equatable {
+        var active = false
+        var font = CodeFont(size: 13)
+    }
+    var presentation = Presentation() {
+        didSet {
+            guard oldValue != presentation else { return }
+            if oldValue.font != presentation.font { pendingFont = presentation.font }
+            refreshVisibility()
+        }
+    }
     @ObservationIgnored private weak var session: (any TerminalPaneServing)?
     @ObservationIgnored private var mounted = false
-    @ObservationIgnored private var active = false
     @ObservationIgnored private var scheduled = false
     @ObservationIgnored private var pendingFocus = false
     @ObservationIgnored private var pendingFont: CodeFont?
@@ -26,9 +36,9 @@ import Observation
         set { session?.showsSurface = newValue }
     }
 
-    func appear(active: Bool) {
+    func appear() {
         mounted = true
-        setActive(active)
+        refreshVisibility()
     }
 
     func disappear() {
@@ -36,17 +46,11 @@ import Observation
         refreshVisibility()
     }
 
-    func setActive(_ value: Bool) {
-        active = value
-        refreshVisibility()
-    }
-
     func visibilityChanged(_ shown: Bool) { refreshVisibility(focus: shown) }
     func surfaceChanged() { refreshVisibility() }
     func becameReady() { refreshVisibility(focus: true) }
-    func setFont(_ value: CodeFont) { pendingFont = value; refreshVisibility() }
-    func start(font: CodeFont) async {
-        setFont(font)
+    func start() async {
+        pendingFont = presentation.font; refreshVisibility()
         // SwiftUI tasks may execute synchronously up to their first suspension.
         // Apply the queued font after the update pass, before attaching output.
         await withCheckedContinuation { continuation in
@@ -76,7 +80,7 @@ import Observation
             pendingFont = nil
             guard let session else { return }
             if let font { session.setFont(font) }
-            let presentationActive = mounted && active
+            let presentationActive = mounted && presentation.active
             session.applyPresentation(active: presentationActive, focus: focus && presentationActive && session.showsSurface && session.ready)
         }
     }

@@ -553,6 +553,7 @@ private final class EventLog: @unchecked Sendable {
         }
         let session = TerminalSession(pairKey: "reconnect", cwd: directory.path, configuration:
             .init(executable: config.executable, directory: directory, socketPath: proxyPath))
+        session.presentation.presentation.active = true
         let hosting = NSHostingView(rootView: TerminalPane(session: session, reconnect: {}))
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 800, height: 500),
                               styleMask: [.borderless], backing: .buffered, defer: false)

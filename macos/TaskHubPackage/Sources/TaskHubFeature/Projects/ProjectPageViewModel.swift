@@ -36,7 +36,11 @@ import Observation
     let tickets: JiraTicketsViewModel?
     let workflows: WorkflowEditorViewModel?
     let automation: AutomationViewModel?
-    private(set) var section = ProjectSection.prs
+    private(set) var section = ProjectSection.prs {
+        didSet { if oldValue != section { cancelActions(); updateBoardPresentation() } }
+    }
+    var active = false { didSet { if oldValue != active { updateBoardPresentation() } } }
+    var appearance = AppAppearance.system { didSet { if oldValue != appearance { updateBoardPresentation() } } }
     var state = "open" { didSet { if oldValue != state { requestRefresh() } } }
     var search = ""
     private(set) var prs: [DashboardPR] = []
@@ -68,13 +72,20 @@ import Observation
         self.service = service; editor.connect(service)
     }
     func retire() {
+        active = false
         retired = true; service = nil; onAction = { _ in }
         cancelRefresh(); cancelActions(); editor.retire()
         tickets?.retire(); board?.retire()
     }
     func selectSection(_ section: ProjectSection) { onAction(.selectSection(section)) }
     func setSection(_ section: ProjectSection) {
-        if self.section != section { cancelActions(); self.section = section }
+        guard !retired else { return }
+        self.section = section
+    }
+    private func updateBoardPresentation() {
+        guard !retired else { return }
+        board?.appearance = appearance
+        board?.active = active && section == .board
     }
     private func requestRefresh() {
         guard !retired else { return }

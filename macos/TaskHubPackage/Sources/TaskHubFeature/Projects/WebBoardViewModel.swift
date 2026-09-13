@@ -27,8 +27,14 @@ struct BoardTicketLink: Decodable, Equatable {
     private(set) var webView: WKWebView?
     private(set) var error: String?
     private var baseURL: URL
-    private var appearance = AppAppearance.system
-    private var active = false { didSet { if oldValue != active && !active { cancelActions() } } }
+    var appearance = AppAppearance.system { didSet { if oldValue != appearance && !retired { applyState() } } }
+    var active = false {
+        didSet {
+            guard oldValue != active, !retired else { return }
+            if active { _ = materialize(); applyState() }
+            else { cancelActions(); releaseSurface() }
+        }
+    }
     private var connected = true { didSet { if oldValue != connected && !connected { cancelActions() } } }
 
     init(projectID: String, baseURL: URL, pageActions: any PageActionServing) {
@@ -67,10 +73,8 @@ struct BoardTicketLink: Decodable, Equatable {
     }
     func show(appearance: AppAppearance) {
         guard !retired else { return }
-        active = true; self.appearance = appearance
-        _ = materialize(); applyState()
+        self.appearance = appearance; active = true
     }
-    func setAppearance(_ appearance: AppAppearance) { self.appearance = appearance; applyState() }
     private func applyState() {
         let command = "window.nativeBoard?.setTheme('\(appearance.rawValue)'); window.nativeBoard?.setActive(\(active && connected ? "true" : "false"));"
         webView?.evaluateJavaScript(command, completionHandler: nil)
@@ -78,9 +82,12 @@ struct BoardTicketLink: Decodable, Equatable {
     func refresh() { webView?.evaluateJavaScript("window.nativeBoard?.refresh()", completionHandler: nil) }
     func reload() { guard !retired else { return }; cancelActions(); error = nil; materialize().reload() }
     func cancelActions() { navigation.cancel() }
-    func retire() { retired = true; onAction = { _ in }; connected = false; suspend() }
+    func retire() { suspend(); retired = true; onAction = { _ in }; connected = false }
     func suspend() {
         active = false
+        cancelActions(); releaseSurface()
+    }
+    private func releaseSurface() {
         webView?.evaluateJavaScript("window.nativeBoard?.setActive(false)", completionHandler: nil)
         webView?.stopLoading()
         webView?.configuration.userContentController.removeScriptMessageHandler(forName: "board")

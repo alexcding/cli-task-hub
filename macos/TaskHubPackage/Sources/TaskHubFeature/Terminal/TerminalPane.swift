@@ -2,10 +2,8 @@ import SwiftUI
 import GhosttyTerminal
 
 struct TerminalPane: View {
-    @Environment(\.terminalFont) private var font
     let session: TerminalSession
     let reconnect: () -> Void
-    var active = true
     var title = "Terminal"
     private var model: TerminalPaneViewModel { session.presentation }
     private var visible: Bool { model.visible }
@@ -41,11 +39,9 @@ struct TerminalPane: View {
             .frame(minHeight: 240)
         }
         .background(.background)
-        .onAppear { model.appear(active: active) }
+        .onAppear(perform: model.appear)
         .onDisappear(perform: model.disappear)
-        .onChange(of: active) { _, value in model.setActive(value) }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didChangeOcclusionStateNotification), perform: model.windowOcclusionChanged)
-        .onChange(of: font) { _, value in model.setFont(value) }
-        .task { await model.start(font: font) }
+        .task { await model.start() }
     }
 }

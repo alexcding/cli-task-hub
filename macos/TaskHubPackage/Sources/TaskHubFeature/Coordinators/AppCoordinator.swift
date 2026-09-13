@@ -55,6 +55,9 @@ import Observation
     @ObservationIgnored let projectCoordinatorFactory: any ProjectCoordinatorFactory
     @ObservationIgnored let canOpenExternalRoute: () -> Bool
     var projectCoordinators: [String: ProjectCoordinator] = [:]
+    var appearance = AppAppearance.system {
+        didSet { if oldValue != appearance { projectModels.values.forEach { $0.appearance = appearance } } }
+    }
     var dashboardCoordinator: DashboardCoordinator?
     var logsCoordinator: LogsCoordinator?
     var settingsCoordinator: SettingsCoordinator?
@@ -80,6 +83,7 @@ import Observation
         }
         routingError = nil
         selection = destination
+        for (id, child) in projectCoordinators { child.model.active = destination == .project(id) }
         settingsCoordinator?.setActive(destination == .settings)
         selectionStore.save(destination)
         rootRuntime?.activateRootDestination()

@@ -115,6 +115,33 @@ import Testing
     model.openTerminal(); model.reconnectBuild(); model.setActive(true)
 }
 
+@MainActor @Test func workspaceOwnsTerminalPresentationAcrossSelectionReplacementAndFontChanges() throws {
+    let runtime = WorkspaceFixture(), viewer = ViewerStore()
+    let terminal = TerminalSession(), build = TerminalSession(), replacement = TerminalSession()
+    defer { terminal.disconnect(); build.disconnect(); replacement.disconnect() }
+    runtime.state.session = WorkspaceSession(id: "terminals", projectId: "p", workspace: "/tmp", worktree: "/tmp/terminals",
+        title: "Terminals", branch: "terminals", url: "", createdAt: nil, pinned: false)
+    runtime.state.terminal = terminal; runtime.state.buildTerminal = build
+    viewer.prepareContext = { $0.configureWorkspace(factory: NativeWorkspaceFeatureFactory(), service: runtime) }
+    let context = viewer.select(id: "task:terminals", url: "", title: "Terminals")
+    let model = try #require(context.workspaceViewModel)
+    #expect(terminal.presentation.presentation.active && !build.presentation.presentation.active)
+    context.setPane(.build)
+    #expect(terminal.presentation.presentation.active && build.presentation.presentation.active)
+    viewer.deactivate()
+    #expect(!terminal.presentation.presentation.active && !build.presentation.presentation.active)
+    runtime.state.terminalFont = CodeFont(size: 19); model.terminalStateChanged()
+    #expect(terminal.presentation.presentation.font.size == 19 && build.presentation.presentation.font.size == 19)
+    _ = viewer.select(id: "task:terminals", url: "", title: "Terminals")
+    runtime.state.terminal = replacement; model.terminalStateChanged()
+    #expect(!terminal.presentation.presentation.active && replacement.presentation.presentation.active)
+    #expect(replacement.presentation.presentation.font.size == 19)
+    context.setPane(.term)
+    #expect(replacement.presentation.presentation.active && !build.presentation.presentation.active)
+    #expect(terminal.termID == nil && build.termID == nil && replacement.termID == nil)
+    viewer.deactivate()
+}
+
 @MainActor @Test(.timeLimit(.minutes(1))) func workspaceOwnsDocumentActivationAndStyleWithoutRenderingViews() async throws {
     let runtime = WorkspaceFixture(), viewer = ViewerStore()
     let diffService = DiffFixture(), historyService = HistoryFixture(), fileService = FileFixture()

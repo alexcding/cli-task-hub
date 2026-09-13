@@ -26,7 +26,9 @@ public final class AppStore {
     private(set) var sessions: [WorkspaceSession] = [] { didSet { if oldValue != sessions { updateWorkspaceReviewState() } } }
     private(set) var tabs: [SavedTab] = []
     var selection: SidebarDestination { coordinator.selection }
-    private(set) var terminals: [String: TerminalSession] = [:]
+    private(set) var terminals: [String: TerminalSession] = [:] {
+        didSet { updateWorkspaceTerminalState() }
+    }
     var projectModels: [String: ProjectPageViewModel] { coordinator.projectModels }
     private(set) var changingSessions: Set<String> = []
     private(set) var buildModels: [String: BuildWorkspaceViewModel] = [:]
@@ -73,7 +75,13 @@ public final class AppStore {
                              memoryPressure: NativeMemoryPressureMonitor(), pageFactory: BrowserPageFactory(desktop: desktop), documentFactory: documentFactory)
         viewer.setPageLimit(shell.remotePageLimit)
         shell.remotePageLimitChanged = { [weak viewer] in viewer?.setPageLimit($0) }
-        shell.documentStyleChanged = { [weak self] in self?.updateWorkspaceDocumentState() }
+        coordinator.appearance = shell.appearance
+        shell.documentStyleChanged = { [weak self] in
+            guard let self else { return }
+            coordinator.appearance = shell.appearance
+            updateWorkspaceDocumentState()
+        }
+        shell.terminalStyleChanged = { [weak self] in self?.updateWorkspaceTerminalState() }
         _ = coordinator.makeDashboard(factory: dashboardFactory, pageActions: NativePageActionService(open: { [weak self] request in
             guard let self else { throw BackendError.operation("The workspace has closed.") }
             try await self.openPage(request)

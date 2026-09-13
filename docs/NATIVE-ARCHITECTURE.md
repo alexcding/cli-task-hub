@@ -598,6 +598,28 @@ allowing an accepted write to finish; connection replacement invalidates old wri
 results. Shutdown waits for captured mutations and does not clear replacement
 reads. Remaining platform and document confirmation ownership is tracked below.
 
+## Implemented: Board and terminal state observers
+
+Root project selection and appearance feed `ProjectPageViewModel`. Its guarded
+active, section and appearance observers drive the web Board model. The Board owns
+surface creation/release and cancels pending ticket navigation when hidden; equal
+inputs and theme changes preserve the existing visible surface. `WebBoardView`
+only renders the supplied model, with no appearance/change lifecycle handlers.
+
+The workspace model supplies terminal activation and font state. Terminal inventory
+replacement deactivates the old presentation, and shell font observers update
+retained workspace models even while hidden. `TerminalPaneViewModel` reacts through
+guarded `presentation.didSet`, retaining deferred, coalesced AppKit display/font
+updates and focus checks against the latest mounted/visible state. View mounting,
+startup and window occlusion remain explicit UI event forwarding; navigation and
+font reactions no longer depend on view `.onChange` handlers. Presentation changes
+do not start, stop or replace detached shells.
+
+The remaining three feature-view `.onChange` handlers synchronize address editing
+focus or request find-field focus. Feature sources contain no `.task(id:)`
+handlers or `ObservableObject` wrappers. Runtime/platform extraction and terminal
+acceptance still have separate outstanding work.
+
 ## Remaining extraction
 
 The architecture extraction remains in progress:

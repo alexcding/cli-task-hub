@@ -67,7 +67,6 @@ struct NewProjectSheet: View {
 
 struct ProjectPageView: View {
     @Bindable var model: ProjectPageViewModel
-    let appearance: AppAppearance
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Picker("Project section", selection: Binding(get: { model.section }, set: model.selectSection)) {
@@ -77,7 +76,7 @@ struct ProjectPageView: View {
             case .tickets:
                 if let tickets = model.tickets { JiraTicketsView(model: tickets) }
             case .board:
-                if let board = model.board { WebBoardView(model: board, appearance: appearance) }
+                if let board = model.board { WebBoardView(model: board) }
             case .settings: ProjectEditorView(model: model.editor)
             case .automation:
                 if let automation = model.automation { AutomationView(model: automation) }

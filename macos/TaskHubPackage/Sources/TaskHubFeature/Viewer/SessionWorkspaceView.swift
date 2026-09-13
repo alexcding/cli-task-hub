@@ -54,7 +54,6 @@ struct BrowserPane: View {
 struct SessionWorkspaceView: View {
     let context: WorkspaceContext
     let model: SessionWorkspaceViewModel
-    let active: Bool
 
     var body: some View {
         VStack(spacing: 0) {
@@ -137,7 +136,7 @@ struct SessionWorkspaceView: View {
                 if model.showsTerminal {
                     ZStack {
                         if let terminal = model.terminal {
-                            TerminalPane(session: terminal, reconnect: model.reconnectTerminal, active: active && model.showsTerminal)
+                            TerminalPane(session: terminal, reconnect: model.reconnectTerminal)
                                 .id(terminal.id)
                         } else {
                             VStack(spacing: 12) {
@@ -174,7 +173,7 @@ struct SessionWorkspaceView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } build: {
                 if let build = model.buildTerminal {
-                    TerminalPane(session: build, reconnect: model.reconnectBuild, active: active && model.showsBuild, title: "Build")
+                    TerminalPane(session: build, reconnect: model.reconnectBuild, title: "Build")
                         .id(build.id).frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }.frame(maxWidth: .infinity, maxHeight: .infinity)

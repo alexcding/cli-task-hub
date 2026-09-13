@@ -22,21 +22,24 @@ import Testing
 
 @MainActor @Test func terminalPresentationDefersDisplayAndUsesLatestVisibilityWithoutLateFocus() async {
     let session = TerminalPresentationFixture(), model = TerminalPaneViewModel(session: session)
-    model.appear(active: true)
+    model.presentation.active = true; model.appear()
     #expect(session.updates.isEmpty)
-    model.setFont(CodeFont(size: 14))
-    model.setFont(CodeFont(size: 18))
+    model.presentation.font = CodeFont(size: 14)
+    model.presentation.font = CodeFont(size: 18)
     #expect(session.font == nil)
     model.visible = false; model.visibilityChanged(false)
     model.visible = true; model.visibilityChanged(true)
-    model.setActive(false)
+    model.presentation.active = false
     #expect(session.updates.isEmpty)
     await flushPresentation()
     #expect(session.updates.count == 1)
     #expect(session.updates[0].active == false && session.updates[0].focus == false)
     #expect(session.font == CodeFont(size: 18))
+    model.presentation = .init(active: false, font: CodeFont(size: 18))
+    await flushPresentation()
+    #expect(session.updates.count == 1) // Equal input does not enqueue display work.
 
-    model.setActive(true)
+    model.presentation.active = true
     model.visibilityChanged(true)
     await flushPresentation()
     #expect(session.updates.count == 2)
@@ -49,7 +52,7 @@ import Testing
 
 @MainActor @Test func terminalPresentationDoesNotFocusHiddenOrUnreadySurfaces() async {
     let session = TerminalPresentationFixture(), model = TerminalPaneViewModel(session: session)
-    model.appear(active: true)
+    model.presentation.active = true; model.appear()
     session.ready = false
     model.visibilityChanged(true)
     await flushPresentation()
@@ -70,13 +73,13 @@ import Testing
     weak var retained = session
     let model = TerminalPaneViewModel(session: session!)
     let font = CodeFont(size: 16)
-    await model.start(font: font)
+    model.presentation.font = font; await model.start()
     #expect(session?.font == font && session?.starts == 1)
-    model.appear(active: true)
+    model.presentation.active = true; model.appear()
     session = nil
     #expect(retained == nil)
     await flushPresentation()
     #expect(!model.visible)
-    model.setActive(false)
-    await model.start(font: font)
+    model.presentation.active = false
+    model.presentation.font = font; await model.start()
 }

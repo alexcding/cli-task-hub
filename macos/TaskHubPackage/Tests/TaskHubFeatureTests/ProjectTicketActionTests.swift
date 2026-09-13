@@ -95,6 +95,7 @@ func projectTicketNavigationCancelsWithoutClearingDrafts(change: String) async t
     let link = BoardTicketLink(type: "openTicket", url: "https://jira.example.test/browse/REC-1", title: "REC-1 Board ticket", external: false)
     board.request(link)
     #expect(actions.opened.isEmpty)
+    model.active = true
     board.show(appearance: .system)
     board.request(link) // Still in PR section.
     #expect(actions.opened.isEmpty)
@@ -116,5 +117,38 @@ func projectTicketNavigationCancelsWithoutClearingDrafts(change: String) async t
     #expect(actions.opened.count == 2)
     child.retire(); board.connect(baseURL: URL(string: "http://127.0.0.1:2")!); board.show(appearance: .system); board.request(link)
     #expect(board.retired && board.webView == nil && actions.opened.count == 2)
+    await model.tickets?.stop()
+}
+
+@MainActor @Test(.timeLimit(.minutes(1))) func projectBoardStateFollowsRootAndSectionWithoutViewCallbacks() async throws {
+    let actions = ProjectPageActions(), (model, _) = try await ticketProject(actions)
+    let board = try #require(model.board), runtime = ProjectPageRuntime()
+    let root = AppCoordinator(factory: NativeCreationFlowFactory(chooseFolder: { nil }))
+    root.appearance = .dark
+    let child = root.installProject(model, runtime: runtime)
+    model.selectSection(.board)
+    #expect(!model.active && !board.active && board.webView == nil && board.appearance == .dark)
+    root.navigate(to: .project(model.project.id))
+    let surface = try #require(board.webView)
+    #expect(model.active && board.active)
+    root.navigate(to: .project(model.project.id)); model.selectSection(.board)
+    root.appearance = .light
+    #expect(board.webView === surface && board.appearance == .light)
+    let gate = ProjectPageGate(); actions.gate = gate
+    let link = BoardTicketLink(type: "openTicket", url: "https://jira.example.test/browse/REC-1", title: "REC-1", external: false)
+    board.request(link); await gate.waitForStart()
+    root.navigate(to: .overview)
+    #expect(!board.active && board.webView == nil && board.navigation.opening == nil)
+    await gate.finish(failing: true); await Task.yield()
+    #expect(actions.navigated.isEmpty && board.navigation.error == nil)
+    root.appearance = .dark
+    #expect(board.webView == nil && board.appearance == .dark)
+    root.navigate(to: .project(model.project.id))
+    #expect(board.active && board.webView !== surface)
+    model.selectSection(.prs)
+    #expect(!board.active && board.webView == nil)
+    model.selectSection(.board)
+    child.retire(); model.active = true; model.appearance = .light
+    #expect(board.retired && board.webView == nil && !board.active)
     await model.tickets?.stop()
 }

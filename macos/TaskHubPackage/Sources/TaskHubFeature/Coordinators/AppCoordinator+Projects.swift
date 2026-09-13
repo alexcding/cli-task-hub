@@ -59,6 +59,8 @@ extension AppCoordinator {
             }
         }
         projectCoordinators[id] = child
+        model.appearance = appearance
+        model.active = selection == .project(id)
         schedulePendingDeepLink()
         return child
     }

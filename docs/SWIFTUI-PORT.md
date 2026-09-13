@@ -2067,6 +2067,31 @@ does not).
 - Remaining document confirmations, platform actions and runtime ownership continue,
   along with M1–M6 acceptance requirements that lack evidence.
 
+### Board and terminal model state observers — 2026-09-13
+
+- Following Record's guarded `didSet` pattern, root/project state now owns Board
+  activation and theme. Leaving the project or Board section cancels navigation
+  and releases its surface; equal selection and appearance updates retain it.
+  The web Board rendering view no longer handles appearance/change lifecycle work.
+- Workspace state supplies terminal activation and fonts. Inventory replacement
+  deactivates the old presentation, and shell font observers update retained
+  models. Terminal presentation observers keep deferred, coalesced display work
+  and latest-state focus checks. Mounting/startup/occlusion remain UI events;
+  terminal activation and fonts no longer depend on view `.onChange` handlers.
+- Twenty-nine focused model/coordinator tests pass in
+  `swift_package_test_2026-09-13T18-40-55-931Z_pid93147_683ac12c.log`, including
+  view-free Board navigation/theme, cancelled pending links, terminal replacement,
+  hidden font updates, duplicate-input coalescing and existing workspace/deeplink
+  coverage. The feature-source audit leaves only three focus-related `.onChange`
+  handlers, with no `.task(id:)` handlers or `ObservableObject` wrappers.
+- Native Board move/assign/open passes in
+  `test_macos_2026-09-13T18-41-31-009Z_pid93509_5de014ed.log`.
+  Terminal navigation retention, hide/show keyboard input, restart Cancel/Confirm
+  and explicit Quit pass in
+  `test_macos_2026-09-13T18-42-26-691Z_pid94047_ccb09647.log`.
+  The existing terminal mount publication warning remains unresolved; this phase
+  does not close terminal fidelity/performance or other M1–M6 acceptance gates.
+
 ## Why now, and why native
 
 The Tauri shell works, but roughly half of `src-tauri/` exists to work around what a DOM
