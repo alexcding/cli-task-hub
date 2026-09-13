@@ -71,12 +71,13 @@ struct APIDiffService: DiffService {
     init(worktree: String, baseURL: URL, service: (any DiffService)? = nil,
          actionsService: (any GitChangesService)? = nil,
          allowsFileOpening: Bool = true,
+         factory: any DocumentFeatureFactory = NativeDocumentFeatureFactory(),
          openFile: @escaping (DocumentLocation) -> Void = { _ in }) {
         self.openFile = openFile; self.allowsFileOpening = allowsFileOpening
         self.worktree = worktree; self.baseURL = baseURL; self.service = service
         super.init()
         if let actionsService {
-            actions = GitChangesActions(worktree: worktree, service: actionsService, didChange: { [weak self] in
+            actions = factory.changes(worktree: worktree, service: actionsService, didChange: { [weak self] in
                 guard let self, active else { return }
                 task?.cancel(); task = nil; generation = UUID(); refresh()
             })

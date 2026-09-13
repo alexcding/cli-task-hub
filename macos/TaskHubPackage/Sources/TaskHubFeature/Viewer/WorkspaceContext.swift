@@ -94,6 +94,7 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
     @ObservationIgnored var activateDocument: (EditorDocumentViewModel) -> Void = { _ in }
     @ObservationIgnored var activatePage: (BrowserPage) -> Void = { _ in }
     @ObservationIgnored private let pageFactory: BrowserPageFactory
+    @ObservationIgnored private let documentFactory: any DocumentFeatureFactory
     private(set) var workspaceViewModel: SessionWorkspaceViewModel?
 
     func configureWorkspace(factory: any WorkspaceFeatureFactory, service: any WorkspaceServing) {
@@ -102,9 +103,11 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
     }
 
     init(id: String, sourceURL: String, title: String, snapshot: ContextSnapshot? = nil,
-         pageFactory: BrowserPageFactory = BrowserPageFactory()) {
+         pageFactory: BrowserPageFactory = BrowserPageFactory(),
+         documentFactory: any DocumentFeatureFactory = NativeDocumentFeatureFactory()) {
         self.id = id; self.sourceURL = sourceURL
         self.pageFactory = pageFactory
+        self.documentFactory = documentFactory
         if let snapshot {
             legacyDocuments = snapshot.legacyDocuments ?? []
             legacyFileHistory = snapshot.legacyFileHistory ?? []
@@ -114,7 +117,7 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
             let records = snapshot.documents ?? legacyDocuments.compactMap { entry in
                 entry.filePath.map { FileDocumentRecord(path: $0) }
             }
-            documents = records.filter { $0.path.hasPrefix("/") && ids.insert($0.id).inserted }.map { EditorDocumentViewModel(record: $0) }
+            documents = records.filter { $0.path.hasPrefix("/") && ids.insert($0.id).inserted }.map { documentFactory.editor(record: $0) }
             tabOrder = Self.order(snapshot.tabOrder, ids: pages.map(\.id) + documents.map(\.id))
             fileHistory = snapshot.fileHistory ?? legacyFileHistory.compactMap { entry in
                 entry.filePath.map { FileDocumentRecord(path: $0) }
@@ -183,7 +186,7 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
         guard path.hasPrefix("/"), !path.contains("\0") else { error = "Choose an absolute file path."; return nil }
         let path = (path as NSString).standardizingPath
         if let file = documents.first(where: { $0.record.path == path }) { select(.file(file)); file.focus(line: line, column: column); return file }
-        let file = EditorDocumentViewModel(record: .init(path: path))
+        let file = documentFactory.editor(record: .init(path: path))
         documents.append(file); wire(file); insert(file.id); noteHistory(file.record)
         select(.file(file)); file.focus(line: line, column: column); return file
     }
@@ -233,7 +236,7 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
     func apply(_ snapshot: ContextSnapshot) {
         // Used only for the first backend load, before the user edits this context.
         pages.forEach { $0.evict() }; documents.forEach { $0.dispose() }
-        let restored = WorkspaceContext(id: id, sourceURL: sourceURL, title: "", snapshot: snapshot, pageFactory: pageFactory)
+        let restored = WorkspaceContext(id: id, sourceURL: sourceURL, title: "", snapshot: snapshot, pageFactory: pageFactory, documentFactory: documentFactory)
         pages = restored.pages; activeID = restored.activeID; history = restored.history; pane = restored.pane
         reviewSection = restored.reviewSection
         documents = restored.documents; tabOrder = restored.tabOrder; fileHistory = restored.fileHistory; historyOrder = restored.historyOrder
@@ -294,12 +297,15 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
     private(set) var pressureCleanupCount = 0
     @ObservationIgnored private let memoryPressure: (any MemoryPressureMonitoring)?
     @ObservationIgnored private let pageFactory: BrowserPageFactory
+    @ObservationIgnored private let documentFactory: any DocumentFeatureFactory
     private let cacheURL: URL?
     private struct Cache: Codable { let snapshots: [String: ContextSnapshot]; let pending: Set<String> }
     init(limit: Int = RemotePageRetention.defaultLimit, cacheURL: URL? = nil, memoryPressure: (any MemoryPressureMonitoring)? = nil,
-         pageFactory: BrowserPageFactory = BrowserPageFactory()) {
+         pageFactory: BrowserPageFactory = BrowserPageFactory(),
+         documentFactory: any DocumentFeatureFactory = NativeDocumentFeatureFactory()) {
         pageLimit = RemotePageRetention.clamp(limit); self.cacheURL = cacheURL
         self.pageFactory = pageFactory
+        self.documentFactory = documentFactory
         self.memoryPressure = memoryPressure
         if let cacheURL, let data = try? Data(contentsOf: cacheURL), let cache = try? JSONDecoder().decode(Cache.self, from: data) {
             saved = cache.snapshots; dirty = cache.pending; edited = cache.pending
@@ -309,7 +315,7 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
     var active: WorkspaceContext? { activeContextID.flatMap { contexts[$0] } }
     func configure(_ document: EditorDocumentViewModel) {
         guard let api else { return }
-        document.connect(service: APIFileDocumentService(api: api), makeSurface: { WebEditorSurface(baseURL: api.baseURL) })
+        document.connect(service: APIFileDocumentService(api: api), makeSurface: { [documentFactory] in documentFactory.editorSurface(baseURL: api.baseURL) })
     }
     func openFile(in context: WorkspaceContext) {
         guard !openingFile, let window = NSApp.keyWindow else { return }
@@ -393,7 +399,7 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
     }
     @discardableResult func select(id: String, url: String, title: String, legacy: SavedTab? = nil) -> WorkspaceContext {
         let context = contexts[id] ?? WorkspaceContext(id: id, sourceURL: url, title: title,
-                                                       snapshot: saved[id] ?? legacy.map(ContextSnapshot.importing), pageFactory: pageFactory)
+                                                       snapshot: saved[id] ?? legacy.map(ContextSnapshot.importing), pageFactory: pageFactory, documentFactory: documentFactory)
         contexts[id] = context
         prepareContext(context)
         context.restoring = restoring

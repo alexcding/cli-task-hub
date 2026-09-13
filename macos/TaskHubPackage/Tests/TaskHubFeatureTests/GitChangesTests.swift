@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import TaskHubFeature
 
-private actor GitActionFixture: GitChangesService {
+actor GitActionFixture: GitChangesService, DiffService {
     var commits: [(String, Bool)] = []
     var pushes = 0, discards = 0
     var discardFails = true

@@ -12,6 +12,7 @@ public final class AppStore {
     @ObservationIgnored private let desktop: any DesktopActions
     @ObservationIgnored private let workspaceFactory: any WorkspaceFeatureFactory
     @ObservationIgnored private let projectFactory: any ProjectFeatureFactory
+    @ObservationIgnored private let documentFactory: any DocumentFeatureFactory
     @ObservationIgnored private let copy: (String) -> Void
     var dashboard: DashboardViewModel? { coordinator.dashboardCoordinator?.model }
     var logs: LogsViewModel? { coordinator.logsCoordinator?.model }
@@ -53,6 +54,7 @@ public final class AppStore {
          dashboardFactory: any DashboardFeatureFactory = NativeDashboardFeatureFactory(),
          logsFactory: any LogsFeatureFactory = NativeLogsFeatureFactory(),
          settingsFactory: (any SettingsFeatureFactory)? = nil,
+         documentFactory: any DocumentFeatureFactory = NativeDocumentFeatureFactory(),
          selectionStore: any SidebarSelectionPersisting = UserDefaultsSidebarSelectionStore(),
          router: any DeepLinkRouting = TaskHubRouter(),
          projectFactory: (any ProjectFeatureFactory)? = nil,
@@ -60,6 +62,7 @@ public final class AppStore {
         self.creationFactory = creationFactory
         self.desktop = desktop
         self.workspaceFactory = workspaceFactory
+        self.documentFactory = documentFactory
         self.copy = copy
         self.projectFactory = projectFactory ?? NativeProjectFeatureFactory(creation: creationFactory, desktop: desktop, copy: copy)
         coordinator = AppCoordinator(factory: creationFactory, selectionStore: selectionStore, workspaceFactory: workspaceFactory, router: router,
@@ -67,7 +70,7 @@ public final class AppStore {
                 NSApplication.shared.modalWindow == nil && !NSApplication.shared.windows.contains { $0.attachedSheet != nil }
             })
         viewer = ViewerStore(cacheURL: try? PtydConfiguration.current().directory.appendingPathComponent("page-tabs.json"),
-                             memoryPressure: NativeMemoryPressureMonitor(), pageFactory: BrowserPageFactory(desktop: desktop))
+                             memoryPressure: NativeMemoryPressureMonitor(), pageFactory: BrowserPageFactory(desktop: desktop), documentFactory: documentFactory)
         viewer.setPageLimit(shell.remotePageLimit)
         shell.remotePageLimitChanged = { [weak viewer] in viewer?.setPageLimit($0) }
         shell.documentStyleChanged = { [weak self] in self?.updateWorkspaceDocumentState() }
@@ -121,13 +124,13 @@ public final class AppStore {
             let base = dashboard?.projects.flatMap(\.prs).first(where: { $0.url == session.url })?.baseRefName
             if let history = historyModels[context.id] { if let base { history.updateBase(base) } }
             else {
-                historyModels[context.id] = GitHistoryViewModel(worktree: session.worktree, baseURL: api.baseURL, base: base ?? "",
+                historyModels[context.id] = documentFactory.history(worktree: session.worktree, baseURL: api.baseURL, base: base ?? "",
                     service: APIGitHistoryService(api: api), copy: copy)
             }
         }
         if diffModels[context.id] == nil {
             guard let api else { context.error = "Connect to the backend to load changes."; return }
-            diffModels[context.id] = DiffViewModel(worktree: session.worktree, baseURL: api.baseURL,
+            diffModels[context.id] = documentFactory.diff(worktree: session.worktree, baseURL: api.baseURL,
                                                    service: APIDiffService(api: api), actionsService: APIGitChangesService(api: api), openFile: { [weak context] location in
                 context?.openFile(location.path, line: location.line, column: location.column)
             })

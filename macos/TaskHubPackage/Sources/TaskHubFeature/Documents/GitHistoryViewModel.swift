@@ -51,11 +51,13 @@ import Observation
     @ObservationIgnored private var nextOffset = 0
     @ObservationIgnored private let pageSize: Int
     @ObservationIgnored private let copy: (String) -> Void
+    @ObservationIgnored private let factory: any DocumentFeatureFactory
 
     init(worktree: String, baseURL: URL, base: String = "", service: any GitHistoryService,
-         pageSize: Int = 200, copy: @escaping (String) -> Void = { _ in }) {
+         pageSize: Int = 200, factory: any DocumentFeatureFactory = NativeDocumentFeatureFactory(), copy: @escaping (String) -> Void = { _ in }) {
         self.worktree = worktree; self.baseURL = baseURL; self.base = base
         self.service = service; self.pageSize = pageSize; self.copy = copy
+        self.factory = factory
     }
     var rows: [GitCommit] { commits.filter { search.isEmpty || $0.searchText.localizedStandardContains(search) } }
     var contextLabel: String {
@@ -136,8 +138,7 @@ import Observation
                 try Task.checkCancellation()
                 guard detailGeneration == generation, selectedSHA == sha, active else { return }
                 detail = value
-                patch = DiffViewModel(worktree: worktree, baseURL: baseURL,
-                    service: HistoricalPatchService(diff: value.diff), allowsFileOpening: false)
+                patch = factory.patch(worktree: worktree, baseURL: baseURL, diff: value.diff)
             } catch { if detailGeneration == generation, !Task.isCancelled { detailError = error.localizedDescription } }
         }
     }

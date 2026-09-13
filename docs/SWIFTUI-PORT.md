@@ -2006,6 +2006,34 @@ does not).
 - Document factories, child action/presentation ownership, platform adapters and
   application runtime extraction continue, along with the remaining M1–M6 gates.
 
+### Injected document feature assembly — 2026-09-13
+
+- Added one document factory for editor models/surfaces, working diffs, git actions,
+  history models and immutable patches. App, viewer and workspace context assembly
+  carry the injected factory through new files, backend snapshots, legacy import,
+  snapshot replacement and reopening. Existing standardized paths reuse their model.
+- Context promotion moves existing documents and dirty buffers without construction.
+  History and working diff retain the selected factory for nested patch/action
+  creation. Historical patches keep mutation and working-file opening disabled.
+  Editor surfaces remain lazy and use the current backend origin.
+- All production constructors for those document models and surfaces now live in
+  `DocumentFeatureFactory.swift`. Backend service lifetime and remaining child
+  navigation/presentation handling continue in their existing owners for now.
+- Twenty-two focused tests pass in
+  `swift_package_test_2026-09-13T18-17-03-553Z_pid85385_2928956b.log`. The three factory
+  integration tests, extended with explicit legacy import, pass in
+  `swift_package_test_2026-09-13T18-17-56-276Z_pid85843_6ebd8150.log`. They cover
+  injected HTTP/editor surfaces, restoration, path deduplication, reopen, dirty
+  promotion, snapshot replacement, nested read-only patches and commit-driven diff
+  refresh through the injected git-action factory.
+- Native editor restoration/save/cancel/discard/reopen and dirty navigation pass in
+  `test_macos_2026-09-13T18-18-17-999Z_pid86030_afc3b521.log`.
+  History paging/recovery/return and immutable patch rendering pass in
+  `test_macos_2026-09-13T18-19-16-639Z_pid86492_6a548c8e.log`.
+  The existing WebKit QoS warning remains open.
+- Child callbacks/confirmation ownership, platform dependencies and application
+  runtime extraction continue alongside outstanding M1–M6 acceptance gates.
+
 ## Why now, and why native
 
 The Tauri shell works, but roughly half of `src-tauri/` exists to work around what a DOM

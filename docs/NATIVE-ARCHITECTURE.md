@@ -557,6 +557,26 @@ reads synchronously and guard result/cleanup by connection generation, preventin
 an old stop from clearing a new service or in-flight probe. Child feature navigation
 and platform action ownership remain part of the remaining extraction below.
 
+## Implemented: document feature factory
+
+The injected `DocumentFeatureFactory` assembles editors, editor surfaces, working
+diffs, git actions, history models and immutable patches. `AppStore`, `ViewerStore`
+and `WorkspaceContext` use the same factory. Snapshot replacement and legacy file
+imports retain it; opening an existing standardized file path reuses its model.
+Promotion moves the existing context/documents without invoking the factory again.
+
+History retains its factory for asynchronously loaded patches, and working diff
+assembly passes it through to git-action creation. This preserves overridden
+dependencies for nested models. Historical patches have no mutation actions or
+working-file opening capability. Editor surfaces are created lazily through the
+factory with the connected backend origin, preserving the existing buffer/save
+contract and clean-versus-dirty suspension behavior.
+
+Tests cover backend restoration with an injected URLSession/editor surface, path
+deduplication, reopen, dirty-buffer promotion, snapshot replacement, legacy import,
+read-only nested patches and a working commit refreshing its owning diff. Native
+acceptance evidence is recorded in `SWIFTUI-PORT.md`.
+
 ## Remaining extraction
 
 The architecture extraction remains in progress:
@@ -567,8 +587,7 @@ The architecture extraction remains in progress:
   while retaining native input and emulator ownership.
 - Finish tray navigation/window coordination and move any remaining platform
   actions behind injected dependencies.
-- Expand factories to document feature assembly;
-  `AppStore` still constructs several concrete services and models. Complete
+- `AppStore` still constructs several concrete backend/platform services. Complete
   child presentation ownership/model retirement as the remaining shared action
   services are extracted.
 - Separate application runtime/backend lifecycle from feature navigation without
