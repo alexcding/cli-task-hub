@@ -32,7 +32,8 @@ private actor AutomationFixture: AutomationService {
     var project = Project(id: "p", name: "Project", repo: "o/r", color: nil, workspace: "/tmp")
     let service = AutomationFixture(project)
     var received: [Project] = []
-    let model = AutomationViewModel(project: project, service: service, didSave: { received.append($0) })
+    let model = AutomationViewModel(project: project, service: service)
+    model.onAction = { if case .saved(let project) = $0 { received.append(project) } }
     #expect(model.draft.forwardWebhooks && !model.dirty)
     await model.refreshStatus()
     #expect(model.forwardingStatus == "Active — forwarding o/r")
@@ -61,7 +62,7 @@ private actor AutomationFixture: AutomationService {
 @MainActor @Test func automationPreviewRejectsEditedHiddenAndDisconnectedResults() async throws {
     let project = Project(id: "p", name: "Project", repo: "", color: nil, workspace: "")
     let service = AutomationFixture(project)
-    let model = AutomationViewModel(project: project, service: service, didSave: { _ in })
+    let model = AutomationViewModel(project: project, service: service)
     model.draft.fixVersionScript = "old"
     let pending = Task { await model.previewVersion() }
     for _ in 0..<100 { if await service.previews == 1 { break }; try await Task.sleep(for: .milliseconds(2)) }
@@ -82,7 +83,8 @@ private actor AutomationFixture: AutomationService {
     let project = Project(id: "p", name: "Project", repo: "", color: nil, workspace: "")
     let service = AutomationFixture(project)
     var received = 0
-    let model = AutomationViewModel(project: project, service: service, didSave: { _ in received += 1 })
+    let model = AutomationViewModel(project: project, service: service)
+    model.onAction = { _ in received += 1 }
     model.draft.mergeTransition = "Done"
     let pending = Task { await model.save() }
     for _ in 0..<100 { if await service.saves == 1 { break }; try await Task.sleep(for: .milliseconds(2)) }

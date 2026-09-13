@@ -40,8 +40,8 @@ extension AppCoordinator {
             routingError = "The linked project section is not available yet."
             return
         }
-        if projectCoordinator?.model !== model { projectCoordinator = projectCoordinatorFactory.project(model: model) }
-        _ = projectCoordinator?.navigate(to: remainder)
+        let child = installProject(model, runtime: runtime as? any ProjectCoordinating)
+        _ = child.navigate(to: remainder)
     }
 
     /// Finish the originating operation's callbacks before applying a queued link.

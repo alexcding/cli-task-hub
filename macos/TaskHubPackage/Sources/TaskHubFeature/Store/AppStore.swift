@@ -11,6 +11,8 @@ public final class AppStore {
     @ObservationIgnored private let creationFactory: any CreationFlowFactory
     @ObservationIgnored private let desktop: any DesktopActions
     @ObservationIgnored private let workspaceFactory: any WorkspaceFeatureFactory
+    @ObservationIgnored private let projectFactory: any ProjectFeatureFactory
+    @ObservationIgnored private let copy: (String) -> Void
     private(set) var dashboard: DashboardViewModel!
     private(set) var logs: LogsViewModel!
     private(set) var settings: SettingsViewModel!
@@ -24,7 +26,7 @@ public final class AppStore {
     private(set) var tabs: [SavedTab] = []
     var selection: SidebarDestination { coordinator.selection }
     private(set) var terminals: [String: TerminalSession] = [:]
-    private(set) var projectModels: [String: ProjectPageViewModel] = [:]
+    var projectModels: [String: ProjectPageViewModel] { coordinator.projectModels }
     private(set) var changingSessions: Set<String> = []
     private(set) var buildModels: [String: BuildWorkspaceViewModel] = [:]
     private(set) var historyModels: [String: GitHistoryViewModel] = [:]
@@ -40,6 +42,7 @@ public final class AppStore {
     @ObservationIgnored private var streamTask: Task<Void, Never>?
     @ObservationIgnored private var refreshTask: Task<Void, Never>?
     @ObservationIgnored private var refreshPending = false
+    @ObservationIgnored private var refreshRequestID = UUID()
     @ObservationIgnored private var started = false
 
     public convenience init() { self.init(creationFactory: NativeCreationFlowFactory()) }
@@ -48,10 +51,14 @@ public final class AppStore {
          workspaceFactory: any WorkspaceFeatureFactory = NativeWorkspaceFeatureFactory(),
          rootFactory: any RootFeatureFactory = NativeRootFeatureFactory(),
          selectionStore: any SidebarSelectionPersisting = UserDefaultsSidebarSelectionStore(),
-         router: any DeepLinkRouting = TaskHubRouter()) {
+         router: any DeepLinkRouting = TaskHubRouter(),
+         projectFactory: (any ProjectFeatureFactory)? = nil,
+         copy: @escaping (String) -> Void = { NativeClipboard.copy($0) }) {
         self.creationFactory = creationFactory
         self.desktop = desktop
         self.workspaceFactory = workspaceFactory
+        self.copy = copy
+        self.projectFactory = projectFactory ?? NativeProjectFeatureFactory(creation: creationFactory, desktop: desktop, copy: copy)
         coordinator = AppCoordinator(factory: creationFactory, selectionStore: selectionStore, router: router,
             canOpenExternalRoute: {
                 NSApplication.shared.modalWindow == nil && !NSApplication.shared.windows.contains { $0.attachedSheet != nil }
@@ -63,19 +70,13 @@ public final class AppStore {
         dashboard = DashboardViewModel(openPage: { [weak self] request in
             guard let self else { throw BackendError.operation("The workspace has closed.") }
             try await self.openPage(request)
-        }, openBrowser: { desktop.openBrowser($0) }, copy: {
-            NSPasteboard.general.clearContents(); NSPasteboard.general.setString($0, forType: .string)
-        })
+        }, openBrowser: { desktop.openBrowser($0) }, copy: copy)
         logs = LogsViewModel(openPage: { [weak self] request in
             guard let self else { throw BackendError.operation("The workspace has closed.") }
             try await self.openPage(request)
-        }, copy: {
-            NSPasteboard.general.clearContents(); NSPasteboard.general.setString($0, forType: .string)
-        })
+        }, copy: copy)
         dashboard.snapshotChanged = { [weak self] in self?.updateWorkspaceReviewState() }
-        settings = SettingsViewModel(clis: CLISettingsViewModel(copy: {
-            NSPasteboard.general.clearContents(); NSPasteboard.general.setString($0, forType: .string)
-        }, openBrowser: { desktop.openBrowser($0) }), diagnostics: DiagnosticsViewModel(),
+        settings = SettingsViewModel(clis: CLISettingsViewModel(copy: copy, openBrowser: { desktop.openBrowser($0) }), diagnostics: DiagnosticsViewModel(),
             loginItem: LoginItemViewModel(service: NativeLoginItemService()), fonts: FontSettingsViewModel(catalog: InstalledCodeFontCatalog()),
             resources: ResourceUsageViewModel(), didSave: { [weak self] patch in
             guard let self else { return }
@@ -123,9 +124,7 @@ public final class AppStore {
             if let history = historyModels[context.id] { if let base { history.updateBase(base) } }
             else {
                 historyModels[context.id] = GitHistoryViewModel(worktree: session.worktree, baseURL: api.baseURL, base: base ?? "",
-                    service: APIGitHistoryService(api: api), copy: {
-                        NSPasteboard.general.clearContents(); NSPasteboard.general.setString($0, forType: .string)
-                    })
+                    service: APIGitHistoryService(api: api), copy: copy)
             }
         }
         if diffModels[context.id] == nil {
@@ -137,28 +136,31 @@ public final class AppStore {
         }
     }
 
-    func projectEditor(for project: Project) -> ProjectEditorViewModel? {
-        guard let api else { return nil }
-        return creationFactory.projectEditor(project: project, service: APIProjectService(api: api),
-            didSave: { [weak self] in self?.savedProject($0) }, didDelete: { [weak self] id in
-                guard let self else { return }
-                projects.removeAll { $0.id == id }
-                if let removed = projectModels.removeValue(forKey: id) {
-                    removed.board?.suspend()
-                    Task { await removed.automation?.stop(); await removed.workflows?.stop(); await removed.tickets?.stop() }
-                }
-                select(.overview); refresh()
-            })
+    func ownsProject(_ id: String) -> Bool { projects.contains { $0.id == id } }
+
+    func applyProjectDeletion(_ id: String, model: ProjectPageViewModel) {
+        projects.removeAll { $0.id == id }
+        retireProject(model)
+        refresh()
+    }
+
+    private func retireProject(_ model: ProjectPageViewModel) {
+        model.connect(nil); model.board?.suspend()
+        Task { await model.automation?.stop(); await model.workflows?.stop(); await model.tickets?.stop() }
     }
 
     private func savedProject(_ project: Project) {
+        applyProjectSave(project, source: .configuration)
+        select(.project(project.id))
+    }
+
+    func applyProjectSave(_ project: Project, source: ProjectSaveSource) {
         if let index = projects.firstIndex(where: { $0.id == project.id }) { projects[index] = project }
         else { projects.append(project) }
         projectModels[project.id]?.update(project)
-        for session in sessions where session.projectId == project.id {
+        for session in sessions where source == .configuration && session.projectId == project.id {
             buildModels.removeValue(forKey: "task:\(session.id)")?.disconnect()
         }
-        select(.project(project.id))
         refresh()
     }
 
@@ -298,32 +300,11 @@ public final class AppStore {
         case .project(let id):
             viewer.deactivate()
             if let project = projects.first(where: { $0.id == id }), let api {
-                if let model = projectModels[id] { model.update(project) }
-                else if let editor = projectEditor(for: project) {
-                    let board = WebBoardViewModel(projectID: id, baseURL: api.baseURL, openPage: { [weak self] request in
-                        guard let self else { throw BackendError.operation("The workspace has closed.") }
-                        try await self.openPage(request)
-                    }, openBrowser: { [desktop] in desktop.openBrowser($0) })
-                    let tickets = JiraTicketsViewModel(project: project, service: APIJiraService(api: api), openPage: { [weak self] request in
-                        guard let self else { throw BackendError.operation("The workspace has closed.") }
-                        try await self.openPage(request)
-                    }, openBrowser: { [desktop] in desktop.openBrowser($0) }, copy: {
-                        NSPasteboard.general.clearContents(); NSPasteboard.general.setString($0, forType: .string)
-                    })
-                    let workflows = WorkflowEditorViewModel(project: project, service: APIWorkflowService(api: api), didSave: { [weak self] value in
-                        guard let self else { return }
-                        if let index = projects.firstIndex(where: { $0.id == value.id }) { projects[index] = value }
-                        projectModels[value.id]?.update(value)
-                        refresh()
-                    })
-                    let automation = AutomationViewModel(project: project, service: APIAutomationService(api: api), didSave: { [weak self] value in
-                        guard let self else { return }
-                        if let index = projects.firstIndex(where: { $0.id == value.id }) { projects[index] = value }
-                        projectModels[value.id]?.update(value)
-                        refresh()
-                    })
-                    projectModels[id] = ProjectPageViewModel(project: project, service: APIProjectService(api: api), editor: editor, board: board,
-                                                           tickets: tickets, workflows: workflows, automation: automation)
+                let services = ProjectFeatureServices(projects: APIProjectService(api: api), tickets: APIJiraService(api: api),
+                    workflows: APIWorkflowService(api: api), automation: APIAutomationService(api: api), baseURL: api.baseURL)
+                coordinator.prepareProject(project, services: services, factory: projectFactory, runtime: self) { [weak self] request in
+                    guard let self else { throw BackendError.operation("The workspace has closed.") }
+                    try await self.openPage(request)
                 }
             }
         case .session(let id):
@@ -729,6 +710,7 @@ public final class AppStore {
     }
 
     public func refresh() {
+        refreshRequestID = UUID()
         shell.refresh()
         dashboard.refresh()
         if selection == .activity { logs.refresh() }
@@ -745,13 +727,18 @@ public final class AppStore {
             defer { refreshTask = nil }
             while refreshPending && !Task.isCancelled {
                 refreshPending = false
+                let requestID = refreshRequestID
                 do {
                     async let projectRequest: [Project] = api.get(Routes.PROJECTS)
                     async let sessionRequest: [WorkspaceSession] = api.get(Routes.TASKS)
                     async let tabRequest: SavedTabs = api.get(Routes.TABS)
                     let (snapshot, sessionSnapshot, tabSnapshot) = try await (projectRequest, sessionRequest, tabRequest)
                     try Task.checkCancellation()
+                    // A save/delete or newer SSE refresh supersedes this batch.
+                    // Do not apply its older inventory or retire newly created models.
+                    guard requestID == refreshRequestID else { refreshPending = true; continue }
                     if projects != snapshot { projects = snapshot }
+                    for model in coordinator.removeMissingProjects(Set(snapshot.map(\.id))) { retireProject(model) }
                     if sessions != sessionSnapshot {
                         let retained = Set(sessionSnapshot.map(\.id))
                         for session in sessions where !retained.contains(session.id) {

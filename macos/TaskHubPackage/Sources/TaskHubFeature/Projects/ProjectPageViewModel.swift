@@ -2,13 +2,34 @@ import Foundation
 import Observation
 
 @MainActor @Observable final class ProjectPageViewModel {
+    enum Action: Equatable {
+        case selectSection(ProjectSection), saved(Project, ProjectSaveSource), deleted(String)
+    }
+    @ObservationIgnored var onAction: (Action) -> Void = { _ in } {
+        didSet {
+            // Forward the current parent callback by value, following Record's
+            // action.didSet pattern. Children do not retain this parent model.
+            editor.onAction = { [onAction] action in
+                switch action {
+                case .saved(let project): onAction(.saved(project, .configuration))
+                case .deleted(let id): onAction(.deleted(id))
+                }
+            }
+            workflows?.onAction = { [onAction] action in
+                if case .saved(let project) = action { onAction(.saved(project, .workflows)) }
+            }
+            automation?.onAction = { [onAction] action in
+                if case .saved(let project) = action { onAction(.saved(project, .automation)) }
+            }
+        }
+    }
     private(set) var project: Project
     let editor: ProjectEditorViewModel
     let board: WebBoardViewModel?
     let tickets: JiraTicketsViewModel?
     let workflows: WorkflowEditorViewModel?
     let automation: AutomationViewModel?
-    var section = ProjectSection.prs
+    private(set) var section = ProjectSection.prs
     var state = "open" { didSet { if oldValue != state { requestRefresh() } } }
     var search = ""
     private(set) var prs: [DashboardPR] = []
@@ -25,9 +46,10 @@ import Observation
     }
     func connect(_ service: (any ProjectService)?) {
         cancelRefresh()
-        generation = UUID(); loading = false
         self.service = service; editor.connect(service)
     }
+    func selectSection(_ section: ProjectSection) { onAction(.selectSection(section)) }
+    func setSection(_ section: ProjectSection) { self.section = section }
     private func requestRefresh() {
         loading = service != nil
         stateTask = Task { [weak self] in await self?.refresh() }

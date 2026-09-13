@@ -86,7 +86,7 @@ private struct DeepLinkProjectService: ProjectService {
     #expect(runtime.selections.isEmpty && coordinator.pendingDeepLink != nil)
     let project = Project(id: "p", name: "Fixture", repo: "", color: nil, workspace: "/tmp")
     let service = DeepLinkProjectService()
-    let editor = ProjectEditorViewModel(project: project, service: service, chooseFolder: { nil }, didSave: { _ in }, didDelete: { _ in })
+    let editor = ProjectEditorViewModel(project: project, service: service, chooseFolder: { nil })
     let model = ProjectPageViewModel(project: project, service: service, editor: editor)
     runtime.state.projects = [project]; runtime.state.projectModels[project.id] = model
     coordinator.setRoutingReady(true)

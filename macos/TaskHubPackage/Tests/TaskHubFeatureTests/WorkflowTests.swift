@@ -39,7 +39,8 @@ private actor WorkflowFixture: WorkflowService {
                           workflows: [.init(id: "recipe", name: "Original", steps: [.init(command: "first")])])
     let service = WorkflowFixture(project)
     var saved: [Project] = []
-    let model = WorkflowEditorViewModel(project: project, service: service, didSave: { saved.append($0) })
+    let model = WorkflowEditorViewModel(project: project, service: service)
+    model.onAction = { if case .saved(let project) = $0 { saved.append(project) } }
     let originalID = try #require(model.draft.first?.id)
     model.setName(originalID, "Local draft")
     project.workflows?[0].name = "Changed elsewhere"
@@ -85,7 +86,8 @@ private actor WorkflowFixture: WorkflowService {
     let project = Project(id: "p", name: "Project", repo: "", color: nil, workspace: "", workflows: [recipe, recipe])
     let old = WorkflowFixture(project), replacement = WorkflowFixture(project)
     var saves = 0
-    let model = WorkflowEditorViewModel(project: project, service: old, didSave: { _ in saves += 1 })
+    let model = WorkflowEditorViewModel(project: project, service: old)
+    model.onAction = { _ in saves += 1 }
     #expect(Set(model.draft.map(\.savedID)).count == 2)
     let rows = model.draft.map(\.id)
     model.update(project)

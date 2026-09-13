@@ -1648,6 +1648,42 @@ does not).
   open. Full terminal/release acceptance and the remaining feature factories,
   callbacks and runtime extraction continue. Sprint Board remains web-based.
 
+### Project factory and typed coordinator completions — 2026-09-13
+
+- Project feature assembly moved from `AppStore` to an injected factory with
+  protocol-based services and desktop/clipboard dependencies. The root coordinator
+  retains each project's child coordinator and models across navigation, preserving
+  drafts and section selection. Sidebar and deeplink section actions share the
+  same child coordinator handler.
+- Project editor, workflow and automation models emit typed `onAction` callbacks.
+  The parent model's `didSet` forwards the latest callback to its children by value.
+  Factories construct editors; coordinators install their action handlers before
+  rendering. Parent completion handling validates project IDs and model identity.
+  Background saves/deletions preserve unrelated navigation.
+- Snapshot removal retires obsolete project coordinators/services. Recreated IDs
+  get fresh models. A newer refresh supersedes an older in-flight inventory before
+  it can replace state or prune newly created models. API reads retain the backend's
+  snapshot/SWR behavior. Native Dashboard, Cocoa sidebar and terminal ownership are
+  unchanged; Sprint Board remains web-based.
+- Twenty-three focused tests pass in
+  `swift_package_test_2026-09-13T15-53-12-818Z_pid36017_6f5c0344.log`, including
+  factory reuse/injection, callback rebinding without parent retention, obsolete
+  completions, deleted/recreated projects, creation flows, workflows and automation.
+  Native project create/edit/delete passes in
+  `test_macos_2026-09-13T15-50-21-270Z_pid34992_b959bfa4.log`;
+  workflow ordering/save/draft retention in
+  `test_macos_2026-09-13T15-51-37-985Z_pid35538_94c30651.log`;
+  automation preview/save/recovery in
+  `test_macos_2026-09-13T15-53-48-754Z_pid36324_e9a2d6b3.log`;
+  web board move/assign/native ticket opening in
+  `test_macos_2026-09-13T15-54-47-851Z_pid36750_5e8869cb.log`.
+  Cold/warm deeplinks and draft preservation pass in
+  `test_macos_2026-09-13T15-56-02-394Z_pid37133_d3f1edcc.log`.
+- Remaining child presentation/lifetime handling, shared action services,
+  settings/document factories, backend runtime extraction and migration acceptance
+  gates remain tracked in `NATIVE-ARCHITECTURE.md` and this plan. Existing terminal
+  mount and WebKit QoS warnings remain open.
+
 ## Why now, and why native
 
 The Tauri shell works, but roughly half of `src-tauri/` exists to work around what a DOM

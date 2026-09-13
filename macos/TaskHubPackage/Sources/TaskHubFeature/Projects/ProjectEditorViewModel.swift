@@ -2,6 +2,8 @@ import Foundation
 import Observation
 
 @MainActor @Observable final class ProjectEditorViewModel {
+    enum Action: Equatable { case saved(Project), deleted(String) }
+    @ObservationIgnored var onAction: (Action) -> Void = { _ in }
     let id: String?
     var draft: ProjectDraft
     private(set) var baseline: ProjectDraft
@@ -11,13 +13,10 @@ import Observation
     var confirmingDelete = false
     private var service: (any ProjectService)?
     private let chooseFolder: () async -> String?
-    private let didSave: (Project) -> Void
-    private let didDelete: (String) -> Void
 
-    init(project: Project?, service: any ProjectService, chooseFolder: @escaping () async -> String?,
-         didSave: @escaping (Project) -> Void, didDelete: @escaping (String) -> Void = { _ in }) {
+    init(project: Project?, service: any ProjectService, chooseFolder: @escaping () async -> String?) {
         id = project?.id; draft = ProjectDraft(project); baseline = ProjectDraft(project)
-        self.service = service; self.chooseFolder = chooseFolder; self.didSave = didSave; self.didDelete = didDelete
+        self.service = service; self.chooseFolder = chooseFolder
     }
     var dirty: Bool { draft != baseline }
     var canSave: Bool { service != nil && !busy && draft.validationError == nil && (id == nil || dirty) }
@@ -54,14 +53,14 @@ import Observation
         do {
             let project = try await service.save(draft, id: id)
             draft = ProjectDraft(project); baseline = draft; saved = true
-            didSave(project)
+            onAction(.saved(project))
         } catch { self.error = error.localizedDescription }
     }
     func delete(confirmed: Bool) async {
         guard let id, !busy, confirmed, let service else { return }
         busy = true; error = nil
         defer { busy = false; confirmingDelete = false }
-        do { try await service.delete(id); didDelete(id) }
+        do { try await service.delete(id); onAction(.deleted(id)) }
         catch { self.error = error.localizedDescription }
     }
 }

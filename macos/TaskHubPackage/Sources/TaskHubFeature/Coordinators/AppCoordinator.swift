@@ -41,7 +41,7 @@ import Observation
     @ObservationIgnored let router: any DeepLinkRouting
     @ObservationIgnored let projectCoordinatorFactory: any ProjectCoordinatorFactory
     @ObservationIgnored let canOpenExternalRoute: () -> Bool
-    @ObservationIgnored var projectCoordinator: ProjectCoordinator?
+    var projectCoordinators: [String: ProjectCoordinator] = [:]
     @ObservationIgnored var pendingDeepLink: DeepLink?
     @ObservationIgnored var routingReady = false
     var routingError: String?
@@ -58,7 +58,6 @@ import Observation
 
     func navigate(to destination: SidebarDestination) {
         routingError = nil
-        if let child = projectCoordinator, destination != .project(child.model.project.id) { projectCoordinator = nil }
         selection = destination
         selectionStore.save(destination)
         rootRuntime?.activateRootDestination()
@@ -77,10 +76,11 @@ import Observation
     func presentNewProject(service: any ProjectService, didSave: @escaping (Project) -> Void) {
         guard canPresent else { return }
         let id = UUID()
-        let model = factory.projectEditor(project: nil, service: service, didSave: { [weak self] project in
-            guard self?.complete(id) == true else { return }
+        let model = factory.projectEditor(project: nil, service: service)
+        model.onAction = { [weak self] action in
+            guard case .saved(let project) = action, self?.complete(id) == true else { return }
             didSave(project)
-        }, didDelete: { _ in })
+        }
         sheet = Sheet(id: id, destination: .newProject(model))
     }
 

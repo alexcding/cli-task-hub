@@ -292,6 +292,40 @@ Activity filtering/confirmed clearing, browser/session creation and removal, and
 history section changes/pagination/read-only patches. The existing terminal mount
 publication warning and WebKit QoS warning remain open.
 
+## Implemented: project feature factory and coordinator callbacks
+
+`NativeProjectFeatureFactory` assembles project, editor, web board, tickets,
+workflow and automation models from a protocol-based service bundle and injected
+creation, desktop and clipboard dependencies. `AppStore` supplies live services
+and runtime operations; it no longer assembles project feature models.
+
+`AppCoordinator` owns the project-coordinator inventory. A project is constructed
+once and retained across sidebar/menu/deeplink navigation, preserving section
+selection and unsaved drafts. The project picker emits a typed ViewModel action;
+the child coordinator consumes it through the same section handler used by
+deeplinks. Views do not mutate section navigation directly.
+
+Project editor, workflow and automation completions are typed `onAction` callbacks.
+The parent model's `onAction.didSet` forwards the current callback to its children
+by value, following Record's callback-rebinding pattern without retaining the
+parent. The project coordinator forwards successful saves/deletions to its parent,
+which validates the project ID and exact model identity before updating runtime
+state. An obsolete coordinator or a callback for another project cannot act.
+
+Saving an inactive project updates its data without redirecting the current screen.
+Deletion navigates to Overview only when that project is selected. Removed snapshot
+IDs retire their coordinator and feature services; recreating an ID creates fresh
+models. A newer refresh request supersedes an older in-flight snapshot before its
+inventory is applied, preventing a pre-save batch from retiring newly created
+models. Snapshot reads still use the existing backend API and SWR sync ownership.
+
+Twenty-three focused tests pass for factory reuse/injection, current-callback
+forwarding, parent lifetime, stale completions, deleted/recreated IDs, creation
+flows, workflow writes, automation and deeplinks. Native UI checks pass for project
+create/edit/delete, workflow ordering/save/draft retention, automation recovery,
+web board movement/assignment/native opening and cold/warm deeplink delivery.
+The broader terminal and release gates remain open.
+
 ## Remaining extraction
 
 The architecture extraction remains in progress:
@@ -302,8 +336,11 @@ The architecture extraction remains in progress:
   while retaining native input and emulator ownership.
 - Finish tray navigation/window coordination and move any remaining platform
   actions behind injected dependencies.
-- Expand factories to project, settings and document feature assembly;
-  `AppStore` still constructs several concrete services and models.
+- Expand factories to settings and document feature assembly;
+  `AppStore` still constructs several concrete services and models. Complete
+  child presentation ownership/model retirement and project PR/Jira/board action
+  forwarding as the remaining shared action services are extracted. Audit retained
+  dismissed creation models so stale commands cannot start another backend write.
 - Separate application runtime/backend lifecycle from feature navigation without
   changing ownership, cancellation, detached-shell retention or update shutdown.
 - Audit every rendering view and web/AppKit adapter for remaining business rules.

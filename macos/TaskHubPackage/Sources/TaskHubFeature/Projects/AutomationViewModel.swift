@@ -28,10 +28,11 @@ import Observation
     @ObservationIgnored private var statusGeneration = UUID()
     @ObservationIgnored private var previewTask: Task<Void, Never>?
     @ObservationIgnored private var saveTask: Task<Void, Never>?
-    @ObservationIgnored private let didSave: (Project) -> Void
+    enum Action: Equatable { case saved(Project) }
+    @ObservationIgnored var onAction: (Action) -> Void = { _ in }
 
-    init(project: Project, service: any AutomationService, didSave: @escaping (Project) -> Void) {
-        self.project = project; self.service = service; self.didSave = didSave
+    init(project: Project, service: any AutomationService) {
+        self.project = project; self.service = service
         let value = AutomationDraft(project)
         draft = value; baseline = value; latest = value
     }
@@ -105,7 +106,7 @@ import Observation
                 // Starting/stopping the forwarder happens asynchronously after the write.
                 statusGeneration = UUID()
                 forwardingStatus = draft.forwardWebhooks ? "Forwarding enabled. Refresh status to check the process." : "Forwarding disabled."
-                didSave(result)
+                onAction(.saved(result))
             } catch { if connection == token { self.error = error.localizedDescription } }
         }
         saveTask = task; await task.value

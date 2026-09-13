@@ -105,10 +105,10 @@ private actor CreationProjectService: ProjectService {
     func addPage(openPage: @escaping (String) -> Bool, didOpen: @escaping () -> Void) -> AddPageViewModel {
         native.addPage(openPage: openPage, didOpen: didOpen)
     }
-    func projectEditor(project: Project?, service: any ProjectService, didSave: @escaping (Project) -> Void,
-                       didDelete: @escaping (String) -> Void) -> ProjectEditorViewModel {
-        projectCompletions.append(didSave)
-        return native.projectEditor(project: project, service: service, didSave: didSave, didDelete: didDelete)
+    func projectEditor(project: Project?, service: any ProjectService) -> ProjectEditorViewModel {
+        let model = native.projectEditor(project: project, service: service)
+        projectCompletions.append { [weak model] in model?.onAction(.saved($0)) }
+        return model
     }
     func newSession(request: SessionCreationRequest, operations: SessionOperations?,
                     didCreate: @escaping (WorkspaceSession) -> Void) -> NewSessionViewModel {

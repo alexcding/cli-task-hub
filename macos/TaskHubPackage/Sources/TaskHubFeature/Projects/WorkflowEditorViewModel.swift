@@ -13,10 +13,11 @@ import Observation
     @ObservationIgnored private var service: (any WorkflowService)?
     @ObservationIgnored private var connection = UUID()
     @ObservationIgnored private var saveTask: Task<Void, Never>?
-    @ObservationIgnored private let didSave: (Project) -> Void
+    enum Action: Equatable { case saved(Project) }
+    @ObservationIgnored var onAction: (Action) -> Void = { _ in }
 
-    init(project: Project, service: any WorkflowService, didSave: @escaping (Project) -> Void) {
-        self.project = project; self.service = service; self.didSave = didSave
+    init(project: Project, service: any WorkflowService) {
+        self.project = project; self.service = service
         let recipes = project.workflows ?? []
         let editing = Self.editing(recipes)
         serverRecipes = recipes; draft = editing; baseline = editing
@@ -114,7 +115,7 @@ import Observation
                 guard connection == token else { return }
                 project = result; serverRecipes = result.workflows ?? []
                 draft = Self.editing(serverRecipes); baseline = draft
-                saved = true; changedElsewhere = false; didSave(result)
+                saved = true; changedElsewhere = false; onAction(.saved(result))
             } catch { if connection == token { self.error = error.localizedDescription } }
         }
         saveTask = task

@@ -38,8 +38,10 @@ private actor ProjectFixture: ProjectService {
     let initial = await service.load("p")
     var saved: Project?
     var removed: String?
-    let editor = ProjectEditorViewModel(project: initial, service: service, chooseFolder: { "/tmp/picked" },
-        didSave: { saved = $0 }, didDelete: { removed = $0 })
+    let editor = ProjectEditorViewModel(project: initial, service: service, chooseFolder: { "/tmp/picked" })
+    editor.onAction = { action in
+        switch action { case .saved(let value): saved = value; case .deleted(let id): removed = id }
+    }
     await editor.pickFolder()
     await editor.detectRepository()
     #expect(editor.draft.workspace == "/tmp/picked" && editor.draft.repo == "detected/repo")
@@ -65,7 +67,7 @@ private actor ProjectFixture: ProjectService {
 @MainActor @Test(.timeLimit(.minutes(1))) func projectPRStateChangesRejectLateResponsesAndKeepOtherAuthors() async throws {
     let service = ProjectFixture()
     let project = await service.load("p")
-    let editor = ProjectEditorViewModel(project: project, service: service, chooseFolder: { nil }, didSave: { _ in })
+    let editor = ProjectEditorViewModel(project: project, service: service, chooseFolder: { nil })
     let model = ProjectPageViewModel(project: project, service: service, editor: editor)
     model.state = "merged"
     while await service.requestedStates.isEmpty { try await Task.sleep(for: .milliseconds(5)) }
