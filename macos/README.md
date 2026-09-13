@@ -89,6 +89,12 @@ detection, Jira key/JQL, and IDE configuration. Unsaved edits survive snapshot r
 and reconnects. Deleting a project requires confirmation and retains its sessions,
 workspace folders, and terminals.
 
+Every PR state reads a database snapshot immediately. Open contains every open PR;
+Merged/All retain the existing latest-30 window in a separate cache. Stale reads
+start a coalesced background fetch and update via SSE. Initial refreshes show progress;
+failed refreshes keep cached cards and offer retry. Views bind state to the observable
+model, which owns refresh, errors and cancellation.
+
 **Workflows** is a native recipe editor with Claude/Codex selection, ordered steps,
 goals, literal placeholder previews, and Save/Revert. Drafts survive navigation and
 snapshot updates; failed saves keep the draft, and external recipe changes are

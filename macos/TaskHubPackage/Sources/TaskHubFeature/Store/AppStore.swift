@@ -750,7 +750,7 @@ public final class AppStore {
                     }
                     if tabs != tabSnapshot.tabs { tabs = tabSnapshot.tabs }
                     showSelectedContext()
-                    if case .project(let id) = selection, let model = projectModels[id], model.section == .prs && model.state == "open" {
+                    if case .project(let id) = selection, let model = projectModels[id], model.section == .prs {
                         await model.refresh()
                     }
                     if !sidebarEntries.flatMap(\.descendants).contains(where: { $0.destination == selection }),

@@ -8,6 +8,12 @@ private actor ProjectFixture: ProjectService {
     var deleted: [String] = []
     var requestedStates: [String] = []
     var cancelledStates: [String] = []
+    var snapshotRefreshing = false
+    var snapshotError: String?
+    var forcedReads = 0
+    var delayReads = false
+    func delayReads(_ value: Bool) { delayReads = value }
+    func snapshot(refreshing: Bool, error: String? = nil) { snapshotRefreshing = refreshing; snapshotError = error }
     func fail(_ value: Bool) { fails = value }
     func load(_ id: String) -> Project { project }
     func save(_ draft: ProjectDraft, id: String?) throws -> Project {
@@ -22,14 +28,16 @@ private actor ProjectFixture: ProjectService {
         deleted.append(id)
     }
     func detectRepository(_ path: String) -> String { "detected/repo" }
-    func pullRequests(_ id: String, state: String) async throws -> [DashboardPR] {
+    func pullRequests(_ id: String, state: String, force: Bool) async throws -> ProjectPRSnapshot {
+        if force { forcedReads += 1 }
         requestedStates.append(state)
+        if delayReads { try await Task.sleep(for: .milliseconds(100)) }
         if state == "merged" {
             do { try await Task.sleep(for: .milliseconds(100)) }
             catch { cancelledStates.append(state); throw error }
         }
         if fails { throw BackendError.operation("PRs unavailable") }
-        return try JSONDecoder().decode([DashboardPR].self, from: Data("[{\"number\":1,\"title\":\"\(state) result\",\"url\":\"https://github.com/o/r/pull/1\",\"state\":\"\(state.uppercased())\",\"category\":\"other\"}]".utf8))
+        return ProjectPRSnapshot(prs: try JSONDecoder().decode([DashboardPR].self, from: Data("[{\"number\":1,\"title\":\"\(state) result\",\"url\":\"https://github.com/o/r/pull/1\",\"state\":\"\(state.uppercased())\",\"category\":\"other\"}]".utf8)), error: snapshotError, refreshing: snapshotRefreshing)
     }
 }
 
@@ -93,6 +101,30 @@ private actor ProjectFixture: ProjectService {
     #expect(model.rows.isEmpty)
     model.cancelRefresh()
     #expect(!model.loading)
+}
+
+@MainActor @Test func projectSnapshotRefreshKeepsCardsAndReportsBackgroundFailureAndRetry() async {
+    let service = ProjectFixture(), project = await service.load("p")
+    let model = ProjectPageViewModel(project: project, service: service,
+        editor: ProjectEditorViewModel(project: project, service: service, chooseFolder: { nil }))
+    await service.snapshot(refreshing: true)
+    await model.refresh()
+    #expect(!model.loading && model.refreshing && model.rows.count == 1)
+    await service.snapshot(refreshing: false, error: "Snapshot unavailable")
+    await model.refresh()
+    #expect(!model.refreshing && model.rows.count == 1 && model.error == "Snapshot unavailable")
+    await service.delayReads(true)
+    let pending = Task { await model.refresh() }
+    while await service.requestedStates.count < 3 { await Task.yield() }
+    #expect(model.error == "Snapshot unavailable" && model.rows.count == 1)
+    await pending.value
+    await service.delayReads(false)
+    await service.snapshot(refreshing: true)
+    await model.refresh(force: true)
+    #expect(await service.forcedReads == 1)
+    #expect(model.refreshing && model.error == nil && model.rows.count == 1)
+    model.update(Project(id: "p", name: "New repo", repo: "other/repo", color: nil, workspace: "/tmp/repo"))
+    #expect(model.rows.isEmpty && model.loadedState == nil && !model.refreshing)
 }
 
 @Test func projectDraftValidatesPathsWithoutSerializingAutomationOrRunDestinations() throws {

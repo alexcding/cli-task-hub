@@ -249,8 +249,11 @@ const updateProject = (id, patch = {}) => {
     sets.push(`${COL[f]} = ?`);
     vals.push(toColValue(f, patch[f]));
   }
+  const previous = getProject(id);
   if (sets.length) db.prepare(`UPDATE projects SET ${sets.join(', ')} WHERE id = ?`).run(...vals, id);
-  return getProject(id);
+  const updated = getProject(id);
+  if (previous && updated && datadb.prScopeIdentity(previous) !== datadb.prScopeIdentity(updated)) datadb.deletePRScopeSnapshots(id);
+  return updated;
 };
 
 const deleteProject = id => {

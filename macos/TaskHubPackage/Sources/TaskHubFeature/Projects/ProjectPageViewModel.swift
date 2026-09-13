@@ -40,6 +40,7 @@ import Observation
     private(set) var loadedState: String?
     private(set) var error: String?
     private(set) var loading = false
+    private(set) var refreshing = false
     private(set) var opening: Set<String> = []
     private(set) var actionError: String?
     private(set) var retired = false
@@ -74,10 +75,12 @@ import Observation
     private func requestRefresh() {
         guard !retired else { return }
         cancelActions()
+        refreshing = false; error = nil
         loading = service != nil
         stateTask = Task { [weak self] in await self?.refresh() }
     }
-    func cancelRefresh() { stateTask = nil; generation = UUID(); loading = false }
+    func cancelRefresh() { stateTask = nil; generation = UUID(); loading = false; refreshing = false }
+    func retry() { stateTask = Task { [weak self] in await self?.refresh(force: true) } }
     func cancelActions() { actionTask = nil; actionGeneration = UUID(); opening = [] }
     func open(_ row: DashboardRow) { request(.open(row.id)) }
     func openExternally(_ row: DashboardRow) { request(.openBrowser(row.id)) }
@@ -129,24 +132,30 @@ import Observation
             return row
         }
     }
-    var warnings: [String] { prs.compactMap(\.error) }
+    var warnings: [String] { loadedState == state ? prs.compactMap(\.error) : [] }
     func update(_ project: Project, snapshot: [DashboardPR]? = nil) {
         guard !retired else { return }
+        if self.project.repo != project.repo || self.project.jiraProjectKey != project.jiraProjectKey {
+            cancelRefresh(); cancelActions(); prs = []; loadedState = nil; error = nil
+        }
         self.project = project; editor.update(project); tickets?.update(project)
         workflows?.update(project); automation?.update(project)
         if state == "open", let snapshot { prs = snapshot; loadedState = "open" }
     }
-    func refresh() async {
+    func refresh(force: Bool = false) async {
         guard !retired, !Task.isCancelled, let service else { return }
         let generation = UUID(); self.generation = generation
         let requestedState = state
-        loading = true; error = nil
+        loading = true
         defer { if self.generation == generation { loading = false } }
         do {
-            let result = try await service.pullRequests(project.id, state: requestedState)
+            let result = try await service.pullRequests(project.id, state: requestedState, force: force)
             try Task.checkCancellation()
             guard self.generation == generation && state == requestedState else { return }
-            prs = result; loadedState = requestedState
-        } catch { if self.generation == generation && !Task.isCancelled { self.error = error.localizedDescription } }
+            prs = result.prs; loadedState = requestedState
+            refreshing = result.refreshing; error = result.error
+        } catch {
+            if self.generation == generation && !Task.isCancelled { self.error = error.localizedDescription; refreshing = false }
+        }
     }
 }

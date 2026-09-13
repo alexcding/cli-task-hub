@@ -40,7 +40,7 @@ private struct ProjectPageService: ProjectService {
     func save(_ draft: ProjectDraft, id: String?) throws -> Project { throw CancellationError() }
     func delete(_ id: String) {}
     func detectRepository(_ path: String) -> String { "" }
-    func pullRequests(_ id: String, state: String) -> [DashboardPR] { [] }
+    func pullRequests(_ id: String, state: String, force: Bool) -> ProjectPRSnapshot { .init() }
 }
 
 @MainActor private final class ProjectPageRuntime: ProjectCoordinating {

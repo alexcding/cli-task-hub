@@ -88,12 +88,12 @@ struct ProjectPageView: View {
                     TextField("Search project pull requests", text: $model.search).textFieldStyle(.roundedBorder)
                     Picker("State", selection: $model.state) {
                         Text("Open").tag("open"); Text("Merged").tag("merged"); Text("All").tag("all")
-                    }.frame(width: 140)
-                    if model.loading { ProgressView().controlSize(.small) }
+                    }.frame(width: 140).accessibilityIdentifier("project-pr-state")
+                    if model.loading || model.refreshing { ProgressView().controlSize(.small) }
                 }
                 if let error = model.error {
                     Text(error).foregroundStyle(.orange).textSelection(.enabled)
-                    Button("Retry pull requests") { Task { await model.refresh() } }
+                    Button("Retry pull requests", action: model.retry).disabled(model.refreshing)
                 }
                 if let error = model.actionError { Text(error).foregroundStyle(.orange).textSelection(.enabled) }
                 ScrollView {
@@ -101,7 +101,9 @@ struct ProjectPageView: View {
                         ForEach(Array(model.warnings.enumerated()), id: \.offset) { _, message in
                             Label(message, systemImage: "exclamationmark.triangle").foregroundStyle(.orange)
                         }
-                        if model.rows.isEmpty && !model.loading {
+                        if model.rows.isEmpty && model.refreshing {
+                            Text("Refreshing pull requests…").foregroundStyle(.secondary).padding(.vertical, 20)
+                        } else if model.rows.isEmpty && !model.loading && model.error == nil {
                             Text(model.project.repo.isEmpty ? "Configure a GitHub repository in Settings to track pull requests." : "No matching pull requests.")
                                 .foregroundStyle(.secondary).padding(.vertical, 20)
                         }

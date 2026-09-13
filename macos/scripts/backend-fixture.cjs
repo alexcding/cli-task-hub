@@ -52,6 +52,26 @@ const sse = require('../../src/server/routes/sse');
 // Project writes exercise real validation/storage without starting external syncs.
 const fixturePoller = require('../../src/server/services/poller');
 fixturePoller.syncProject = fixturePoller.syncProjectJira = fixturePoller.syncProjectBoard = async () => {};
+require('../../src/server/repositories/github').getPRs = async () => [];
+if (process.env.TASKHUB_PROJECT_ACTION_FIXTURE === '1') {
+  let held = null;
+  const calls = { merged: 0, all: 0 };
+  const result = state => [{ number: state === 'merged' ? 101 : 102, title: `${state} snapshot fixture`,
+    url: 'https://example.invalid/fixture', state: 'MERGED', category: 'other', baseRefName: 'main' }];
+  fixturePoller.setPublisher(sse.publishSync);
+  require('../../src/server/repositories/github').getPRs = async (_repo, state) => {
+    calls[state] = (calls[state] || 0) + 1;
+    if (state === 'merged' && calls.merged === 1) return new Promise(resolve => { held = () => resolve(result(state)); });
+    if (state === 'all' && calls.all === 1) throw new Error('Fixture PR snapshot unavailable');
+    return result(state);
+  };
+  app.post('/fixture/arm-pr-scopes', (_req, res) => {
+    require('../../src/server/database/datadb').deletePRScopeSnapshots(db.getProjects()[0].id);
+    calls.merged = 0; calls.all = 0; res.json({ ok: true });
+  });
+  app.post('/fixture/release-pr-scope', (_req, res) => { const release = held; held = null; release?.(); res.json({ ok: true }); });
+  app.get('/fixture/pr-scope-calls', (_req, res) => res.json({ ...calls, held: held !== null }));
+}
 require('../../src/server/services/webhook-forwarder').sync = () => {};
 require('../../src/server/repositories/jira').listVersions = async () => [{ name: 'ios-1.2.3' }];
 if (process.env.TASKHUB_WORKFLOW_PAGE_FIXTURE === '1') {

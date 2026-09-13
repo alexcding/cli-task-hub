@@ -1822,10 +1822,44 @@ does not).
   `test_macos_2026-09-13T16-52-59-246Z_pid55432_45eafaad.log`; web Sprint Board
   move/assign/native ticket opening passes in
   `test_macos_2026-09-13T16-54-26-167Z_pid55911_99dcab9c.log`.
-- The existing Merged/All project PR endpoint still calls the CLI directly. Moving
-  those scopes under background snapshot sync is the next backend correction to
-  meet the repository's SWR rule. Jira/board actions, remaining factories/runtime
+- At this phase the Merged/All endpoint still called the CLI directly; the following
+  snapshot phase addresses that SWR violation. Jira/board actions, remaining factories/runtime
   extraction and terminal/release acceptance also remain open.
+
+### Snapshot-backed project PR history — 2026-09-13
+
+- Merged, Closed and All now read a separate `data.db` scope cache, preserving the
+  existing latest-30 window. Open remains complete and separate. The poller owns
+  coalesced history fetches with CI and the lean UI projection; history reads never
+  trigger merge automation, review tracking or tray classification changes.
+- Every state returns immediately; missing/stale snapshots revalidate in the
+  background and publish SSE after storage. Failed attempts retain matching cards
+  and back off for 30 seconds. Explicit retry bypasses age checks while still
+  coalescing. Invalid states fail before CLI scheduling; corrupt timestamps are stale.
+- Cache identity includes repository, Jira key and project creation identity.
+  Edits/deletion invalidate scoped caches and pending generations; stopped pollers
+  cannot publish obsolete scope results. History does not enter open-snapshot metrics.
+- Native and web consumers opt into snapshot metadata (`snapshot=1`), render initial
+  refresh/error states and re-read every active PR scope on SSE. The legacy array
+  response remains supported. Native model generation/cancellation guards and web
+  request/DOM identity guards reject obsolete replies. Web transport failures keep
+  previously rendered cards from the same scope.
+- Forty-two backend/API/web adapter tests pass (`pr-scope-snapshot`,
+  `pr-scope-renderer`, `poller`, `api`). Thirty-three focused native tests pass in
+  `swift_package_test_2026-09-13T17-14-24-275Z_pid63787_92b295b2.log`, including
+  refresh status, retained cards/errors, retry, repository changes, cancellation
+  and existing coordinator lifetimes.
+- Native Open/Merged/All switching, initial progress, late background completion,
+  SSE updates and explicit failure recovery pass in
+  `test_macos_2026-09-13T17-14-50-553Z_pid64047_edd06ed0.log`. Earlier UI runs exposed
+  a missing picker test identifier and an actual retry race: background reads
+  cleared the error row during a click. The view model now retains error feedback
+  until a response replaces it and owns the retry task; a delayed-read model test
+  covers the retained feedback. The final fixture observes one Merged fetch and
+  two All fetches (initial failure plus explicit retry), despite repeated SSE reads.
+- Jira/board action callbacks, remaining DI/runtime extraction and terminal/release
+  acceptance remain open. The arbitrary pasted-PR lookup retains its existing
+  on-demand resolution contract; this phase covers project PR list reads.
 
 ## Why now, and why native
 

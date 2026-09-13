@@ -829,6 +829,45 @@ final class TaskHubUITests: XCTestCase {
     }
 
     @MainActor
+    func testNativeProjectPullRequestSnapshotsRefreshThroughSSEAndRecover() async throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard let base = environment["TASKHUB_UI_BACKEND_URL"],
+              let path = environment["TASKHUB_UI_DATA_DIR"], let socket = environment["TASKHUB_UI_PTY_SOCKET"] else {
+            throw XCTSkip("Run macos/scripts/test-browser-ui.sh with its isolated fixture.")
+        }
+        func post(_ route: String) async throws {
+            var request = URLRequest(url: URL(string: base + route)!); request.httpMethod = "POST"
+            _ = try await URLSession.shared.data(for: request)
+        }
+        try await post("/fixture/arm-pr-scopes")
+        let app = XCUIApplication()
+        app.launchArguments = ["--backend-url", base, "--data-dir", path, "--pty-socket", socket]
+        app.launch()
+        let project = app.outlines["workspace-sidebar"].staticTexts["Native integration fixture"].firstMatch
+        XCTAssertTrue(project.waitForExistence(timeout: 10)); project.click()
+        XCTAssertTrue(app.buttons["dashboard-pr-2"].waitForExistence(timeout: 10))
+        let picker = app.popUpButtons["project-pr-state"]
+        XCTAssertTrue(picker.waitForExistence(timeout: 5), app.debugDescription)
+        picker.click(); app.menuItems["Merged"].click()
+        XCTAssertTrue(app.staticTexts["Refreshing pull requests…"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["No matching pull requests."].exists)
+        picker.click(); app.menuItems["Open"].click()
+        try await post("/fixture/release-pr-scope")
+        XCTAssertTrue(app.buttons["dashboard-pr-2"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["dashboard-pr-101"].exists)
+        picker.click(); app.menuItems["Merged"].click()
+        XCTAssertTrue(app.buttons["dashboard-pr-101"].waitForExistence(timeout: 5))
+        picker.click(); app.menuItems["All"].click()
+        XCTAssertTrue(app.staticTexts["Fixture PR snapshot unavailable"].waitForExistence(timeout: 5))
+        app.buttons["Retry pull requests"].click()
+        XCTAssertTrue(app.buttons["dashboard-pr-102"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["Fixture PR snapshot unavailable"].exists)
+        let (data, _) = try await URLSession.shared.data(from: URL(string: base + "/fixture/pr-scope-calls")!)
+        let calls = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        XCTAssertEqual(calls["merged"] as? Int, 1); XCTAssertEqual(calls["all"] as? Int, 2)
+    }
+
+    @MainActor
     func testNativeDashboardFiltersAndOpensContextPage() throws {
         let environment = ProcessInfo.processInfo.environment
         guard let base = environment["TASKHUB_UI_BACKEND_URL"],

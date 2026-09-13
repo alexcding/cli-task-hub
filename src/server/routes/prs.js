@@ -3,28 +3,21 @@
 // background revalidate when stale and the result lands over SSE.
 const db = require('../database/db');
 const github = require('../repositories/github');
-const { snapshotFor } = require('../services/sync');
+const { snapshotFor, prSnapshotFor } = require('../services/sync');
+const { PR_LIST_STATES } = require('../services/poller');
 const { PR_CATEGORY } = require('../../shared/constants.mjs');
 const { ROUTES } = require('../../shared/routes.mjs');
 const sse = require('./sse');
 
 function register(app) {
-  // Project-scoped PR list. `open` is served from the snapshot; merged/all is a live
-  // fetch (rare, on-demand from the state filter).
-  app.get(ROUTES.PROJECT_PRS, async (req, res) => {
+  // All scopes are immediate SWR reads. Opt-in metadata preserves the legacy array contract.
+  app.get(ROUTES.PROJECT_PRS, (req, res) => {
     const project = db.getProject(req.params.id);
     if (!project) return res.status(404).json({ error: 'Not found' });
-    if (!project.repo) return res.json([]);
-
     const state = req.query.state || 'open';
-    if (state === 'open') return res.json(snapshotFor(project)?.prs || []);
-
-    try {
-      const prs = await github.getPRs(project.repo, state, 30, { ci: true, jiraProjectKey: project.jiraProjectKey });
-      res.json(prs.map(p => ({ ...p, repo: project.repo })));
-    } catch (err) {
-      res.json([{ repo: project.repo, error: err.message }]);
-    }
+    if (!PR_LIST_STATES.has(state)) return res.status(400).json({ error: 'Invalid pull request state' });
+    const snap = prSnapshotFor(project, state, req.query.refresh === '1');
+    res.json(req.query.snapshot === '1' ? snap : [...snap.prs, ...(snap.error ? [{ repo: project.repo, error: snap.error }] : [])]);
   });
 
   // One PR by url — the only PR read that ISN'T snapshot-backed, because its whole job is to answer

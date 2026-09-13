@@ -34,7 +34,7 @@ private actor ProjectDeletionService: ProjectService {
         if let gate { self.gate = nil; try await gate.wait() }
     }
     func detectRepository(_ path: String) -> String { "" }
-    func pullRequests(_ id: String, state: String) -> [DashboardPR] { [] }
+    func pullRequests(_ id: String, state: String, force: Bool) -> ProjectPRSnapshot { .init() }
 }
 
 @MainActor private final class ProjectDeletionRuntime: RootCoordinating, ProjectCoordinating {

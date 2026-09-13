@@ -714,23 +714,35 @@ export async function saveProjectWebhooks(id) {
   } catch (e) { toastErr(e.message); }
 }
 
-export async function reloadProjectPRs(id, prState, { silent = false } = {}) {
+const prRequests = new WeakMap(); // render lifetime only; late reads cannot replace a newer scope
+const prMarkup = new WeakMap();
+export async function reloadProjectPRs(id, prState, { silent = false, force = false } = {}) {
   const el = document.getElementById(`proj-prs-${id}`);
   if (!el) return;
   const p = proj(id);
-  // Cache-first: open PRs are already in the snapshot we loaded (state.projects), so render
-  // them instantly — no spinner. The fetch below revalidates and reconciles, and an SSE `sync`
-  // keeps it live afterward. Merged/all aren't cached (the snapshot holds only open), so they
-  // show the loading state while their live `gh` fetch runs.
+  const request = Symbol();
+  prRequests.set(el, request);
+  // Open is also available from the dashboard cache. Every scope then reads its DB
+  // snapshot immediately; completion of background revalidation arrives over SSE.
   const cached = prState === 'open' ? p?.prs : null;
   if (cached) el.innerHTML = prListHtml(cached.filter(pr => !pr.error), p?.repo, 'open');
   else if (!silent) el.innerHTML = '<div class="loading-row"><div class="spinner"></div> Loading…</div>';
 
-  const prs = await api(`${ROUTES.projectPrs(id)}?state=${prState}`);
-  // Reconcile the render cache to the DB so the next open-view render is cache-first from
-  // current data, not a copy that only refreshes on a dashboard visit. Open only — merged/all
-  // aren't snapshotted, so they must not overwrite the cached open set.
-  if (prState === 'open' && p) p.prs = prs;
-  const target = document.getElementById(`proj-prs-${id}`); // may have re-rendered; re-query
-  if (target) target.innerHTML = prListHtml(prs.filter(pr => !pr.error), p?.repo, prState);
+  const current = () => document.getElementById(`proj-prs-${id}`) === el
+    && prRequests.get(el) === request && document.getElementById(`pr-state-${id}`)?.value === prState;
+  const failure = message => `<div class="error-row">${esc(message)} <button class="btn btn-sm" onclick="reloadProjectPRs('${id}','${prState}',{force:true})">Retry pull requests</button></div>`;
+  try {
+    const snapshot = await api(`${ROUTES.projectPrs(id)}?state=${encodeURIComponent(prState)}&snapshot=1&refresh=${force ? '1' : '0'}`);
+    if (!current()) return;
+    if (prState === 'open' && p) p.prs = snapshot.prs;
+    const prs = snapshot.prs.filter(pr => !pr.error);
+    const progress = snapshot.refreshing ? '<div class="loading-row"><div class="spinner"></div> Refreshing pull requests…</div>' : '';
+    const error = snapshot.error ? failure(snapshot.error) : '';
+    const content = prs.length || (!snapshot.refreshing && !snapshot.error) ? prListHtml(prs, p?.repo, prState) : '';
+    prMarkup.set(el, { state: prState, content });
+    el.innerHTML = progress + error + content;
+  } catch (error) {
+    const cached = prMarkup.get(el);
+    if (current()) el.innerHTML = failure(error.message) + (cached?.state === prState ? cached.content : '');
+  }
 }

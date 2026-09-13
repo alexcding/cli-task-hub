@@ -24,12 +24,19 @@ struct ProjectDraft: Encodable, Equatable, Sendable {
     }
 }
 
+struct ProjectPRSnapshot: Decodable, Sendable {
+    var prs: [DashboardPR] = []
+    var lastSynced: String? = nil
+    var error: String? = nil
+    var refreshing = false
+}
+
 protocol ProjectService: Sendable {
     func load(_ id: String) async throws -> Project
     func save(_ draft: ProjectDraft, id: String?) async throws -> Project
     func delete(_ id: String) async throws
     func detectRepository(_ path: String) async throws -> String
-    func pullRequests(_ id: String, state: String) async throws -> [DashboardPR]
+    func pullRequests(_ id: String, state: String, force: Bool) async throws -> ProjectPRSnapshot
 }
 
 struct APIProjectService: ProjectService {
@@ -46,8 +53,8 @@ struct APIProjectService: ProjectService {
         let result: Result = try await api.get(APIClient.query(Routes.DETECT_REPO, ["path": path]), timeout: 30)
         return result.repo
     }
-    func pullRequests(_ id: String, state: String) async throws -> [DashboardPR] {
-        try await api.get(APIClient.query(Routes.projectPrs(id), ["state": state]), timeout: 100)
+    func pullRequests(_ id: String, state: String, force: Bool) async throws -> ProjectPRSnapshot {
+        try await api.get(APIClient.query(Routes.projectPrs(id), ["state": state, "snapshot": "1", "refresh": force ? "1" : "0"]))
     }
 }
 

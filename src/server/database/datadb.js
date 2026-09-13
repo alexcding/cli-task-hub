@@ -33,6 +33,15 @@ db.exec(`
     last_synced TEXT,
     error       TEXT
   );
+  CREATE TABLE IF NOT EXISTS pr_scope_snapshots (
+    id TEXT NOT NULL,
+    state TEXT NOT NULL,
+    identity TEXT NOT NULL,
+    prs TEXT NOT NULL DEFAULT '[]',
+    last_synced TEXT,
+    error TEXT,
+    PRIMARY KEY (id, state)
+  );
 `);
 
 // Columns added after the table first shipped — idempotent (throws on DBs that already
@@ -65,6 +74,26 @@ function setSnapshot(id, snap = {}) {
 }
 function deleteSnapshot(id) {
   db.prepare('DELETE FROM pr_snapshots WHERE id = ?').run(id);
+  deletePRScopeSnapshots(id);
+}
+
+// Separate from open snapshots: history must never feed tray review alerts or merge detection.
+const scopeGenerations = new Map();
+const prScopeGeneration = id => scopeGenerations.get(id) || 0;
+const prScopeIdentity = project => JSON.stringify([project.repo || '', project.jiraProjectKey || '', project.created_at || '']);
+function getPRScopeSnapshot(project, state) {
+  return _prRow(db.prepare('SELECT * FROM pr_scope_snapshots WHERE id = ? AND state = ? AND identity = ?')
+    .get(project.id, state, prScopeIdentity(project)));
+}
+function setPRScopeSnapshot(project, state, snap) {
+  db.prepare(`INSERT INTO pr_scope_snapshots (id, state, identity, prs, last_synced, error) VALUES (?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id, state) DO UPDATE SET identity = excluded.identity, prs = excluded.prs,
+    last_synced = excluded.last_synced, error = excluded.error`)
+    .run(project.id, state, prScopeIdentity(project), JSON.stringify(snap.prs || []), snap.lastSynced || null, snap.error || null);
+}
+function deletePRScopeSnapshots(id) {
+  scopeGenerations.set(id, prScopeGeneration(id) + 1);
+  db.prepare('DELETE FROM pr_scope_snapshots WHERE id = ?').run(id);
 }
 
 // ── Jira snapshots ──────────────────────────────────────────────────────────────
@@ -99,5 +128,6 @@ function deleteJiraSnapshot(id) {
 module.exports = {
   dbPath,
   getSnapshot, getAllSnapshots, setSnapshot, deleteSnapshot,
+  getPRScopeSnapshot, setPRScopeSnapshot, deletePRScopeSnapshots, prScopeIdentity, prScopeGeneration,
   getJiraSnapshot, getAllJiraSnapshots, setJiraSnapshot, deleteJiraSnapshot,
 };

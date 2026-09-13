@@ -34,7 +34,7 @@ private actor LifetimeProjectService: ProjectService {
         if let detection { return try await detection.value() }
         return "fixture/repo"
     }
-    func pullRequests(_ id: String, state: String) -> [DashboardPR] { [] }
+    func pullRequests(_ id: String, state: String, force: Bool) -> ProjectPRSnapshot { .init() }
 }
 
 private actor LifetimeSessionService: SessionCreating {

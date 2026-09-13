@@ -175,6 +175,55 @@ function handleMerge(repo, pr) {
 // list` processes for one repo. Return the in-flight promise instead, so each repo
 // has at most one sync running at a time. (Different projects still run concurrently.)
 const _inFlight = new Map(); // project.id -> { repo, promise }
+const _scopeInFlight = new Map();
+let scopeEpoch = 0;
+const PR_LIST_STATES = new Set(['open', 'merged', 'closed', 'all']);
+const scopeKey = (project, state) => JSON.stringify([project.id, state]);
+function prScopeSyncing(project, state) {
+  if (state === 'open') return _inFlight.get(project.id)?.repo === project.repo;
+  const entry = _scopeInFlight.get(scopeKey(project, state));
+  return !!entry && entry.identity === db.prScopeIdentity(project) && entry.generation === db.prScopeGeneration(project.id);
+}
+
+// Demand-driven history read. Only the poller calls GitHub; this path has no lifecycle,
+// review timestamp or automation side effects. Open remains the complete paginated snapshot.
+function syncPRScope(project, state) {
+  if (!PR_LIST_STATES.has(state) || state === 'open') throw new Error('Invalid PR history state');
+  const key = scopeKey(project, state), identity = db.prScopeIdentity(project);
+  const generation = db.prScopeGeneration(project.id), epoch = scopeEpoch;
+  const existing = _scopeInFlight.get(key);
+  if (existing?.identity === identity && existing.generation === generation) {
+    github.noteCoalesced(); return existing.promise;
+  }
+  const current = () => {
+    const saved = db.getProject(project.id);
+    return epoch === scopeEpoch && saved && db.prScopeIdentity(saved) === identity
+      && db.prScopeGeneration(project.id) === generation;
+  };
+  github.noteInflight(1);
+  let written = false;
+  const promise = Promise.resolve().then(async () => {
+    if (!current()) return;
+    try {
+      const prs = await github.getPRs(project.repo, state, 30, { ci: true, jiraProjectKey: project.jiraProjectKey });
+      if (!current()) return;
+      db.setPRScopeSnapshot(project, state, { prs: prs.map(pr => lean(pr, project.repo)), lastSynced: now(), error: null });
+    } catch (error) {
+      if (!current()) return;
+      const previous = db.getPRScopeSnapshot(project, state);
+      // Timestamp the attempt too: an offline CLI must not be retried on every render.
+      db.setPRScopeSnapshot(project, state, { prs: previous?.prs || [], lastSynced: now(), error: error.message });
+    }
+    written = true;
+  }).finally(() => {
+    if (_scopeInFlight.get(key)?.promise === promise) _scopeInFlight.delete(key);
+    github.noteInflight(-1);
+    if (written && current() && onSync) onSync(project.id);
+  });
+  _scopeInFlight.set(key, { identity, generation, promise });
+  return promise;
+}
+
 function syncProject(project) {
   const existing = _inFlight.get(project.id);
   // Coalesce only when the in-flight sync is for the SAME repo. A repo change (project
@@ -205,8 +254,8 @@ const CLOSED_SLACK_MS = 60_000;
 // want opposite things: the UI snapshot needs EVERY open PR with CI, while merge detection
 // needs only a recent window of merged/closed PRs and no CI at all. Fetching them together as
 // one `--state all` window made open-PR visibility a hostage of merge volume (an old open PR
-// fell off the end) and paid for CI on merged PRs that never render. This is the only place we
-// hit `gh` for PRs.
+// fell off the end) and paid for CI on merged PRs that never render. Demand-driven history
+// scopes use syncPRScope above and do not participate in these lifecycle decisions.
 async function syncProjectImpl(project) {
   if (!project.repo) {
     db.setSnapshot(project.id, { prs: [], lastSynced: now(), error: null });
@@ -437,6 +486,8 @@ function startJira(publisher) {
 }
 
 function stop() {
+  scopeEpoch++;
+  _scopeInFlight.clear();
   if (timer) clearInterval(timer);
   if (jiraTimer) clearInterval(jiraTimer);
   timer = null;
@@ -463,6 +514,7 @@ function reconfigure() {
 module.exports = {
   start, startJira, stop, reconfigure, poll, pollJira,
   syncProject, syncProjectJira, syncProjectBoard, projectJql,
+  syncPRScope, prScopeSyncing, PR_LIST_STATES,
   activeSprintFor, boardSnapId,
   handleMerge, applyMergeAutomation,
   setPublisher, setJiraPublisher,

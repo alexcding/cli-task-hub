@@ -70,7 +70,7 @@ private struct DeepLinkProjectService: ProjectService {
     func save(_ draft: ProjectDraft, id: String?) async throws -> Project { throw CancellationError() }
     func delete(_ id: String) async throws {}
     func detectRepository(_ path: String) async throws -> String { "" }
-    func pullRequests(_ id: String, state: String) async throws -> [DashboardPR] { [] }
+    func pullRequests(_ id: String, state: String, force: Bool) async throws -> ProjectPRSnapshot { .init() }
 }
 
 @MainActor private final class DeepLinkProjectFactory: ProjectCoordinatorFactory {
