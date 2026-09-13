@@ -9,6 +9,8 @@ struct AppCoordinatorSheetView: View {
         case .newProject(let model): NewProjectSheet(model: model, cancel: cancel)
         case .newSession(let model): NewSessionView(model: model, cancel: cancel)
         case .addPage(let model): AddPageSheet(model: model, cancel: cancel)
+        case .removal(let model): SessionRemovalView(model: model, cancel: cancel)
+        case .build(let model): BuildDestinationView(model: model, cancel: cancel)
         }
     }
 }

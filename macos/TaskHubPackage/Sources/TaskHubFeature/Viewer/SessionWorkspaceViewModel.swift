@@ -1,0 +1,121 @@
+import Foundation
+import Observation
+
+@MainActor struct SessionWorkspaceState {
+    var session: WorkspaceSession?
+    var project: Project?
+    var terminal: TerminalSession?
+    var buildTerminal: TerminalSession?
+    var build: BuildWorkspaceViewModel?
+    var history: GitHistoryViewModel?
+    var diff: DiffViewModel?
+    var workflow: WorkflowRunViewModel?
+    var appearance: AppAppearance = .system
+    var connected = false
+    var changingSession = false
+    var openingExternal = false
+    var canPresent = false
+    var canCreateSession = false
+    var editorLabel: String?
+    var gitClientLabel: String?
+    var launchError: String?
+    var reviewBase: String?
+}
+
+enum WorkspaceAction: Equatable {
+    case reveal, openEditor, openGitClient, createSession, openFile, addPage
+    case changes, run, remove, restart, openTerminal, reconnectTerminal, reconnectBuild, hookSettings, prepareChanges
+}
+
+@MainActor protocol WorkspaceServing: AnyObject {
+    func workspaceState(in context: WorkspaceContext) -> SessionWorkspaceState
+    func performWorkspaceAction(_ action: WorkspaceAction, in context: WorkspaceContext)
+}
+
+@MainActor @Observable final class SessionWorkspaceViewModel {
+    struct ReviewInputs: Equatable {
+        let pane: WorkspacePane?
+        let section: ReviewSection?
+        let connected: Bool
+        let base: String?
+    }
+    @ObservationIgnored private weak var context: WorkspaceContext?
+    @ObservationIgnored private weak var service: (any WorkspaceServing)?
+    private(set) var active = false
+
+    init(context: WorkspaceContext, service: any WorkspaceServing) {
+        self.context = context; self.service = service
+    }
+    private var state: SessionWorkspaceState {
+        guard let context, let service else { return SessionWorkspaceState() }
+        return service.workspaceState(in: context)
+    }
+    var session: WorkspaceSession? { state.session }
+    var terminal: TerminalSession? { state.terminal }
+    var buildTerminal: TerminalSession? { state.buildTerminal }
+    var build: BuildWorkspaceViewModel? { state.build }
+    var history: GitHistoryViewModel? { state.history }
+    var diff: DiffViewModel? { state.diff }
+    var workflow: WorkflowRunViewModel? {
+        guard let model = state.workflow, !model.recipes.isEmpty || model.running else { return nil }
+        return model
+    }
+    var appearance: AppAppearance { state.appearance }
+    var launchError: String? { state.launchError }
+    var editorLabel: String? { state.editorLabel }
+    var gitClientLabel: String? { state.gitClientLabel }
+    var workspaceTitle: String {
+        if context?.id == "scratch" { return "Terminal" }
+        return context?.activeDocument?.title ?? context?.activePage?.title ?? "Workspace"
+    }
+    var terminalPrompt: String {
+        context?.id == "scratch" ? "Open an interactive shell." : "Open this session’s shell in its worktree."
+    }
+    var showsBuild: Bool { session != nil && context?.pane == .build }
+    var showsTerminal: Bool { session != nil || context?.id == "scratch" }
+    var showsChanges: Bool { session != nil && context?.pane == .diff }
+    var showsPage: Bool {
+        !showsTerminal || showsChanges || (!showsBuild && context?.pane == .term && context?.activeID != nil)
+    }
+    var showsBuildActions: Bool { session != nil && state.project?.ide == "xcode" }
+    var canCreateSession: Bool { state.canCreateSession }
+    var canOpenExternal: Bool { session != nil && !state.openingExternal && !state.changingSession }
+    var canShowChanges: Bool { session != nil && state.connected }
+    var canRun: Bool { showsBuildActions && state.connected && state.canPresent && !state.changingSession }
+    var canRemove: Bool { session != nil && state.connected && state.canPresent && !state.changingSession }
+    var canRestart: Bool { session != nil && state.canPresent && !state.changingSession }
+    var canToggleContext: Bool { context?.activeID != nil }
+    var reviewInputs: ReviewInputs {
+        .init(pane: context?.pane, section: context?.reviewSection, connected: state.connected, base: state.reviewBase)
+    }
+
+    func setActive(_ value: Bool) { active = value; prepareChanges() }
+    func prepareChanges() { if active && showsChanges { perform(.prepareChanges) } }
+    func reveal() { if session != nil { perform(.reveal) } }
+    func openEditor() { if canOpenExternal && editorLabel != nil { perform(.openEditor) } }
+    func openGitClient() { if canOpenExternal && gitClientLabel != nil { perform(.openGitClient) } }
+    func createSession() { if canCreateSession { perform(.createSession) } }
+    func openFile() { perform(.openFile) }
+    func addPage() { if state.canPresent { perform(.addPage) } }
+    func toggleChanges() { if canShowChanges { perform(.changes) } }
+    func run() { if canRun { perform(.run) } }
+    func remove() { if canRemove { perform(.remove) } }
+    func restart() { if canRestart { perform(.restart) } }
+    func openTerminal() { if showsTerminal { perform(.openTerminal) } }
+    func reconnectTerminal() { perform(.reconnectTerminal) }
+    func reconnectBuild() { perform(.reconnectBuild) }
+    func openHookSettings() { perform(.hookSettings) }
+    func stopBuild() async { await build?.stop() }
+    func toggleBuild() { if buildTerminal != nil { context?.setPane(showsBuild ? .term : .build) } }
+    func toggleContext() { if canToggleContext { context?.setPane(context?.pane == .term ? .off : .term) } }
+    func reopen(_ visit: WorkspaceVisit) {
+        switch visit {
+        case .page(let page): context?.open(page.url, title: page.title)
+        case .file(let file): context?.openFile(file.path)
+        }
+    }
+    private func perform(_ action: WorkspaceAction) {
+        guard let context else { return }
+        service?.performWorkspaceAction(action, in: context)
+    }
+}

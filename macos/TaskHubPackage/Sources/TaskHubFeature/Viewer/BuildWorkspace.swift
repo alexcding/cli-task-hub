@@ -54,14 +54,15 @@ struct BuildSettings: Decodable, Sendable {
     private let api: APIClient
     private let project: Project
     private let session: WorkspaceSession
-    private let terminalFactory: () -> any BuildTerminal
+    private let terminalFactory: () throws -> any BuildTerminal
     private let reveal: () -> Void
     @ObservationIgnored private var terminal: (any BuildTerminal)?
     @ObservationIgnored private var monitor: Task<Void, Never>?
     private var valid = true
+    @ObservationIgnored var didStart: () -> Void = {}
 
     init(api: APIClient, project: Project, session: WorkspaceSession,
-         terminalFactory: @escaping () -> any BuildTerminal, reveal: @escaping () -> Void) {
+         terminalFactory: @escaping () throws -> any BuildTerminal, reveal: @escaping () -> Void) {
         self.api = api; self.project = project; self.session = session
         self.terminalFactory = terminalFactory; self.reveal = reveal
         scheme = project.runScheme ?? ""; simulator = project.runSim ?? ""
@@ -94,7 +95,7 @@ struct BuildSettings: Decodable, Sendable {
                                                    body: ["runScheme": scheme, "runSim": simulator])
             try Task.checkCancellation()
             guard valid else { return }
-            let terminal = terminalFactory()
+            let terminal = try terminalFactory()
             self.terminal = terminal
             reveal()
             try await terminal.waitUntilReady()
@@ -115,6 +116,7 @@ struct BuildSettings: Decodable, Sendable {
                 }
                 self?.running = false
             }
+            didStart()
         } catch { if !Task.isCancelled { self.error = error.localizedDescription } }
     }
     func stop() async {
@@ -125,8 +127,8 @@ struct BuildSettings: Decodable, Sendable {
 }
 
 struct BuildDestinationView: View {
-    @State var model: BuildWorkspaceViewModel
-    @Environment(\.dismiss) private var dismiss
+    @Bindable var model: BuildWorkspaceViewModel
+    let cancel: () -> Void
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Run Destination").font(.title2.weight(.semibold))
@@ -139,10 +141,10 @@ struct BuildDestinationView: View {
             if model.loading { ProgressView("Loading destinations…") }
             if let error = model.error { Text(error).foregroundStyle(.orange).textSelection(.enabled) }
             HStack {
-                Button("Cancel", role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction)
+                Button("Cancel", role: .cancel, action: cancel).keyboardShortcut(.cancelAction)
                 Spacer()
                 if model.starting { ProgressView().controlSize(.small) }
-                Button("Run") { Task { await model.run(); if model.running { dismiss() } } }
+                Button("Run") { Task { await model.run() } }
                     .keyboardShortcut(.defaultAction).disabled(!model.canRun)
             }.disabled(model.starting)
         }.padding(24).frame(width: 480)

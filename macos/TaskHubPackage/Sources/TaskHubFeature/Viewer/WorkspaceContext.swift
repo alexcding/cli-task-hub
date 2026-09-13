@@ -86,6 +86,12 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
     @ObservationIgnored var activateDocument: (EditorDocumentViewModel) -> Void = { _ in }
     @ObservationIgnored var activatePage: (BrowserPage) -> Void = { _ in }
     @ObservationIgnored private let pageFactory: BrowserPageFactory
+    private(set) var workspaceViewModel: SessionWorkspaceViewModel?
+
+    func configureWorkspace(factory: any WorkspaceFeatureFactory, service: any WorkspaceServing) {
+        guard workspaceViewModel == nil else { return }
+        workspaceViewModel = factory.workspace(context: self, service: service)
+    }
 
     init(id: String, sourceURL: String, title: String, snapshot: ContextSnapshot? = nil,
          pageFactory: BrowserPageFactory = BrowserPageFactory()) {
@@ -259,6 +265,7 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
 @MainActor @Observable final class ViewerStore {
     private(set) var contexts: [String: WorkspaceContext] = [:]
     private(set) var activeContextID: String?
+    @ObservationIgnored var prepareContext: (WorkspaceContext) -> Void = { _ in }
     @ObservationIgnored private var api: APIClient?
     @ObservationIgnored private var saved: [String: ContextSnapshot] = [:]
     @ObservationIgnored private var dirty: Set<String> = []
@@ -374,6 +381,7 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
         let context = contexts[id] ?? WorkspaceContext(id: id, sourceURL: url, title: title,
                                                        snapshot: saved[id] ?? legacy.map(ContextSnapshot.importing), pageFactory: pageFactory)
         contexts[id] = context
+        prepareContext(context)
         context.restoring = restoring
         context.changed = { [weak self, weak context] in
             if let context { self?.save(context) }

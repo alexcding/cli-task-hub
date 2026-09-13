@@ -68,6 +68,7 @@ struct SessionRemovalService: Sendable {
     private let sessions: [WorkspaceSession]
     private let didRemove: ([WorkspaceSession]) async -> Void
     private let finished: () -> Void
+    @ObservationIgnored var didComplete: () -> Void = {}
     init(service: SessionRemovalService, record: WorkspaceSession, projects: [Project], sessions: [WorkspaceSession],
          didRemove: @escaping ([WorkspaceSession]) async -> Void, finished: @escaping () -> Void) {
         self.service = service; self.record = record; self.projects = projects; self.sessions = sessions; self.didRemove = didRemove
@@ -86,13 +87,14 @@ struct SessionRemovalService: Sendable {
             try await service.remove(plan, discardChanges: discardChanges)
             await didRemove(plan.sessions)
             completed = true
+            didComplete()
         } catch { self.error = error.localizedDescription }
     }
 }
 
 struct SessionRemovalView: View {
-    @State var model: SessionRemovalViewModel
-    @Environment(\.dismiss) private var dismiss
+    @Bindable var model: SessionRemovalViewModel
+    let cancel: () -> Void
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text(model.plan?.removesWorktree == true ? "Remove Worktree and Sessions" : "Forget Session").font(.title2.weight(.semibold))
@@ -113,7 +115,7 @@ struct SessionRemovalView: View {
             }
             if let error = model.error { Text(error).foregroundStyle(.orange).textSelection(.enabled) }
             HStack {
-                Button("Cancel", role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction)
+                Button("Cancel", role: .cancel, action: cancel).keyboardShortcut(.cancelAction)
                 Spacer()
                 if model.removing { ProgressView().controlSize(.small) }
                 Button(model.plan?.removesWorktree == true ? "Remove Worktree" : "Forget Session", role: .destructive) {
@@ -123,6 +125,5 @@ struct SessionRemovalView: View {
         }.padding(24).frame(width: 520)
         .interactiveDismissDisabled(model.removing)
         .task { await model.load() }
-        .onChange(of: model.completed) { _, complete in if complete { dismiss() } }
     }
 }

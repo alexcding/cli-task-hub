@@ -46,14 +46,43 @@ private final class BuildHTTPFixture: URLProtocol, @unchecked Sendable {
         terminalFactory: { factories += 1; return build }, reveal: { reveals += 1 })
     await model.load()
     #expect(model.canRun)
+    let coordinator = AppCoordinator(factory: NativeCreationFlowFactory(chooseFolder: { nil }))
+    coordinator.presentBuild { model }
+    let presentation = try #require(coordinator.sheet)
     async let first: Void = model.run()
     async let second: Void = model.run()
+    for _ in 0..<100 {
+        if model.starting { break }
+        try await Task.sleep(for: .milliseconds(10))
+    }
+    #expect(model.starting)
+    coordinator.dismissSheet(id: presentation.id)
+    #expect(coordinator.sheet?.id == presentation.id)
     _ = await (first, second)
     #expect(model.running && build.commands.count == 1 && factories == 1 && reveals == 1)
+    #expect(coordinator.sheet == nil)
     await model.stop()
     #expect(build.interrupts == 1)
     model.disconnect()
     #expect(!model.canRun)
+}
+
+@MainActor @Test func buildCoordinatorRetainsDestinationWhenInjectedTerminalFactoryFails() async throws {
+    let configuration = URLSessionConfiguration.ephemeral
+    configuration.protocolClasses = [BuildHTTPFixture.self]
+    let api = try APIClient(baseURL: URL(string: "http://127.0.0.1:12345")!, session: URLSession(configuration: configuration))
+    let project = Project(id: "fixture", name: "Fixture", repo: "", color: nil, workspace: "/tmp", ide: "xcode")
+    let session = WorkspaceSession(id: "task", projectId: "fixture", workspace: "/tmp", worktree: "/tmp", title: "", branch: "", url: "", createdAt: nil, pinned: false)
+    let model = NativeWorkspaceFeatureFactory().build(api: api, project: project, session: session,
+        terminalFactory: { throw BackendError.operation("Runtime closed") }, reveal: { Issue.record("Failed build was revealed") })
+    let coordinator = AppCoordinator(factory: NativeCreationFlowFactory(chooseFolder: { nil }))
+    coordinator.presentBuild { model }
+    let sheet = try #require(coordinator.sheet)
+    await model.load(); await model.run()
+    #expect(model.error == "Runtime closed" && !model.running && model.canRun)
+    #expect(coordinator.sheet?.id == sheet.id && sheet.canDismiss)
+    coordinator.dismissSheet(id: sheet.id)
+    #expect(coordinator.sheet == nil)
 }
 
 @Test func buildCommandKeepsOneForegroundGroupAndQuotesDestinationValues() throws {

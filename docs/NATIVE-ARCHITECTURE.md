@@ -88,18 +88,54 @@ confirmed deletion in `test_macos_2026-09-13T13-59-03-171Z_pid97035_153685ef.log
 These runs close the first creation phase's pending UI checks. Further validation
 and the packaging correction are recorded in `SWIFTUI-PORT.md`.
 
+## Implemented: workspace presentation and operation dialogs
+
+`SessionWorkspaceViewModel` computes pane visibility, toolbar availability,
+workspace titles, review refresh inputs and history reopening. It receives a
+`WorkspaceServing` dependency; the live `AppStore` adapter supplies current session,
+project and feature models and routes commands to existing services. Retained
+actions are checked against the viewer's current context before they can act.
+
+`WorkspaceFeatureFactory` creates workspace, build and removal models. The viewer
+configures each context once, before rendering, and the context owns its workspace
+model. The model weakly references the context and service. Moving a page context
+into a session retains that model and all live documents/pages; no terminal or
+WebKit surface is reconstructed by this extraction.
+
+Restart confirmations, build destinations and session-removal sheets now belong
+to `AppCoordinator`. Competing presentations are blocked, stale confirmation IDs
+cannot act, and busy build/removal operations cannot be dismissed. Success callbacks
+close the identified presentation; failed operations leave it available for retry.
+Build terminal factories may throw, so a runtime disappearing during preparation
+produces an error rather than an unowned-reference crash.
+
+`SessionWorkspaceView`, `BuildDestinationView` and `SessionRemovalView` render models
+and forward actions/lifecycle events. The workspace view no longer reads `AppStore`,
+constructs feature models, decides which project/session an action uses or owns
+operation dialogs. Terminal surfaces remain in the same retained split hierarchy.
+
+Twelve focused Swift tests pass for command gating, factory/model lifetime, context
+promotion with a retained document, stale restart confirmations, busy sheets and
+build success/failure. Native UI tests pass for browser navigation and session
+creation/removal, editor save/cancel/discard/history, and a real fixture shell:
+navigation and cancelled restart preserve its PID, confirmed restart replaces it,
+and explicit Quit exits the app. The UI script now supplies the helper path to
+XCTest's copied app and cleans up only its verified fixture daemon after failures.
+The shell run emitted a SwiftUI publication-during-update warning; its source still
+needs investigation in the terminal adapter pass. This is not a complete terminal
+fidelity or performance acceptance result.
+
 ## Remaining extraction
 
 The architecture extraction remains in progress:
 
 - Move sidebar/root destinations and titles out of root rendering code. Preserve
   stable session/context IDs and mounted terminal surfaces across navigation.
-- Extract the remaining session workspace toolbar state, dialog routing,
-  editor actions and removal/build presentation from views into
-  feature ViewModels and coordinators.
+- Complete terminal/UI-adapter lifecycle extraction and audit focus/visibility
+  updates, while retaining native input and emulator ownership.
 - Finish tray navigation/window coordination and move any remaining platform
   actions behind injected dependencies.
-- Expand factories to project, settings, document and workspace feature assembly;
+- Expand factories to project, settings and document feature assembly;
   `AppStore` still constructs several concrete services and models.
 - Separate application runtime/backend lifecycle from feature navigation without
   changing ownership, cancellation, detached-shell retention or update shutdown.

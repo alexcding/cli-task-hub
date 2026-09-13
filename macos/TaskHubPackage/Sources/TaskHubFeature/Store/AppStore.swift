@@ -9,6 +9,7 @@ public final class AppStore {
     let coordinator: AppCoordinator
     @ObservationIgnored private let creationFactory: any CreationFlowFactory
     @ObservationIgnored private let desktop: any DesktopActions
+    @ObservationIgnored private let workspaceFactory: any WorkspaceFeatureFactory
     private(set) var dashboard: DashboardViewModel!
     private(set) var logs: LogsViewModel!
     private(set) var settings: SettingsViewModel!
@@ -42,9 +43,11 @@ public final class AppStore {
 
     public convenience init() { self.init(creationFactory: NativeCreationFlowFactory()) }
 
-    init(creationFactory: any CreationFlowFactory, desktop: any DesktopActions = NativeDesktopActions()) {
+    init(creationFactory: any CreationFlowFactory, desktop: any DesktopActions = NativeDesktopActions(),
+         workspaceFactory: any WorkspaceFeatureFactory = NativeWorkspaceFeatureFactory()) {
         self.creationFactory = creationFactory
         self.desktop = desktop
+        self.workspaceFactory = workspaceFactory
         coordinator = AppCoordinator(factory: creationFactory)
         viewer = ViewerStore(cacheURL: try? PtydConfiguration.current().directory.appendingPathComponent("page-tabs.json"),
                              memoryPressure: NativeMemoryPressureMonitor(), pageFactory: BrowserPageFactory(desktop: desktop))
@@ -74,6 +77,10 @@ public final class AppStore {
         })
         if let data = UserDefaults.standard.data(forKey: "sidebar.selection"),
            let saved = try? JSONDecoder().decode(SidebarDestination.self, from: data) { selection = saved }
+        viewer.prepareContext = { [weak self] context in
+            guard let self else { return }
+            context.configureWorkspace(factory: workspaceFactory, service: self)
+        }
     }
 
     var sidebarEntries: [SidebarEntry] {
@@ -160,8 +167,8 @@ public final class AppStore {
 
     public func canPerform(_ command: ShellCommand) -> Bool {
         switch command {
-        case .newProject: connection == "Connected" && coordinator.sheet == nil
-        case .newSession: connection == "Connected" && coordinator.sheet == nil && !projects.isEmpty && pageWorkflowRuns[viewer.activeContextID ?? ""]?.running != true
+        case .newProject: connection == "Connected" && coordinator.canPresent
+        case .newSession: connection == "Connected" && coordinator.canPresent && !projects.isEmpty && pageWorkflowRuns[viewer.activeContextID ?? ""]?.running != true
         case .back: viewer.active?.activePage?.canGoBack == true
         case .forward: viewer.active?.activePage?.canGoForward == true
         case .openFile: viewer.active != nil && connection == "Connected"
@@ -468,7 +475,7 @@ public final class AppStore {
             guard let self else { throw BackendError.operation("The workspace closed before removal.") }
             try await self.stopForRemoval(keys, operationID: operationID)
         })
-        return SessionRemovalViewModel(service: service, record: record, projects: projects, sessions: sessions,
+        return workspaceFactory.removal(service: service, record: record, projects: projects, sessions: sessions,
             didRemove: { [weak self] removed in
                 guard let self else { return }
                 for record in removed {
@@ -492,7 +499,8 @@ public final class AppStore {
     func buildModel(for record: WorkspaceSession, context: WorkspaceContext) -> BuildWorkspaceViewModel? {
         if let existing = buildModels[context.id] { return existing }
         guard let api, let project = projects.first(where: { $0.id == record.projectId }), project.ide == "xcode" else { return nil }
-        let model = BuildWorkspaceViewModel(api: api, project: project, session: record, terminalFactory: { [unowned self] in
+        let model = workspaceFactory.build(api: api, project: project, session: record, terminalFactory: { [weak self] in
+            guard let self else { throw BackendError.operation("The workspace closed before the build could start.") }
             let key = "build:\(record.url)"
             if let terminal = terminals[key] { return terminal }
             let terminal = TerminalSession(pairKey: key, cwd: record.worktree, paired: true)

@@ -812,6 +812,59 @@ final class TaskHubUITests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: directory.appendingPathComponent("sidebar-1").path))
     }
 
+    @MainActor
+    func testWorkspaceCoordinatorPreservesShellUntilConfirmedRestart() throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard let base = environment["TASKHUB_UI_BACKEND_URL"],
+              let path = environment["TASKHUB_UI_DATA_DIR"], let socket = environment["TASKHUB_UI_PTY_SOCKET"],
+              let helper = environment["TASKHUB_UI_PTYD_PATH"] else {
+            throw XCTSkip("Run macos/scripts/test-browser-ui.sh with its isolated fixture and PTY socket.")
+        }
+        let app = XCUIApplication()
+        app.launchArguments = ["--backend-url", base, "--data-dir", path, "--pty-socket", socket, "--ptyd-path", helper]
+        app.launch()
+        // Explicit tray Quit owns only this fixture's daemon and shells. Also
+        // attempt cleanup if a UI assertion exits the test early.
+        defer {
+            if app.state != .notRunning {
+                let tray = app.buttons["Reviews & Usage"]
+                if tray.exists {
+                    tray.click()
+                    let quit = app.buttons["Quit TaskHub"]
+                    if quit.waitForExistence(timeout: 5) { quit.click() }
+                }
+            }
+        }
+        let row = app.outlines["workspace-sidebar"].staticTexts["sidebar-2"]
+        XCTAssertTrue(row.waitForExistence(timeout: 10)); row.click()
+        XCTAssertTrue(app.buttons["Open Terminal"].waitForExistence(timeout: 5))
+        app.buttons["Open Terminal"].click()
+        let pid = app.staticTexts["terminal-shell-pid"].firstMatch
+        XCTAssertTrue(pid.waitForExistence(timeout: 15), app.debugDescription)
+        let original = try XCTUnwrap(pid.value as? String)
+        XCTAssertTrue(original.hasPrefix("PID "))
+        app.outlines["workspace-sidebar"].staticTexts["Overview"].click()
+        row.click()
+        XCTAssertTrue(pid.waitForExistence(timeout: 5))
+        XCTAssertEqual(pid.value as? String, original)
+        app.buttons["Restart Session"].click()
+        XCTAssertTrue(app.sheets.buttons["Cancel"].waitForExistence(timeout: 5), app.debugDescription)
+        app.sheets.buttons["Cancel"].click()
+        XCTAssertEqual(pid.value as? String, original)
+        app.buttons["Restart Session"].click()
+        XCTAssertTrue(app.sheets.buttons["Restart Session"].waitForExistence(timeout: 5), app.debugDescription)
+        app.sheets.buttons["Restart Session"].click()
+        let replaced = expectation(for: NSPredicate(format: "exists == true AND value != %@", original), evaluatedWith: pid)
+        wait(for: [replaced], timeout: 15)
+        XCTAssertTrue((pid.value as? String)?.hasPrefix("PID ") == true)
+        XCTAssertTrue(row.exists)
+        app.buttons["Reviews & Usage"].click()
+        XCTAssertTrue(app.buttons["Quit TaskHub"].waitForExistence(timeout: 5))
+        app.buttons["Quit TaskHub"].click()
+        let stopped = expectation(for: NSPredicate(format: "state == %d", XCUIApplication.State.notRunning.rawValue), evaluatedWith: app)
+        wait(for: [stopped], timeout: 10)
+    }
+
     override func setUpWithError() throws {
         // Put setup code here. This method is called before the invocation of each test method in the class.
 

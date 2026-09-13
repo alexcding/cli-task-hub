@@ -14,7 +14,9 @@ struct TerminalPane: View {
             HStack {
                 Label(title, systemImage: title == "Build" ? "hammer" : "terminal").labelStyle(.iconOnly).help(title)
                 Text(session.status).foregroundStyle(.secondary).lineLimit(1)
-                if let pid = session.shellPID { Text("PID \(pid)").monospacedDigit().foregroundStyle(.secondary) }
+                if let pid = session.shellPID {
+                    Text("PID \(pid)").monospacedDigit().foregroundStyle(.secondary).accessibilityIdentifier("terminal-shell-pid")
+                }
                 Spacer()
                 Toggle("Show terminal", isOn: Binding(get: { visible }, set: { session.showsSurface = $0 })).toggleStyle(.switch).labelsHidden().help("Show terminal")
                 Button("Reattach", systemImage: "arrow.triangle.2.circlepath", action: reconnect).labelStyle(.iconOnly).help("Reattach")

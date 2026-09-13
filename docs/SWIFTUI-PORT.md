@@ -1508,6 +1508,37 @@ does not).
   See `NATIVE-ARCHITECTURE.md` for the remaining coordinator/VM/DI extraction.
   Sprint Board stays web-based; broader migration acceptance remains open.
 
+### Workspace coordinator and ViewModel extraction — 2026-09-13
+
+- Workspace titles, toolbar availability, pane presentation, review refresh and
+  command routing now live in `SessionWorkspaceViewModel` with an injected service.
+  A workspace factory creates models before rendering; context promotion retains
+  their identity and open documents. The live service rejects actions from contexts
+  that are no longer owned or selected.
+- The root coordinator owns restart confirmations, build and removal sheets.
+  Busy operations prevent dismissal; successful callbacks match presentation IDs;
+  failed builds retain their destination for retry. Views render supplied models
+  and forward actions. Terminal surfaces remain mounted through navigation.
+- Twelve focused Swift tests passed in
+  `swift_package_test_2026-09-13T14-19-53-627Z_pid3773_0bd89631.log`.
+  Real-shell UI verification passed in
+  `test_macos_2026-09-13T14-25-00-123Z_pid5605_2ff94843.log`: the same PID survives
+  navigation and cancelled restart, confirmation creates a new shell, and tray Quit
+  exits. Browser/session creation/removal passed in
+  `test_macos_2026-09-13T14-33-03-815Z_pid7762_507584a5.log`; editor save/cancel/
+  discard/history passed in `test_macos_2026-09-13T14-34-11-165Z_pid8337_7ab8bc41.log`.
+- XCTest's copied app needs an explicit PTY helper path; the fixture script builds
+  and passes it. The PID assertion reads the static text's accessibility value.
+  Earlier setup/oracle failures were corrected and rerun. Cleanup verifies the
+  private socket's protocol/PID and terminal directories before stopping its shells
+  and daemon; it also handles a stopped daemon's stale socket without signaling
+  its old PID. The earlier failed test's daemon and remaining shell were stopped.
+- The shell UI run emitted a publication-during-view-update warning, pending the
+  terminal adapter audit. Browser navigation emitted a WebKit QoS warning. These
+  passing functional checks do not establish performance or full terminal fidelity.
+  Remaining extraction is in `NATIVE-ARCHITECTURE.md`; migration acceptance gates
+  remain open. Sprint Board stays web-based.
+
 ## Why now, and why native
 
 The Tauri shell works, but roughly half of `src-tauri/` exists to work around what a DOM

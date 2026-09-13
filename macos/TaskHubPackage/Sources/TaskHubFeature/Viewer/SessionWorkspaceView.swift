@@ -54,88 +54,62 @@ struct BrowserPane: View {
 
 struct SessionWorkspaceView: View {
     let context: WorkspaceContext
-    let store: AppStore
+    let model: SessionWorkspaceViewModel
     let active: Bool
-    @State private var restarting = false
-    @State private var removal: SessionRemovalViewModel?
-    @State private var destination: BuildWorkspaceViewModel?
-    private var session: WorkspaceSession? { store.sessions.first { "task:\($0.id)" == context.id } }
-    private var terminal: TerminalSession? { store.terminals[context.id] }
-    private var showsBuild: Bool { session != nil && context.pane == .build }
-    private var showsTerminal: Bool { session != nil || context.id == "scratch" }
-    private var showsChanges: Bool { session != nil && context.pane == .diff }
-    private var showsPage: Bool { !showsTerminal || showsChanges || (!showsBuild && context.pane == .term && context.activeID != nil) }
 
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                if let session {
+                if let session = model.session {
                     Label(session.label, systemImage: "terminal").labelStyle(.titleAndIcon).font(.headline).lineLimit(1)
                     Text(session.branch).font(.callout).foregroundStyle(.secondary).lineLimit(1)
-                    Button("Reveal Worktree", systemImage: "folder") {
-                        store.revealWorktree(session)
-                    }.labelStyle(.iconOnly)
-                    if let title = store.workspaceLaunch.editorLabel(store.projects.first { $0.id == session.projectId }) {
-                        Button(title, systemImage: "curlybraces") {
-                            Task { await store.workspaceLaunch.openEditor(session: session, project: store.projects.first { $0.id == session.projectId }) }
-                        }.disabled(store.workspaceLaunch.opening.contains(context.id) || store.changingSessions.contains(session.id))
+                    Button("Reveal Worktree", systemImage: "folder", action: model.reveal).labelStyle(.iconOnly)
+                    if let title = model.editorLabel {
+                        Button(title, systemImage: "curlybraces", action: model.openEditor).disabled(!model.canOpenExternal)
                     }
-                    if let title = store.workspaceLaunch.gitClientLabel(store.shell.gitClient) {
-                        Button(title, systemImage: "arrow.triangle.branch") {
-                            Task { await store.workspaceLaunch.openGitClient(session: session, id: store.shell.gitClient, custom: store.shell.gitClientCommand) }
-                        }.disabled(store.workspaceLaunch.opening.contains(context.id) || store.changingSessions.contains(session.id))
+                    if let title = model.gitClientLabel {
+                        Button(title, systemImage: "arrow.triangle.branch", action: model.openGitClient).disabled(!model.canOpenExternal)
                     }
-                } else if context.id == "scratch" {
-                    Text("Terminal").font(.headline)
                 } else {
-                    Text(context.activeDocument?.title ?? context.activePage?.title ?? "Workspace").font(.headline).lineLimit(1)
-                    Button("Create Session", systemImage: "terminal.badge.plus") { store.perform(.newSession) }
-                        .disabled(!store.canPerform(.newSession))
+                    Text(model.workspaceTitle).font(.headline).lineLimit(1)
+                    if !model.showsTerminal {
+                        Button("Create Session", systemImage: "terminal.badge.plus", action: model.createSession)
+                            .disabled(!model.canCreateSession)
+                    }
                 }
                 Spacer()
                 Menu("History", systemImage: "clock.arrow.circlepath") {
                     if context.visits.isEmpty { Text("No closed or visited pages") }
                     ForEach(context.visits.reversed()) { record in
-                        Button(record.title) {
-                            switch record { case .page(let page): context.open(page.url, title: page.title)
-                            case .file(let file): context.openFile(file.path) }
-                        }
+                        Button(record.title) { model.reopen(record) }
                     }
                 }
-                Button("Open File", systemImage: "doc.badge.plus") { store.viewer.openFile(in: context) }
-                Button("Add Page", systemImage: "plus") { store.addPage(in: context) }
-                if session != nil {
-                    Button(showsChanges ? "Hide Changes" : "Show Changes", systemImage: "arrow.triangle.branch") {
-                        if let session { store.showChanges(for: session, context: context) }
-                    }.disabled(store.connection != "Connected")
-                    if let session, store.projects.first(where: { $0.id == session.projectId })?.ide == "xcode" {
-                        if let model = store.buildModels[context.id], model.running {
-                            Button("Stop Build", systemImage: "stop.fill") { Task { await model.stop() } }
+                Button("Open File", systemImage: "doc.badge.plus", action: model.openFile)
+                Button("Add Page", systemImage: "plus", action: model.addPage)
+                if model.session != nil {
+                    Button(model.showsChanges ? "Hide Changes" : "Show Changes", systemImage: "arrow.triangle.branch", action: model.toggleChanges)
+                        .disabled(!model.canShowChanges)
+                    if model.showsBuildActions {
+                        if model.build?.running == true {
+                            Button("Stop Build", systemImage: "stop.fill") { Task { await model.stopBuild() } }
                         } else {
-                            Button("Run…", systemImage: "play.fill") { destination = store.buildModel(for: session, context: context) }
-                                .disabled(store.changingSessions.contains(session.id))
+                            Button("Run…", systemImage: "play.fill", action: model.run).disabled(!model.canRun)
                         }
                     }
-                    if store.terminals["build:\(context.sourceURL)"] != nil {
-                        Button(showsBuild ? "Show Context" : "Show Build", systemImage: "hammer") {
-                            context.setPane(showsBuild ? .term : .build)
-                        }
+                    if model.buildTerminal != nil {
+                        Button(model.showsBuild ? "Show Context" : "Show Build", systemImage: "hammer", action: model.toggleBuild)
                     }
-                    Button("Remove Session", systemImage: "trash") {
-                        if let session { removal = store.removalModel(for: session) }
-                    }.disabled(store.connection != "Connected" || (session.map { store.changingSessions.contains($0.id) } ?? true))
-                    if terminal?.agentBusy == true { ProgressView().controlSize(.small).help("Agent working") }
-                    Button("Restart Session", systemImage: "arrow.counterclockwise") { restarting = true }
-                        .disabled(session.map { store.changingSessions.contains($0.id) } ?? true)
+                    Button("Remove Session", systemImage: "trash", action: model.remove).disabled(!model.canRemove)
+                    if model.terminal?.agentBusy == true { ProgressView().controlSize(.small).help("Agent working") }
+                    Button("Restart Session", systemImage: "arrow.counterclockwise", action: model.restart).disabled(!model.canRestart)
                 }
-                if showsTerminal {
-                    Button(showsPage ? "Hide Context Pane" : "Show Context Pane", systemImage: "rectangle.righthalf.inset.filled") {
-                        context.setPane(context.pane == .term ? .off : .term)
-                    }.disabled(context.activeID == nil)
+                if model.showsTerminal {
+                    Button(model.showsPage ? "Hide Context Pane" : "Show Context Pane", systemImage: "rectangle.righthalf.inset.filled", action: model.toggleContext)
+                        .disabled(!model.canToggleContext)
                 }
             }.labelStyle(.iconOnly).padding(12)
-            if let workflow = store.workflowModel(in: context), !workflow.recipes.isEmpty || workflow.running {
-                WorkflowRunView(model: workflow, openHookSettings: store.openWorkflowHookSettings)
+            if let workflow = model.workflow {
+                WorkflowRunView(model: workflow, openHookSettings: model.openHookSettings)
             }
             if !context.tabs.isEmpty {
                 ScrollView(.horizontal) {
@@ -155,77 +129,60 @@ struct SessionWorkspaceView: View {
                 }.frame(height: 40)
             }
             if let error = context.error { Text(error).font(.caption).foregroundStyle(.orange).padding(8) }
-            if let error = store.workspaceLaunch.errors[context.id] {
+            if let error = model.launchError {
                 Text(error).font(.caption).foregroundStyle(.orange).textSelection(.enabled).padding(8)
                     .accessibilityIdentifier("workspace-launch-error")
             }
             Divider()
-            WorkspaceSplit(showsLeft: showsTerminal, showsRight: showsPage, showsBuild: showsBuild) {
-                if showsTerminal {
+            WorkspaceSplit(showsLeft: model.showsTerminal, showsRight: model.showsPage, showsBuild: model.showsBuild) {
+                if model.showsTerminal {
                     ZStack {
-                        if let terminal {
-                            TerminalPane(session: terminal, reconnect: store.reattachTerminal, active: active && showsTerminal)
+                        if let terminal = model.terminal {
+                            TerminalPane(session: terminal, reconnect: model.reconnectTerminal, active: active && model.showsTerminal)
                                 .id(terminal.id)
                         } else {
                             VStack(spacing: 12) {
-                                Text(context.id == "scratch" ? "Open an interactive shell." : "Open this session’s shell in its worktree.").foregroundStyle(.secondary)
-                                Button("Open Terminal", systemImage: "terminal", action: store.openTerminal).buttonStyle(.borderedProminent)
+                                Text(model.terminalPrompt).foregroundStyle(.secondary)
+                                Button("Open Terminal", systemImage: "terminal", action: model.openTerminal).buttonStyle(.borderedProminent)
                             }.frame(maxWidth: .infinity, maxHeight: .infinity)
                         }
                     }
                     // The emulator remains mounted across page and build selection.
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .opacity(showsTerminal ? 1 : 0).allowsHitTesting(showsTerminal)
-                    .accessibilityHidden(!showsTerminal).clipped()
+                    .opacity(model.showsTerminal ? 1 : 0).allowsHitTesting(model.showsTerminal)
+                    .accessibilityHidden(!model.showsTerminal).clipped()
                 }
             } right: {
                 ZStack {
-                    if showsChanges {
+                    if model.showsChanges {
                         VStack(spacing: 0) {
                             Picker("Review section", selection: Binding(get: { context.reviewSection }, set: context.setReviewSection)) {
                                 ForEach(ReviewSection.allCases) { Text($0.rawValue).tag($0) }
                             }.pickerStyle(.segmented).labelsHidden().padding(8)
-                            if context.reviewSection == .history, let model = store.historyModels[context.id] {
-                                GitHistoryView(model: model, appearance: store.shell.appearance, active: active)
-                            } else if context.reviewSection == .changes, let model = store.diffModels[context.id] {
-                                DiffView(model: model, appearance: store.shell.appearance, active: active)
+                            if context.reviewSection == .history, let history = model.history {
+                                GitHistoryView(model: history, appearance: model.appearance, active: active)
+                            } else if context.reviewSection == .changes, let diff = model.diff {
+                                DiffView(model: diff, appearance: model.appearance, active: active)
                             }
                         }
                     } else if let document = context.activeDocument {
-                        EditorDocumentView(model: document, appearance: store.shell.appearance, active: active && showsPage && !context.restoring).id(document.id)
+                        EditorDocumentView(model: document, appearance: model.appearance, active: active && model.showsPage && !context.restoring).id(document.id)
                     } else if let page = context.activePage { BrowserPane(page: page, context: context, model: page.controls).id(page.id) }
-                    else if session == nil {
+                    else if model.session == nil {
                         ContentUnavailableView("No open pages", systemImage: "globe", description: Text("Add a page or reopen one from History."))
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } build: {
-                if let build = store.terminals["build:\(context.sourceURL)"] {
-                    TerminalPane(session: build, reconnect: { store.reattachTerminal(key: "build:\(context.sourceURL)") }, active: active && showsBuild, title: "Build")
+                if let build = model.buildTerminal {
+                    TerminalPane(session: build, reconnect: model.reconnectBuild, active: active && model.showsBuild, title: "Build")
                         .id(build.id).frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }.frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .onAppear { prepareChanges() }
-        .onChange(of: context.reviewSection) { _, _ in prepareChanges() }
-        .onChange(of: store.dashboard.projects) { _, _ in prepareChanges() }
-        .onChange(of: context.pane) { _, _ in prepareChanges() }
-        .onChange(of: store.connection) { _, _ in prepareChanges() }
-        .onChange(of: active) { _, _ in prepareChanges() }
-        .confirmationDialog("Restart this session?", isPresented: $restarting, titleVisibility: .visible) {
-            Button("Restart Session", role: .destructive) { if let session { store.restartSession(session) } }
-        } message: {
-            Text("This stops the session’s shell and any command it is running. The worktree is kept. The agent resumes its saved conversation when an ID is available.")
-        }
-        .sheet(isPresented: Binding(get: { removal != nil }, set: { if !$0 { removal = nil } })) {
-            if let removal { SessionRemovalView(model: removal) }
-        }
-        .sheet(isPresented: Binding(get: { destination != nil }, set: { if !$0 { destination = nil } })) {
-            if let destination { BuildDestinationView(model: destination) }
-        }
-    }
-
-    private func prepareChanges() {
-        if active, showsChanges, let session { store.prepareChanges(for: session, context: context) }
+        .onAppear { model.setActive(active) }
+        .onDisappear { model.setActive(false) }
+        .onChange(of: model.reviewInputs) { _, _ in model.prepareChanges() }
+        .onChange(of: active) { _, value in model.setActive(value) }
     }
 }

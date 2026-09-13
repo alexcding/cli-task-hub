@@ -22,9 +22,9 @@ public struct ContentView: View {
                     // Keep every opened emulator mounted. Selection changes only
                     // visibility, never the PTY identity or parser state.
                     ForEach(store.viewer.contexts.keys.sorted(), id: \.self) { id in
-                        if let context = store.viewer.contexts[id] {
+                        if let context = store.viewer.contexts[id], let model = context.workspaceViewModel {
                             let active = store.viewer.activeContextID == id
-                            SessionWorkspaceView(context: context, store: store, active: active)
+                            SessionWorkspaceView(context: context, model: model, active: active)
                                 .opacity(active ? 1 : 0).allowsHitTesting(active).accessibilityHidden(!active)
                         }
                     }
@@ -56,6 +56,15 @@ public struct ContentView: View {
             if value == nil, let sheet = store.coordinator.sheet { store.coordinator.dismissSheet(id: sheet.id) }
         })) { sheet in
             AppCoordinatorSheetView(sheet: sheet, cancel: { store.coordinator.dismissSheet(id: sheet.id) })
+        }
+        .confirmationDialog("Restart this session?", isPresented: Binding(get: { store.coordinator.restartConfirmation != nil }, set: { value in
+            if !value, let request = store.coordinator.restartConfirmation { store.coordinator.dismissRestart(id: request.id) }
+        }), titleVisibility: .visible) {
+            if let request = store.coordinator.restartConfirmation {
+                Button("Restart Session", role: .destructive) { store.coordinator.confirmRestart(id: request.id) }
+            }
+        } message: {
+            Text("This stops the session’s shell and any command it is running. The worktree is kept. The agent resumes its saved conversation when an ID is available.")
         }
     }
 

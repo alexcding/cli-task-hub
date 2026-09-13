@@ -2,6 +2,28 @@ import Foundation
 import Testing
 @testable import TaskHubFeature
 
+@MainActor @Test func workspaceRestartConfirmationBlocksOtherFlowsAndRejectsCancelledOrDuplicateActions() throws {
+    let coordinator = AppCoordinator(factory: NativeCreationFlowFactory(chooseFolder: { nil }))
+    var restarts = 0, factories = 0
+    coordinator.presentRestart { restarts += 1 }
+    let first = try #require(coordinator.restartConfirmation)
+    #expect(!coordinator.canPresent)
+    coordinator.presentRemoval { factories += 1; return nil }
+    coordinator.presentBuild { factories += 1; return nil }
+    #expect(factories == 0 && coordinator.sheet == nil)
+    coordinator.confirmRestart(id: UUID())
+    #expect(restarts == 0 && coordinator.restartConfirmation?.id == first.id)
+    coordinator.dismissRestart(id: first.id)
+    coordinator.confirmRestart(id: first.id)
+    #expect(restarts == 0 && coordinator.canPresent)
+    coordinator.presentRestart { restarts += 1 }
+    let second = try #require(coordinator.restartConfirmation)
+    coordinator.confirmRestart(id: first.id)
+    coordinator.confirmRestart(id: second.id)
+    coordinator.confirmRestart(id: second.id)
+    #expect(restarts == 1 && coordinator.canPresent)
+}
+
 private actor CreationProjectService: ProjectService {
     private var pending: CheckedContinuation<Project, any Error>?
     private var waiting: CheckedContinuation<Void, Never>?
