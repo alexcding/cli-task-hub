@@ -1387,6 +1387,31 @@ does not).
   The other migration gates and final elevate-ios coordinator/VM/DI pass remain
   open. Sprint Board stays web-based.
 
+### M6 data snapshot and restoration tooling — 2026-09-13
+
+- Added standalone backup/verify/restore commands shipped with the native backend.
+  They never import application stores or run schema migrations before backup.
+  SQLite's online backup captures committed WAL state, then produces a standalone
+  database with no WAL/SHM dependency. The durable DB (including its legacy filename),
+  optional logs and pending native page JSON are captured under a versioned manifest
+  with per-file SHA-256 hashes. Source databases are opened read-only.
+- Restore validates the allowlisted manifest, checksums, regular-file paths and
+  SQLite integrity before creating a new destination. Existing destinations are
+  always rejected. Copied files are rechecked; directories/files are private, and
+  incomplete operations do not publish a completed manifest or restore receipt.
+- Seven focused tests pass, including WAL-only committed rows, unknown legacy
+  schema, symlink/sidecar and corruption rejection, no-overwrite guarantees and a
+  full current-backend durable-state round trip. The suite takes about 71 seconds;
+  no backup/startup performance gate is claimed. A packaged-resource smoke test
+  outside the checkout passes and leaves the fixture source DB checksum unchanged.
+- [Data recovery](DATA-RECOVERY.md) documents commands, storage ownership, native
+  versus Tauri layout preferences, and rollback limits. Live PTYs, worktree files,
+  regenerable CLI cache, browser data and UserDefaults are not copied by this tool.
+  Online captures are consistent per database, not one transaction across all files.
+- Automatic pre-upgrade checkpoint integration, real previous-release rollback,
+  clean-Mac/signed update acceptance, other migration gates and the final requested
+  coordinator/VM/DI architecture pass remain open. Sprint Board stays web-based.
+
 ## Why now, and why native
 
 The Tauri shell works, but roughly half of `src-tauri/` exists to work around what a DOM

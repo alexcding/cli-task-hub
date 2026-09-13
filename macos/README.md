@@ -450,6 +450,14 @@ future protocol changes must retain attachment compatibility or require a planne
 terminal shutdown. Real signed feed download/install/relaunch and upgrade/rollback
 acceptance remain release gates.
 
+### Data recovery
+
+The bundled backend includes a standalone SQLite backup/verify/restore tool. It
+preserves the durable database, optional activity logs and pending native page
+metadata without executing application schema migrations. Restore only creates a
+new data directory. See [data recovery](../docs/DATA-RECOVERY.md) for commands, the
+state inventory, online-backup limits and the remaining upgrade/rollback gates.
+
 ## Verify
 
 ```bash
