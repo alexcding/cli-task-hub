@@ -19,13 +19,15 @@ import GhosttyTerminal
     private var optionClick: (url: String, point: NSPoint, dragged: Bool)?
 
     // Ask Ghostty to hit-test the actual click position, not a stale hover. The
-    // Command modifier requests hyperlink recognition even in a mouse-reporting TUI.
+    // Command requests link recognition. Shift also releases TUI mouse capture
+    // when Ghostty permits it; Command alone does not bypass mouse reporting.
     private func link(at event: NSEvent) -> String? {
         guard let surface = linkSurface else { return nil }
         let point = convert(event.locationInWindow, from: nil)
-        surface.sendMousePos(x: -1, y: -1, modifiers: .super_)
+        let modifiers: TerminalInputModifiers = surface.isMouseCaptured ? [.super_, .shift] : .super_
+        surface.sendMousePos(x: -1, y: -1, modifiers: modifiers)
         hoveredLink = nil
-        surface.sendMousePos(x: point.x, y: bounds.height - point.y, modifiers: .super_)
+        surface.sendMousePos(x: point.x, y: bounds.height - point.y, modifiers: modifiers)
         return hoveredLink
     }
     override func mouseDown(with event: NSEvent) {

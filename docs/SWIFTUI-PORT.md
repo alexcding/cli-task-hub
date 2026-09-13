@@ -576,11 +576,10 @@ does not).
   encoded filenames, invalid positions and canonical worktree containment. The diff
   UI regression passes collapse, failed-refresh recovery, opening a changed-file
   line into Monaco, and opening an untracked file.
-- Still open: automatic detection of plain printed file paths, Option-click external
-  browser routing, broader terminal link/focus/IME acceptance, and diff mutations.
-  Ghostty's documented custom link-regex configuration is not currently settable;
-  handling activated links does not establish plain-path detection parity. Remaining
-  M1/M3/M4/M6 gates and the final elevate-ios architecture pass continue to apply.
+- At this stage, plain printed paths and Option-click had only indirect evidence.
+  The later M1/M5 printed-link acceptance section verifies the pinned core's built-in
+  matcher directly; a custom regex configuration is not needed. Broader terminal
+  link/focus/IME acceptance and other M1/M3/M4/M6 gates remain separate.
 
 ### M5 native commit and push — 2026-09-12
 
@@ -1292,6 +1291,31 @@ does not).
   other terminals can still pause temporarily behind an unread client. It proves
   recovery from the indefinite freeze, not per-terminal socket isolation or a
   substitute for full-app performance and interaction acceptance.
+
+### M1/M5 printed-link acceptance — 2026-09-12
+
+- Verified that the pinned core already recognizes printed paths through its
+  default URL/path matcher. No custom regex, dependency patch, output scanner or
+  additional per-frame parsing is needed. This corrects the earlier assumption
+  that unsettable custom link configuration prevented plain-path detection.
+- A real native surface verifies relative, absolute and home-relative paths,
+  line/column suffixes, Unicode filenames, wide/combining characters before a
+  link, punctuation and soft-wrapped paths. Web URLs and OSC 8 links retain
+  precedence; unsupported SSH addresses remain whole for the host to refuse.
+  Local positions and scheme refusal remain covered by the host parser tests.
+- Fixed the Option-click adapter's mouse-capture modifier. Command alone does
+  not override Ghostty mouse reporting; the adapter now adds Shift while capture
+  is active, subject to Ghostty's override policy. A real AppKit Option-click
+  invokes external web routing while ordinary clicks continue producing SGR
+  mouse input. Shift-Command-click activates a printed file under capture.
+- Five focused Swift tests pass, including the existing OSC 8, Option-drag,
+  hidden output, encoded keys/paste, URI and file-containment regressions. The
+  native arm64 app builds. The fixture uses actual engine cell metrics after
+  initial layout, and a valid localhost OSC 7 URI, rather than estimating columns
+  from string length or accepting a zero-cell-size hit test.
+- This covers synthetic native click events and basic mouse-button reporting.
+  Broader motion/drag/focus/IME and interactive agent acceptance, performance,
+  release checks and the final coordinator/ViewModel/DI pass remain open.
 
 ## Why now, and why native
 

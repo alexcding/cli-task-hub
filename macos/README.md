@@ -459,7 +459,11 @@ Ghostty-activated local-file links. Web links open in the owning workspace, and 
 standalone terminal supports the same split context pane as session terminals.
 Line/column locations survive document loading. Diff paths stay within the
 canonical worktree; terminal relative links use the current working directory.
-Plain printed file-path detection and Option-click external routing remain open.
+Command-click recognizes printed paths (including wrapped paths and `:line:column`)
+through the pinned core's default matcher. While a TUI captures the mouse, use
+Shift-Command-click to release capture. Option-click routes web links to the real
+browser and also respects Ghostty's capture override. Ordinary clicks retain TUI
+mouse reporting. Paths remain scoped to their originating terminal's workspace.
 
 
 Changes → **Commit and Push…** opens native commit controls. Commit stages all

@@ -19,6 +19,118 @@ private final class PipeEvents: @unchecked Sendable {
     var all: [String] { lock.lock(); defer { lock.unlock() }; return values }
 }
 
+private final class LinkMetrics: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: InMemoryTerminalViewport?
+    func set(_ value: InMemoryTerminalViewport) { lock.lock(); self.value = value; lock.unlock() }
+    func get() -> InMemoryTerminalViewport? { lock.lock(); defer { lock.unlock() }; return value }
+}
+
+@MainActor @Test(.timeLimit(.minutes(1))) func ghosttyDetectsPrintedFilesWithoutBreakingURLsOrMouseInput() async throws {
+    _ = NSApplication.shared
+    let input = InputBytes(), metrics = LinkMetrics()
+    let memory = InMemoryTerminalSession(write: { input.append($0) }, resize: { metrics.set($0) })
+    let configuration = CodeFont(size: 13).terminalConfiguration
+        .custom("window-padding-x", "0").custom("window-padding-y", "0")
+        .custom("click-repeat-interval", "1")
+    let state = TerminalViewState(terminalConfiguration: configuration)
+    let view = WorkspaceTerminalView(frame: NSRect(x: 0, y: 0, width: 640, height: 320))
+    view.delegate = state; view.controller = state.controller
+    view.configuration = .init(backend: .inMemory(memory), fontSize: 13)
+    let window = NSWindow(contentRect: view.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+    window.isReleasedWhenClosed = false; window.contentView = view
+    defer { window.contentView = nil; window.close() }
+    view.layoutSubtreeIfNeeded()
+    for _ in 0..<100 {
+        if state.surface != nil && metrics.get() != nil { break }
+        try await Task.sleep(for: .milliseconds(20))
+    }
+    let surface = try #require(state.surface)
+    #expect(memory.enableGeometryCallbacks())
+    // Allow the view's throttled initial layout to replace the core's default
+    // dimensions, then use the engine's actual cell pixels for hit testing.
+    try await Task.sleep(for: .milliseconds(150))
+    let grid = try #require(metrics.get())
+    try #require(grid.cellWidthPixels > 0 && grid.cellHeightPixels > 0)
+    #expect(state.controller.lastConfigurationIssue == nil)
+    view.setSurfaceVisible(false)
+    let cellWidth = Double(grid.cellWidthPixels) / window.backingScaleFactor
+    let cellHeight = Double(grid.cellHeightPixels) / window.backingScaleFactor
+    var opened: String?
+    var workingDirectory: String?
+    view.openLink = { raw, directory, _ in opened = raw; workingDirectory = directory }
+    func point(column: Int, row: Int = 0) -> (Double, Double) {
+        ((Double(column) + 0.5) * cellWidth, (Double(row) + 0.5) * cellHeight)
+    }
+    func click(column: Int, row: Int = 0, modifiers: TerminalInputModifiers = .super_) {
+        let (x, y) = point(column: column, row: row)
+        surface.sendMousePos(x: -1, y: -1, modifiers: modifiers)
+        surface.sendMousePos(x: x, y: y, modifiers: modifiers)
+        surface.sendMouseButton(state: GHOSTTY_MOUSE_PRESS, button: GHOSTTY_MOUSE_LEFT, modifiers: modifiers)
+        surface.sendMouseButton(state: GHOSTTY_MOUSE_RELEASE, button: GHOSTTY_MOUSE_LEFT, modifiers: modifiers)
+    }
+    let wrapped = String(repeating: "directory/", count: Int(grid.columns) / 5) + "file.swift:12:3"
+    let cases: [(String, Int, Int, String?)] = [
+        ("Sources/File.swift:12:3", 1, 0, "Sources/File.swift:12:3"),
+        ("~/Sources/File.swift:9", 1, 0, "~/Sources/File.swift:9"),
+        ("../src/file.swift", 1, 0, "../src/file.swift"),
+        ("/tmp/file.swift", 1, 0, "/tmp/file.swift"),
+        ("src/日本語.swift:4", 1, 0, "src/日本語.swift:4"),
+        ("🦀 日本語 e\u{301}  Sources/File.swift:5", 14, 0, "Sources/File.swift:5"),
+        ("(src/file.swift:4).", 3, 0, "src/file.swift:4"),
+        (wrapped, 3, 1, wrapped),
+        ("https://example.com/o/r/blob/main/file.swift:7", 33, 0, "https://example.com/o/r/blob/main/file.swift:7"),
+        ("\u{1b}]8;;https://example.com/original\u{1b}\\src/file.swift\u{1b}]8;;\u{1b}\\", 3, 0, "https://example.com/original"),
+        ("bare.swift", 2, 0, nil),
+        ("src/README", 2, 0, nil),
+        ("ssh://host/src/file.swift", 15, 0, "ssh://host/src/file.swift"),
+    ]
+    for (text, column, row, expected) in cases {
+        opened = nil
+        memory.receive("\u{1b}[2J\u{1b}[H\u{1b}]7;file://localhost/work/current\u{1b}\\" + text)
+        memory.waitForPendingOutput()
+        state.controller.tick()
+        click(column: column, row: row)
+        try await Task.sleep(for: .milliseconds(30))
+        #expect(opened == expected, "Printed link: \(text)")
+        if expected != nil { #expect(workingDirectory == "/work/current") }
+    }
+
+    // Ordinary clicks remain native TUI input. Ghostty requires Shift-Command
+    // while mouse reporting is enabled; Command alone is still TUI input.
+    opened = nil
+    memory.receive("\u{1b}[2J\u{1b}[Hsrc/file.swift:12:3\u{1b}[?1000h\u{1b}[?1006h")
+    memory.waitForPendingOutput(); _ = input.take()
+    click(column: 3, modifiers: [])
+    try await Task.sleep(for: .milliseconds(50))
+    #expect(opened == nil)
+    #expect(String(decoding: input.take(), as: UTF8.self).contains("\u{1b}[<0;"))
+    click(column: 3)
+    try await Task.sleep(for: .milliseconds(30))
+    #expect(opened == nil)
+    click(column: 3, modifiers: [.super_, .shift])
+    try await Task.sleep(for: .milliseconds(30))
+    #expect(opened == "src/file.swift:12:3")
+
+    // AppKit Option-click must do the same capture-aware hit test, routing a
+    // web link externally without forwarding a button press to the TUI.
+    opened = nil
+    var external = false
+    view.openLink = { raw, _, outside in opened = raw; external = outside }
+    memory.receive("\u{1b}[2J\u{1b}[Hhttps://example.com/code.swift")
+    memory.waitForPendingOutput(); _ = input.take()
+    let (x, y) = point(column: 3)
+    let location = view.convert(NSPoint(x: x, y: view.bounds.height - y), to: nil)
+    let down = try #require(NSEvent.mouseEvent(with: .leftMouseDown, location: location, modifierFlags: .option,
+        timestamp: 1, windowNumber: window.windowNumber, context: nil, eventNumber: 1, clickCount: 1, pressure: 1))
+    let up = try #require(NSEvent.mouseEvent(with: .leftMouseUp, location: location, modifierFlags: .option,
+        timestamp: 1.1, windowNumber: window.windowNumber, context: nil, eventNumber: 2, clickCount: 1, pressure: 0))
+    view.mouseDown(with: down); view.mouseUp(with: up)
+    try await Task.sleep(for: .milliseconds(30))
+    #expect(opened == "https://example.com/code.swift" && external)
+    #expect(input.take().isEmpty)
+}
+
 @MainActor @Test(.timeLimit(.minutes(1))) func terminalAttachDeduplicatesBufferedOutputAndDrainsBeforeExit() async throws {
     _ = NSApplication.shared
     let events = PipeEvents()
