@@ -12,6 +12,7 @@ let package = Package(
             name: "TaskHubFeature",
             targets: ["TaskHubFeature"]
         ),
+        .executable(name: "TaskHubTerminalStress", targets: ["TaskHubTerminalStress"]),
     ],
     dependencies: [
         // Generated from the locked upstream revisions and maintained patches.
@@ -19,6 +20,7 @@ let package = Package(
         .package(name: "GhosttyKit", path: "../.build/ghostty-native/package"),
     ],
     targets: [
+        .executableTarget(name: "TaskHubTerminalStress", dependencies: ["TaskHubFeature"]),
         // Targets are the basic building blocks of a package, defining a module or a test suite.
         // Targets can depend on other targets in this package and products from dependencies.
         .target(

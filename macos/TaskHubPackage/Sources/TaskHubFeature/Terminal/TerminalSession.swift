@@ -32,17 +32,20 @@ final class TerminalSession: Identifiable {
     @ObservationIgnored private var reconnectTask: Task<Void, Never>?
     @ObservationIgnored private var commandWrites = 0
     @ObservationIgnored private let configuration: PtydConfiguration?
+    @ObservationIgnored private let shellPath: String?
+    var outputDiagnostics: TerminalPipe.Diagnostics { pipe.diagnostics }
     @ObservationIgnored var openLink: (String, String, Bool) -> Void = { _, _, _ in }
     @ObservationIgnored var onCreated: ((TerminalSession) async throws -> Void)?
     @ObservationIgnored var launchedAgent: WorkflowCLI?
     @ObservationIgnored var launchedAgentForeground: WorkflowForeground?
 
     init(pairKey: String = "native-terminal-spike", cwd: String = FileManager.default.homeDirectoryForCurrentUser.path, paired: Bool = false,
-         configuration: PtydConfiguration? = nil) {
+         configuration: PtydConfiguration? = nil, shellPath: String? = nil) {
         self.pairKey = pairKey
         self.cwd = cwd
         self.paired = paired
         self.configuration = configuration
+        self.shellPath = shellPath
         makeSurface()
     }
 
@@ -162,7 +165,7 @@ final class TerminalSession: Identifiable {
             let geometry = try await pipe.measuredGeometry()
             try Task.checkCancellation()
             info = try await client.request(.init(op: "create", opts: .init(
-                cwd: cwd, paired: paired, pairKey: pairKey,
+                cwd: cwd, shell: shellPath, paired: paired, pairKey: pairKey,
                 stateResponseOwner: PtyHello.identityResponseOwnerVersion, terminalProfile: profile,
                 geometryResponseOwner: PtyHello.geometryResponseOwnerVersion, geometry: geometry)))
             created = true

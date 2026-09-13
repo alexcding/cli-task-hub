@@ -349,6 +349,26 @@ socket to test the new helper without ending an existing shell. Broader
 lifecycle coverage, links, workflow hooks, IME/mouse/selection checks, and the
 ten-minute multi-session performance benchmark remain part of M1's acceptance gate.
 
+The standalone `TaskHubTerminalStress` Swift package executable exercises ten real
+native sessions with a visible interactive terminal, one hidden flood and eight
+hidden tickers. It writes machine/build metadata, input-to-parsed-output latency,
+queue peaks and native process CPU/RSS. Run it with an already-prepared Ghostty
+package and helper (the arguments must be JSON strings):
+
+```bash
+cargo build --manifest-path crates/taskhub-ptyd/Cargo.toml --release --features terminal-snapshots --locked
+xcodebuildmcp swift-package run --package-path macos/TaskHubPackage \
+  --executable-name TaskHubTerminalStress --configuration release --background \
+  --json '{"arguments":["--seconds","600","--root","/absolute/path/to/cli-task-hub-swiftui","--helper","/absolute/path/to/cli-task-hub-swiftui/crates/taskhub-ptyd/target/release/taskhub-ptyd","--report","/tmp/taskhub-terminal-stress.json"]}'
+xcodebuildmcp swift-package list
+```
+
+Background launch reports a process ID, not a passed measurement. Check the final
+report and process completion. Do not overlap it with builds, other UI tests or
+another benchmark. [The first ten-minute result](../docs/measurements/native-terminal-stress-2026-09-12.md)
+records 20.51 ms input-to-parsed-output p95 and bounded queues. GPU/display latency,
+memory stabilization and an equivalent Tauri comparison remain open.
+
 An established terminal automatically reconnects after a transient transport loss
 when all input has been acknowledged. It replaces the native surface and restores
 the same terminal ID/PID from a fresh snapshot, using up to five attempts with

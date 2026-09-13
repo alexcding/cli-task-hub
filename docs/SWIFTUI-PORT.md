@@ -1246,6 +1246,29 @@ does not).
 - Real Claude/Codex interaction acceptance, remaining M1–M6 acceptance/release work
   and the final coordinator/view-model/DI pass remain open. Sprint Board stays web.
 
+### M1 sustained native terminal measurement — 2026-09-12
+
+- Added a standalone AppKit harness around the production terminal session, native
+  view, output pipe and snapshot/geometry-enabled helper. It uses private compiled
+  fixture programs and captures queue high-water values without publishing output
+  through observable UI state. The shell override is injected only by the harness;
+  normal sessions retain their existing shell selection.
+- An optimized ten-minute run used one visible interactive terminal, one hidden
+  ANSI/Unicode flood and eight hidden tickers. All 292 samples observed the visible
+  window. Tick output progressed between samples, input stayed responsive, and PTY
+  PIDs/surface generations stayed unchanged. A separate pause owner disconnected
+  successfully while the other sessions continued.
+- [Recorded evidence](measurements/native-terminal-stress-2026-09-12.md): 600.32 s,
+  input-to-parsed-output p95 20.51 ms, maximum output queue 60,686 bytes, native host
+  median CPU 179.7%, daemon tree 21.2%. Host RSS grew from 126.7 to 173.2 MiB and
+  daemon-tree RSS from 32.1 to 74.5 MiB; no memory plateau is claimed.
+- This verifies sustained native-path progress and bounded queues for the specified
+  workload. It does not close M1: physical key-to-display/GPU measurements, hidden
+  draw verification, slow socket stress, a matching Tauri baseline, full-app overhead
+  and the remaining terminal interaction/fidelity checks are still required.
+  Four focused terminal/PTY/workflow regressions and the native arm64 app build
+  pass after adding the diagnostics and harness target.
+
 ## Why now, and why native
 
 The Tauri shell works, but roughly half of `src-tauri/` exists to work around what a DOM

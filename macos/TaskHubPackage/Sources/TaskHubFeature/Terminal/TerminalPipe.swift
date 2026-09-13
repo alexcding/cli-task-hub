@@ -5,6 +5,16 @@ import GhosttyTerminal
 // observable app state. Ghostty parses on its own serial queue; the drain fence is
 // waited on a worker, so parsing and replay cannot block the UI actor.
 final class TerminalPipe: @unchecked Sendable {
+    struct Diagnostics: Codable, Sendable {
+        let queuedBytes: Int
+        let queuedEvents: Int
+        let peakQueuedBytes: Int
+        let peakQueuedEvents: Int
+        let receivedBytes: UInt64
+        let pauseCount: UInt64
+        let resumeCount: UInt64
+        let failed: Bool
+    }
     private let lock = NSLock()
     private let outputQueue = DispatchQueue(label: "taskhub.terminal.output", qos: .userInitiated)
     private var client: PtydClient?
@@ -15,6 +25,11 @@ final class TerminalPipe: @unchecked Sendable {
     private var buffered: [PtyEvent] = []
     private var queuedBytes = 0
     private var queuedEvents = 0
+    private var peakQueuedBytes = 0
+    private var peakQueuedEvents = 0
+    private var receivedBytes: UInt64 = 0
+    private var pauseCount: UInt64 = 0
+    private var resumeCount: UInt64 = 0
     private var paused = false
     private var failed = false
     private var lastSequence: UInt64 = 0
@@ -27,6 +42,11 @@ final class TerminalPipe: @unchecked Sendable {
     private let exited: @Sendable (Int) -> Void
     private(set) var memory: InMemoryTerminalSession!
     var isClosed: Bool { lock.withLock { failed } }
+    var diagnostics: Diagnostics {
+        lock.withLock { .init(queuedBytes: queuedBytes, queuedEvents: queuedEvents,
+            peakQueuedBytes: peakQueuedBytes, peakQueuedEvents: peakQueuedEvents,
+            receivedBytes: receivedBytes, pauseCount: pauseCount, resumeCount: resumeCount, failed: failed) }
+    }
 
     init(onError: @escaping @Sendable (String) -> Void, onExit: @escaping @Sendable (Int) -> Void) {
         error = onError
@@ -89,6 +109,7 @@ final class TerminalPipe: @unchecked Sendable {
         defer { lock.unlock() }
         guard event.id == termID, !failed else { return }
         queuedEvents += 1
+        peakQueuedEvents = max(peakQueuedEvents, queuedEvents)
         guard queuedEvents <= 16384 else { failLocked("Terminal output exceeded its event limit."); return }
         if event.ev == "inputError" {
             failLocked("Terminal input delivery failed: \(event.message ?? "PTY write failed.") Earlier input may have been sent; remaining input was stopped. Check the shell before reattaching.")
@@ -99,6 +120,8 @@ final class TerminalPipe: @unchecked Sendable {
                 failLocked("The terminal daemon sent an incomplete byte frame."); return
             }
             queuedBytes += bytes.count
+            receivedBytes &+= UInt64(bytes.count)
+            peakQueuedBytes = max(peakQueuedBytes, queuedBytes)
             guard queuedBytes <= 8 * 1024 * 1024 else { failLocked("Terminal output exceeded its buffer limit."); return }
             if queuedBytes > 1024 * 1024 && !paused { flowLocked(true) }
         }
@@ -186,6 +209,7 @@ final class TerminalPipe: @unchecked Sendable {
         lastSequence = attachment.seq
         let replay = attachment.bytes
         queuedBytes += replay.count
+        peakQueuedBytes = max(peakQueuedBytes, queuedBytes)
         guard queuedBytes <= 8 * 1024 * 1024 else { failLocked("Terminal attachment exceeded its buffer limit."); return }
         if queuedBytes > 1024 * 1024 && !paused { flowLocked(true) }
         outputQueue.async { [self] in
@@ -283,6 +307,7 @@ final class TerminalPipe: @unchecked Sendable {
 
     private func flowLocked(_ pause: Bool) {
         paused = pause
+        if pause { pauseCount &+= 1 } else { resumeCount &+= 1 }
         client?.fire(.init(op: "flow", term: termID, pause: pause))
     }
 
