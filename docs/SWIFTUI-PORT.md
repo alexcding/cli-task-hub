@@ -1953,6 +1953,33 @@ does not).
 - Settings/document/platform factories, remaining view-input adapters and runtime
   extraction continue, along with terminal and release acceptance gates.
 
+### Document activation through model property observers — 2026-09-13
+
+- Removed activation, appearance and font change handlers from Diff, Git History
+  and Editor rendering views. Workspace/context state now supplies a typed
+  `DocumentPresentation`; guarded model `didSet` reactions own load/suspend and
+  surface updates. History forwards presentation to new immutable patches itself.
+- Pane, selected file, workspace activity, restoration and backend state drive
+  presentation without a mounted view. Replaced models deactivate. Shell theme and
+  document-font observers update current and retained models directly; style-only
+  changes preserve surfaces, buffers, selection and pagination. Duplicate inputs
+  do not reload. A selected file resumes after its service is connected.
+- Thirty-four focused tests pass in
+  `swift_package_test_2026-09-13T17-59-50-276Z_pid79416_a29fed68.log`. New workspace
+  tests exercise activation, dirty buffer retention, history patch/selection/page
+  retention, repeated/style-only input, restoration, replacement and reconnect
+  without rendering any SwiftUI document view.
+- Native editor save/cancel/discard/reopen and the added dirty-buffer navigation
+  check pass in `test_macos_2026-09-13T18-00-47-954Z_pid79893_54dcdd05.log`.
+  Working diff collapse, failed/successful refresh and tracked/untracked file opening
+  pass in `test_macos_2026-09-13T18-01-47-259Z_pid80393_727698be.log`.
+  History error recovery, paging, return with selection/search and read-only patches
+  pass in `test_macos_2026-09-13T18-02-51-000Z_pid80774_3106005a.log`.
+  The existing WebKit QoS warning remains open.
+- Remaining settings/document factories and action/presentation ownership,
+  terminal/platform adapters and runtime extraction continue. M1–M6 acceptance
+  requirements remain open wherever evidence is missing.
+
 ## Why now, and why native
 
 The Tauri shell works, but roughly half of `src-tauri/` exists to work around what a DOM

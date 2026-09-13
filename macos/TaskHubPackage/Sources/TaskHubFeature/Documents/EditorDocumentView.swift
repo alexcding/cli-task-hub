@@ -1,10 +1,7 @@
 import SwiftUI
 
 struct EditorDocumentView: View {
-    @Environment(\.documentFont) private var font
     let model: EditorDocumentViewModel
-    let appearance: AppAppearance
-    let active: Bool
     var body: some View {
         VStack(spacing: 0) {
             HStack {
@@ -18,17 +15,12 @@ struct EditorDocumentView: View {
             if let error = model.error {
                 HStack {
                     Text(error).font(.callout).foregroundStyle(.orange)
-                    if !model.loaded && !model.loading { Button("Retry") { model.show(appearance: appearance) } }
+                    if !model.loaded && !model.loading { Button("Retry", action: model.retry) }
                 }.padding(8)
             }
             Divider()
             if let view = model.webView { BrowserSurface(webView: view) }
             else { Color.clear }
         }
-        .onAppear { model.setFont(font); if active { model.show(appearance: appearance) } }
-        .onChange(of: active) { _, value in if value { model.show(appearance: appearance) } else { model.hide() } }
-        .onDisappear { model.hide() }
-        .onChange(of: appearance) { _, value in model.setAppearance(value) }
-        .onChange(of: font) { _, value in model.setFont(value) }
     }
 }

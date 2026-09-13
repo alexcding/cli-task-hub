@@ -5,6 +5,10 @@ extension AppStore: WorkspaceCoordinating {
         for context in viewer.contexts.values { context.workspaceViewModel?.reviewStateChanged() }
     }
 
+    func updateWorkspaceDocumentState() {
+        for context in viewer.contexts.values { context.workspaceViewModel?.documentStateChanged() }
+    }
+
     func workspaceState(in context: WorkspaceContext) -> SessionWorkspaceState {
         guard viewer.contexts[context.id] === context else { return SessionWorkspaceState() }
         let session = sessions.first { "task:\($0.id)" == context.id }
@@ -13,7 +17,7 @@ extension AppStore: WorkspaceCoordinating {
         return SessionWorkspaceState(session: session, project: project, terminal: terminals[context.id],
             buildTerminal: terminals["build:\(context.sourceURL)"], build: buildModels[context.id],
             history: historyModels[context.id], diff: diffModels[context.id], workflow: workflowModel(in: context),
-            appearance: shell.appearance, connected: connection == "Connected",
+            appearance: shell.appearance, documentFont: shell.font(.diff), connected: connection == "Connected",
             changingSession: session.map { changingSessions.contains($0.id) } ?? false,
             openingExternal: workspaceLaunch.opening.contains(context.id), canPresent: coordinator.canPresent,
             canCreateSession: canPerform(.newSession), editorLabel: workspaceLaunch.editorLabel(project),

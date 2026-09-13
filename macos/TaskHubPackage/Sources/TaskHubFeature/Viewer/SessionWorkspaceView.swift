@@ -159,13 +159,13 @@ struct SessionWorkspaceView: View {
                                 ForEach(ReviewSection.allCases) { Text($0.rawValue).tag($0) }
                             }.pickerStyle(.segmented).labelsHidden().padding(8)
                             if context.reviewSection == .history, let history = model.history {
-                                GitHistoryView(model: history, appearance: model.appearance, active: active)
+                                GitHistoryView(model: history)
                             } else if context.reviewSection == .changes, let diff = model.diff {
-                                DiffView(model: diff, appearance: model.appearance, active: active)
+                                DiffView(model: diff)
                             }
                         }
                     } else if let document = context.activeDocument {
-                        EditorDocumentView(model: document, appearance: model.appearance, active: active && model.showsPage && !context.restoring).id(document.id)
+                        EditorDocumentView(model: document).id(document.id)
                     } else if let page = context.activePage { BrowserPane(page: page, context: context, model: page.controls).id(page.id) }
                     else if model.session == nil {
                         ContentUnavailableView("No open pages", systemImage: "globe", description: Text("Add a page or reopen one from History."))

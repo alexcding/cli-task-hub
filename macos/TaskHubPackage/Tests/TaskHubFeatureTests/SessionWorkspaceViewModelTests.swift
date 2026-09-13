@@ -114,3 +114,79 @@ import Testing
     #expect(!model.showsTerminal && !model.canRestart)
     model.openTerminal(); model.reconnectBuild(); model.setActive(true)
 }
+
+@MainActor @Test(.timeLimit(.minutes(1))) func workspaceOwnsDocumentActivationAndStyleWithoutRenderingViews() async throws {
+    let runtime = WorkspaceFixture(), viewer = ViewerStore()
+    let diffService = DiffFixture(), historyService = HistoryFixture(), fileService = FileFixture()
+    let base = URL(string: "http://127.0.0.1:9")!
+    runtime.state.session = WorkspaceSession(id: "documents", projectId: "p", workspace: "/tmp", worktree: "/tmp/documents",
+        title: "Documents", branch: "documents", url: "", createdAt: nil, pinned: false)
+    runtime.state.connected = true
+    let diff = DiffViewModel(worktree: "/tmp/documents", baseURL: base, service: diffService)
+    let history = GitHistoryViewModel(worktree: "/tmp/documents", baseURL: base, service: historyService, pageSize: 2)
+    runtime.state.diff = diff; runtime.state.history = history
+    viewer.prepareContext = { context in context.configureWorkspace(factory: NativeWorkspaceFeatureFactory(), service: runtime) }
+    let context = viewer.select(id: "task:documents", url: "", title: "Documents")
+    let workspace = try #require(context.workspaceViewModel)
+    let file = try #require(context.openFile("/tmp/documents/File.swift")), surface = BufferFixture()
+    file.connect(service: fileService, makeSurface: { surface })
+    await file.waitForLoad()
+    #expect(file.loaded && file.presentation.active && !diff.presentation.active && !history.presentation.active)
+    surface.edit("keep this unsaved buffer")
+    context.setPane(.diff)
+    await diff.waitForRefresh()
+    #expect(!file.presentation.active && file.dirty && file.surface === surface && !surface.disposed)
+    #expect(diff.presentation.active && diff.snapshot != nil && !history.presentation.active)
+    context.setPane(.diff); workspace.reviewStateChanged()
+    #expect(await diffService.calls == 1)
+    context.setReviewSection(.history)
+    await history.waitForList(); await history.waitForDetail()
+    #expect(!diff.presentation.active && diff.webView == nil && history.presentation.active)
+    #expect(history.patch?.presentation.active == true && history.patch?.actions == nil)
+    history.loadMore(); await history.waitForList()
+    let selection = history.selectedSHA, patch = try #require(history.patch)
+    let count = await historyService.calls.count
+    runtime.state.appearance = .dark; runtime.state.documentFont = CodeFont(size: 19)
+    workspace.documentStateChanged(); workspace.documentStateChanged()
+    #expect(history.patch === patch && patch.presentation.appearance == .dark && patch.presentation.font.size == 19)
+    #expect(await historyService.calls.count == count && history.selectedSHA == selection)
+    #expect(surface.appearances.last == .dark && surface.fonts.last?.size == 19)
+    viewer.deactivate()
+    #expect(!history.presentation.active && history.patch == nil && patch.webView == nil)
+    #expect(file.loaded && file.surface === surface)
+    _ = viewer.select(id: "task:documents", url: "", title: "Documents")
+    await history.waitForList(); await history.waitForDetail()
+    #expect(history.commits.count == 3 && history.selectedSHA == selection && history.presentation.active)
+    context.select(.file(file)); await file.waitForLoad()
+    #expect(!history.presentation.active && file.presentation.active && file.surface === surface)
+    #expect(surface.content == "keep this unsaved buffer")
+    #expect(await fileService.reads == 1)
+    context.restoring = true
+    #expect(!file.presentation.active)
+    context.restoring = false
+    #expect(file.presentation.active && file.surface === surface)
+    viewer.deactivate(); diff.disconnect(); history.hide(); file.dispose()
+}
+
+@MainActor @Test(.timeLimit(.minutes(1))) func workspaceReplacementAndReconnectDeactivateObsoleteDocumentModels() async throws {
+    let runtime = WorkspaceFixture(), viewer = ViewerStore(), base = URL(string: "http://127.0.0.1:9")!
+    let service = DiffFixture()
+    let old = DiffViewModel(worktree: "/tmp/old", baseURL: base, service: service)
+    runtime.state.session = WorkspaceSession(id: "p", projectId: "p", workspace: "/tmp", worktree: "/tmp/p",
+        title: "P", branch: "p", url: "", createdAt: nil, pinned: false)
+    runtime.state.connected = true; runtime.state.diff = old
+    viewer.prepareContext = { $0.configureWorkspace(factory: NativeWorkspaceFeatureFactory(), service: runtime) }
+    let context = viewer.select(id: "task:p", url: "", title: "P")
+    let model = try #require(context.workspaceViewModel)
+    context.setPane(.diff)
+    let fresh = DiffViewModel(worktree: "/tmp/fresh", baseURL: base, service: service)
+    runtime.state.diff = fresh; model.documentStateChanged()
+    await fresh.waitForRefresh()
+    #expect(!old.presentation.active && old.webView == nil && old.snapshot == nil)
+    #expect(fresh.presentation.active && fresh.snapshot?.diff == "diff for /tmp/fresh")
+    runtime.state.connected = false; model.reviewStateChanged()
+    #expect(!fresh.presentation.active && fresh.webView == nil)
+    runtime.state.connected = true; model.reviewStateChanged(); await fresh.waitForRefresh()
+    #expect(fresh.presentation.active && fresh.snapshot != nil)
+    viewer.deactivate(); old.disconnect(); fresh.disconnect()
+}

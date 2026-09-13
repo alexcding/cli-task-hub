@@ -2,6 +2,15 @@ import Foundation
 import Observation
 
 @MainActor @Observable final class GitHistoryViewModel {
+    var presentation = DocumentPresentation() {
+        didSet {
+            guard oldValue != presentation else { return }
+            if oldValue.active != presentation.active {
+                if presentation.active { show() } else { hide() }
+            }
+            patch?.presentation = presentation
+        }
+    }
     let worktree: String
     var scope = GitHistoryScope.branchChanges {
         didSet {
@@ -21,7 +30,9 @@ import Observation
     private(set) var commits: [GitCommit] = []
     private(set) var selectedSHA: String?
     private(set) var detail: GitCommitDetail?
-    private(set) var patch: DiffViewModel?
+    private(set) var patch: DiffViewModel? {
+        didSet { patch?.presentation = presentation }
+    }
     private(set) var page: GitHistoryPage?
     private(set) var loading = false
     private(set) var loadingMore = false
@@ -58,6 +69,7 @@ import Observation
     }
     func connect(baseURL: URL, service: any GitHistoryService) {
         hide(); self.baseURL = baseURL; self.service = service
+        if presentation.active { show() }
     }
     func updateBase(_ value: String) {
         guard value != base else { return }

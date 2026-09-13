@@ -1,10 +1,7 @@
 import SwiftUI
 
 struct DiffView: View {
-    @Environment(\.documentFont) private var font
     @Bindable var model: DiffViewModel
-    let appearance: AppAppearance
-    let active: Bool
     var title = "Changes"
 
     var body: some View {
@@ -37,10 +34,5 @@ struct DiffView: View {
         .sheet(item: Binding(get: { model.actions?.discardProposal }, set: { if $0 == nil { model.actions?.cancelDiscard() } })) { proposal in
             if let actions = model.actions { DiscardChangeSheet(model: actions, proposal: proposal) }
         }
-        .onAppear { model.setFont(font); if active { model.show(appearance: appearance) } }
-        .onChange(of: active) { _, value in if value { model.show(appearance: appearance) } else { model.hide() } }
-        .onChange(of: appearance) { _, value in model.setAppearance(value) }
-        .onChange(of: font) { _, value in model.setFont(value) }
-        .onDisappear { model.hide() }
     }
 }

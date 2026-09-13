@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import TaskHubFeature
 
-private actor DiffFixture: DiffService {
+actor DiffFixture: DiffService {
     var calls = 0
     var fails = false
     func fail(_ value: Bool) { fails = value }

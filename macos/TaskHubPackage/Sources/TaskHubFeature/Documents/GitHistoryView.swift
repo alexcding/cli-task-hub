@@ -2,8 +2,6 @@ import SwiftUI
 
 struct GitHistoryView: View {
     @Bindable var model: GitHistoryViewModel
-    let appearance: AppAppearance
-    let active: Bool
     @FocusState private var finding: Bool
     var body: some View {
         VStack(spacing: 0) {
@@ -61,7 +59,7 @@ struct GitHistoryView: View {
                                 ScrollView { Text(detail.meta.message).font(.callout).frame(maxWidth: .infinity, alignment: .leading) }.frame(maxHeight: 90)
                             }
                         }.padding(10).textSelection(.enabled)
-                        if let patch = model.patch { DiffView(model: patch, appearance: appearance, active: active, title: "Commit Changes").id(detail.meta.sha) }
+                        if let patch = model.patch { DiffView(model: patch, title: "Commit Changes").id(detail.meta.sha) }
                     } else {
                         ContentUnavailableView("Select a commit", systemImage: "clock.arrow.circlepath")
                     }
@@ -69,8 +67,5 @@ struct GitHistoryView: View {
             }
         }
         .onChange(of: model.findRequest) { _, _ in finding = true }
-        .onAppear { if active { model.show() } }
-        .onChange(of: active) { _, value in if value { model.show() } else { model.hide() } }
-        .onDisappear { model.hide() }
     }
 }

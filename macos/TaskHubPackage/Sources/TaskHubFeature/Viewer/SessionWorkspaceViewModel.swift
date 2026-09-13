@@ -11,6 +11,7 @@ import Observation
     var diff: DiffViewModel?
     var workflow: WorkflowRunViewModel?
     var appearance: AppAppearance = .system
+    var documentFont = CodeFont(size: 12)
     var connected = false
     var changingSession = false
     var openingExternal = false
@@ -46,6 +47,8 @@ enum WorkspaceOperation: Equatable {
     @ObservationIgnored private weak var service: (any WorkspaceServing)?
     @ObservationIgnored var onAction: (Action) -> Void = { _ in }
     @ObservationIgnored private var previousReviewInputs: ReviewInputs?
+    @ObservationIgnored private weak var presentedDiff: DiffViewModel?
+    @ObservationIgnored private weak var presentedHistory: GitHistoryViewModel?
     private(set) var active = false {
         didSet { if oldValue != active { reviewStateChanged(force: true) } }
     }
@@ -99,9 +102,27 @@ enum WorkspaceOperation: Equatable {
     func setActive(_ value: Bool) { active = value }
     func reviewStateChanged(force: Bool = false) {
         let inputs = reviewInputs
-        guard force || previousReviewInputs != inputs else { return }
-        previousReviewInputs = inputs
-        prepareChanges()
+        if force || previousReviewInputs != inputs {
+            previousReviewInputs = inputs
+            prepareChanges()
+        }
+        documentStateChanged()
+    }
+    func documentStateChanged() {
+        let state = state
+        let visible = active && context?.restoring == false
+        let reviewing = visible && showsChanges && state.connected
+        if presentedDiff !== state.diff { presentedDiff?.presentation.active = false }
+        if presentedHistory !== state.history { presentedHistory?.presentation.active = false }
+        presentedDiff = state.diff; presentedHistory = state.history
+        state.diff?.presentation = .init(active: reviewing && context?.reviewSection == .changes,
+                                         appearance: state.appearance, font: state.documentFont)
+        state.history?.presentation = .init(active: reviewing && context?.reviewSection == .history,
+                                            appearance: state.appearance, font: state.documentFont)
+        for document in context?.documents ?? [] {
+            document.presentation = .init(active: visible && showsPage && !showsChanges && document === context?.activeDocument,
+                                           appearance: state.appearance, font: state.documentFont)
+        }
     }
     func prepareChanges() { if active && showsChanges { perform(.prepareChanges) } }
     func reveal() { if session != nil { perform(.reveal) } }

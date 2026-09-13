@@ -8,7 +8,7 @@ private func historyCommit(_ digit: String) -> GitCommit {
     .init(sha: String(repeating: digit, count: 40), short: String(repeating: digit, count: 7), parents: [],
           author: "History Author", email: "history@example.invalid", date: "2026-01-01T00:00:00Z", subject: "Commit \(digit)", refs: [])
 }
-private actor HistoryFixture: GitHistoryService {
+actor HistoryFixture: GitHistoryService {
     var failList = false, failDetail = false
     var revision = "original"
     var calls: [(GitHistoryQuery, Int)] = []

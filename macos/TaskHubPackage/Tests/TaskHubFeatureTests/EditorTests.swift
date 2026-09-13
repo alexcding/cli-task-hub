@@ -10,12 +10,14 @@ private struct FontDiffFixture: DiffService {
     }
 }
 
-private actor FileFixture: FileDocumentService {
+actor FileFixture: FileDocumentService {
     var writes: [String] = []
+    var reads = 0
     var fails = false
     func fail(_ value: Bool) { fails = value }
     func load(path: String) async throws -> FileDocumentSnapshot {
-        .init(content: "original", readOnly: false, revision: String(repeating: "a", count: 64))
+        reads += 1
+        return .init(content: "original", readOnly: false, revision: String(repeating: "a", count: 64))
     }
     func save(path: String, content: String, revision: String) async throws -> String {
         writes.append(content)
@@ -25,7 +27,7 @@ private actor FileFixture: FileDocumentService {
     }
 }
 
-@MainActor private final class BufferFixture: EditorSurface {
+@MainActor final class BufferFixture: EditorSurface {
     var webView: WKWebView? { nil }
     var changed: (Bool) -> Void = { _ in }
     var failed: (String) -> Void = { _ in }
@@ -44,8 +46,10 @@ private actor FileFixture: FileDocumentService {
     }
     func acknowledge(version: Int) async throws -> Bool { saved = version; return self.version != saved }
     func unfreeze() async throws { frozen = false }
-    func setAppearance(_ value: AppAppearance) {}
-    func setFont(_ value: CodeFont) {}
+    var appearances: [AppAppearance] = []
+    var fonts: [CodeFont] = []
+    func setAppearance(_ value: AppAppearance) { appearances.append(value) }
+    func setFont(_ value: CodeFont) { fonts.append(value) }
     var location: (Int, Int)?
     func focus(line: Int, column: Int) { location = (line, column) }
     func find() {}

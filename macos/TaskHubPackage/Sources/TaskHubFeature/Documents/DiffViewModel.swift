@@ -36,6 +36,16 @@ struct APIDiffService: DiffService {
 }
 
 @MainActor @Observable final class DiffViewModel: NSObject, WKNavigationDelegate {
+    var presentation = DocumentPresentation() {
+        didSet {
+            guard oldValue != presentation else { return }
+            if oldValue.appearance != presentation.appearance { setAppearance(presentation.appearance) }
+            if oldValue.font != presentation.font { setFont(presentation.font) }
+            if oldValue.active != presentation.active {
+                if presentation.active { show(appearance: presentation.appearance) } else { hide() }
+            }
+        }
+    }
     let worktree: String
     private(set) var snapshot: DiffSnapshot?
     private(set) var loading = false
@@ -154,7 +164,7 @@ struct APIDiffService: DiffService {
         snapshot = nil; documentScript = nil
         documentError = nil; loadError = nil
     }
-    func disconnect() { hide(); service = nil; showsActions = false }
+    func disconnect() { presentation.active = false; hide(); service = nil; showsActions = false }
     func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction,
                  decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void) {
         decisionHandler(action.targetFrame?.isMainFrame == true && action.request.url == pageURL ? .allow : .cancel)

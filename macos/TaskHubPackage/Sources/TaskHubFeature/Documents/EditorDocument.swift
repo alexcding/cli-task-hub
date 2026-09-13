@@ -58,6 +58,16 @@ struct EditorBuffer: Codable, Sendable {
 // Swift owns the document identity and revision; the editor owns its buffer and
 // undo stack. Saves acknowledge the submitted version, never a later edit.
 @MainActor @Observable final class EditorDocumentViewModel: Identifiable {
+    var presentation = DocumentPresentation() {
+        didSet {
+            guard oldValue != presentation else { return }
+            if oldValue.appearance != presentation.appearance { setAppearance(presentation.appearance) }
+            if oldValue.font != presentation.font { setFont(presentation.font) }
+            if oldValue.active != presentation.active {
+                if presentation.active { show(appearance: presentation.appearance) } else { hide() }
+            }
+        }
+    }
     let record: FileDocumentRecord
     nonisolated var id: String { record.id }
     var title: String { record.title }
@@ -88,7 +98,9 @@ struct EditorBuffer: Codable, Sendable {
     }
     func connect(service: any FileDocumentService, makeSurface: @escaping () -> any EditorSurface) {
         self.service = service; self.makeSurface = makeSurface
+        if presentation.active && !loaded { show(appearance: presentation.appearance) }
     }
+    func retry() { if presentation.active { show(appearance: presentation.appearance) } }
     func show(appearance: AppAppearance) {
         visible = true
         self.appearance = appearance

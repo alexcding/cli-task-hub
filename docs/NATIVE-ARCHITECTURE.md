@@ -301,9 +301,10 @@ longer watch these model values to trigger business work. Context promotion reta
 the model and its documents; removed/absorbed contexts lose activity.
 
 No rendering `.task(id:)` remains. Initial appearance/cancellation still forwards
-lifecycle events. Remaining `.onChange` handlers adapt SwiftUI focus, environment
-appearance/fonts and mounted surface visibility; those are UI events, not data
-request triggers. Application observation remains exclusively `@Observable`.
+lifecycle events. Document activation, appearance and fonts now come from workspace
+models rather than rendering `.onChange` handlers (see document presentation below).
+Remaining view change handlers bridge focus and terminal/board presentation inputs.
+Application observation remains exclusively `@Observable`.
 
 Twenty-two focused tests pass, including automatic model loading, cancellation,
 repeated-value guards, stale responses, context promotion and real WebKit address
@@ -509,6 +510,31 @@ an uncooperative old transport. Root presentations and deeplinks respect the chi
 confirmation and any outstanding write.
 
 Focused model/coordinator tests and native UI evidence are recorded in
+`SWIFTUI-PORT.md`.
+
+## Implemented: model-owned document presentation
+
+`SessionWorkspaceViewModel` derives each document's `DocumentPresentation` from
+workspace activity, pane, review section, selected file, restoration and connection
+state. Context property observers and runtime callbacks deliver those inputs even
+without a mounted SwiftUI view. Replaced diff/history models are deactivated before
+the replacement receives current state. Shell theme and document-font observers
+update workspace models directly.
+
+The diff, history and editor models react through guarded `presentation.didSet`.
+Activation starts their existing loading paths; deactivation releases diff/history
+surfaces and lets the editor retain dirty buffers under its existing close/save
+rules. Reassigning identical inputs does nothing. Style-only updates keep the
+surface, selection, pagination and buffer intact. History forwards current
+presentation to newly loaded immutable patches in its own property observer.
+
+The three rendering views no longer have activation/theme/font parameters or
+change handlers. History retains only its focus adapter for the Find command.
+Editor retry is a model action, and connecting a previously selected file resumes
+loading without requiring another view appearance. Restoration suppresses loading
+until the selected document is resolved.
+
+Focused model tests and native acceptance evidence are recorded in
 `SWIFTUI-PORT.md`.
 
 ## Remaining extraction

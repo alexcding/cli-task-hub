@@ -14,7 +14,9 @@ import Observation
     private(set) var usage: UsageSnapshot?
     private(set) var usageError: String?
     private(set) var usageLoading = false
-    public private(set) var appearance: AppAppearance
+    public private(set) var appearance: AppAppearance {
+        didSet { if oldValue != appearance { documentStyleChanged() } }
+    }
     private(set) var usageAgent: String
     private(set) var defaultAgent: SessionAgent
     private(set) var gitClient: String
@@ -22,7 +24,10 @@ import Observation
     var gitClientCommandDraft: String
     private(set) var gitClientCommandError: String?
     private(set) var terminalCodeFont: CodeFont
-    private(set) var documentCodeFont: CodeFont
+    private(set) var documentCodeFont: CodeFont {
+        didSet { if oldValue != documentCodeFont { documentStyleChanged() } }
+    }
+    @ObservationIgnored var documentStyleChanged: () -> Void = {}
     private(set) var remotePageLimit: Int
     @ObservationIgnored var remotePageLimitChanged: (Int) -> Void = { _ in }
     private(set) var settingsError: String?

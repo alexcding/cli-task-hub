@@ -72,7 +72,9 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
     private(set) var tabOrder: [String] = []
     private(set) var fileHistory: [FileDocumentRecord] = []
     private(set) var historyOrder: [String] = []
-    private(set) var activeID: String?
+    private(set) var activeID: String? {
+        didSet { if oldValue != activeID { workspaceViewModel?.documentStateChanged() } }
+    }
     private(set) var history: [WebPageRecord] = []
     private(set) var pane: WorkspacePane = .term {
         didSet { if oldValue != pane { workspaceViewModel?.reviewStateChanged() } }
@@ -80,7 +82,9 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
     private(set) var reviewSection: ReviewSection = .changes {
         didSet { if oldValue != reviewSection { workspaceViewModel?.reviewStateChanged() } }
     }
-    var restoring = false
+    var restoring = false {
+        didSet { if oldValue != restoring { workspaceViewModel?.documentStateChanged() } }
+    }
     var findVisible = false
     var findText = ""
     var error: String?
@@ -357,10 +361,10 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
     func connect(_ api: APIClient) {
         memoryPressure?.start { [weak self] in self?.handleMemoryPressure() }
         self.api = api
-        contexts.values.flatMap(\.documents).forEach(configure)
         loading?.cancel()
         restoring = true
         contexts.values.forEach { $0.restoring = true }
+        contexts.values.flatMap(\.documents).forEach(configure)
         let generation = UUID(); restoreGeneration = generation
         loading = Task {
             defer {

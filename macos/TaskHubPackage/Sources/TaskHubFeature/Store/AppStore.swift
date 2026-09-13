@@ -69,6 +69,7 @@ public final class AppStore {
                              memoryPressure: NativeMemoryPressureMonitor(), pageFactory: BrowserPageFactory(desktop: desktop))
         viewer.setPageLimit(shell.remotePageLimit)
         shell.remotePageLimitChanged = { [weak viewer] in viewer?.setPageLimit($0) }
+        shell.documentStyleChanged = { [weak self] in self?.updateWorkspaceDocumentState() }
         _ = coordinator.makeDashboard(factory: dashboardFactory, pageActions: NativePageActionService(open: { [weak self] request in
             guard let self else { throw BackendError.operation("The workspace has closed.") }
             try await self.openPage(request)
@@ -121,6 +122,7 @@ public final class AppStore {
     }
 
     func prepareChanges(for session: WorkspaceSession, context: WorkspaceContext) {
+        defer { context.workspaceViewModel?.documentStateChanged() }
         if context.reviewSection == .history, let api {
             let base = dashboard?.projects.flatMap(\.prs).first(where: { $0.url == session.url })?.baseRefName
             if let history = historyModels[context.id] { if let base { history.updateBase(base) } }
