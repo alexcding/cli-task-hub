@@ -374,6 +374,7 @@ public final class AppStore {
 
     private func makeTerminal(_ record: WorkspaceSession, fresh: Bool = false) -> TerminalSession {
         let terminal = TerminalSession(pairKey: record.id, cwd: record.worktree, paired: true)
+        terminal.agentTurns.setStreamAvailable(connection == "Connected")
         wireLinks(terminal, contextID: "task:\(record.id)")
         terminal.onCreated = { [weak self] terminal in
             guard let self else { return }
@@ -583,6 +584,7 @@ public final class AppStore {
                     if Task.isCancelled { break }
                     self?.error = error.localizedDescription
                 }
+                self?.terminals.values.forEach { $0.agentTurns.setStreamAvailable(false) }
                 self?.connection = "Reconnecting"
                 do { try await Task.sleep(for: .seconds(delay)) } catch { break }
                 delay = min(delay * 2, 15)
@@ -593,6 +595,7 @@ public final class AppStore {
     private func connected() {
         guard started else { return }
         connection = "Connected"
+        terminals.values.forEach { $0.agentTurns.setStreamAvailable(true) }
         refresh() // SSE has no replay IDs: refresh the snapshot on every reconnect.
         settings.diagnostics.invalidate()
     }
@@ -600,8 +603,8 @@ public final class AppStore {
     private func received(_ event: ServerEvent) {
         if ["agent-turn-start", "agent-turn-done"].contains(event.type), let runID = event.runId,
            let terminal = terminals.values.first(where: { $0.termID == runID }),
-           let session = sessions.first(where: { $0.id == terminal.pairKey }) {
-            terminal.agentBusy = event.type == "agent-turn-start"
+           let session = sessions.first(where: { $0.id == terminal.pairKey }), event.cli == session.cli,
+           terminal.agentTurns.receive(event) {
             if let id = event.sessionId, !id.isEmpty, id != session.sessionId, event.cli == session.cli,
                let operations = sessionOperations {
                 Task {
@@ -625,6 +628,7 @@ public final class AppStore {
 
     public func stop() async {
         started = false
+        terminals.values.forEach { $0.agentTurns.setStreamAvailable(false) }
         workspaceLaunch.stop()
         for model in diffModels.values { await model.actions?.suspendAndWait() }
         streamTask?.cancel()

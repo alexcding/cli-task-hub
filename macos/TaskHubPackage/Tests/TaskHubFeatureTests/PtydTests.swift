@@ -487,6 +487,11 @@ private final class EventLog: @unchecked Sendable {
         let generation = session.surfaceGeneration
         let previousSurface = session.surface
         #expect(session.shellPID == term.pid)
+        session.agentTurns.setStreamAvailable(true)
+        let workflowStep = try session.agentTurns.arm(cli: .claude, sessionID: "fixture-conversation")
+        session.agentTurns.receive(ServerEvent(type: "agent-turn-start", projectId: nil, id: nil,
+            runId: term.id, cli: "claude", sessionId: "fixture-conversation"))
+        let workflowWait = Task { try await session.agentTurns.wait(for: workflowStep) }
         if mode == "idle" { session.showsSurface = false }
         var interrupt: Task<Void, Error>?
         if uncertainInput {
@@ -560,6 +565,8 @@ private final class EventLog: @unchecked Sendable {
             #expect(!session.ready && session.surfaceGeneration == beforeStop)
         }
         await session.stopConnecting()
+        do { _ = try await workflowWait.value; Issue.record("PTY disconnection must fail the pending workflow step") }
+        catch { #expect(error.localizedDescription.contains("connection was lost")) }
         let remaining: [PtyInfo] = try await control.request(.init(op: "list"))
         if mode == "missing" { #expect(remaining.isEmpty) }
         else {

@@ -135,9 +135,15 @@ private actor StoppedSessions {
     try await removal.remove(orphanPlan, discardChanges: false)
     #expect(FileManager.default.fileExists(atPath: orphanFolder.path))
     let events = Events()
+    let turns = await MainActor.run {
+        let turns = AgentTurnTracker(); turns.bind(terminalID: "fixture-hook-terminal"); return turns
+    }
     let consumer = Task {
-        try await SSEClient().consume(from: base, onConnect: { await events.connect() },
-                                      onEvent: { await events.receive($0) })
+        try await SSEClient().consume(from: base, onConnect: {
+            await turns.setStreamAvailable(true); await events.connect()
+        }, onEvent: {
+            await turns.receive($0); await events.receive($0)
+        })
     }
     defer { consumer.cancel() }
     for _ in 0..<60 {
@@ -146,6 +152,18 @@ private actor StoppedSessions {
     }
     #expect(await events.connected)
     #expect(await events.sync)
+    let turn = try await turns.arm(cli: .claude, sessionID: "fixture-conversation")
+    for route in [Routes.HOOK_TURN_START, Routes.HOOK_TURN_DONE] {
+        let path = APIClient.query(route, ["cli": "claude", "runId": "fixture-hook-terminal"])
+        var request = URLRequest(url: try await api.url(path))
+        request.httpMethod = "POST"; request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder().encode(["session_id": "fixture-conversation"])
+        let (_, response) = try await URLSession.shared.data(for: request)
+        #expect((response as? HTTPURLResponse)?.statusCode == 204)
+    }
+    _ = try await turns.wait(for: turn)
+    #expect(await turns.sessionID == "fixture-conversation")
+    #expect(await turns.busy == false)
     consumer.cancel()
     _ = await consumer.result
     await external.stop()

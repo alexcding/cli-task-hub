@@ -1158,6 +1158,28 @@ does not).
 - Native workflow execution, terminal acceptance gates, release validation and the
   final coordinator/VM/DI refactor remain open. Sprint Board stays web-based.
 
+### M1/M4 native agent turn tracking — 2026-09-12
+
+- Native terminals own an observable hook-driven turn tracker, independent of pane
+  visibility. AppStore accepts only events for the terminal and its configured CLI
+  before updating busy state or persisting the conversation ID.
+- A workflow step can arm before input delivery, require a matching Start before
+  Stop, and consume an already-arrived completion. Wrong PTYs/CLIs and missing
+  required conversation IDs cannot complete it. Conversation replacement or a second
+  overlapping Start fails the pending step; duplicate Stop events are harmless.
+- Cancellation releases its waiter without cancelling a later ticket. SSE loss,
+  PTY loss, terminal exit/removal and app shutdown invalidate pending waits,
+  including successful replies buffered but not yet consumed. Reconnect never
+  resumes a partially observed workflow step automatically.
+- Nine focused Swift tests pass, including real HTTP hook POST → SSE → tracker
+  delivery, terminal attachment/output ordering, input acknowledgements and partial
+  write failures. The real native-surface/daemon reconnect test additionally passes
+  pending-step failure across idle, unacknowledged keyboard/interrupt input and
+  missing-shell cases, retaining the original shell without replaying uncertain input.
+  The ordered workflow runner, agent input ownership checks and
+  advisory analysis are still in progress; this phase supplies their completion
+  clock and fixes the native busy-state event boundary.
+
 ## Why now, and why native
 
 The Tauri shell works, but roughly half of `src-tauri/` exists to work around what a DOM

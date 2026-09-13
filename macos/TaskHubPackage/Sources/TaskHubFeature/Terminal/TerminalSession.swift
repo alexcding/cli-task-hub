@@ -16,7 +16,8 @@ final class TerminalSession: Identifiable {
     private(set) var error: String?
     private(set) var shellPID: UInt32?
     private(set) var termID: String?
-    var agentBusy = false
+    let agentTurns = AgentTurnTracker()
+    var agentBusy: Bool { agentTurns.busy }
     private(set) var ready = false
     private(set) var font = CodeFont(size: 13)
     private(set) var fontError: String?
@@ -58,6 +59,7 @@ final class TerminalSession: Identifiable {
             Task { @MainActor in
                 guard let self, self.surfaceGeneration == generation else { return }
                 self.status = "Exited (\(code))"; self.ready = false
+                self.agentTurns.invalidate("The terminal exited during the workflow step.")
             }
         })
         surface.configuration = .init(backend: .inMemory(pipe.memory), resizeThrottleMilliseconds: 80)
@@ -72,6 +74,7 @@ final class TerminalSession: Identifiable {
         surface.onClose = { [weak self] _ in
             guard let self, self.surfaceGeneration == generation else { return }
             self.status = "Exited"; self.ready = false
+            self.agentTurns.invalidate("The terminal closed during the workflow step.")
         }
     }
 
@@ -172,6 +175,7 @@ final class TerminalSession: Identifiable {
         if info.geometryResponseOwner != nil { try negotiated.validateGeometryResponseOwner() }
         shellPID = info.pid
         termID = info.id
+        agentTurns.bind(terminalID: info.id)
         pipe.bind(client: client, id: info.id, geometryOwned: info.geometryResponseOwner != nil)
         try await pipe.synchronizeGrid()
         status = "Restoring terminal"
@@ -201,6 +205,7 @@ final class TerminalSession: Identifiable {
 
     private func connectionLost(_ failure: PtyError, inputWasIdle: Bool) {
         guard !stopped else { return }
+        agentTurns.invalidate("The terminal connection was lost. Check the terminal before restarting the workflow.")
         let wasReady = ready
         ready = false
         // The current attempt observes its closed pipeline and handles retry.
@@ -243,12 +248,14 @@ final class TerminalSession: Identifiable {
         if error == nil || prefer { error = text }
         status = "Disconnected"
         ready = false
+        agentTurns.invalidate(text)
     }
 
     func disconnect() {
         // This object owns one connection/surface generation. A delayed ready
         // callback must not reactivate it after its owner removes the pane.
         stopped = true
+        agentTurns.invalidate("The terminal was disconnected during the workflow step.")
         reconnectTask?.cancel()
         started = false
         pipe.close()
