@@ -18,7 +18,7 @@ import Observation
     @ObservationIgnored private let openBrowser: (URL) -> Bool
 
     init(copy: @escaping (String) -> Void, openBrowser: @escaping (URL) -> Bool) { self.copy = copy; self.openBrowser = openBrowser }
-    func connect(_ service: any CLISettingsService) { self.service = service }
+    func connect(_ service: any CLISettingsService) { _ = disconnect(); self.service = service }
     func label(_ cli: ManagedCLI) -> String { availability[cli.rawValue]?.label(for: cli) ?? (probing ? "Checking…" : "Not checked") }
     func hookLabel(_ cli: ManagedCLI) -> String {
         guard let status = hooks[cli.rawValue] else { return loadingHooks ? "Checking…" : "Not checked" }
@@ -29,26 +29,29 @@ import Observation
     }
     func refresh() {
         guard let service else { return }
+        let requestGeneration = generation
         if probeTask == nil {
             probing = true
             probeTask = Task {
-                defer { probeTask = nil; probing = false }
+                defer { if generation == requestGeneration { probeTask = nil; probing = false } }
                 do {
                     let result = try await service.probe()
                     try Task.checkCancellation()
+                    guard generation == requestGeneration else { return }
                     availability = result; probeError = nil
-                } catch { if !Task.isCancelled { probeError = error.localizedDescription } }
+                } catch { if !Task.isCancelled && generation == requestGeneration { probeError = error.localizedDescription } }
             }
         }
         if hookTask == nil && changing == nil {
             loadingHooks = true
             hookTask = Task {
-                defer { hookTask = nil; loadingHooks = false }
+                defer { if generation == requestGeneration { hookTask = nil; loadingHooks = false } }
                 do {
                     let result = try await service.hooks()
                     try Task.checkCancellation()
+                    guard generation == requestGeneration else { return }
                     hooks = result; hookError = nil
-                } catch { if !Task.isCancelled { hookError = error.localizedDescription } }
+                } catch { if !Task.isCancelled && generation == requestGeneration { hookError = error.localizedDescription } }
             }
         }
     }
@@ -72,9 +75,13 @@ import Observation
     func openGuide(_ cli: ManagedCLI) {
         if !openBrowser(cli.installationGuide) { probeError = "macOS could not open the installation guide." }
     }
-    func stop() async {
+    func disconnect() -> [Task<Void, Never>] {
+        let reads = [probeTask, hookTask].compactMap { $0 }
         generation = UUID(); probeTask?.cancel(); hookTask?.cancel()
-        await probeTask?.value; await hookTask?.value
-        service = nil
+        probeTask = nil; hookTask = nil; probing = false; loadingHooks = false; service = nil
+        return reads
+    }
+    func stop() async {
+        for task in disconnect() { await task.value }
     }
 }

@@ -7,9 +7,12 @@ private actor CLIFixture: CLISettingsService {
     var mutations: [String] = []
     var statuses = ["claude": "absent", "codex": "absent"]
     var fails = false
+    var probeGate: ProjectPageGate?
     func fail(_ value: Bool) { fails = value }
+    func holdProbe(_ gate: ProjectPageGate) { probeGate = gate }
     func probe() async throws -> [String: CLIAvailability] {
         probes += 1
+        if let gate = probeGate { probeGate = nil; try await gate.wait() }
         try await Task.sleep(for: .milliseconds(100))
         if fails { throw BackendError.operation("Probe unavailable") }
         return ["gh": CLIAvailability(present: true, authed: nil), "claude": CLIAvailability(present: true)]
@@ -26,6 +29,23 @@ private actor CLIFixture: CLISettingsService {
         statuses[cli.rawValue] = installed ? "installed" : "absent"
         return statuses
     }
+}
+
+@MainActor @Test(.timeLimit(.minutes(1))) func cliSettingsOldStopCannotClearReplacementProbeOrService() async throws {
+    let old = CLIFixture(), fresh = CLIFixture(), oldGate = ProjectPageGate(), freshGate = ProjectPageGate()
+    let model = CLISettingsViewModel(copy: { _ in }, openBrowser: { _ in true })
+    await old.holdProbe(oldGate); model.connect(old); model.refresh(); await oldGate.waitForStart()
+    let stop = Task { await model.stop() }
+    while model.probing { await Task.yield() }
+    await fresh.holdProbe(freshGate); model.connect(fresh); model.refresh(); await freshGate.waitForStart()
+    await oldGate.finish(); await stop.value
+    #expect(model.probing)
+    model.refresh()
+    #expect(await fresh.probes == 1)
+    await freshGate.finish()
+    while model.probing || model.loadingHooks { await Task.yield() }
+    #expect(model.canChange(.claude) && model.label(.gh) == "Installed; sign-in status unavailable")
+    await model.stop()
 }
 
 @MainActor @Test(.timeLimit(.minutes(1))) func cliSettingsLoadHooksIndependentlyAndRejectStaleReadsDuringEdits() async throws {

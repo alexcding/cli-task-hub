@@ -537,6 +537,26 @@ until the selected document is resolved.
 Focused model tests and native acceptance evidence are recorded in
 `SWIFTUI-PORT.md`.
 
+## Implemented: Settings factory and save-completion coordinator
+
+`NativeSettingsFeatureFactory` assembles Settings and its child models with injected
+desktop, clipboard, login-item and font-catalog dependencies. `AppStore` reads the
+Settings model through the root-owned `SettingsCoordinator`. Successful saves emit
+typed callbacks; the coordinator serializes completion delivery to the application
+runtime. Leaving Settings preserves an accepted save and its configuration effects.
+Replacing the model retires it and rejects queued or late completions.
+
+Settings read and connection generations protect draft/baseline state and task
+cleanup. Saving invalidates older reads without waiting for an uncooperative
+transport. Save errors are independent of refresh errors; a refresh cannot erase
+retry feedback. Guarded draft observers invalidate the saved indicator on new edits,
+while an edit during a write remains dirty against the submitted baseline.
+
+Settings disconnects before awaiting shutdown. CLI probes/hooks also detach their
+reads synchronously and guard result/cleanup by connection generation, preventing
+an old stop from clearing a new service or in-flight probe. Child feature navigation
+and platform action ownership remain part of the remaining extraction below.
+
 ## Remaining extraction
 
 The architecture extraction remains in progress:
@@ -547,7 +567,7 @@ The architecture extraction remains in progress:
   while retaining native input and emulator ownership.
 - Finish tray navigation/window coordination and move any remaining platform
   actions behind injected dependencies.
-- Expand factories to settings and document feature assembly;
+- Expand factories to document feature assembly;
   `AppStore` still constructs several concrete services and models. Complete
   child presentation ownership/model retirement as the remaining shared action
   services are extracted.

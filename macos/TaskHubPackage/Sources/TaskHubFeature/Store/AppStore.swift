@@ -15,7 +15,7 @@ public final class AppStore {
     @ObservationIgnored private let copy: (String) -> Void
     var dashboard: DashboardViewModel? { coordinator.dashboardCoordinator?.model }
     var logs: LogsViewModel? { coordinator.logsCoordinator?.model }
-    private(set) var settings: SettingsViewModel!
+    var settings: SettingsViewModel? { coordinator.settingsCoordinator?.model }
     let workspaceLaunch = WorkspaceLaunchViewModel(launcher: NativeWorkspaceCommandLauncher())
     public private(set) var projects: [Project] = []
     public private(set) var connection = "Connecting" { didSet { if oldValue != connection { updateWorkspaceReviewState() } } }
@@ -52,6 +52,7 @@ public final class AppStore {
          rootFactory: any RootFeatureFactory = NativeRootFeatureFactory(),
          dashboardFactory: any DashboardFeatureFactory = NativeDashboardFeatureFactory(),
          logsFactory: any LogsFeatureFactory = NativeLogsFeatureFactory(),
+         settingsFactory: (any SettingsFeatureFactory)? = nil,
          selectionStore: any SidebarSelectionPersisting = UserDefaultsSidebarSelectionStore(),
          router: any DeepLinkRouting = TaskHubRouter(),
          projectFactory: (any ProjectFeatureFactory)? = nil,
@@ -79,14 +80,7 @@ public final class AppStore {
             try await self.openPage(request)
         }, desktop: desktop, copy: copy), copy: copy)
         dashboard?.snapshotChanged = { [weak self] in self?.updateWorkspaceReviewState() }
-        settings = SettingsViewModel(clis: CLISettingsViewModel(copy: copy, openBrowser: { desktop.openBrowser($0) }), diagnostics: DiagnosticsViewModel(),
-            loginItem: LoginItemViewModel(service: NativeLoginItemService()), fonts: FontSettingsViewModel(catalog: InstalledCodeFontCatalog()),
-            resources: ResourceUsageViewModel(), didSave: { [weak self] patch in
-            guard let self else { return }
-            if patch["jira_base_url"] != nil || patch["jira_api_token"] != nil {
-                for model in projectModels.values { await model.tickets?.invalidateSite() }
-            }
-        })
+        _ = coordinator.makeSettings(factory: settingsFactory ?? NativeSettingsFeatureFactory(desktop: desktop, copy: copy), runtime: self)
         viewer.prepareContext = { [weak self] context in
             guard let self else { return }
             context.configureWorkspace(factory: workspaceFactory, service: self)
@@ -238,7 +232,7 @@ public final class AppStore {
     }
 
     private var fontTarget: CodeFontKind? {
-        if selection == .settings && settings.section == .general { return .diff }
+        if selection == .settings && settings?.section == .general { return .diff }
         if let context = viewer.active {
             if context.pane == .diff { return .diff }
             let hasTerminal = context.id == "scratch" || sessions.contains { "task:\($0.id)" == context.id }
@@ -426,7 +420,7 @@ public final class AppStore {
     }
 
     func openWorkflowHookSettings() {
-        settings.section = .clis; select(.settings); settings.clis.refresh()
+        settings?.section = .clis; select(.settings); settings?.clis.refresh()
     }
 
     private func prepareWorkflowTerminal(sessionID: String, cli: WorkflowCLI) async throws -> any WorkflowTerminal {
@@ -679,7 +673,7 @@ public final class AppStore {
         guard !started else { return }
         coordinator.setRoutingReady(false)
         started = true
-        settings.resources.connect(NativeResourceUsageService(api: nil, pty: try? PtydConfiguration.current()))
+        settings?.resources.connect(NativeResourceUsageService(api: nil, pty: try? PtydConfiguration.current()))
         do {
             let config = try BackendConfiguration.current()
             backendAddress = config.baseURL.absoluteString
@@ -698,13 +692,13 @@ public final class AppStore {
             if let api { for model in historyModels.values { model.connect(baseURL: api.baseURL, service: APIGitHistoryService(api: api)) } }
             if let api { for model in diffModels.values { model.connect(baseURL: api.baseURL, service: APIDiffService(api: api)); model.actions?.connect(APIGitChangesService(api: api)) } }
             if let api {
-                settings.connect(APISettingsService(api: api))
-                settings.clis.connect(APICLISettingsService(api: api))
-                settings.diagnostics.connect(APIDiagnosticsService(api: api))
-                settings.resources.connect(NativeResourceUsageService(api: api, pty: try? PtydConfiguration.current()))
+                settings?.connect(APISettingsService(api: api))
+                settings?.clis.connect(APICLISettingsService(api: api))
+                settings?.diagnostics.connect(APIDiagnosticsService(api: api))
+                settings?.resources.connect(NativeResourceUsageService(api: api, pty: try? PtydConfiguration.current()))
                 workspaceLaunch.connect(APIWorkspaceTargetService(api: api))
-                if selection == .settings { settings.refresh() }
-                if selection == .settings && settings.section == .clis { settings.clis.refresh() }
+                if selection == .settings { settings?.refresh() }
+                if selection == .settings && settings?.section == .clis { settings?.clis.refresh() }
             }
             startStream(baseURL: config.baseURL)
         } catch {
@@ -804,7 +798,7 @@ public final class AppStore {
         connection = "Connected"
         terminals.values.forEach { $0.agentTurns.setStreamAvailable(true) }
         refresh() // SSE has no replay IDs: refresh the snapshot on every reconnect.
-        settings.diagnostics.invalidate()
+        settings?.diagnostics.invalidate()
     }
 
     private func received(_ event: ServerEvent) {
@@ -827,8 +821,8 @@ public final class AppStore {
             if selection == .activity { logs?.refresh() }
         }
         if event.type == "settings" { shell.loadSettings() }
-        if event.type == "config" { settings.refresh() }
-        if ["sync", "jira-sync", "activity", "config", "reload"].contains(event.type) { settings.diagnostics.invalidate() }
+        if event.type == "config" { settings?.refresh() }
+        if ["sync", "jira-sync", "activity", "config", "reload"].contains(event.type) { settings?.diagnostics.invalidate() }
         if event.type == "reviews" { shell.refresh() }
         if ["sync", "jira-sync", "tabs", "tasks", "reload"].contains(event.type) { refresh() }
     }
@@ -853,7 +847,7 @@ public final class AppStore {
         await shell.stop()
         await dashboard?.stop()
         await logs?.stop()
-        await settings.stop()
+        await settings?.stop()
         for model in projectModels.values {
             await model.automation?.stop()
             await model.workflows?.stop()

@@ -2,18 +2,25 @@ import Foundation
 import Testing
 @testable import TaskHubFeature
 
-private actor SettingsFixture: SettingsService {
+actor SettingsFixture: SettingsService {
     var values = ["poll_interval": "60", "jira_base_url": "https://jira.test", "unrelated": "keep"]
     var writes: [[String: String]] = []
     var fails = false
+    var configGate: ProjectPageGate?
+    var saveGate: ProjectPageGate?
     func fail(_ value: Bool) { fails = value }
+    func holdConfig(_ gate: ProjectPageGate) { configGate = gate }
+    func holdSave(_ gate: ProjectPageGate) { saveGate = gate }
+    func setValues(_ values: [String: String]) { self.values = values }
     func config() async throws -> [String: String] {
         let result = values
+        if let gate = configGate { configGate = nil; try await gate.wait() }
         try await Task.sleep(for: .milliseconds(40))
         if fails { throw BackendError.operation("Settings offline") }
         return result
     }
     func save(_ patch: [String: String]) async throws {
+        if let gate = saveGate { saveGate = nil; try await gate.wait() }
         try await Task.sleep(for: .milliseconds(40))
         if fails { throw BackendError.operation("Save failed") }
         writes.append(patch); values.merge(patch, uniquingKeysWith: { _, new in new })
@@ -21,12 +28,23 @@ private actor SettingsFixture: SettingsService {
     func sounds() -> [ReviewSound] { [ReviewSound(name: "Glass", path: "/System/Library/Sounds/Glass.aiff")] }
 }
 
+@MainActor final class SettingsRuntimeFixture: SettingsCoordinating {
+    var patches: [[String: String]] = []
+    var gate: ProjectPageGate?
+    func applySettingsSave(_ patch: [String: String]) async {
+        patches.append(patch)
+        if let gate { self.gate = nil; try? await gate.wait() }
+    }
+}
+
+@MainActor func settingsFixtureModel() -> SettingsViewModel {
+    NativeSettingsFeatureFactory(desktop: ProjectPageActions(), copy: { _ in }).settings()
+}
+
 @MainActor @Test(.timeLimit(.minutes(1))) func settingsPreserveDraftsSaveOnlyChangedFieldsAndRecoverAfterFailure() async throws {
     let service = SettingsFixture()
-    var callbacks: [[String: String]] = []
-    let model = SettingsViewModel(clis: CLISettingsViewModel(copy: { _ in }, openBrowser: { _ in true }), diagnostics: DiagnosticsViewModel(),
-        loginItem: LoginItemViewModel(service: NativeLoginItemService()), fonts: FontSettingsViewModel(catalog: InstalledCodeFontCatalog()),
-        resources: ResourceUsageViewModel(), didSave: { callbacks.append($0) })
+    let runtime = SettingsRuntimeFixture(), model = settingsFixtureModel()
+    let coordinator = SettingsCoordinator(model: model, runtime: runtime)
     model.connect(service); model.refresh()
     while model.loading { try await Task.sleep(for: .milliseconds(10)) }
     #expect(model.loaded && model.draft.jiraBaseURL == "https://jira.test")
@@ -36,14 +54,18 @@ private actor SettingsFixture: SettingsService {
     #expect(model.draft.pollInterval == "90" && model.dirty)
     await service.fail(true)
     await model.save()
-    #expect(model.error == "Save failed" && model.dirty && callbacks.isEmpty)
+    #expect(model.error == "Save failed" && model.dirty && runtime.patches.isEmpty)
     await service.fail(false)
+    model.refresh()
+    while model.loading { await Task.yield() }
+    #expect(model.saveError == "Save failed" && model.loadError == nil)
     let save = Task { await model.save() }
     try await Task.sleep(for: .milliseconds(10))
     model.draft.pollInterval = "120"
     await save.value
+    await coordinator.waitForCompletion()
     #expect(await service.writes == [["poll_interval": "90"]])
-    #expect(callbacks == [["poll_interval": "90"]] && model.draft.pollInterval == "120" && model.dirty)
+    #expect(runtime.patches == [["poll_interval": "90"]] && model.draft.pollInterval == "120" && model.dirty)
     await model.stop(); model.connect(service)
     await model.save()
     #expect(!model.dirty)

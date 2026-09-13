@@ -57,6 +57,7 @@ import Observation
     var projectCoordinators: [String: ProjectCoordinator] = [:]
     var dashboardCoordinator: DashboardCoordinator?
     var logsCoordinator: LogsCoordinator?
+    var settingsCoordinator: SettingsCoordinator?
     @ObservationIgnored var pendingDeepLink: DeepLink?
     @ObservationIgnored var routingReady = false
     var routingError: String?

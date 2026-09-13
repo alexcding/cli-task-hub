@@ -1980,6 +1980,32 @@ does not).
   terminal/platform adapters and runtime extraction continue. M1–M6 acceptance
   requirements remain open wherever evidence is missing.
 
+### Settings factory and completion coordinator — 2026-09-13
+
+- The Settings feature factory injects desktop, clipboard, login-item and font
+  catalog dependencies and assembles child models. The root owns Settings through
+  its coordinator; `AppStore` no longer constructs or separately retains the model.
+- Saves emit typed callbacks to the coordinator, which serializes application
+  completion effects. Navigation away preserves accepted saves. Replacement retires
+  the old model and rejects queued or late completion callbacks; released root
+  ownership also prevents delivery.
+- Settings draft observers clear stale saved state while preserving newer edits
+  across a write. Read and connection generations reject obsolete values and task
+  cleanup. Saving invalidates pre-save reads; save errors survive background
+  refreshes. Shutdown disconnects before waiting. CLI reads now have equivalent
+  connection/cleanup protection, so an old stop cannot clear a replacement probe.
+- Twenty-two focused tests pass in
+  `swift_package_test_2026-09-13T18-11-00-524Z_pid83246_7b1e58c5.log`, including
+  injected dependencies, draft/error preservation, held reads/writes, duplicate
+  saves, reconnect/stop, navigation, queued completion ordering and replacement.
+- Native validation/save/revert and retained draft/menu navigation pass in
+  `test_macos_2026-09-13T18-11-21-354Z_pid83476_6f39f124.log`.
+  CLI status and hook installation failure/recovery pass in
+  `test_macos_2026-09-13T18-12-07-672Z_pid83892_e3fc054c.log`.
+  The existing WebKit QoS warning appeared in the Settings test and remains open.
+- Document factories, child action/presentation ownership, platform adapters and
+  application runtime extraction continue, along with the remaining M1–M6 gates.
+
 ## Why now, and why native
 
 The Tauri shell works, but roughly half of `src-tauri/` exists to work around what a DOM
