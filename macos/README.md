@@ -396,15 +396,23 @@ still in progress.
 ## Local bundle smoke test
 
 ```bash
-bash scripts/build-sidecar.sh
+python3 macos/scripts/node_runtime.py
 bash macos/scripts/bundle-backend.sh /absolute/path/to/TaskHub.app
 xcodebuildmcp macos launch --json '{"appPath":"/absolute/path/to/TaskHub.app","launchArgs":["--backend-port","43187","--data-dir","/absolute/path/to/isolated-data"]}'
 ```
 
 The bundle script includes the official Node executable, production npm dependencies,
 server/shared code, focused web assets listed in `web-assets.txt`, and the standalone Rust PTY helper, then signs the local bundle
-ad hoc. It runs after Xcode builds; repeat it when rebuilding the app. It currently
-expects the arm64 sidecar from `scripts/build-sidecar.sh` (or `TASKHUB_NODE_SIDECAR`).
+ad hoc. It runs after Xcode builds; repeat it when rebuilding the app. It prepares
+its own runtime under `macos/.build/node`, independent of Tauri and the developer's
+installed Node version. `node-runtime.lock.json` pins the official arm64 archive
+and SHA-256; every preparation verifies the archive, extracts only Node and its
+license, and checks the version and built-in SQLite. The first command above is
+optional because bundling runs it automatically. Downloads are cached for offline
+re-bundling. The license is included at `Contents/Resources/Licenses/Node-LICENSE`.
+For a custom runtime, provide both `TASKHUB_NODE_SIDECAR` and `TASKHUB_NODE_LICENSE`.
+Re-bundling replaces the generated backend tree so removed web assets and stale
+npm dependencies cannot survive a build.
 Use an absolute app path. This is a development bundle, not a notarized release.
 Run `node macos/scripts/smoke-web-assets.cjs /absolute/path/TaskHub.app` from the repo
 root to check all packaged board/diff/editor assets using the bundled Node helper and isolated data.

@@ -1334,6 +1334,31 @@ does not).
   Actual input methods, interactive agents, display/focus changes and the other
   terminal/release acceptance gates remain open.
 
+### M6 independent native runtime packaging — 2026-09-13
+
+- Native bundling no longer reads `src-tauri/binaries` or derives its runtime from
+  the developer's installed Node version. A native lock file pins the already-used
+  official Node v26.8.1 arm64 archive and its SHA-256 from Node's published checksums.
+  Downloads live in `macos/.build/node`; cached archives are verified on every run.
+- Preparation extracts only the regular Node executable and license, checks the
+  exact version and an in-memory built-in SQLite query, and replaces cached outputs
+  from the verified archive. Invalid checksums, missing licenses and symlink members
+  fail before extraction. The app includes Node's license. Custom runtime overrides
+  require their corresponding license path.
+- Backend resources are assembled in a fresh staging directory, including production
+  npm dependencies and the focused web allowlist, before replacing the generated
+  backend tree. Re-bundling cannot retain removed SPA files or old dependencies.
+- Four archive-integrity tests pass. The native arm64 Release app builds and bundles;
+  a seeded stale SPA file and backend sentinel disappear. A copy outside the checkout
+  passes deep/strict signature verification and serves the focused web assets through
+  its own Node helper. The smoke check also verifies that SPA/index/terminal bootstrap
+  files and Tauri npm tooling are absent, and that the Node license is present.
+- The downloaded Node binary links only system libraries and declares macOS 13.5
+  minimum, within the application's macOS 14 requirement. These are local ad-hoc
+  bundle checks; Sparkle, Developer ID signing/notarization, DMG installation,
+  clean-Mac upgrades/rollback, terminal release acceptance and the final architecture
+  pass remain open.
+
 ## Why now, and why native
 
 The Tauri shell works, but roughly half of `src-tauri/` exists to work around what a DOM

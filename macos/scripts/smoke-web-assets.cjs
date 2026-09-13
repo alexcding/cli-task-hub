@@ -35,7 +35,11 @@ async function main() {
       assert.equal(response.status, 200, `${asset}: ${response.status}`);
       assert.ok((await response.text()).length > 0, `${asset} is empty`);
     }
-    assert.equal((await fetch(`${origin}/app.js`)).status, 404, 'Full SPA must not be in the native bundle');
+    for (const legacy of ['app.js', 'index.html', 'components/terminal.js']) {
+      assert.equal((await fetch(`${origin}/${legacy}`)).status, 404, `${legacy} must not be in the native bundle`);
+    }
+    assert.ok(fs.statSync(path.join(app, 'Contents/Resources/Licenses/Node-LICENSE')).size > 0, 'Node license must be bundled');
+    assert.equal(fs.existsSync(path.join(app, 'Contents/Resources/backend/node_modules/@tauri-apps')), false, 'Tauri tooling must not be packaged');
     console.log(`Packaged backend served ${servedAssets.length} focused web assets; full SPA absent.`);
   } finally {
     if (child.pid && child.exitCode == null && child.signalCode == null) {
