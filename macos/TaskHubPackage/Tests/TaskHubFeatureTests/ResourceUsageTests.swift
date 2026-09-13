@@ -50,7 +50,7 @@ private func resourceCounter(pid: Int32 = 20, start: UInt64 = 1, cpu: UInt64, ti
     #expect(!FileManager.default.fileExists(atPath: directory.path))
 }
 
-private actor HeldResourceService: ResourceUsageService {
+actor HeldResourceService: ResourceUsageService {
     private(set) var calls = 0
     private var closed = false
     private var pending: [CheckedContinuation<ResourceUsageSample, Error>] = []

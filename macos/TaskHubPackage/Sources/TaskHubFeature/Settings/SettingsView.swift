@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct SettingsView: View {
@@ -90,6 +91,8 @@ struct SettingsView: View {
                 Button("Retry Settings", action: model.refresh)
             }
             if model.loading && !model.loaded { ProgressView("Loading settings…") }
-        }.onAppear { model.refresh(); shell.loadSettings(); shell.notifications.refreshAuthorization() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in model.applicationActiveChanged(true) }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in model.applicationActiveChanged(false) }
     }
 }

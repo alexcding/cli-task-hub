@@ -423,7 +423,7 @@ public final class AppStore {
     }
 
     func openWorkflowHookSettings() {
-        settings?.section = .clis; select(.settings); settings?.clis.refresh()
+        settings?.section = .clis; select(.settings)
     }
 
     private func prepareWorkflowTerminal(sessionID: String, cli: WorkflowCLI) async throws -> any WorkflowTerminal {
@@ -677,6 +677,7 @@ public final class AppStore {
         coordinator.setRoutingReady(false)
         started = true
         settings?.resources.connect(NativeResourceUsageService(api: nil, pty: try? PtydConfiguration.current()))
+        coordinator.settingsCoordinator?.setActive(selection == .settings)
         do {
             let config = try BackendConfiguration.current()
             backendAddress = config.baseURL.absoluteString
@@ -701,7 +702,7 @@ public final class AppStore {
                 settings?.resources.connect(NativeResourceUsageService(api: api, pty: try? PtydConfiguration.current()))
                 workspaceLaunch.connect(APIWorkspaceTargetService(api: api))
                 if selection == .settings { settings?.refresh() }
-                if selection == .settings && settings?.section == .clis { settings?.clis.refresh() }
+                settings?.refreshCurrentSection()
             }
             startStream(baseURL: config.baseURL)
         } catch {

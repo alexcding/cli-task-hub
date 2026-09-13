@@ -2034,6 +2034,39 @@ does not).
 - Child callbacks/confirmation ownership, platform dependencies and application
   runtime extraction continue alongside outstanding M1–M6 acceptance gates.
 
+### Settings section observers and CLI action callbacks — 2026-09-13
+
+- Root navigation now activates the Settings model. Guarded active/section
+  observers own config/CLI/login/font reads, diagnostics visibility and resource
+  sampling. Settings rendering sections no longer launch work on appearance.
+  Application foreground events are forwarded as model inputs; hidden/background
+  resource polling and late font results are cancelled or rejected in the model.
+- CLI copy-login, installation-guide and hook actions emit typed callbacks through
+  the parent callback's `didSet` forwarding. The coordinator checks ownership,
+  selected section, activation and competing presentations. Retired CLI models
+  reject callbacks, reconnect and refresh. Guide failures remain separate from
+  probe errors and survive status refreshes.
+- Hook writes coalesce in a model-owned task and can finish after navigation.
+  Leaving a section cancels reads without invalidating an accepted write;
+  disconnect/retirement still reject obsolete write results. Shutdown captures
+  mutations before awaiting and cannot clear replacement readers.
+- Thirty-two focused tests pass in
+  `swift_package_test_2026-09-13T18-27-46-656Z_pid88792_131c4ff3.log`, covering
+  view-free section activation, foreground/hidden resource sampling, stale font
+  results, repeated inputs, callback gates, error isolation and accepted writes
+  across navigation, alongside existing Settings/lifecycle checks.
+- Native CLI status and hook recovery pass in
+  `test_macos_2026-09-13T18-28-26-914Z_pid89161_d1740587.log`.
+  Resources show app/backend samples and resume after navigation in
+  `test_macos_2026-09-13T18-29-31-540Z_pid89636_7f5288c7.log`.
+  Diagnostics snapshot loading/return pass in
+  `test_macos_2026-09-13T18-30-09-407Z_pid89985_d86b7c56.log`.
+  Settings save/revert and retained draft/menu navigation pass in
+  `test_macos_2026-09-13T18-31-01-721Z_pid90294_d85e26a2.log`.
+  The existing WebKit QoS warning remains open.
+- Remaining document confirmations, platform actions and runtime ownership continue,
+  along with M1–M6 acceptance requirements that lack evidence.
+
 ## Why now, and why native
 
 The Tauri shell works, but roughly half of `src-tauri/` exists to work around what a DOM

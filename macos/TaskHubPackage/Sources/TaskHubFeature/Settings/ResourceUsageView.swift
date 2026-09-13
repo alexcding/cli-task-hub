@@ -35,9 +35,5 @@ struct ResourceUsageView: View {
                 Text("Sampled \(date.formatted(date: .omitted, time: .standard))").font(.caption).foregroundStyle(.secondary)
             }
         }
-        .onAppear { model.setForeground(NSApp.isActive); model.setVisible(true) }
-        .onDisappear { model.setVisible(false) }
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in model.setForeground(true) }
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in model.setForeground(false) }
     }
 }

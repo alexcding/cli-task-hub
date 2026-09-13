@@ -53,8 +53,9 @@ import Observation
         }
     }
     func openSystemSettings() { Task { await service.openSystemSettings() } }
-    func stop() async {
+    func cancelRead() -> Task<Void, Never>? {
         revision = UUID(); read?.cancel(); read = nil; loading = false
-        await mutation?.value
+        return mutation
     }
+    func stop() async { await cancelRead()?.value }
 }

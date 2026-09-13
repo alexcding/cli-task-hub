@@ -18,6 +18,7 @@ import Observation
 
 @MainActor protocol SettingsCoordinating: AnyObject {
     func applySettingsSave(_ patch: [String: String]) async
+    func activateSettings()
 }
 
 @MainActor @Observable final class SettingsCoordinator {
@@ -25,6 +26,7 @@ import Observation
     private(set) var retired = false
     @ObservationIgnored private weak var runtime: (any SettingsCoordinating)?
     @ObservationIgnored var isOwned: () -> Bool = { true }
+    @ObservationIgnored var canPresent: () -> Bool = { true }
     @ObservationIgnored private var completion: Task<Void, Never>?
     init(model: SettingsViewModel, runtime: any SettingsCoordinating) {
         self.model = model; self.runtime = runtime
@@ -33,6 +35,9 @@ import Observation
     func handle(_ action: SettingsViewModel.Action) {
         guard !retired, isOwned() else { return }
         switch action {
+        case .cli(let action):
+            guard model.active, model.section == .clis, canPresent() else { return }
+            model.clis.perform(action)
         case .saved(let patch):
             let previous = completion
             completion = Task { [weak self] in
@@ -43,9 +48,14 @@ import Observation
             }
         }
     }
+    func setActive(_ value: Bool) {
+        guard !retired, isOwned(), model.active != value else { return }
+        if value { runtime?.activateSettings() }
+        model.setActive(value)
+    }
     func waitForCompletion() async { await completion?.value }
     func retire() {
-        retired = true; isOwned = { false }; completion?.cancel(); completion = nil
+        retired = true; isOwned = { false }; canPresent = { false }; completion?.cancel(); completion = nil
         runtime = nil; model.retire()
         Task { await model.stop() }
     }
@@ -60,7 +70,11 @@ extension AppCoordinator {
             guard let self, let model else { return false }
             return settingsCoordinator?.model === model
         }
+        child.canPresent = { [weak self] in
+            self?.selection == .settings && self?.canPresent == true && self?.canOpenExternalRoute() == true
+        }
         settingsCoordinator = child
+        child.setActive(selection == .settings)
         return child
     }
     func makeSettings(factory: any SettingsFeatureFactory, runtime: any SettingsCoordinating) -> SettingsViewModel {

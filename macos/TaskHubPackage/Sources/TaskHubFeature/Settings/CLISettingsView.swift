@@ -25,6 +25,7 @@ struct CLISettingsView: View {
                 }.padding(.vertical, 6)
             }
             if let error = model.probeError { Text(error).foregroundStyle(.orange) }
+            if let error = model.actionError { Text(error).foregroundStyle(.orange) }
             Divider().padding(.vertical, 8)
             Text("Agent hooks").font(.headline)
             Text("Hooks report when an agent starts and finishes a turn. TaskHub merges its entries into the agent's configuration and removes only its own entries.")
@@ -36,13 +37,13 @@ struct CLISettingsView: View {
                     Spacer()
                     if model.changing == cli { ProgressView().controlSize(.small) }
                     Button(model.hooks[cli.rawValue] == "installed" ? "Remove Hooks" : "Install Hooks") {
-                        Task { await model.toggleHook(cli) }
+                        model.requestToggleHook(cli)
                     }.disabled(!model.canChange(cli)).accessibilityIdentifier("hook-toggle-\(cli.rawValue)")
                 }.padding(.vertical, 6)
             }
             if let error = model.hookError { Text(error).foregroundStyle(.orange).textSelection(.enabled) }
             if let message = model.message { Text(message).foregroundStyle(.secondary) }
             Spacer(minLength: 0)
-        }.onAppear { model.refresh() }
+        }
     }
 }

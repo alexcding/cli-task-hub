@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import TaskHubFeature
 
-private actor CLIFixture: CLISettingsService {
+actor CLIFixture: CLISettingsService {
     var probes = 0
     var mutations: [String] = []
     var statuses = ["claude": "absent", "codex": "absent"]
@@ -52,6 +52,7 @@ private actor CLIFixture: CLISettingsService {
     let service = CLIFixture()
     var copied: String?
     let model = CLISettingsViewModel(copy: { copied = $0 }, openBrowser: { _ in true })
+    model.onAction = { [weak model] in model?.perform($0) }
     model.connect(service)
     #expect(await service.probes == 0) // construction/reconnect does not spawn probes
     model.refresh(); model.refresh()

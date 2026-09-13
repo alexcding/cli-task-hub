@@ -113,6 +113,8 @@ private struct SettingsFontFixture: CodeFontCatalog {
     let factory = NativeSettingsFeatureFactory(desktop: actions, copy: actions.copyLink,
         loginItem: SettingsLoginFixture(), fontCatalog: SettingsFontFixture())
     let model = factory.settings()
+    let runtime = SettingsRuntimeFixture(), coordinator = SettingsCoordinator(model: model, runtime: runtime)
+    model.section = .clis; coordinator.setActive(true)
     model.clis.copyLogin(.gh); model.clis.openGuide(.gh)
     model.loginItem.refresh(); model.fonts.refresh()
     while model.loginItem.loading || model.fonts.loading { await Task.yield() }

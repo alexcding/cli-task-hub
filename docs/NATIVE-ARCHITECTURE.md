@@ -577,6 +577,27 @@ deduplication, reopen, dirty-buffer promotion, snapshot replacement, legacy impo
 read-only nested patches and a working commit refreshing its owning diff. Native
 acceptance evidence is recorded in `SWIFTUI-PORT.md`.
 
+## Implemented: Settings section lifetime and CLI callbacks
+
+The root coordinator delivers Settings activation. Guarded `active` and `section`
+observers in `SettingsViewModel` own section reads, diagnostic visibility and
+resource polling. Leaving a section cancels its reads without disconnecting the
+service. Font requests have generation-protected cleanup so a late catalogue reply
+cannot replace a newly selected section's result. Application-active events forward
+one input into the model; resource foreground policy and login-status refresh remain
+model decisions. Rendering Settings sections no longer start work on appearance.
+
+CLI copy, guide and hook buttons emit typed callbacks. The parent forwards its
+current callback through `onAction.didSet`; the Settings coordinator checks current
+ownership, section, activity and presentation availability before dispatching an
+action. CLI retirement rejects late requests and reconnect attempts. Navigation
+feedback remains separate from probe errors, so refreshing status preserves it.
+
+Hook writes coalesce in a model-owned task. Section changes cancel reads while
+allowing an accepted write to finish; connection replacement invalidates old write
+results. Shutdown waits for captured mutations and does not clear replacement
+reads. Remaining platform and document confirmation ownership is tracked below.
+
 ## Remaining extraction
 
 The architecture extraction remains in progress:

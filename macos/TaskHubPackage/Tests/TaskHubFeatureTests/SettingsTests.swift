@@ -30,6 +30,8 @@ actor SettingsFixture: SettingsService {
 
 @MainActor final class SettingsRuntimeFixture: SettingsCoordinating {
     var patches: [[String: String]] = []
+    var activations = 0
+    func activateSettings() { activations += 1 }
     var gate: ProjectPageGate?
     func applySettingsSave(_ patch: [String: String]) async {
         patches.append(patch)

@@ -80,6 +80,7 @@ import Observation
         }
         routingError = nil
         selection = destination
+        settingsCoordinator?.setActive(destination == .settings)
         selectionStore.save(destination)
         rootRuntime?.activateRootDestination()
     }

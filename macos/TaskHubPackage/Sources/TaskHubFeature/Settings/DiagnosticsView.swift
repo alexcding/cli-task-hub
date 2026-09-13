@@ -61,6 +61,6 @@ struct DiagnosticsView: View {
             } else if !model.loading && model.error == nil {
                 ContentUnavailableView("Waiting for backend", systemImage: "externaldrive")
             }
-        }.onAppear { model.setVisible(true) }.onDisappear { model.setVisible(false) }
+        }
     }
 }

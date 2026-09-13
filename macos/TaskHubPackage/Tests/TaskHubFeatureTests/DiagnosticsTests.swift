@@ -15,7 +15,7 @@ private func diagnosticsFixture(_ name: String = "Fixture") throws -> Diagnostic
     return try JSONDecoder().decode(DiagnosticsSnapshot.self, from: JSONSerialization.data(withJSONObject: object))
 }
 
-private actor DiagnosticsFixture: DiagnosticsService {
+actor DiagnosticsFixture: DiagnosticsService {
     var calls = 0
     private var requests: [Int: CheckedContinuation<DiagnosticsSnapshot, any Error>] = [:]
     func snapshot() async throws -> DiagnosticsSnapshot {

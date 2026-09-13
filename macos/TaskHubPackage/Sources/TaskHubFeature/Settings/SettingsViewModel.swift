@@ -2,10 +2,21 @@ import Foundation
 import Observation
 
 @MainActor @Observable final class SettingsViewModel {
-    enum Action: Equatable { case saved([String: String]) }
-    @ObservationIgnored var onAction: (Action) -> Void = { _ in }
+    enum Action: Equatable { case saved([String: String]), cli(CLISettingsViewModel.Action) }
+    @ObservationIgnored var onAction: (Action) -> Void = { _ in } {
+        didSet { let callback = onAction; clis.onAction = { callback(.cli($0)) } }
+    }
     private(set) var retired = false
-    var section = SettingsSection.general
+    var section = SettingsSection.general {
+        didSet { if oldValue != section { refreshCurrentSection() } }
+    }
+    private(set) var active = false {
+        didSet {
+            guard oldValue != active else { return }
+            if active { refresh() } else { cancelRead() }
+            refreshCurrentSection()
+        }
+    }
     let clis: CLISettingsViewModel
     let diagnostics: DiagnosticsViewModel
     let loginItem: LoginItemViewModel
@@ -36,6 +47,20 @@ import Observation
         self.resources = resources
     }
     var dirty: Bool { draft != baseline }
+    func setActive(_ value: Bool) { if !retired { active = value } }
+    func refreshCurrentSection() {
+        guard !retired else { return }
+        diagnostics.setVisible(active && section == .diagnostics)
+        resources.setVisible(active && section == .resources)
+        if active && section == .general { loginItem.refresh(); fonts.refresh() }
+        else { _ = loginItem.cancelRead(); _ = fonts.cancelRead() }
+        if active && section == .clis { clis.refresh() } else { clis.cancelReads() }
+    }
+    func applicationActiveChanged(_ value: Bool) {
+        guard !retired else { return }
+        resources.setForeground(value)
+        if value && active && section == .general { loginItem.refresh() }
+    }
     var canSave: Bool { !retired && loaded && dirty && !saving && service != nil && draft.validationError == nil }
     func connect(_ service: any SettingsService) {
         guard !retired else { return }
@@ -92,13 +117,14 @@ import Observation
         connection = UUID(); cancelRead(); service = nil
     }
     private func cancelRead() { readGeneration = UUID(); task?.cancel(); task = nil; loading = false }
-    func retire() { retired = true; onAction = { _ in }; disconnect() }
+    func retire() { active = false; retired = true; onAction = { _ in }; clis.retire(); disconnect() }
     func stop() async {
-        let read = task; disconnect(); diagnostics.stop()
+        let read = task; active = false; disconnect(); diagnostics.stop()
         resources.stop()
         let cliReads = clis.disconnect()
-        await loginItem.stop()
-        await fonts.stop()
+        let loginMutation = loginItem.cancelRead(), fontRead = fonts.cancelRead()
+        await loginMutation?.value
+        await fontRead?.value
         await read?.value
         for task in cliReads { await task.value }
     }

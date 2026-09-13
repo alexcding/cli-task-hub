@@ -13,7 +13,5 @@ struct LoginItemView: View {
             if model.needsApproval { Button("Open Login Items Settings", action: model.openSystemSettings) }
             if let error = model.error { Text(error).foregroundStyle(.orange).textSelection(.enabled) }
         }
-        .onAppear(perform: model.refresh)
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in model.refresh() }
     }
 }

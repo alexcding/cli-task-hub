@@ -58,17 +58,22 @@ actor InstalledCodeFontCatalog: CodeFontCatalog {
     private(set) var loading = false
     @ObservationIgnored private let catalog: any CodeFontCatalog
     @ObservationIgnored private var task: Task<Void, Never>?
+    @ObservationIgnored private var generation = UUID()
     init(catalog: any CodeFontCatalog) { self.catalog = catalog }
     func refresh() {
         guard task == nil else { return }
         loading = true
+        let generation = generation
         task = Task {
-            defer { task = nil; loading = false }
+            defer { if self.generation == generation { task = nil; loading = false } }
             let result = await catalog.families()
-            if !Task.isCancelled { families = result }
+            if !Task.isCancelled && self.generation == generation { families = result }
         }
     }
-    func stop() async { task?.cancel(); await task?.value }
+    func cancelRead() -> Task<Void, Never>? {
+        let pending = task; generation = UUID(); task?.cancel(); task = nil; loading = false; return pending
+    }
+    func stop() async { await cancelRead()?.value }
 }
 
 struct FontSettingsView: View {
@@ -101,6 +106,6 @@ struct FontSettingsView: View {
                 Spacer()
                 Button("Refresh Font List", action: model.refresh).disabled(model.loading)
             }
-        }.onAppear { model.refresh() }
+        }
     }
 }
