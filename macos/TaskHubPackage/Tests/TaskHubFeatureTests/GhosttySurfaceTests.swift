@@ -117,7 +117,7 @@ private final class LinkMetrics: @unchecked Sendable {
     opened = nil
     var external = false
     view.openLink = { raw, _, outside in opened = raw; external = outside }
-    memory.receive("\u{1b}[2J\u{1b}[Hhttps://example.com/code.swift")
+    memory.receive("\u{1b}[2J\u{1b}[Hhttps://example.com/code.swift\u{1b}[?1003h")
     memory.waitForPendingOutput(); _ = input.take()
     let (x, y) = point(column: 3)
     let location = view.convert(NSPoint(x: x, y: view.bounds.height - y), to: nil)
@@ -129,6 +129,96 @@ private final class LinkMetrics: @unchecked Sendable {
     try await Task.sleep(for: .milliseconds(30))
     #expect(opened == "https://example.com/code.swift" && external)
     #expect(input.take().isEmpty)
+
+    // A modified drag cancels activation even when released on the original
+    // link. It must not leak synthetic motion into an all-motion TUI either.
+    opened = nil
+    let dragLocation = NSPoint(x: location.x + cellWidth * 5, y: location.y)
+    let drag = try #require(NSEvent.mouseEvent(with: .leftMouseDragged, location: dragLocation, modifierFlags: .option,
+        timestamp: 2.1, windowNumber: window.windowNumber, context: nil, eventNumber: 3, clickCount: 1, pressure: 1))
+    view.mouseDown(with: down); view.mouseDragged(with: drag); view.mouseUp(with: up)
+    try await Task.sleep(for: .milliseconds(30))
+    #expect(opened == nil && input.take().isEmpty)
+
+    // On ordinary text the adapter falls through to Ghostty. All resulting
+    // reports must use the actual position, with no off-screen probe events.
+    let (blankX, blankY) = point(column: 40)
+    let blank = view.convert(NSPoint(x: blankX, y: view.bounds.height - blankY), to: nil)
+    let plainDown = try #require(NSEvent.mouseEvent(with: .leftMouseDown, location: blank, modifierFlags: .option,
+        timestamp: 3, windowNumber: window.windowNumber, context: nil, eventNumber: 4, clickCount: 1, pressure: 1))
+    let plainUp = try #require(NSEvent.mouseEvent(with: .leftMouseUp, location: blank, modifierFlags: .option,
+        timestamp: 3.1, windowNumber: window.windowNumber, context: nil, eventNumber: 5, clickCount: 1, pressure: 0))
+    view.mouseDown(with: plainDown); view.mouseUp(with: plainUp)
+    try await Task.sleep(for: .milliseconds(30))
+    let reports = String(decoding: input.take(), as: UTF8.self)
+    #expect(opened == nil)
+    #expect(reports.contains("\u{1b}[<8;41;1M") && reports.contains("\u{1b}[<8;41;1m"))
+    let matched = reports.matches(of: /\u{1b}\[<([0-9]+);([0-9]+);([0-9]+)[Mm]/)
+    #expect(!matched.isEmpty && matched.allSatisfy { $0.2 == "41" && $0.3 == "1" })
+}
+
+@MainActor @Test(.timeLimit(.minutes(1))) func nativeMarkedTextCommitsOnceBeforeEncodedKeys() async throws {
+    _ = NSApplication.shared
+    let input = InputBytes()
+    let memory = InMemoryTerminalSession(write: { input.append($0) }, resize: { _ in })
+    let state = TerminalViewState()
+    let view = WorkspaceTerminalView(frame: NSRect(x: 0, y: 0, width: 640, height: 320))
+    view.delegate = state; view.controller = state.controller
+    view.configuration = .init(backend: .inMemory(memory), fontSize: 13)
+    let window = NSWindow(contentRect: view.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+    window.isReleasedWhenClosed = false; window.contentView = view
+    defer { window.contentView = nil; window.close() }
+    view.layoutSubtreeIfNeeded()
+    for _ in 0..<100 {
+        if state.surface != nil { break }
+        try await Task.sleep(for: .milliseconds(20))
+    }
+    try #require(state.surface != nil)
+    view.setSurfaceVisible(false)
+    memory.receive("\u{1b}[2J\u{1b}[HCOMPOSITION\u{1b}[?2004h")
+    memory.waitForPendingOutput()
+    let replacement = NSRange(location: NSNotFound, length: 0)
+    view.setMarkedText("にほん", selectedRange: NSRange(location: 3, length: 0), replacementRange: replacement)
+    #expect(view.hasMarkedText() && view.markedRange().length == 3)
+    let composed = "日本語🦀e\u{301}"
+    let length = (composed as NSString).length
+    view.setMarkedText(NSAttributedString(string: composed), selectedRange: NSRange(location: length, length: 0), replacementRange: replacement)
+    #expect(view.markedRange().length == length && view.selectedRange().location == length)
+    var actual = NSRange()
+    #expect(view.attributedSubstring(forProposedRange: NSRange(location: 0, length: length), actualRange: &actual)?.string == composed)
+    #expect(actual == NSRange(location: 0, length: length))
+    let candidateRect = view.firstRect(forCharacterRange: view.markedRange(), actualRange: nil)
+    #expect(candidateRect.width > 0 && candidateRect.height > 0)
+    try await Task.sleep(for: .milliseconds(30))
+    #expect(input.take().isEmpty, "Preedit updates must not reach the process")
+    #expect(memory.readViewportText()?.contains(composed) == false, "Preedit is not output text")
+
+    // The native host key API commits the composition before Enter. Bracketed
+    // paste mode must not wrap composed typing in paste control sequences.
+    #expect(view.sendKey(.enter))
+    try await Task.sleep(for: .milliseconds(50))
+    #expect(input.take() == Data((composed + "\r").utf8))
+    #expect(!view.hasMarkedText() && view.markedRange().location == NSNotFound)
+    #expect(view.sendKey(.enter))
+    try await Task.sleep(for: .milliseconds(30))
+    #expect(input.take() == Data([13]), "Committed text must not be replayed")
+
+    // Input methods cancel composition by replacing the marked range with an
+    // empty string. A following key must not resurrect the discarded preedit.
+    view.setMarkedText("discarded", selectedRange: NSRange(location: 9, length: 0), replacementRange: replacement)
+    view.setMarkedText("", selectedRange: NSRange(location: 0, length: 0), replacementRange: replacement)
+    #expect(!view.hasMarkedText())
+    #expect(view.sendKey(.enter))
+    try await Task.sleep(for: .milliseconds(30))
+    #expect(input.take() == Data([13]))
+
+    // Exercise the engine's negotiated keyboard encoding, not hand-built
+    // terminal bytes in the app. Shift-Enter remains distinct under Kitty.
+    memory.receive("\u{1b}[>1u")
+    memory.waitForPendingOutput()
+    #expect(view.sendKey(.enter, modifiers: .shift))
+    try await Task.sleep(for: .milliseconds(30))
+    #expect(input.take() == Data("\u{1b}[13;2u".utf8))
 }
 
 @MainActor @Test(.timeLimit(.minutes(1))) func terminalAttachDeduplicatesBufferedOutputAndDrainsBeforeExit() async throws {

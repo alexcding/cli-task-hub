@@ -1317,6 +1317,23 @@ does not).
   Broader motion/drag/focus/IME and interactive agent acceptance, performance,
   release checks and the final coordinator/ViewModel/DI pass remain open.
 
+### M1 native motion and composition checks — 2026-09-12
+
+- Expanded the native link regression to SGR all-motion reporting (mode 1003).
+  Option-click and a cancelled Option-drag produce no process input; clicking
+  ordinary text forwards button events at the real coordinates, without probe
+  coordinates leaking into the TUI. No additional implementation change was needed.
+- Added real AppKit marked-text coverage on the native Ghostty surface. Japanese,
+  emoji and combining-character preedit updates retain UTF-16 selection ranges and
+  do not reach the PTY or parsed output. The host key API commits composed text
+  exactly once before Enter, without bracketed-paste markers. Replacing preedit
+  with empty text cancels it; the next key cannot replay it. Candidate placement
+  returns a nonzero rectangle, and negotiated Kitty Shift-Enter stays distinct.
+- Both focused interaction tests pass. These are synthetic AppKit composition
+  calls and native host key events, not an OS input-source/candidate-window test.
+  Actual input methods, interactive agents, display/focus changes and the other
+  terminal/release acceptance gates remain open.
+
 ## Why now, and why native
 
 The Tauri shell works, but roughly half of `src-tauri/` exists to work around what a DOM
