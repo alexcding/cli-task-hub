@@ -30,6 +30,7 @@ import Observation
             }
         }
         let alert = NSAlert()
+        alert.window.setAccessibilityIdentifier("browser-dialog")
         alert.messageText = request.origin + " says"
         let field: NSTextField?
         switch request.kind {

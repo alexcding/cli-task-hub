@@ -40,7 +40,10 @@ struct BrowserPane: View {
                     .padding(10).foregroundStyle(.orange)
             }
             Divider()
-            if let view = page.webView { BrowserSurface(webView: view) }
+            if let view = page.webView {
+                BrowserSurface(webView: view)
+                    .accessibilityHidden(page.dialogs.request != nil)
+            }
             else { ContentUnavailableView("Page suspended", systemImage: "globe", description: Text("Select this tab to reload it.")) }
         }
         .onAppear(perform: model.synchronizeAddress)

@@ -2299,7 +2299,7 @@ does not).
   `browser-upload-fixture.txt` (39 bytes). The page reported `Fixture upload received`.
   These runs used private fixture directories `taskhub-browser-ui.NiXALm` and
   `taskhub-browser-ui.ZS8EnR`; their manual apps and backends were stopped afterward.
-- **Automated UI acceptance remains open.** The new full workflow test initially
+- **Initial automated UI verification failed (resolved below).** The new full workflow test initially
   hit XCTest accessibility recursion at the sidebar. Querying the outline row
   containing the session text resolved selection. Targeting keyboard input at the
   address field fixed corrupted application-level typing and reached the prompt.
@@ -2307,8 +2307,9 @@ does not).
   app was stopped after capturing a sample whose main thread remained in the
   AppKit event loop. Final failed run:
   `test_macos_2026-09-13T22-00-17-497Z_pid55154_1ec3395b.log` (302.1 seconds).
-  The test is retained without a skip or weakened assertions. Manual checks and
-  AppKit/model tests do not establish a passing full XCUITest workflow.
+  The assertions were retained. At this point, the manual and AppKit/model checks
+  did not establish a passing full XCUITest workflow; the later modal accessibility
+  phase below supplies that evidence.
 - This completes the dialog implementation, not M3 acceptance. Real browser
   authentication/relaunch retention, build/run workflows and the broader M1–M6
   gates remain required.
@@ -2336,9 +2337,38 @@ does not).
   Sidebar selection queries the row containing its text; text input targets its
   actual field, resolving the earlier selection/typing failures in this workflow.
 - This establishes normal browser navigation acceptance for the current change.
-  The separate JavaScript prompt/file-upload XCUITest still has the sheet-query
-  limitation recorded above; real browser authentication and the remaining M1–M6
-  gates remain open.
+  The separate JavaScript prompt/file-upload XCUITest was still pending at this
+  phase; its accessibility issue is resolved below. Real browser authentication
+  and the remaining M1–M6 gates remain open.
+
+### Browser modal accessibility and full dialog UI verification — 2026-09-13
+
+- The paused WebKit page remained in the accessibility tree behind its native
+  JavaScript dialog. XCTest could find the dialog by a stable native identifier,
+  but inspecting the underlying toolbar still attempted to snapshot remote web
+  content and timed out. The browser surface now renders the pending model request
+  as `accessibilityHidden`, restoring accessibility when the request ends without
+  unmounting the web view or adding view-owned business reactions.
+- The dedicated modal-boundary UI test passes: the prompt appears, the web view
+  is absent from accessibility, New Project is disabled, Cancel restores the page
+  with `Prompt cancelled`, and New Project is enabled again. Log (25.5 seconds
+  including build):
+  `test_macos_2026-09-13T22-33-01-780Z_pid65781_69881cd9.log`.
+- The complete native dialog/upload UI test passes (90.5 seconds including build):
+  `test_macos_2026-09-13T22-36-01-444Z_pid66710_e205b030.log`.
+  It verifies prompt default/changed/empty values and cancellation, both
+  confirmation results, alert completion, selecting the exact generated fixture
+  path through the macOS file panel, successful server receipt, and a second
+  cancelled chooser that leaves the upload count at one. Tests use private
+  localhost fixtures; their backends and apps are stopped after execution.
+- Both scenarios retain the earlier assertions; separating them gives focused
+  failures. Element-targeted text input and waiting for the file panel's Open
+  button to become enabled make file selection explicit. No privacy permissions
+  or application behavior were changed to accommodate direct accessibility reads.
+- The previously recorded prompt/file-upload UI verification gap is resolved.
+  The unrelated WebKit/XCTest QoS warning still appears. Real authentication and
+  relaunch retention, terminal performance/fidelity and release acceptance remain
+  part of the broader M1–M6 work.
 
 ## Why now, and why native
 

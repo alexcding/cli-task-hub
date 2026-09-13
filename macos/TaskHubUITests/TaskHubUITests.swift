@@ -1025,7 +1025,7 @@ final class TaskHubUITests: XCTestCase {
     }
 
     @MainActor
-    func testNativeBrowserPromptsConfirmationsAndFileUpload() async throws {
+    private func openBrowserDialogFixture() throws -> (app: XCUIApplication, base: String, path: String) {
         let environment = ProcessInfo.processInfo.environment
         guard let base = environment["TASKHUB_UI_BACKEND_URL"], let path = environment["TASKHUB_UI_DATA_DIR"],
               let socket = environment["TASKHUB_UI_PTY_SOCKET"] else {
@@ -1042,42 +1042,72 @@ final class TaskHubUITests: XCTestCase {
         XCTAssertEqual(address.value as? String, base + "/fixture/dialogs", "Address input must finish before navigation")
         address.typeKey(.return, modifierFlags: [])
         XCTAssertTrue(app.webViews.staticTexts["Browser dialog fixture"].waitForExistence(timeout: 10))
+        return (app, base, path)
+    }
+
+    @MainActor
+    func testNativeBrowserDialogDisablesProjectCreation() throws {
+        let (app, _, _) = try openBrowserDialogFixture()
+        app.webViews.buttons["Prompt fixture"].click()
+        let dialog = app.descendants(matching: .any)["browser-dialog"].firstMatch
+        XCTAssertTrue(dialog.textFields["browser-dialog-input"].waitForExistence(timeout: 5))
+        // The native modal owns accessibility focus. Its paused web content must
+        // leave the tree and return when the request completes.
+        XCTAssertFalse(app.webViews.firstMatch.exists)
+        let newProject = app.windows["TaskHub"].children(matching: .toolbar).buttons["New Project"]
+        XCTAssertFalse(newProject.isEnabled)
+        dialog.buttons["Cancel"].click()
+        XCTAssertTrue(app.webViews.staticTexts["Prompt cancelled"].waitForExistence(timeout: 5))
+        XCTAssertTrue(newProject.isEnabled)
+    }
+
+    @MainActor
+    func testNativeBrowserPromptsConfirmationsAndFileUpload() async throws {
+        let (app, base, path) = try openBrowserDialogFixture()
         let prompt = app.webViews.buttons["Prompt fixture"]
         prompt.click()
-        let input = app.sheets.textFields["browser-dialog-input"]
+        let dialog = app.descendants(matching: .any)["browser-dialog"].firstMatch
+        let input = dialog.textFields["browser-dialog-input"]
         XCTAssertTrue(input.waitForExistence(timeout: 5), app.debugDescription)
         XCTAssertEqual(input.value as? String, "Original value")
-        XCTAssertFalse(app.buttons["New Project"].isEnabled)
-        input.click(); app.typeKey("a", modifierFlags: .command); app.typeText("Changed value")
-        app.sheets.buttons["OK"].click()
+        input.click(); input.typeKey("a", modifierFlags: .command); input.typeText("Changed value")
+        dialog.buttons["OK"].click()
         XCTAssertTrue(app.webViews.staticTexts["Prompt: Changed value"].waitForExistence(timeout: 5))
         prompt.click(); XCTAssertTrue(input.waitForExistence(timeout: 5))
-        app.sheets.buttons["Cancel"].click()
+        dialog.buttons["Cancel"].click()
         XCTAssertTrue(app.webViews.staticTexts["Prompt cancelled"].waitForExistence(timeout: 5))
         prompt.click(); XCTAssertTrue(input.waitForExistence(timeout: 5))
-        input.click(); app.typeKey("a", modifierFlags: .command); app.typeKey(.delete, modifierFlags: [])
-        app.sheets.buttons["OK"].click()
+        input.click(); input.typeKey("a", modifierFlags: .command); input.typeKey(.delete, modifierFlags: [])
+        dialog.buttons["OK"].click()
         XCTAssertTrue(app.webViews.staticTexts["Prompt: empty"].waitForExistence(timeout: 5))
         let confirm = app.webViews.buttons["Confirm fixture"]
-        confirm.click(); XCTAssertTrue(app.sheets.buttons["Cancel"].waitForExistence(timeout: 5))
-        app.sheets.buttons["Cancel"].click()
+        confirm.click(); XCTAssertTrue(dialog.buttons["Cancel"].waitForExistence(timeout: 5))
+        dialog.buttons["Cancel"].click()
         XCTAssertTrue(app.webViews.staticTexts["Confirmation cancelled"].waitForExistence(timeout: 5))
-        confirm.click(); XCTAssertTrue(app.sheets.buttons["OK"].waitForExistence(timeout: 5))
-        app.sheets.buttons["OK"].click()
+        confirm.click(); XCTAssertTrue(dialog.buttons["OK"].waitForExistence(timeout: 5))
+        dialog.buttons["OK"].click()
         XCTAssertTrue(app.webViews.staticTexts["Confirmation accepted"].waitForExistence(timeout: 5))
         app.webViews.buttons["Alert fixture"].click()
-        XCTAssertTrue(app.sheets.buttons["OK"].waitForExistence(timeout: 5))
-        app.sheets.buttons["OK"].click()
+        XCTAssertTrue(dialog.buttons["OK"].waitForExistence(timeout: 5))
+        dialog.buttons["OK"].click()
         XCTAssertTrue(app.webViews.staticTexts["Alert dismissed"].waitForExistence(timeout: 5))
         let upload = app.webViews.buttons["Upload fixture file"]
         XCTAssertTrue(upload.waitForExistence(timeout: 5), app.debugDescription)
         upload.click()
         XCTAssertTrue(app.sheets.buttons["Open"].waitForExistence(timeout: 5), app.debugDescription)
         app.typeKey("g", modifierFlags: [.command, .shift])
-        app.typeText(URL(fileURLWithPath: path).appendingPathComponent("browser-upload-fixture.txt").path)
-        app.typeKey(.return, modifierFlags: [])
+        let filePath = app.textFields["PathTextField"]
+        XCTAssertTrue(filePath.waitForExistence(timeout: 5))
+        filePath.typeKey("a", modifierFlags: .command)
+        let fixturePath = URL(fileURLWithPath: path).appendingPathComponent("browser-upload-fixture.txt").path
+        filePath.typeText(fixturePath)
+        XCTAssertEqual(filePath.value as? String, fixturePath, "Only the generated fixture may be selected")
+        filePath.typeKey(.return, modifierFlags: [])
         let open = app.sheets.buttons["Open"]
-        XCTAssertTrue(open.waitForExistence(timeout: 5)); open.click()
+        XCTAssertTrue(open.waitForExistence(timeout: 5))
+        let ready = expectation(for: NSPredicate(format: "enabled == true"), evaluatedWith: open)
+        await fulfillment(of: [ready], timeout: 5)
+        open.click()
         XCTAssertTrue(app.webViews.staticTexts["Fixture upload received"].waitForExistence(timeout: 10), app.debugDescription)
         upload.click(); XCTAssertTrue(app.sheets.buttons["Cancel"].waitForExistence(timeout: 5))
         app.sheets.buttons["Cancel"].click()
@@ -1085,7 +1115,6 @@ final class TaskHubUITests: XCTestCase {
         let result = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Int])
         XCTAssertEqual(result["uploads"], 1)
         XCTAssertFalse(app.sheets.firstMatch.exists)
-        XCTAssertTrue(app.buttons["New Project"].isEnabled)
     }
 
     @MainActor

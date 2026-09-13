@@ -748,6 +748,15 @@ and [file selection delegate](https://developer.apple.com/documentation/webkit/w
 File selection forwards WebKit's multiple-selection and directory options; Cancel
 returns no URLs. No browser business reactions were added to view `.onChange`.
 
+During a dialog request, the browser surface uses SwiftUI's
+[accessibilityHidden](https://developer.apple.com/documentation/swiftui/view/accessibilityhidden(_:))
+modifier to exclude the paused web content from accessibility. Completing or
+cancelling the request restores it. The web view remains mounted; this is rendering
+of model state, with no view-owned reaction or navigation. Native alerts have a
+stable accessibility identifier. UI tests verify the web content's exclusion and
+restoration, disabled/re-enabled project creation, prompt default/changed/empty and
+cancelled responses, confirmations, alerts, and actual file upload/cancellation.
+
 ## Implemented: terminal appearance publication lifetime
 
 The terminal mount warning had two independent sources in the pinned wrapper.
