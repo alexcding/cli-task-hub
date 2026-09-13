@@ -3,8 +3,19 @@ import Observation
 
 @MainActor @Observable final class GitHistoryViewModel {
     let worktree: String
-    private(set) var scope = GitHistoryScope.branchChanges
-    private(set) var search = ""
+    var scope = GitHistoryScope.branchChanges {
+        didSet {
+            guard oldValue != scope else { return }
+            commits = []; page = nil; hasMore = false; nextOffset = 0
+            clearDetail(); refresh()
+        }
+    }
+    var search = "" {
+        didSet {
+            guard oldValue != search else { return }
+            if let selectedSHA, !rows.contains(where: { $0.sha == selectedSHA }) { select(rows.first?.sha) }
+        }
+    }
     private(set) var findRequest = UUID()
     func find() { findRequest = UUID() }
     private(set) var commits: [GitCommit] = []
@@ -52,14 +63,6 @@ import Observation
         guard value != base else { return }
         base = value
         if active, scope == .branchChanges { refresh() }
-    }
-    func setScope(_ value: GitHistoryScope) {
-        guard scope != value else { return }
-        scope = value; commits = []; page = nil; clearDetail(); refresh()
-    }
-    func setSearch(_ value: String) {
-        search = value
-        if let selectedSHA, !rows.contains(where: { $0.sha == selectedSHA }) { select(rows.first?.sha) }
     }
     func show() { active = true; reload(preserveLoadedPages: true) }
     func refresh() { reload(preserveLoadedPages: false) }

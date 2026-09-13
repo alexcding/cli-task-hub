@@ -9,14 +9,14 @@ struct GitHistoryView: View {
         VStack(spacing: 0) {
             VStack(spacing: 8) {
               HStack {
-                Picker("History scope", selection: Binding(get: { model.scope }, set: model.setScope)) {
+                Picker("History scope", selection: $model.scope) {
                     ForEach(GitHistoryScope.allCases) { Text($0.rawValue).tag($0) }
                 }.labelsHidden().frame(maxWidth: 220)
                 Spacer()
                 if model.loading { ProgressView().controlSize(.small) }
                 Button("Refresh History", systemImage: "arrow.clockwise", action: model.refresh).labelStyle(.iconOnly).disabled(model.loading)
               }
-              TextField("Search loaded commits", text: Binding(get: { model.search }, set: model.setSearch)).textFieldStyle(.roundedBorder).focused($finding)
+              TextField("Search loaded commits", text: $model.search).textFieldStyle(.roundedBorder).focused($finding)
             }.padding(10)
             if let error = model.error { Text(error).font(.callout).foregroundStyle(.orange).padding(.horizontal, 10) }
             VSplitView {

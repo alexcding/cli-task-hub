@@ -43,10 +43,10 @@ private actor HistoryFixture: GitHistoryService {
     #expect(model.commits.count == 3 && !model.hasMore)
     #expect(model.selectedSHA == historyCommit("b").sha)
     #expect(await service.calls.map(\.1) == [0, 2])
-    model.select(historyCommit("c").sha); model.setSearch("Commit c")
+    model.select(historyCommit("c").sha); model.search = "Commit c"
     model.hide(); model.show(); await model.waitForList(); await model.waitForDetail()
     #expect(model.commits.count == 3 && model.selectedSHA == historyCommit("c").sha && model.rows.count == 1)
-    model.setSearch("")
+    model.search = ""
     model.refresh(); await model.waitForList()
     await service.changeRevision()
     model.loadMore(); await model.waitForList()
@@ -69,7 +69,7 @@ private actor HistoryFixture: GitHistoryService {
     model.refresh(); await model.waitForList()
     #expect(model.commits.count == 2 && model.error == "History unavailable")
     await service.failList(false)
-    model.refresh(); model.setScope(.currentBranch); await model.waitForList()
+    model.refresh(); model.scope = .currentBranch; await model.waitForList()
     try? await Task.sleep(for: .milliseconds(70))
     #expect(model.commits.map(\.subject) == ["Commit d", "Commit e"])
     await service.failDetail(true)
@@ -92,6 +92,33 @@ private actor HistoryFixture: GitHistoryService {
     #expect(restored.reviewSection == .history && restored.pane == .diff)
     let other = WorkspaceContext(id: "other", sourceURL: "", title: "")
     #expect(other.reviewSection == .changes)
+}
+
+@MainActor @Test func historyPropertyChangesOwnRefreshAndSelectionWithoutAView() async {
+    let service = HistoryFixture()
+    let model = GitHistoryViewModel(worktree: "/fixture", baseURL: URL(string: "http://127.0.0.1:3000")!, service: service, pageSize: 2)
+    model.show(); await model.waitForList(); await model.waitForDetail()
+    model.scope = .branchChanges
+    await model.waitForList()
+    #expect(await service.calls.count == 1)
+
+    model.search = "Commit b"
+    await model.waitForDetail()
+    #expect(model.selectedSHA == historyCommit("b").sha && model.detail?.meta.message == "Detail b")
+    model.search = "missing"
+    #expect(model.selectedSHA == nil && model.detail == nil && model.patch == nil)
+    #expect(await service.calls.count == 1)
+
+    model.hide()
+    model.search = ""
+    model.scope = .currentBranch
+    #expect(model.commits.isEmpty && !model.hasMore && !model.loading)
+    #expect(await service.calls.count == 1)
+    model.show(); await model.waitForList(); await model.waitForDetail()
+    #expect(model.commits.map(\.subject) == ["Commit d", "Commit e"])
+    #expect(await service.calls.count == 2)
+    #expect(await service.calls.last?.0.aheadOnly == false)
+    model.hide()
 }
 
 

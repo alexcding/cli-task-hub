@@ -1621,6 +1621,14 @@ does not).
 
 ### Record-style model property observers — 2026-09-13
 
+- Follow-up audit: Git History now binds scope and search directly to observable
+  model properties. Guarded `didSet` handlers own scope refresh, pagination reset
+  and filtered selection updates, including changes made without a mounted view.
+  Four focused history tests pass in
+  `swift_package_test_2026-09-13T17-01-51-571Z_pid58154_d0d2828d.log`.
+  Native history search, pagination, section return and read-only patches pass in
+  `test_macos_2026-09-13T17-02-11-393Z_pid58373_c16101f8.log`; the run reports a
+  WebKit/UI-test thread priority inversion warning.
 - Read Record's Search, Settings, Download Settings and Sign In models. TaskHub's
   Activity filters, project PR state and session project selection now react inside
   guarded `didSet` observers. Replacement tasks cancel their predecessors and
