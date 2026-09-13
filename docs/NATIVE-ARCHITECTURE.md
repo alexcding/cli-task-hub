@@ -486,6 +486,31 @@ and clipboard actions remain available offline; native opens show connection fee
 Focused tests
 and native Dashboard acceptance are recorded in `SWIFTUI-PORT.md`.
 
+## Implemented: Activity coordinator and confirmed clear lifetime
+
+`NativeLogsFeatureFactory` injects page actions and clipboard access. The root
+coordinator owns `LogsCoordinator` and its `@Observable` model. Activity emits typed
+open/copy/clear callbacks; the coordinator checks ownership, selected destination
+and presentation availability before dispatching them. Opening resolves current
+visible rows and uses the shared cancellable navigation model. Navigation failures
+remain separate from snapshot and clear failures.
+
+Category, error level and search changes react in guarded model `didSet` observers.
+Views bind directly and render state. Unchanged assignments preserve pending work;
+changed inputs, root navigation, accepted dialogs and retirement cancel stale opens.
+
+Clear confirmation is an identified request capturing category, model identity and
+connection. Cancellation invalidates the request, duplicate confirmations cannot
+start another write, and failed writes preserve the same request for retry. Snapshot
+refreshes do not erase clear feedback. A reconnect invalidates confirmation; a write
+already started may finish but cannot delete rows from the replacement connection.
+Successful clearing invalidates pending reads before refreshing, without waiting for
+an uncooperative old transport. Root presentations and deeplinks respect the child
+confirmation and any outstanding write.
+
+Focused model/coordinator tests and native UI evidence are recorded in
+`SWIFTUI-PORT.md`.
+
 ## Remaining extraction
 
 The architecture extraction remains in progress:
@@ -498,8 +523,8 @@ The architecture extraction remains in progress:
   actions behind injected dependencies.
 - Expand factories to settings and document feature assembly;
   `AppStore` still constructs several concrete services and models. Complete
-  child presentation ownership/model retirement and Activity action
-  forwarding as the remaining shared action services are extracted.
+  child presentation ownership/model retirement as the remaining shared action
+  services are extracted.
 - Separate application runtime/backend lifecycle from feature navigation without
   changing ownership, cancellation, detached-shell retention or update shutdown.
 - Audit every rendering view and web/AppKit adapter for remaining business rules.

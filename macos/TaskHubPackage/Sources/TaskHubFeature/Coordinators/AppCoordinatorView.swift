@@ -70,8 +70,8 @@ struct AppCoordinatorView: View {
         switch model.destination {
         case .dashboard(let dashboard):
             DashboardView(model: dashboard, shell: model.shell)
-        case .activity(let logs):
-            LogsView(model: logs)
+        case .activity:
+            if let child = coordinator.logsCoordinator { LogsCoordinatorView(coordinator: child) }
         case .settings(let settings):
             SettingsView(model: settings, shell: model.shell, viewer: model.viewer)
         case .terminal:

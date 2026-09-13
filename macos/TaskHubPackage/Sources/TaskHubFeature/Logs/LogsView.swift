@@ -11,10 +11,11 @@ struct LogsView: View {
                 Toggle("Errors only", isOn: $model.errorsOnly)
                 Spacer()
                 Button("Refresh logs", systemImage: "arrow.clockwise", action: model.refresh).labelStyle(.iconOnly)
-                Button("Clear Logs…", role: .destructive, action: model.requestClear).disabled(model.clearing)
+                Button("Clear Logs…", role: .destructive, action: model.requestClear).disabled(!model.canRequestClear)
             }
             TextField("Search loaded logs", text: $model.search).textFieldStyle(.roundedBorder).accessibilityIdentifier("logs-search")
             if let error = model.error { Label(error, systemImage: "exclamationmark.triangle").foregroundStyle(.orange).textSelection(.enabled) }
+            if let error = model.navigation.error { Label(error, systemImage: "exclamationmark.triangle").foregroundStyle(.orange).textSelection(.enabled) }
             if model.loading { ProgressView("Loading logs…").controlSize(.small) }
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 16) {
@@ -34,7 +35,10 @@ struct LogsView: View {
                             HStack {
                                 Text("\(LogsViewModel.label(entry.category)) · \(entry.level)").font(.caption).foregroundStyle(.secondary)
                                 Spacer()
-                                if entry.link != nil { Button("Open Pull Request") { Task { await model.open(entry) } } }
+                                if let link = entry.link {
+                                    if model.navigation.opening == link { ProgressView().controlSize(.small) }
+                                    Button("Open Pull Request") { model.open(entry) }.disabled(model.navigation.opening == link)
+                                }
                                 Button("Copy entry", systemImage: "doc.on.doc") { model.copyEntry(entry) }.labelStyle(.iconOnly)
                             }
                         }.accessibilityIdentifier("log-entry-\(entry.id)")
@@ -43,12 +47,6 @@ struct LogsView: View {
                 }
             }
             Text("Latest 200 entries for the selected category and level.").font(.caption).foregroundStyle(.secondary)
-        }.task { model.refresh() }
-            .alert("Clear \(model.clearScopeLabel)?", isPresented: $model.confirmingClear) {
-                Button("Cancel", role: .cancel) {}
-                Button("Clear Logs", role: .destructive) { Task { await model.clear(confirmed: true) } }
-            } message: {
-                Text("This deletes every entry in this category, including entries hidden by search or Errors only.")
-            }
+        }.onAppear(perform: model.refresh)
     }
 }

@@ -73,6 +73,29 @@ private struct DeepLinkProjectService: ProjectService {
     func pullRequests(_ id: String, state: String, force: Bool) async throws -> ProjectPRSnapshot { .init() }
 }
 
+private struct DeepLinkLogsService: LogService {
+    func categories() -> [String] { ["event"] }
+    func entries(category: String, errorsOnly: Bool) -> [LogEntry] { [] }
+    func clear(category: String) {}
+}
+
+@MainActor @Test(.timeLimit(.minutes(1)), arguments: [false, true])
+func deepLinksWaitForActivityClearConfirmationToFinish(confirm: Bool) async throws {
+    let coordinator = AppCoordinator(factory: NativeCreationFlowFactory(chooseFolder: { nil }))
+    let runtime = DeepLinkRuntime(); runtime.coordinator = coordinator; coordinator.rootRuntime = runtime
+    let model = coordinator.makeLogs(factory: NativeLogsFeatureFactory(), pageActions: ProjectPageActions(), copy: { _ in })
+    model.connect(DeepLinkLogsService())
+    coordinator.navigate(to: .activity); coordinator.setRoutingReady(true)
+    model.requestClear()
+    let child = try #require(coordinator.logsCoordinator), request = try #require(child.confirmation)
+    coordinator.handle(url: URL(string: "taskhub://app/settings")!)
+    #expect(coordinator.selection == .activity && coordinator.pendingDeepLink != nil)
+    if confirm { await child.confirm(id: request.id) } else { child.cancel(id: request.id) }
+    while coordinator.pendingDeepLink != nil { await Task.yield() }
+    #expect(coordinator.selection == .settings && coordinator.canPresent)
+    child.retire()
+}
+
 @MainActor private final class DeepLinkProjectFactory: ProjectCoordinatorFactory {
     var creations = 0
     func project(model: ProjectPageViewModel) -> ProjectCoordinator { creations += 1; return ProjectCoordinator(model: model) }

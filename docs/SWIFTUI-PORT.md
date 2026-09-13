@@ -1926,6 +1926,33 @@ does not).
 - Activity actions/clear confirmation, remaining settings/document/platform factories
   and runtime extraction remain open, along with terminal and release acceptance.
 
+### Activity coordinator, factory and model-owned reactions — 2026-09-13
+
+- Rechecked Record's Search, Settings and Download Settings models: input reactions
+  and replacement work belong in model property observers. Activity binds directly
+  to guarded `@Observable` category/errors/search properties; opening and copying
+  emit typed callbacks handled by its new owning coordinator.
+- The Activity factory injects navigation and clipboard dependencies. Current-row,
+  ownership and presentation checks reject stale callbacks. Navigation failures stay
+  separate from snapshot feedback, and filters/navigation/dialogs cancel late opens.
+- Clear confirmation captures the reviewed category, model and backend connection.
+  Failed clears retain their request and error for retry; refreshes cannot erase that
+  feedback. Cancelled, foreign and reconnected requests cannot write. Duplicate
+  confirms coalesce, and an already started write cannot clear a new connection's
+  rows. Generation checks reject pre-clear reads and obsolete stop cleanup.
+- The root includes Activity confirmation/busy state in presentation and deeplink
+  gating. Cancelling or completing the confirmation resumes queued navigation.
+- Twenty-eight focused tests pass in
+  `swift_package_test_2026-09-13T17-53-18-498Z_pid77095_92b6a53e.log`, covering property
+  guards, navigation cancellation, confirmation identity/retry, held reads/writes,
+  reconnect, ownership and deferred deeplinks. The initial build found the request
+  label needed a nonisolated pure formatter; that was corrected before validation.
+- Native Activity filtering, cancel/confirm, captured category/warning text and
+  disabled New Project while confirming pass in
+  `test_macos_2026-09-13T17-53-47-602Z_pid77393_e990b56d.log`.
+- Settings/document/platform factories, remaining view-input adapters and runtime
+  extraction continue, along with terminal and release acceptance gates.
+
 ## Why now, and why native
 
 The Tauri shell works, but roughly half of `src-tauri/` exists to work around what a DOM

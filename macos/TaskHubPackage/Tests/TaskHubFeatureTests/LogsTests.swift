@@ -24,7 +24,8 @@ private actor LogFixture: LogService {
 
 @MainActor @Test func logFiltersRejectStaleResponsesAndClearTheConfirmedCategoryOnly() async throws {
     let service = LogFixture()
-    let model = LogsViewModel(openPage: { _ in }, copy: { _ in })
+    let model = LogsViewModel(pageActions: ProjectPageActions(), copy: { _ in })
+    let coordinator = LogsCoordinator(model: model)
     model.connect(service)
     model.refresh()
     try await Task.sleep(for: .milliseconds(10))
@@ -44,17 +45,23 @@ private actor LogFixture: LogService {
     while model.loading { try await Task.sleep(for: .milliseconds(10)) }
     #expect(model.rows.count == 1 && model.error == "Logs offline")
     model.requestClear()
-    await model.clear(confirmed: false)
+    coordinator.cancel(id: try #require(coordinator.confirmation).id)
     #expect(await service.cleared.isEmpty)
-    await model.clear(confirmed: true)
-    #expect(model.rows.count == 1 && model.error == "Clear unavailable")
+    model.requestClear()
+    let request = try #require(coordinator.confirmation)
+    await coordinator.confirm(id: request.id)
+    #expect(model.rows.count == 1 && model.clearError == "Clear unavailable")
+    #expect(coordinator.confirmation == request && model.error == "Logs offline")
     await service.fail(false)
-    model.requestClear() // capture poller before changing the visible filter
+    model.refresh()
+    while model.loading { try await Task.sleep(for: .milliseconds(10)) }
+    #expect(model.error == nil && model.clearError == "Clear unavailable")
     model.category = "all"
-    await model.clear(confirmed: true)
+    await coordinator.confirm(id: request.id) // retry the reviewed category after the visible filter changes
     while model.loading { try await Task.sleep(for: .milliseconds(10)) }
     #expect(await service.cleared == ["poller"])
     #expect(model.rows.isEmpty)
+    #expect(coordinator.confirmation == nil)
     await model.stop()
 }
 

@@ -14,7 +14,7 @@ public final class AppStore {
     @ObservationIgnored private let projectFactory: any ProjectFeatureFactory
     @ObservationIgnored private let copy: (String) -> Void
     var dashboard: DashboardViewModel? { coordinator.dashboardCoordinator?.model }
-    private(set) var logs: LogsViewModel!
+    var logs: LogsViewModel? { coordinator.logsCoordinator?.model }
     private(set) var settings: SettingsViewModel!
     let workspaceLaunch = WorkspaceLaunchViewModel(launcher: NativeWorkspaceCommandLauncher())
     public private(set) var projects: [Project] = []
@@ -51,6 +51,7 @@ public final class AppStore {
          workspaceFactory: any WorkspaceFeatureFactory = NativeWorkspaceFeatureFactory(),
          rootFactory: any RootFeatureFactory = NativeRootFeatureFactory(),
          dashboardFactory: any DashboardFeatureFactory = NativeDashboardFeatureFactory(),
+         logsFactory: any LogsFeatureFactory = NativeLogsFeatureFactory(),
          selectionStore: any SidebarSelectionPersisting = UserDefaultsSidebarSelectionStore(),
          router: any DeepLinkRouting = TaskHubRouter(),
          projectFactory: (any ProjectFeatureFactory)? = nil,
@@ -72,10 +73,10 @@ public final class AppStore {
             guard let self else { throw BackendError.operation("The workspace has closed.") }
             try await self.openPage(request)
         }, desktop: desktop, copy: copy))
-        logs = LogsViewModel(openPage: { [weak self] request in
+        _ = coordinator.makeLogs(factory: logsFactory, pageActions: NativePageActionService(open: { [weak self] request in
             guard let self else { throw BackendError.operation("The workspace has closed.") }
             try await self.openPage(request)
-        }, copy: copy)
+        }, desktop: desktop, copy: copy), copy: copy)
         dashboard?.snapshotChanged = { [weak self] in self?.updateWorkspaceReviewState() }
         settings = SettingsViewModel(clis: CLISettingsViewModel(copy: copy, openBrowser: { desktop.openBrowser($0) }), diagnostics: DiagnosticsViewModel(),
             loginItem: LoginItemViewModel(service: NativeLoginItemService()), fonts: FontSettingsViewModel(catalog: InstalledCodeFontCatalog()),
@@ -691,7 +692,7 @@ public final class AppStore {
                 model.workflows?.connect(APIWorkflowService(api: api))
                 model.automation?.connect(APIAutomationService(api: api))
             } }
-            if let api { logs.connect(APILogService(api: api)) }
+            if let api { logs?.connect(APILogService(api: api)) }
             if let api { for model in historyModels.values { model.connect(baseURL: api.baseURL, service: APIGitHistoryService(api: api)) } }
             if let api { for model in diffModels.values { model.connect(baseURL: api.baseURL, service: APIDiffService(api: api)); model.actions?.connect(APIGitChangesService(api: api)) } }
             if let api {
@@ -715,7 +716,7 @@ public final class AppStore {
         refreshRequestID = UUID()
         shell.refresh()
         dashboard?.refresh()
-        if selection == .activity { logs.refresh() }
+        if selection == .activity { logs?.refresh() }
         if case .project(let id) = selection, let model = projectModels[id], model.section == .board {
             model.board?.refresh()
         }
@@ -821,7 +822,7 @@ public final class AppStore {
         }
         if event.type == "activity", let activity = event.event {
             shell.notifications.receiveActivity(activity, enabled: shell.activityNotify)
-            if selection == .activity { logs.refresh() }
+            if selection == .activity { logs?.refresh() }
         }
         if event.type == "settings" { shell.loadSettings() }
         if event.type == "config" { settings.refresh() }
@@ -849,7 +850,7 @@ public final class AppStore {
         refreshTask = nil
         await shell.stop()
         await dashboard?.stop()
-        await logs.stop()
+        await logs?.stop()
         await settings.stop()
         for model in projectModels.values {
             await model.automation?.stop()

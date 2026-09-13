@@ -43,7 +43,7 @@ import Observation
     }
     private(set) var restartConfirmation: RestartConfirmation?
     var canPresent: Bool {
-        sheet == nil && restartConfirmation == nil && !projectCoordinators.values.contains { $0.isPresenting }
+        sheet == nil && restartConfirmation == nil && logsCoordinator?.isPresenting != true && !projectCoordinators.values.contains { $0.isPresenting }
     }
     @ObservationIgnored private let factory: any CreationFlowFactory
     @ObservationIgnored private let workspaceFactory: any WorkspaceFeatureFactory
@@ -56,6 +56,7 @@ import Observation
     @ObservationIgnored let canOpenExternalRoute: () -> Bool
     var projectCoordinators: [String: ProjectCoordinator] = [:]
     var dashboardCoordinator: DashboardCoordinator?
+    var logsCoordinator: LogsCoordinator?
     @ObservationIgnored var pendingDeepLink: DeepLink?
     @ObservationIgnored var routingReady = false
     var routingError: String?
@@ -73,7 +74,9 @@ import Observation
     }
 
     func navigate(to destination: SidebarDestination) {
-        if selection != destination { projectCoordinator?.endPresentation(); dashboardCoordinator?.model.cancelActions() }
+        if selection != destination {
+            projectCoordinator?.endPresentation(); dashboardCoordinator?.model.cancelActions(); logsCoordinator?.endPresentation()
+        }
         routingError = nil
         selection = destination
         selectionStore.save(destination)
@@ -82,6 +85,7 @@ import Observation
 
     private func cancelPageActions() {
         projectCoordinator?.model.cancelActions(); dashboardCoordinator?.model.cancelActions()
+        logsCoordinator?.model.cancelActions()
     }
 
     func presentAddPage(openPage: @escaping (String) -> Bool) {
