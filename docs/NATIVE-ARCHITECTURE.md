@@ -6,6 +6,14 @@ view renders those models and forwards user or lifecycle events. The native
 Dashboard, Cocoa sidebar and native terminal remain; Sprint Board, diff and editor
 remain focused web surfaces.
 
+Application ViewModels and coordinators use Swift Observation (`@Observable`),
+with `@Bindable` where a rendering view needs bindings. Do not introduce
+`ObservableObject`, `@Published`, `@StateObject` or `@ObservedObject` into TaskHub's
+application layer. The pinned third-party Ghostty wrapper internally uses the older
+Combine observation API; that dependency implementation is not the application's
+ViewModel pattern. An audit of `TaskHubPackage/Sources` and `TaskHub` on 2026-09-13
+found no legacy observation declarations in TaskHub-owned Swift code.
+
 ## Reference inspected
 
 The reference checkout is `/Users/accedo/Workspace/elevate-ios`. These files informed
@@ -125,14 +133,37 @@ The shell run emitted a SwiftUI publication-during-update warning; its source st
 needs investigation in the terminal adapter pass. This is not a complete terminal
 fidelity or performance acceptance result.
 
+## Implemented: terminal presentation model
+
+Each `TerminalSession` creates and retains a `TerminalPaneViewModel` before the view
+renders. The model uses `@Observable` and an injected `TerminalPaneServing` protocol,
+weakly referencing its session. The view forwards visibility, activity, appearance,
+font and window-occlusion events. The model coalesces display/font updates after
+the current update pass and evaluates focus against the latest mounted, active,
+visible and ready state. The native adapter resolves the owning window and changes
+focus/visibility without replacing the emulator or touching PTY ownership.
+
+The connection's ready callback uses the same presentation model. A queued focus
+request cannot acquire the terminal after the model has been deactivated. Removing
+the rendering view suspends its drawing; it does not disconnect or kill its shell.
+
+Seven focused Swift tests pass, including the real-daemon reconnect suite's idle,
+unacknowledged keyboard input, unacknowledged interrupt and missing-shell cases.
+The native UI check verifies hide/show and actual keyboard input into the same
+fixture shell in addition to navigation, cancellation, restart and Quit.
+The mount-time publication warning remains reproducible. Experiments deferring
+the wrapper's theme adoption and nested hosting updates did not remove it and were
+reverted; neither Ghostty's patch set nor split geometry changes in this phase.
+The warning's origin and terminal hardware/performance acceptance remain open.
+
 ## Remaining extraction
 
 The architecture extraction remains in progress:
 
 - Move sidebar/root destinations and titles out of root rendering code. Preserve
   stable session/context IDs and mounted terminal surfaces across navigation.
-- Complete terminal/UI-adapter lifecycle extraction and audit focus/visibility
-  updates, while retaining native input and emulator ownership.
+- Complete the remaining terminal/UI-adapter audit, including the mount warning,
+  while retaining native input and emulator ownership.
 - Finish tray navigation/window coordination and move any remaining platform
   actions behind injected dependencies.
 - Expand factories to project, settings and document feature assembly;

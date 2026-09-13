@@ -847,6 +847,21 @@ final class TaskHubUITests: XCTestCase {
         row.click()
         XCTAssertTrue(pid.waitForExistence(timeout: 5))
         XCTAssertEqual(pid.value as? String, original)
+        let visibility = app.descendants(matching: .any).matching(identifier: "terminal-visibility").firstMatch
+        XCTAssertTrue(visibility.waitForExistence(timeout: 5))
+        visibility.click()
+        XCTAssertTrue(app.staticTexts["terminal-hidden"].waitForExistence(timeout: 5))
+        XCTAssertEqual(pid.value as? String, original)
+        visibility.click()
+        let shown = expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: app.staticTexts["terminal-hidden"])
+        wait(for: [shown], timeout: 5)
+        // Showing the ready surface returns keyboard focus to this fixture shell.
+        let marker = URL(fileURLWithPath: path).appendingPathComponent("terminal-focus.txt")
+        let quoted = "'" + marker.path.replacingOccurrences(of: "'", with: "'\\''") + "'"
+        app.typeText("printf 'presentation-focus' > " + quoted + "\n")
+        let input = expectation(for: NSPredicate { _, _ in FileManager.default.fileExists(atPath: marker.path) }, evaluatedWith: nil)
+        wait(for: [input], timeout: 5)
+        XCTAssertEqual(try String(contentsOf: marker, encoding: .utf8), "presentation-focus")
         app.buttons["Restart Session"].click()
         XCTAssertTrue(app.sheets.buttons["Cancel"].waitForExistence(timeout: 5), app.debugDescription)
         app.sheets.buttons["Cancel"].click()

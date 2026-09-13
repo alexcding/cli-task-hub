@@ -1539,6 +1539,36 @@ does not).
   Remaining extraction is in `NATIVE-ARCHITECTURE.md`; migration acceptance gates
   remain open. Sprint Board stays web-based.
 
+### Observable terminal presentation model — 2026-09-13
+
+- `TerminalPaneViewModel` now owns mounted/activity/visibility policy, deferred font
+  updates and focus eligibility through an injected `TerminalPaneServing` protocol.
+  Each session creates its model before rendering and retains it across emulator
+  generations; the model weakly references the session. Views forward lifecycle and
+  input events. Showing/hiding a view never starts, stops or replaces the shell.
+- Font/display updates coalesce after the synchronous view update. Focus uses the
+  current mounted, active, visible and ready state, including the connection-ready
+  callback, so an obsolete queued request cannot focus a hidden workspace.
+- Seven Swift tests pass, including rapid presentation changes, model lifetime,
+  latest-font application and real-daemon reconnection with idle input, lost keyboard
+  acknowledgment, lost interrupt acknowledgment and a missing original shell.
+  Log: `swift_package_test_2026-09-13T14-49-46-688Z_pid15133_621cdb31.log`.
+- Final native UI verification passes in
+  `test_macos_2026-09-13T14-50-30-399Z_pid15523_e93de549.log`: navigation and hide/show
+  retain the PID; typing after showing the terminal writes the expected marker in
+  the isolated fixture; cancelled restart retains the shell; confirmed restart
+  replaces it; explicit Quit exits. Fixture cleanup remains enabled.
+- The mount-time publication warning still occurs. Deferring wrapper theme adoption
+  and nested hosting updates did not remove it; both experiments were reverted.
+  The pinned Ghostty inputs and split controller remain unchanged. This warning,
+  hardware/input-source checks and full terminal performance acceptance remain open.
+- Reconfirmed the reference's `@Observable` pattern and audited all TaskHub-owned
+  Swift sources: no `ObservableObject`, `@Published`, `@StateObject`, `@ObservedObject`
+  or `@EnvironmentObject` remains. The legacy observation API is internal to the
+  third-party Ghostty wrapper. `NATIVE-ARCHITECTURE.md` makes Swift Observation the
+  explicit application-layer rule. Remaining migration/architecture work continues;
+  Sprint Board remains web-based.
+
 ## Why now, and why native
 
 The Tauri shell works, but roughly half of `src-tauri/` exists to work around what a DOM

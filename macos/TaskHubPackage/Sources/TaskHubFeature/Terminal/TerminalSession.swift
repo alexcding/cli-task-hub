@@ -8,8 +8,8 @@ final class TerminalSession: Identifiable {
     let pairKey: String
     let cwd: String
     let paired: Bool
-    @ObservationIgnored var isActive = true
     var showsSurface = true
+    @ObservationIgnored private(set) var presentation: TerminalPaneViewModel!
     private(set) var surface = TerminalViewState()
     private(set) var surfaceGeneration = UUID()
     private(set) var status = "Connecting"
@@ -47,6 +47,7 @@ final class TerminalSession: Identifiable {
         self.configuration = configuration
         self.shellPath = shellPath
         makeSurface()
+        presentation = TerminalPaneViewModel(session: self)
     }
 
     private func makeSurface() {
@@ -192,7 +193,7 @@ final class TerminalSession: Identifiable {
                 guard let self, self.started, self.surfaceGeneration == generation, self.error == nil else { return }
                 self.status = "Connected"
                 self.ready = true
-                if self.isActive && self.showsSurface { self.surface.requestFocus() }
+                self.presentation.becameReady()
                 if created, let onCreated = self.onCreated {
                     self.launchTask = Task {
                         defer { self.launchTask = nil }
