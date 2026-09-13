@@ -1269,6 +1269,30 @@ does not).
   Four focused terminal/PTY/workflow regressions and the native arm64 app build
   pass after adding the diagnostics and harness target.
 
+### M1 unread socket recovery — 2026-09-12
+
+- Fixed a daemon deadlock in client delivery backpressure. Once an unread socket
+  exceeded the 4 MiB high-water mark, all PTY reads could pause before another
+  output offer ran the 60-second stalled-client check. PTY backlog checks and the
+  independent watchdog now enforce that deadline even without new output.
+- A connection with no queued output starts a fresh delivery clock when work
+  arrives. Partial socket writes count as progress and reduce the outstanding
+  byte budget; a large frame no longer hides a reader that is making progress.
+- Real Unix socket tests fill the production outbox with synthetic flood frames,
+  keep a healthy reader draining, and verify that an actual PTY stops reading
+  under backlog pressure and resumes with its original PID after expiry. Both
+  legacy text and native byte transports pass. The test advances only the fixture
+  delivery timestamp instead of waiting 60 seconds. Removing the backlog expiry
+  check reproduces the failure. A deterministic idle-clock regression also passes.
+- Verification: 16 daemon tests pass without snapshots and 21 with snapshots;
+  all three focused outbox regressions pass after the final test refinement.
+  Two native Swift tests verify same-process reattachment and reconnect without
+  retrying unacknowledged input. Both debug and release snapshot helpers build.
+- This retains the existing global backpressure policy and 60-second deadline;
+  other terminals can still pause temporarily behind an unread client. It proves
+  recovery from the indefinite freeze, not per-terminal socket isolation or a
+  substitute for full-app performance and interaction acceptance.
+
 ## Why now, and why native
 
 The Tauri shell works, but roughly half of `src-tauri/` exists to work around what a DOM

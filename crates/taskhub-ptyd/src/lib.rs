@@ -51,6 +51,8 @@ use serde_json::{json, Value};
 mod utf8;
 mod shell_integration;
 mod geometry;
+#[cfg(test)]
+mod outbox_tests;
 pub use geometry::TerminalGeometry;
 #[cfg(feature = "terminal-snapshots")]
 mod snapshot;
@@ -369,6 +371,12 @@ struct Client {
   sock: UnixStream,
 }
 
+impl Client {
+  fn stalled(&self) -> bool {
+    self.owed.load(Ordering::Relaxed) > 0 && self.progress.lock().unwrap().elapsed() > STALL_DROP
+  }
+}
+
 #[derive(Default)]
 struct ClientSession {
   #[cfg(feature = "terminal-snapshots")]
@@ -579,12 +587,15 @@ impl Daemon {
 
   fn offer(&self, c: &Client, line: &Arc<str>) -> bool {
     let owed = c.owed.load(Ordering::Relaxed);
-    let stalled = owed > 0 && c.progress.lock().unwrap().elapsed() > STALL_DROP;
+    let stalled = c.stalled();
     if line.len() > OUTBOX_MAX.saturating_sub(owed) || stalled {
       log(&format!("client {} dropped: owed {owed} bytes{}", c.id, if stalled { ", stalled" } else { "" }));
       let _ = c.sock.shutdown(std::net::Shutdown::Both);
       return false;
     }
+    // An idle connection has no delivery deadline. Start its clock when it
+    // acquires work, rather than expiring the first output after a long idle.
+    if owed == 0 { *c.progress.lock().unwrap() = Instant::now(); }
     c.owed.fetch_add(line.len(), Ordering::Relaxed);
     c.tx.send(line.clone()).is_ok()
   }
@@ -598,7 +609,23 @@ impl Daemon {
   }
 
   fn max_owed(&self) -> usize {
-    self.clients.lock().unwrap().iter().map(|c| c.owed.load(Ordering::Relaxed)).max().unwrap_or(0)
+    self.reap_stalled_clients()
+  }
+
+  fn reap_stalled_clients(&self) -> usize {
+    // Must run independently of offer(): BACKLOG_HIGH suspends every PTY read,
+    // so there may never be another output event to detect a blocked writer.
+    let mut max_owed = 0;
+    self.clients.lock().unwrap().retain(|c| {
+      if !c.stalled() {
+        max_owed = max_owed.max(c.owed.load(Ordering::Relaxed));
+        return true;
+      }
+      log(&format!("client {} dropped: stalled with {} bytes owed", c.id, c.owed.load(Ordering::Relaxed)));
+      let _ = c.sock.shutdown(std::net::Shutdown::Both);
+      false
+    });
+    max_owed
   }
 
   fn create(self: &Arc<Self>, opts: CreateOpts) -> Result<TermInfo, String> {
@@ -1146,12 +1173,22 @@ impl Daemon {
 
     // Outbox: the single writer on this socket. Blocking here blocks only this client.
     std::thread::spawn(move || {
-      for line in rx {
-        if out.write_all(line.as_bytes()).and_then(|_| out.flush()).is_err() {
-          break;
+      'outbox: for line in rx {
+        let mut bytes = line.as_bytes();
+        while !bytes.is_empty() {
+          match out.write(bytes) {
+            Ok(0) => break 'outbox,
+            Ok(n) => {
+              // Count actual socket progress, including partially written frames.
+              // A large frame must not hide a reader that is still making progress.
+              *progress.lock().unwrap() = Instant::now();
+              owed.fetch_sub(n, Ordering::Relaxed);
+              bytes = &bytes[n..];
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(_) => break 'outbox,
+          }
         }
-        owed.fetch_sub(line.len(), Ordering::Relaxed);
-        *progress.lock().unwrap() = Instant::now();
       }
       let _ = out.shutdown(std::net::Shutdown::Both);
     });
@@ -1237,11 +1274,13 @@ pub fn main(dir: PathBuf) -> ! {
     idle_since: Mutex::new(Some(Instant::now())),
   });
 
-  // Idle watchdog: no terminals + no clients for IDLE_EXIT → leave (the host respawns on demand).
+  // Also enforce client delivery deadlines when no PTY thread is polling (for
+  // example, a client owns an explicit flow pause or is only receiving replies).
   let d2 = d.clone();
   let sock2 = sock.clone();
   std::thread::spawn(move || loop {
     std::thread::sleep(Duration::from_secs(5));
+    d2.reap_stalled_clients();
     let idle = *d2.idle_since.lock().unwrap();
     if let Some(t) = idle {
       if t.elapsed() >= IDLE_EXIT && d2.terms.lock().unwrap().is_empty() && d2.clients.lock().unwrap().is_empty() {
