@@ -193,8 +193,8 @@ creation/removal, editor save/cancel/discard/history, and a real fixture shell:
 navigation and cancelled restart preserve its PID, confirmed restart replaces it,
 and explicit Quit exits the app. The UI script now supplies the helper path to
 XCTest's copied app and cleans up only its verified fixture daemon after failures.
-The shell run emitted a SwiftUI publication-during-update warning; its source still
-needs investigation in the terminal adapter pass. This is not a complete terminal
+That shell run emitted a SwiftUI publication-during-update warning, subsequently
+resolved by the appearance publication fix below. This is not a complete terminal
 fidelity or performance acceptance result.
 
 ## Implemented: terminal presentation model
@@ -215,10 +215,11 @@ Seven focused Swift tests pass, including the real-daemon reconnect suite's idle
 unacknowledged keyboard input, unacknowledged interrupt and missing-shell cases.
 The native UI check verifies hide/show and actual keyboard input into the same
 fixture shell in addition to navigation, cancellation, restart and Quit.
-The mount-time publication warning remains reproducible. Experiments deferring
+At this stage the mount-time publication warning remained reproducible. Experiments deferring
 the wrapper's theme adoption and nested hosting updates did not remove it and were
 reverted; neither Ghostty's patch set nor split geometry changes in this phase.
-The warning's origin and terminal hardware/performance acceptance remain open.
+The later appearance fix below resolves the warning; terminal hardware/performance
+acceptance remains open.
 
 ## Implemented: root presentation and coordinator action callbacks
 
@@ -244,7 +245,7 @@ Twelve focused Swift tests pass for callback dispatch, stale root/context reject
 factory injection, selection persistence and retained workspace identity. Native UI
 tests pass for the Dashboard, web Sprint Board, Settings/menu navigation and actual
 shell navigation, keyboard input, cancelled/confirmed restart and Quit. The existing
-terminal mount publication warning and WebKit QoS warning remain unresolved.
+terminal mount publication warning was later resolved below; the WebKit QoS warning remains open.
 
 ## Implemented: native deeplink routing
 
@@ -310,8 +311,8 @@ Twenty-two focused tests pass, including automatic model loading, cancellation,
 repeated-value guards, stale responses, context promotion and real WebKit address
 synchronization. Native UI checks pass for actual shell input/navigation/restart,
 Activity filtering/confirmed clearing, browser/session creation and removal, and
-history section changes/pagination/read-only patches. The existing terminal mount
-publication warning and WebKit QoS warning remain open.
+history section changes/pagination/read-only patches. The terminal mount publication
+warning was later resolved below; the WebKit QoS warning remains open.
 
 ## Implemented: project feature factory and coordinator callbacks
 
@@ -381,8 +382,8 @@ running-build retention, retries, single-use removal and cleanup after retiremen
 Native UI checks pass for build selection/cancel/reopen/failure recovery, removal
 cancel/reopen/confirmation, and actual shell input/navigation/restart/Quit.
 Evidence is recorded in `SWIFTUI-PORT.md`; actual Xcode build/run/stop and terminal
-fidelity/performance acceptance remain separate requirements. Existing terminal
-mount publication and WebKit QoS warnings remain open.
+fidelity/performance acceptance remain separate requirements. The terminal mount
+publication warning was later resolved below; the WebKit QoS warning remains open.
 
 ## Implemented: project deletion confirmation in the child coordinator
 
@@ -718,14 +719,35 @@ cannot clear newer task bookkeeping. Review announcement markers survive backend
 reconnects. Native delegate callbacks require the currently installed delivery;
 retired models and released runtime owners cannot dispatch new actions.
 
+## Implemented: terminal appearance publication lifetime
+
+The terminal mount warning had two independent sources in the pinned wrapper.
+Captured stacks show AppKit's appearance callback publishing during window
+attachment, and SwiftUI's appearance callback publishing inside
+`Update.dispatchActions`. Deferring just one left the other path active.
+
+The managed `0004-appkit-appearance-publication.patch` moves view-driven appearance
+adoption after the current update pass. AppKit coalesces requests and reads current
+appearance and ownership at execution. SwiftUI forwards requests to its wrapper
+state, which checks the latest request and attached view/controller identities.
+Detached or superseded views cannot apply queued appearance. The imperative public
+adoption API remains synchronous. Input, resize, focus and PTY timing are unchanged.
+
+Direct AppKit and SwiftUI mount regressions assert no synchronous publication and
+verify rapid appearance changes, cancellation on detachment and retained surface
+identity after reattachment. The native lifecycle UI test passes with zero
+publication warnings, preserving the shell through navigation and hide/show,
+keyboard focus, cancelled/confirmed restart and explicit Quit. The native archive
+hash is unchanged. Broader hardware, fidelity and performance gates remain open.
+
 ## Remaining extraction
 
 The architecture extraction remains in progress:
 
 - Extend the typed action-callback pattern to the remaining feature/completion
   flows and child coordinators as their runtime dependencies are extracted.
-- Complete the remaining terminal/UI-adapter audit, including the mount warning,
-  while retaining native input and emulator ownership.
+- Complete the remaining terminal/UI-adapter audit while retaining native input
+  and emulator ownership; the measured appearance mount warning is resolved above.
 - Move remaining shared shell appearance and platform actions behind injected
   dependencies.
 - `AppStore` still constructs several concrete backend/platform services. Complete

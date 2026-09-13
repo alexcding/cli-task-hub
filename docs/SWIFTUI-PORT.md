@@ -2219,6 +2219,40 @@ does not).
   with the terminal and release gates. This phase adds no new permission prompts
   on startup, snapshot refresh or foreground activity.
 
+### Terminal mount appearance publication fixed — 2026-09-13
+
+- A focused failing regression captured AppKit's `setContentView` → appearance
+  callback → Ghostty `adopt` → `objectWillChange.send` stack in
+  `swift_package_test_2026-09-13T19-49-55-904Z_pid17581_7f62eb85.log`. Fixing that
+  path exposed the second stack: SwiftUI's appearance callback publishing inside
+  `Update.dispatchActions`, recorded in
+  `swift_package_test_2026-09-13T19-53-01-947Z_pid18783_218f4728.log`.
+- Added managed wrapper patch `0004-appkit-appearance-publication.patch`. AppKit
+  coalesces appearance updates after the view update pass and reads current
+  appearance/ownership. SwiftUI forwards deferred requests to wrapper state with
+  latest-request and attached view/controller guards. The public imperative adopt
+  API stays synchronous. No input, resize, focus or PTY operation is deferred.
+- The maintained build applies and fingerprints the new patch; generated dependency
+  checkouts were not edited manually. Final input fingerprint:
+  `9e9d259cd8ec502ce6995e281e86d133395235e236111e839c4aff5fd3bfbcd3`.
+  Native archive SHA-256 remains
+  `3f026176322b0295197e27b9c993347fb8b9e219c13ea415c22e909f4ddd509b`.
+- Nine focused terminal tests pass in
+  `swift_package_test_2026-09-13T19-55-05-043Z_pid19777_963720c3.log`. The new test
+  covers both direct AppKit and SwiftUI mounting, rapid light/dark changes,
+  detached-view cancellation and reattachment without replacing the surface.
+  Existing tests cover hidden parsing, marked text, key/paste encoding, printed
+  links, output ordering and presentation/focus policy.
+- Native PID retention, navigation, hide/show with keyboard input, cancelled and
+  confirmed restart, and explicit Quit pass in
+  `test_macos_2026-09-13T19-55-33-838Z_pid20099_bdc8389b.log`. The log contains zero
+  publication-during-update warnings, compared with one in the earlier identical
+  scenario (`test_macos_2026-09-13T19-10-42-017Z_pid3994_469a0fb7.log`). Existing
+  compiler warnings about weak test variables remain unrelated.
+- This resolves the previously recorded terminal appearance mount warning. The
+  broader M1 hardware/input/fidelity/performance acceptance and M2–M6 release and
+  runtime work remain open.
+
 ## Why now, and why native
 
 The Tauri shell works, but roughly half of `src-tauri/` exists to work around what a DOM

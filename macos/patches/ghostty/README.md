@@ -3,7 +3,8 @@
 These patches extend the exact Ghostty and Swift wrapper revisions in
 `macos/scripts/ghostty-vt.lock.json`. Apply the wrapper's own patch stack first,
 then `0001-native-snapshot-import.patch` to Ghostty and
-`0002-swift-snapshot-import.patch` to the wrapper. The maintained build script
+`0002-swift-snapshot-import.patch` and `0004-appkit-appearance-publication.patch`
+to the wrapper. The maintained build script
 does this in generated checkouts; do not edit SwiftPM dependency checkouts.
 
 `ghostty_surface_restore_snapshot` / `InMemoryTerminalSession.restoreSnapshot`
@@ -73,3 +74,21 @@ do not send replies to the shell. Metadata checks cover local/remote URIs, title
 fallback, preserved parser continuation and surface closure during callbacks.
 These tests establish the bridge behavior;
 they do not establish complete app reconnection or the M1 performance gate.
+
+## Appearance publication during native attachment
+
+`0004-appkit-appearance-publication.patch` fixes two measured synchronous
+publication paths: AppKit's `viewDidChangeEffectiveAppearance` during attachment,
+and the SwiftUI wrapper's appearance callback inside `Update.dispatchActions`.
+AppKit coalesces updates onto the next main-queue turn and reads the current
+appearance only if the view is still attached and still presents its state.
+SwiftUI forwards a deferred request to the wrapper model; stale requests and
+replaced/detached view or controller identities are rejected. The public imperative
+`adopt` API stays synchronous.
+
+The patch changes only Swift appearance handling. It does not defer terminal input,
+output, resize or focus callbacks, replace the emulator, or alter the native archive.
+`TerminalAppearanceTests` verifies no synchronous publication during direct AppKit
+and SwiftUI mounts, final appearance after rapid changes, detached-view cancellation
+and surface identity across reattachment. It observes the pinned wrapper's Combine
+publisher only in tests; TaskHub application models continue to use `@Observable`.
