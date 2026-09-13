@@ -8,6 +8,7 @@ struct AppCoordinatorSheetView: View {
         switch sheet.destination {
         case .newProject(let model): NewProjectSheet(model: model, cancel: cancel)
         case .newSession(let model): NewSessionView(model: model, cancel: cancel)
+        case .addPage(let model): AddPageSheet(model: model, cancel: cancel)
         }
     }
 }

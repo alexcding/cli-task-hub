@@ -1,4 +1,3 @@
-import AppKit
 import SwiftUI
 import WebKit
 
@@ -11,44 +10,43 @@ struct BrowserSurface: NSViewRepresentable {
 struct BrowserPane: View {
     let page: BrowserPage
     let context: WorkspaceContext
-    @State private var address = ""
+    @Bindable var model: BrowserControlsViewModel
     @FocusState private var editingAddress: Bool
     @FocusState private var finding: Bool
 
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
-                Button("Back", systemImage: "chevron.left", action: page.back).disabled(!page.canGoBack)
-                Button("Forward", systemImage: "chevron.right", action: page.forward).disabled(!page.canGoForward)
-                Button(page.loading ? "Stop Loading" : "Reload Page", systemImage: page.loading ? "xmark" : "arrow.clockwise") {
-                    if page.loading { page.stop() } else { page.reload() }
-                }
-                TextField("Page address", text: $address).textFieldStyle(.roundedBorder).focused($editingAddress)
-                    .onSubmit { page.navigate(address); editingAddress = false }
-                Button("Open in Browser", systemImage: "arrow.up.right.square") {
-                    if let url = safeWebURL(page.url) { NSWorkspace.shared.open(url) }
-                }
+                Button("Back", systemImage: "chevron.left", action: model.back).disabled(!model.canGoBack)
+                Button("Forward", systemImage: "chevron.right", action: model.forward).disabled(!model.canGoForward)
+                Button(model.loading ? "Stop Loading" : "Reload Page", systemImage: model.loading ? "xmark" : "arrow.clockwise", action: model.toggleLoading)
+                TextField("Page address", text: $model.address).textFieldStyle(.roundedBorder).focused($editingAddress)
+                    .onSubmit { if model.submitAddress() { editingAddress = false } }
+                Button("Open in Browser", systemImage: "arrow.up.right.square", action: model.openExternally)
+                    .disabled(!model.canOpenExternally)
             }.labelStyle(.iconOnly).padding(8)
             if context.findVisible {
                 HStack {
                     TextField("Find in page", text: Binding(get: { context.findText }, set: { context.findText = $0 }))
-                        .focused($finding).onSubmit { page.find(context.findText) }
-                    if page.found == false { Text("No match").font(.caption).foregroundStyle(.secondary) }
-                    Button("Previous Match", systemImage: "chevron.up") { page.find(context.findText, backwards: true) }
-                    Button("Next Match", systemImage: "chevron.down") { page.find(context.findText) }
+                        .focused($finding).onSubmit { model.find(context.findText) }
+                    if model.found == false { Text("No match").font(.caption).foregroundStyle(.secondary) }
+                    Button("Previous Match", systemImage: "chevron.up") { model.find(context.findText, backwards: true) }
+                    Button("Next Match", systemImage: "chevron.down") { model.find(context.findText) }
                     Button("Close Find", systemImage: "xmark") { context.findVisible = false }
                 }.labelStyle(.iconOnly).padding(8)
             }
-            if let error = page.error {
-                HStack { Text(error).font(.callout); Spacer(); Button("Retry", action: page.reload) }
+            if let error = model.error {
+                HStack { Text(error).font(.callout); Spacer(); Button("Retry", action: model.retry) }
                     .padding(10).foregroundStyle(.orange)
             }
             Divider()
             if let view = page.webView { BrowserSurface(webView: view) }
             else { ContentUnavailableView("Page suspended", systemImage: "globe", description: Text("Select this tab to reload it.")) }
         }
-        .onAppear { address = page.url }
-        .onChange(of: page.url) { _, value in if !editingAddress { address = value } }
+        .onAppear(perform: model.synchronizeAddress)
+        .onChange(of: page.url) { _, _ in model.synchronizeAddress() }
+        .onChange(of: editingAddress) { _, value in model.setEditingAddress(value) }
+        .onDisappear { model.setEditingAddress(false) }
         .onChange(of: context.findVisible) { _, value in if value { finding = true } }
         .onExitCommand { context.findVisible = false }
     }
@@ -58,11 +56,9 @@ struct SessionWorkspaceView: View {
     let context: WorkspaceContext
     let store: AppStore
     let active: Bool
-    @State private var addingPage = false
     @State private var restarting = false
     @State private var removal: SessionRemovalViewModel?
     @State private var destination: BuildWorkspaceViewModel?
-    @State private var address = "https://"
     private var session: WorkspaceSession? { store.sessions.first { "task:\($0.id)" == context.id } }
     private var terminal: TerminalSession? { store.terminals[context.id] }
     private var showsBuild: Bool { session != nil && context.pane == .build }
@@ -77,7 +73,7 @@ struct SessionWorkspaceView: View {
                     Label(session.label, systemImage: "terminal").labelStyle(.titleAndIcon).font(.headline).lineLimit(1)
                     Text(session.branch).font(.callout).foregroundStyle(.secondary).lineLimit(1)
                     Button("Reveal Worktree", systemImage: "folder") {
-                        NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: session.worktree)])
+                        store.revealWorktree(session)
                     }.labelStyle(.iconOnly)
                     if let title = store.workspaceLaunch.editorLabel(store.projects.first { $0.id == session.projectId }) {
                         Button(title, systemImage: "curlybraces") {
@@ -107,7 +103,7 @@ struct SessionWorkspaceView: View {
                     }
                 }
                 Button("Open File", systemImage: "doc.badge.plus") { store.viewer.openFile(in: context) }
-                Button("Add Page", systemImage: "plus") { addingPage = true }
+                Button("Add Page", systemImage: "plus") { store.addPage(in: context) }
                 if session != nil {
                     Button(showsChanges ? "Hide Changes" : "Show Changes", systemImage: "arrow.triangle.branch") {
                         if let session { store.showChanges(for: session, context: context) }
@@ -197,7 +193,7 @@ struct SessionWorkspaceView: View {
                         }
                     } else if let document = context.activeDocument {
                         EditorDocumentView(model: document, appearance: store.shell.appearance, active: active && showsPage && !context.restoring).id(document.id)
-                    } else if let page = context.activePage { BrowserPane(page: page, context: context).id(page.id) }
+                    } else if let page = context.activePage { BrowserPane(page: page, context: context, model: page.controls).id(page.id) }
                     else if session == nil {
                         ContentUnavailableView("No open pages", systemImage: "globe", description: Text("Add a page or reopen one from History."))
                     }
@@ -216,19 +212,6 @@ struct SessionWorkspaceView: View {
         .onChange(of: context.pane) { _, _ in prepareChanges() }
         .onChange(of: store.connection) { _, _ in prepareChanges() }
         .onChange(of: active) { _, _ in prepareChanges() }
-        .sheet(isPresented: $addingPage) {
-            VStack(alignment: .leading, spacing: 16) {
-                Text("Add Page").font(.headline)
-                TextField("HTTP or HTTPS address", text: $address).textFieldStyle(.roundedBorder)
-                HStack {
-                    Button("Cancel", role: .cancel) { addingPage = false }.keyboardShortcut(.cancelAction)
-                    Spacer()
-                    Button("Open") {
-                        if context.open(address.trimmingCharacters(in: .whitespacesAndNewlines)) != nil { addingPage = false; address = "https://" }
-                    }.keyboardShortcut(.defaultAction).disabled(safeWebURL(address.trimmingCharacters(in: .whitespacesAndNewlines)) == nil)
-                }
-            }.padding(24).frame(width: 440)
-        }
         .confirmationDialog("Restart this session?", isPresented: $restarting, titleVisibility: .visible) {
             Button("Restart Session", role: .destructive) { if let session { store.restartSession(session) } }
         } message: {

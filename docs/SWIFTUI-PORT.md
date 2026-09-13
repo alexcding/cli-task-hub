@@ -1469,6 +1469,45 @@ does not).
   acceptance remains open; it does not close those gates or complete the full
   architecture pass. Sprint Board remains web-based.
 
+### Runtime framework correction and browser/creation architecture — 2026-09-13
+
+- A direct Debug launch exposed `DYLD Library missing` for Sparkle. The framework
+  was embedded, but neither Debug nor Release had a runtime search path to
+  `Contents/Frameworks`. Previous signature and copied backend-tool checks did not
+  exercise the main app loader. Shared build settings now retain inherited paths
+  and add `@loader_path/../Frameworks`, matching Sparkle's documented setup.
+- `check-runtime-frameworks.py` checks the arm64 executable's direct `@rpath`
+  dependencies resolve to files inside the app. It rejected both broken artifacts
+  before the correction and passes rebuilt Debug/Release bundles. Backend bundling
+  runs the check before resource changes. This does not replace launch testing,
+  transitive dependency checks, signing or clean-Mac acceptance.
+- Release builds and bundles with deep/strict ad-hoc verification. A copied Release
+  app outside the checkout stayed alive with explicit isolated backend/data/socket
+  arguments and rendered the native Dashboard, fixture PRs and Cocoa sidebar. Its
+  packaged recovery/launcher resources also pass the isolated backup/restore and
+  corrupt-checkpoint refusal smoke. Both the Debug and copied Release fixture apps
+  were stopped after verification. Signing/notarization and real update/rollback
+  remain separate release gates.
+- `BrowserControlsViewModel` owns address drafts, URL validation, loading actions,
+  find, external opening and operation-specific retry. `BrowserPageFactory` carries
+  injected desktop actions through new/restored/popup pages. Controls cannot retain
+  closed pages, and terminal/context identities are preserved. Browser and worktree
+  platform calls and tray opening/grouping are moved out of rendering views.
+- Add Page now uses the existing identified creation coordinator and injected
+  factory. Failed opens retain the draft; cancelled/obsolete sheet actions cannot
+  open pages or dismiss a later sheet. New presentations start with a fresh address.
+- Eleven focused Swift tests pass, including real WebKit navigation/find, cookie
+  retention, view eviction/restoration, factory/lifetime checks and coordinator
+  behavior. Native browser/session and project creation UI tests pass, closing the
+  previous creation phase's pending UI checks. The session title field received a
+  stable accessibility identifier after the first UI run could not find its label.
+- Evidence: Swift log `swift_package_test_2026-09-13T11-48-43-732Z_pid64713_b95671f1.log`;
+  browser/session UI log `test_macos_2026-09-13T13-57-27-853Z_pid96134_85541037.log`;
+  project UI log `test_macos_2026-09-13T13-59-03-171Z_pid97035_153685ef.log`;
+  Release build log `build_macos_2026-09-13T13-59-54-229Z_pid97450_2fcc0560.log`.
+  See `NATIVE-ARCHITECTURE.md` for the remaining coordinator/VM/DI extraction.
+  Sprint Board stays web-based; broader migration acceptance remains open.
+
 ## Why now, and why native
 
 The Tauri shell works, but roughly half of `src-tauri/` exists to work around what a DOM

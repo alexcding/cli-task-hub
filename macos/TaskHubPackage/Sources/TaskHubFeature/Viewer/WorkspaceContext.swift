@@ -85,14 +85,17 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
     @ObservationIgnored var changed: () -> Void = {}
     @ObservationIgnored var activateDocument: (EditorDocumentViewModel) -> Void = { _ in }
     @ObservationIgnored var activatePage: (BrowserPage) -> Void = { _ in }
+    @ObservationIgnored private let pageFactory: BrowserPageFactory
 
-    init(id: String, sourceURL: String, title: String, snapshot: ContextSnapshot? = nil) {
+    init(id: String, sourceURL: String, title: String, snapshot: ContextSnapshot? = nil,
+         pageFactory: BrowserPageFactory = BrowserPageFactory()) {
         self.id = id; self.sourceURL = sourceURL
+        self.pageFactory = pageFactory
         if let snapshot {
             legacyDocuments = snapshot.legacyDocuments ?? []
             legacyFileHistory = snapshot.legacyFileHistory ?? []
             var ids: Set<String> = []
-            pages = snapshot.pages.filter { safeWebURL($0.url) != nil && ids.insert($0.id).inserted }.map(BrowserPage.init)
+            pages = snapshot.pages.filter { safeWebURL($0.url) != nil && ids.insert($0.id).inserted }.map(pageFactory.make)
             history = Array(snapshot.history.filter { safeWebURL($0.url) != nil }.suffix(100))
             let records = snapshot.documents ?? legacyDocuments.compactMap { entry in
                 entry.filePath.map { FileDocumentRecord(path: $0) }
@@ -108,7 +111,7 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
             reviewSection = snapshot.reviewSection ?? .changes
             if pane == .build { pane = .term }
         } else if safeWebURL(sourceURL) != nil {
-            let page = BrowserPage(.init(url: sourceURL, title: title))
+            let page = pageFactory.make(.init(url: sourceURL, title: title))
             pages = [page]; tabOrder = [page.id]; activeID = page.id
         }
         pages.forEach(wire)
@@ -197,7 +200,7 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
             error = "Enter an HTTP or HTTPS address."; return nil
         }
         if configuration == nil, let existing = pages.first(where: { $0.url == url }) { select(existing); return existing }
-        let page = BrowserPage(.init(url: url, title: title.isEmpty ? (URL(string: url)?.host ?? url) : title))
+        let page = pageFactory.make(.init(url: url, title: title.isEmpty ? (URL(string: url)?.host ?? url) : title))
         wire(page)
         pages.append(page); insert(page.id)
         if let configuration { page.materialize(configuration: configuration, load: false) }
@@ -216,7 +219,7 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
     func apply(_ snapshot: ContextSnapshot) {
         // Used only for the first backend load, before the user edits this context.
         pages.forEach { $0.evict() }; documents.forEach { $0.dispose() }
-        let restored = WorkspaceContext(id: id, sourceURL: sourceURL, title: "", snapshot: snapshot)
+        let restored = WorkspaceContext(id: id, sourceURL: sourceURL, title: "", snapshot: snapshot, pageFactory: pageFactory)
         pages = restored.pages; activeID = restored.activeID; history = restored.history; pane = restored.pane
         reviewSection = restored.reviewSection
         documents = restored.documents; tabOrder = restored.tabOrder; fileHistory = restored.fileHistory; historyOrder = restored.historyOrder
@@ -269,10 +272,13 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
     private(set) var pageLimit: Int
     private(set) var pressureCleanupCount = 0
     @ObservationIgnored private let memoryPressure: (any MemoryPressureMonitoring)?
+    @ObservationIgnored private let pageFactory: BrowserPageFactory
     private let cacheURL: URL?
     private struct Cache: Codable { let snapshots: [String: ContextSnapshot]; let pending: Set<String> }
-    init(limit: Int = RemotePageRetention.defaultLimit, cacheURL: URL? = nil, memoryPressure: (any MemoryPressureMonitoring)? = nil) {
+    init(limit: Int = RemotePageRetention.defaultLimit, cacheURL: URL? = nil, memoryPressure: (any MemoryPressureMonitoring)? = nil,
+         pageFactory: BrowserPageFactory = BrowserPageFactory()) {
         pageLimit = RemotePageRetention.clamp(limit); self.cacheURL = cacheURL
+        self.pageFactory = pageFactory
         self.memoryPressure = memoryPressure
         if let cacheURL, let data = try? Data(contentsOf: cacheURL), let cache = try? JSONDecoder().decode(Cache.self, from: data) {
             saved = cache.snapshots; dirty = cache.pending; edited = cache.pending
@@ -366,7 +372,7 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
     }
     @discardableResult func select(id: String, url: String, title: String, legacy: SavedTab? = nil) -> WorkspaceContext {
         let context = contexts[id] ?? WorkspaceContext(id: id, sourceURL: url, title: title,
-                                                       snapshot: saved[id] ?? legacy.map(ContextSnapshot.importing))
+                                                       snapshot: saved[id] ?? legacy.map(ContextSnapshot.importing), pageFactory: pageFactory)
         contexts[id] = context
         context.restoring = restoring
         context.changed = { [weak self, weak context] in

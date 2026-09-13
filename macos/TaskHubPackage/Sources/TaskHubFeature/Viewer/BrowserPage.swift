@@ -8,7 +8,7 @@ struct WebPageRecord: Codable, Identifiable, Equatable, Sendable {
     var title: String
 }
 
-@MainActor @Observable final class BrowserPage: NSObject, Identifiable, WKNavigationDelegate, WKUIDelegate {
+@MainActor @Observable final class BrowserPage: NSObject, Identifiable, BrowserControlling, WKNavigationDelegate, WKUIDelegate {
     let id: String
     private(set) var url: String
     private(set) var title: String
@@ -21,8 +21,12 @@ struct WebPageRecord: Codable, Identifiable, Equatable, Sendable {
     @ObservationIgnored var changed: () -> Void = {}
     @ObservationIgnored var openPopup: ((URL, WKWebViewConfiguration) -> WKWebView?)?
     @ObservationIgnored private var observations: [NSKeyValueObservation] = []
+    @ObservationIgnored private let desktop: any DesktopActions
+    @ObservationIgnored lazy var controls = BrowserControlsViewModel(page: self, desktop: desktop)
 
-    init(_ record: WebPageRecord) { id = record.id; url = record.url; title = record.title; super.init() }
+    init(_ record: WebPageRecord, desktop: any DesktopActions) {
+        id = record.id; url = record.url; title = record.title; self.desktop = desktop; super.init()
+    }
     var record: WebPageRecord { .init(id: id, url: url, title: title) }
 
     @discardableResult func materialize(configuration: WKWebViewConfiguration? = nil, load: Bool = true) -> WKWebView {

@@ -20,7 +20,7 @@ struct NewSessionView: View {
                         ForEach(model.branches, id: \.self) { Text($0).tag($0) }
                     }
                 }
-                TextField("Title (optional)", text: $model.draft.title)
+                TextField("Title (optional)", text: $model.draft.title).accessibilityIdentifier("session-title")
                 TextField("Page URL (optional)", text: $model.draft.url)
                 Button("Use Page Details") { Task { await model.resolve() } }.disabled(!model.canResolve)
                 Picker("Agent", selection: $model.draft.agent) {

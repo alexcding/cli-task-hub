@@ -1,4 +1,3 @@
-import AppKit
 import SwiftUI
 
 public struct NativeTrayView: View {
@@ -64,9 +63,7 @@ public struct NativeTrayView: View {
             }
             ForEach(store.shell.pendingReviews) { pr in
                 Button {
-                    guard let url = pr.webURL, NSWorkspace.shared.open(url) else { return }
-                    store.shell.acknowledge(pr)
-                    dismiss()
+                    store.openTrayReview(pr, dismiss: dismiss)
                 } label: {
                     HStack(alignment: .top, spacing: 8) {
                         Image(systemName: ciSymbol(pr)).foregroundStyle(ciColor(pr))
@@ -85,7 +82,7 @@ public struct NativeTrayView: View {
     }
 
     private var openTabs: some View {
-        ForEach(TrayTabGroup.make(tabs: store.tabs, prs: store.shell.prs)) { group in
+        ForEach(store.trayTabGroups) { group in
             VStack(alignment: .leading, spacing: 6) {
                 Text(group.title).font(.headline)
                 ForEach(group.tabs) { tab in

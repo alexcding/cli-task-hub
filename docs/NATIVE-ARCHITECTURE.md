@@ -27,7 +27,7 @@ navigation-stack library or iOS-specific dependencies to preserve these boundari
 ## Implemented: creation flows
 
 `AppCoordinator` owns one identified sheet destination containing its ViewModel.
-`CreationFlowFactory` supplies project editors and new-session models. The live
+`CreationFlowFactory` supplies project editors, new-session models and Add Page models. The live
 `NativeCreationFlowFactory` receives its folder-picker dependency; tests inject a
 recording factory and fixture services. `AppStore` supplies the current backend,
 project/session context and successful-operation callbacks.
@@ -38,30 +38,67 @@ state; completion is tied to the presentation ID, so an old or duplicate callbac
 cannot dismiss a newer sheet or repeat navigation. Cancelling and reopening creates
 a new model. Save failure retains the original model and draft for retry.
 
-`AppCoordinatorSheetView`, `NewProjectSheet` and `NewSessionView` render the supplied
+`AppCoordinatorSheetView`, `NewProjectSheet`, `NewSessionView` and `AddPageSheet` render the supplied
 models. They do not construct models, resolve services or navigate after observing
 a completion flag. Their button/task closures forward events to model/coordinator
 methods. Project validation, persistence, session preparation and error state stay
 in their existing ViewModels and services.
 
-Five focused Swift tests pass. The Debug app and UI target compile. The project UI
-test and its retry both stop before assertions with XCTest's “Timed out while
+Five focused Swift tests passed in the first phase. The Debug app and UI target compiled. The initial project UI
+test and its retry stopped before assertions with XCTest's “Timed out while
 enabling automation mode” initialization error. The added project/session
-cancel-and-reopen UI assertions remain pending. Diagnostic logs from this attempt
+cancel-and-reopen UI assertions were initially pending. Diagnostic logs from that attempt
 are `test_macos_2026-09-13T11-36-34-916Z_pid60871_2d93edb4.log` and
 `test_macos_2026-09-13T11-38-30-176Z_pid61538_ffb4d5a3.log` in the workspace's
 XcodeBuildMCP log directory; this is not recorded as a passing UI check.
 
+## Implemented: browser controls and desktop actions
+
+Each `BrowserPage` owns one `BrowserControlsViewModel`. The controls weakly reference
+the page, so a retained action cannot keep a closed WebKit page alive. Address
+drafts, URL validation, Stop/Reload selection, find actions, external-browser
+opening and failure-specific retry are implemented in the model. The view retains
+focus state and forwards focus, appearance and URL-change events. Redirects do not
+overwrite the address while the user is editing it; external opening uses the
+committed page URL, not the address draft.
+
+`BrowserPageFactory` carries injected `DesktopActions` through `ViewerStore`, new
+contexts, saved-snapshot restoration, newly opened pages and popup creation.
+`NativeDesktopActions` implements browser opening and Finder reveal. The app's
+Dashboard, CLI/Jira/board links, terminal external links, tray reviews and worktree
+reveal share this dependency. Tray opening/acknowledgment ordering and tab grouping
+now live outside the rendering view.
+
+Add Page uses the same identified sheet coordinator as project/session creation.
+Its ViewModel validates and trims the address before requesting an open. A failed
+open keeps the draft visible, and actions retained from a dismissed sheet cannot
+open a page or dismiss a later presentation. Cancelling and reopening begins with
+a fresh address. The request checks that its originating workspace is still owned
+by the viewer before opening a page.
+
+Eleven focused tests pass, including actual WebKit navigation, find, cookie
+retention, cache eviction/restoration, model lifetime, factory injection and sheet
+completion. After correcting a runtime framework search-path defect found during
+direct launch, native UI execution is working again. Add Page validation/open/close,
+browser find/navigation, session cancel/reopen and session removal passed in
+`test_macos_2026-09-13T13-57-27-853Z_pid96134_85541037.log`. The session title now has
+a stable accessibility identifier after the first UI run could not locate it by
+its display label. Project creation also passes cancel/reopen, save, edit and
+confirmed deletion in `test_macos_2026-09-13T13-59-03-171Z_pid97035_153685ef.log`.
+These runs close the first creation phase's pending UI checks. Further validation
+and the packaging correction are recorded in `SWIFTUI-PORT.md`.
+
 ## Remaining extraction
 
-This is the first architecture phase, not completion of the requested pass:
+The architecture extraction remains in progress:
 
 - Move sidebar/root destinations and titles out of root rendering code. Preserve
   stable session/context IDs and mounted terminal surfaces across navigation.
-- Extract session workspace toolbar state, page-address validation, dialog routing,
-  editor/Finder/browser actions and removal/build presentation from views into
+- Extract the remaining session workspace toolbar state, dialog routing,
+  editor actions and removal/build presentation from views into
   feature ViewModels and coordinators.
-- Move remaining tray platform actions behind injected dependencies.
+- Finish tray navigation/window coordination and move any remaining platform
+  actions behind injected dependencies.
 - Expand factories to project, settings, document and workspace feature assembly;
   `AppStore` still constructs several concrete services and models.
 - Separate application runtime/backend lifecycle from feature navigation without

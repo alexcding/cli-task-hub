@@ -8,6 +8,7 @@ import Observation
         enum Destination {
             case newProject(ProjectEditorViewModel)
             case newSession(NewSessionViewModel)
+            case addPage(AddPageViewModel)
         }
         let id: UUID
         let destination: Destination
@@ -16,6 +17,7 @@ import Observation
             switch destination {
             case .newProject(let model): !model.busy
             case .newSession(let model): !model.creating
+            case .addPage: true
             }
         }
     }
@@ -24,6 +26,16 @@ import Observation
     @ObservationIgnored private let factory: any CreationFlowFactory
 
     init(factory: any CreationFlowFactory) { self.factory = factory }
+
+    func presentAddPage(openPage: @escaping (String) -> Bool) {
+        guard sheet == nil else { return }
+        let id = UUID()
+        let model = factory.addPage(openPage: { [weak self] address in
+            guard self?.sheet?.id == id else { return false }
+            return openPage(address)
+        }, didOpen: { [weak self] in _ = self?.complete(id) })
+        sheet = Sheet(id: id, destination: .addPage(model))
+    }
 
     func presentNewProject(service: any ProjectService, didSave: @escaping (Project) -> Void) {
         guard sheet == nil else { return }

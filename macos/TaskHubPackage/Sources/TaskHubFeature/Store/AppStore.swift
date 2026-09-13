@@ -8,6 +8,7 @@ public final class AppStore {
     let viewer: ViewerStore
     let coordinator: AppCoordinator
     @ObservationIgnored private let creationFactory: any CreationFlowFactory
+    @ObservationIgnored private let desktop: any DesktopActions
     private(set) var dashboard: DashboardViewModel!
     private(set) var logs: LogsViewModel!
     private(set) var settings: SettingsViewModel!
@@ -41,17 +42,18 @@ public final class AppStore {
 
     public convenience init() { self.init(creationFactory: NativeCreationFlowFactory()) }
 
-    init(creationFactory: any CreationFlowFactory) {
+    init(creationFactory: any CreationFlowFactory, desktop: any DesktopActions = NativeDesktopActions()) {
         self.creationFactory = creationFactory
+        self.desktop = desktop
         coordinator = AppCoordinator(factory: creationFactory)
         viewer = ViewerStore(cacheURL: try? PtydConfiguration.current().directory.appendingPathComponent("page-tabs.json"),
-                             memoryPressure: NativeMemoryPressureMonitor())
+                             memoryPressure: NativeMemoryPressureMonitor(), pageFactory: BrowserPageFactory(desktop: desktop))
         viewer.setPageLimit(shell.remotePageLimit)
         shell.remotePageLimitChanged = { [weak viewer] in viewer?.setPageLimit($0) }
         dashboard = DashboardViewModel(openPage: { [weak self] request in
             guard let self else { throw BackendError.operation("The workspace has closed.") }
             try await self.openPage(request)
-        }, openBrowser: { NSWorkspace.shared.open($0) }, copy: {
+        }, openBrowser: { desktop.openBrowser($0) }, copy: {
             NSPasteboard.general.clearContents(); NSPasteboard.general.setString($0, forType: .string)
         })
         logs = LogsViewModel(openPage: { [weak self] request in
@@ -62,7 +64,7 @@ public final class AppStore {
         })
         settings = SettingsViewModel(clis: CLISettingsViewModel(copy: {
             NSPasteboard.general.clearContents(); NSPasteboard.general.setString($0, forType: .string)
-        }, openBrowser: { NSWorkspace.shared.open($0) }), diagnostics: DiagnosticsViewModel(),
+        }, openBrowser: { desktop.openBrowser($0) }), diagnostics: DiagnosticsViewModel(),
             loginItem: LoginItemViewModel(service: NativeLoginItemService()), fonts: FontSettingsViewModel(catalog: InstalledCodeFontCatalog()),
             resources: ResourceUsageViewModel(), didSave: { [weak self] patch in
             guard let self else { return }
@@ -228,6 +230,25 @@ public final class AppStore {
         else { select(.tab(tab.url)) }
     }
 
+    func revealWorktree(_ session: WorkspaceSession) {
+        desktop.reveal(URL(fileURLWithPath: session.worktree))
+    }
+
+    func addPage(in context: WorkspaceContext) {
+        coordinator.presentAddPage(openPage: { [weak self, weak context] address in
+            guard let self, let context, viewer.contexts[context.id] === context else { return false }
+            return context.open(address) != nil
+        })
+    }
+
+    func openTrayReview(_ pr: TrayPR, dismiss: () -> Void) {
+        guard !shell.acknowledging.contains(pr.id), let url = pr.webURL, desktop.openBrowser(url) else { return }
+        shell.acknowledge(pr)
+        dismiss()
+    }
+
+    var trayTabGroups: [TrayTabGroup] { TrayTabGroup.make(tabs: tabs, prs: shell.prs) }
+
     func openPage(_ request: OpenPageRequest) async throws {
         guard safeWebURL(request.url) != nil else { throw BackendError.operation("Invalid page address.") }
         if let session = sessions.first(where: { $0.url == request.url }) {
@@ -265,11 +286,11 @@ public final class AppStore {
                     let board = WebBoardViewModel(projectID: id, baseURL: api.baseURL, openPage: { [weak self] request in
                         guard let self else { throw BackendError.operation("The workspace has closed.") }
                         try await self.openPage(request)
-                    }, openBrowser: { NSWorkspace.shared.open($0) })
+                    }, openBrowser: { [desktop] in desktop.openBrowser($0) })
                     let tickets = JiraTicketsViewModel(project: project, service: APIJiraService(api: api), openPage: { [weak self] request in
                         guard let self else { throw BackendError.operation("The workspace has closed.") }
                         try await self.openPage(request)
-                    }, openBrowser: { NSWorkspace.shared.open($0) }, copy: {
+                    }, openBrowser: { [desktop] in desktop.openBrowser($0) }, copy: {
                         NSPasteboard.general.clearContents(); NSPasteboard.general.setString($0, forType: .string)
                     })
                     let workflows = WorkflowEditorViewModel(project: project, service: APIWorkflowService(api: api), didSave: { [weak self] value in
@@ -556,7 +577,7 @@ public final class AppStore {
                 return
             }
             if external, case .web(let url) = link {
-                NSWorkspace.shared.open(url)
+                desktop.openBrowser(url)
                 return
             }
             if contextID == "scratch" { select(.terminal) }

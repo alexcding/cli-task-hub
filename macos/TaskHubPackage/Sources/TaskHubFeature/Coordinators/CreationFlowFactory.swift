@@ -15,10 +15,15 @@ struct SessionCreationRequest {
                        didDelete: @escaping (String) -> Void) -> ProjectEditorViewModel
     func newSession(request: SessionCreationRequest, operations: SessionOperations?,
                     didCreate: @escaping (WorkspaceSession) -> Void) -> NewSessionViewModel
+    func addPage(openPage: @escaping (String) -> Bool, didOpen: @escaping () -> Void) -> AddPageViewModel
 }
 
 @MainActor struct NativeCreationFlowFactory: CreationFlowFactory {
     var chooseFolder: () async -> String? = NativeFolderPicker.choose
+
+    func addPage(openPage: @escaping (String) -> Bool, didOpen: @escaping () -> Void) -> AddPageViewModel {
+        AddPageViewModel(openPage: openPage, didOpen: didOpen)
+    }
 
     func projectEditor(project: Project?, service: any ProjectService,
                        didSave: @escaping (Project) -> Void,
