@@ -76,6 +76,13 @@ detection, Jira key/JQL, and IDE configuration. Unsaved edits survive snapshot r
 and reconnects. Deleting a project requires confirmation and retains its sessions,
 workspace folders, and terminals.
 
+**Workflows** is a native recipe editor with Claude/Codex selection, ordered steps,
+goals, literal placeholder previews, and Save/Revert. Drafts survive navigation and
+snapshot updates; failed saves keep the draft, and external recipe changes are
+reported before replacement. Legacy `commands` arrays remain readable. Only the
+`workflows` project field is sent on save, preserving automation and Xcode settings.
+The native terminal workflow runner and merge-automation editor remain in progress.
+
 **Tickets** is native SwiftUI. It reads the project's cached Jira feed, with local
 text/facet filtering and saved filter preferences. An explicit search accepts keywords,
 a ticket key, or JQL; SSE refreshes the feed without repeating the search. Status menus

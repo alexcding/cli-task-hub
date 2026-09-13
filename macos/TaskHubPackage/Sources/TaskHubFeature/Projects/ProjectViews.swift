@@ -79,13 +79,15 @@ struct ProjectPageView: View {
         VStack(alignment: .leading, spacing: 16) {
             Picker("Project section", selection: $model.section) {
                 ForEach(ProjectSection.allCases) { Text($0.rawValue).tag($0) }
-            }.pickerStyle(.segmented)
+            }.pickerStyle(.segmented).labelsHidden()
             switch model.section {
             case .tickets:
                 if let tickets = model.tickets { JiraTicketsView(model: tickets) }
             case .board:
                 if let board = model.board { WebBoardView(model: board, appearance: appearance) }
             case .settings: ProjectEditorView(model: model.editor)
+            case .workflows:
+                if let workflows = model.workflows { WorkflowEditorView(model: workflows) }
             case .prs:
                 HStack {
                     TextField("Search project pull requests", text: $model.search).textFieldStyle(.roundedBorder)

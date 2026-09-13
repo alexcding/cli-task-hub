@@ -47,6 +47,21 @@ private actor StoppedSessions {
     let projects: [Project] = try await api.get(Routes.PROJECTS)
     #expect(projects.count == 1)
     #expect(projects.first?.name == "Native integration fixture")
+    struct ExistingProjectSettings: Encodable {
+        let runScheme = "Existing scheme", runSim = "existing-simulator", mergeTransition = "Ready for QA"
+        let fixVersionEnabled = true, fixVersionPrefix = "ios-", fixVersionScript = "return '1';"
+    }
+    let _: Project = try await api.request(Routes.project(projects[0].id), method: "PUT", body: ExistingProjectSettings())
+    let workflow = WorkflowRecipe(id: "native-recipe", name: "Review", cli: .codex, steps: [.init(title: "Reviewed", command: "/review {url}")])
+    let workflowProject = try await APIWorkflowService(api: api).save(projectID: projects[0].id, workflows: [workflow])
+    #expect(workflowProject.workflows == [workflow] && workflowProject.runScheme == "Existing scheme")
+    struct PreservedProjectSettings: Decodable {
+        let runScheme: String, runSim: String, mergeTransition: String
+        let fixVersionEnabled: Bool, fixVersionPrefix: String, fixVersionScript: String
+    }
+    let preserved: PreservedProjectSettings = try await api.get(Routes.project(projects[0].id))
+    #expect(preserved.runSim == "existing-simulator" && preserved.mergeTransition == "Ready for QA")
+    #expect(preserved.fixVersionEnabled && preserved.fixVersionPrefix == "ios-" && preserved.fixVersionScript == "return '1';")
     let checkout = directory.appendingPathComponent("repo")
     try FileManager.default.createDirectory(at: checkout, withIntermediateDirectories: true)
     func git(_ arguments: [String]) throws {

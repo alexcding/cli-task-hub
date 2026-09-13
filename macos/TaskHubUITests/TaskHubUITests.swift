@@ -307,6 +307,53 @@ final class TaskHubUITests: XCTestCase {
     }
 
     @MainActor
+    func testNativeWorkflowEditorOrdersSavesAndPreservesDraftAcrossNavigation() throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard let base = environment["TASKHUB_UI_BACKEND_URL"],
+              let path = environment["TASKHUB_UI_DATA_DIR"], let socket = environment["TASKHUB_UI_PTY_SOCKET"] else {
+            throw XCTSkip("Run macos/scripts/test-browser-ui.sh to provide the isolated fixture.")
+        }
+        let app = XCUIApplication()
+        app.launchArguments = ["--backend-url", base, "--data-dir", path, "--pty-socket", socket]
+        app.launch()
+        XCTAssertTrue(app.outlines["workspace-sidebar"].waitForExistence(timeout: 10))
+        let project = app.outlines["workspace-sidebar"].staticTexts["Native integration fixture"]
+        XCTAssertTrue(project.waitForExistence(timeout: 10)); project.click()
+        app.radioButtons["Workflows"].click()
+        app.buttons["New Workflow"].click()
+        let name = app.textFields["workflow-name"].firstMatch
+        XCTAssertTrue(name.waitForExistence(timeout: 5))
+        name.click(); app.typeKey("a", modifierFlags: .command); app.typeText("Native review")
+        app.popUpButtons["workflow-cli"].click(); app.popUpButtons["workflow-cli"].menuItems["Codex"].click()
+        let commands = app.descendants(matching: .any).matching(identifier: "workflow-step-command")
+        commands.element(boundBy: 0).click(); app.typeText("/review {url}")
+        app.textFields["workflow-step-goal"].firstMatch.click(); app.typeText("Review complete")
+        XCTAssertTrue(app.staticTexts["Sample: /review https://example.atlassian.net/browse/REC-123"].waitForExistence(timeout: 5))
+        app.buttons["Add Step"].click()
+        commands.element(boundBy: 1).click(); app.typeText("/test")
+        app.buttons.matching(identifier: "Move Step Up").element(boundBy: 1).click()
+        XCTAssertEqual(commands.element(boundBy: 0).value as? String, "/test")
+        app.buttons["Save Workflows"].click()
+        XCTAssertTrue(app.staticTexts["Workflows saved"].waitForExistence(timeout: 5), app.debugDescription)
+        let screenshot = app.screenshot()
+        let screenshotURL = FileManager.default.temporaryDirectory.appendingPathComponent("taskhub-workflows.png")
+        try screenshot.pngRepresentation.write(to: screenshotURL)
+        print("Workflow screenshot: " + screenshotURL.path)
+        let attachment = XCTAttachment(screenshot: screenshot); attachment.lifetime = .keepAlways; add(attachment)
+        name.click(); app.typeKey("a", modifierFlags: .command); app.typeText("Unsaved review")
+        app.typeKey("1", modifierFlags: .command)
+        project.click()
+        XCTAssertEqual(name.value as? String, "Unsaved review")
+        app.buttons["Revert Workflows"].click()
+        XCTAssertEqual(name.value as? String, "Native review")
+        app.buttons["Delete Workflow"].click()
+        XCTAssertTrue(app.staticTexts["No workflows configured."].waitForExistence(timeout: 5))
+        app.buttons["Revert Workflows"].click()
+        XCTAssertEqual(name.value as? String, "Native review")
+        XCTAssertFalse(app.webViews.firstMatch.exists)
+    }
+
+    @MainActor
     func testQuietStartupLoadsTrayAndOpensNativeWindow() throws {
         let environment = ProcessInfo.processInfo.environment
         guard let base = environment["TASKHUB_UI_BACKEND_URL"],

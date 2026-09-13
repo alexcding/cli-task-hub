@@ -128,7 +128,7 @@ public final class AppStore {
                 projects.removeAll { $0.id == id }
                 if let removed = projectModels.removeValue(forKey: id) {
                     removed.board?.suspend()
-                    Task { await removed.tickets?.stop() }
+                    Task { await removed.workflows?.stop(); await removed.tickets?.stop() }
                 }
                 select(.overview); refresh()
             })
@@ -262,7 +262,14 @@ public final class AppStore {
                     }, openBrowser: { NSWorkspace.shared.open($0) }, copy: {
                         NSPasteboard.general.clearContents(); NSPasteboard.general.setString($0, forType: .string)
                     })
-                    projectModels[id] = ProjectPageViewModel(project: project, service: APIProjectService(api: api), editor: editor, board: board, tickets: tickets)
+                    let workflows = WorkflowEditorViewModel(project: project, service: APIWorkflowService(api: api), didSave: { [weak self] value in
+                        guard let self else { return }
+                        if let index = projects.firstIndex(where: { $0.id == value.id }) { projects[index] = value }
+                        projectModels[value.id]?.update(value)
+                        refresh()
+                    })
+                    projectModels[id] = ProjectPageViewModel(project: project, service: APIProjectService(api: api), editor: editor, board: board,
+                                                           tickets: tickets, workflows: workflows)
                 }
             }
         case .session(let id):
@@ -482,6 +489,7 @@ public final class AppStore {
             if let api { for model in projectModels.values {
                 model.connect(APIProjectService(api: api)); model.board?.connect(baseURL: api.baseURL)
                 model.tickets?.connect(APIJiraService(api: api))
+                model.workflows?.connect(APIWorkflowService(api: api))
             } }
             if let api { logs.connect(APILogService(api: api)) }
             if let api { for model in historyModels.values { model.connect(baseURL: api.baseURL, service: APIGitHistoryService(api: api)) } }
@@ -622,7 +630,10 @@ public final class AppStore {
         await dashboard.stop()
         await logs.stop()
         await settings.stop()
-        for model in projectModels.values { model.connect(nil); model.board?.pause(); await model.tickets?.stop() }
+        for model in projectModels.values {
+            await model.workflows?.stop()
+            model.connect(nil); model.board?.pause(); await model.tickets?.stop()
+        }
         await viewer.stop()
         for model in buildModels.values { model.disconnect() }
         buildModels.removeAll()

@@ -43,6 +43,7 @@ public struct Project: Decodable, Identifiable, Equatable, Sendable {
     var jiraProjectKey: String? = nil
     var jql: String? = nil
     var ideCmd: String? = nil
+    var workflows: [WorkflowRecipe]? = nil
 }
 
 // Actor isolation keeps response decoding off the UI actor. Only decoded snapshots

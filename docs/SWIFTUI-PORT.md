@@ -1109,6 +1109,31 @@ does not).
   NSHostingView app does not supply an active SwiftUI scenePhase; AppKit activation
   events fixed sampling. The table's native accessibility role is an outline.
 
+### M4 native workflow configuration — 2026-09-12
+
+- Native project Workflows supports recipes, Claude/Codex choice, step goals and
+  commands, add/remove/reorder, Save/Revert and local sample previews. Stable editor
+  row identities are separate from persisted recipe IDs. Missing/duplicate legacy
+  IDs normalize only when saved, and old `commands` arrays decode into steps.
+- Shared Swift helpers match the web branch-slug and literal placeholder rules,
+  including leaving unknown/empty values unresolved and avoiding recursive expansion.
+  The editor validates the server's workflow/step counts and string-length limits
+  instead of silently truncating text. Blank command rows are omitted on save.
+- The injected service sends only `{workflows}` through the existing project route.
+  View-model drafts survive navigation, refresh, disconnection and failed writes.
+  External recipe changes are surfaced; Revert loads the latest observed list.
+  Concurrent saves coalesce, old-connection replies cannot replace the draft, and
+  shutdown waits for an outstanding write before stopping its backend.
+- Seven focused Swift tests and the five existing JavaScript helper tests pass,
+  including real SQLite/API verification that saving recipes preserves merge/fix-
+  version automation and Xcode run destinations. The isolated native UI test also
+  passes recipe creation, Codex selection, command previews, step reordering, save,
+  navigation with an unsaved draft, and revert after local deletion; its screenshot
+  was visually checked. The test waits for the sidebar before querying its project
+  and scopes Codex selection to the picker (macOS Services also contains Codex).
+  Native workflow execution, hook sequencing/advisory analysis, and the merge-
+  automation editor remain separate work.
+
 ## Why now, and why native
 
 The Tauri shell works, but roughly half of `src-tauri/` exists to work around what a DOM
