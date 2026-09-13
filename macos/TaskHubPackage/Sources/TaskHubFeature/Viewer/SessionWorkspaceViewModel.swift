@@ -35,7 +35,7 @@ enum WorkspaceOperation: Equatable {
 
 @MainActor @Observable final class SessionWorkspaceViewModel {
     enum Action: Equatable {
-        case operation(WorkspaceOperation), run, remove, restart
+        case operation(WorkspaceOperation), run, remove, restart, selectTab(String), closeTab(String)
     }
     struct ReviewInputs: Equatable {
         let pane: WorkspacePane?
@@ -103,6 +103,8 @@ enum WorkspaceOperation: Equatable {
     }
 
     func setActive(_ value: Bool) { active = value }
+    func selectTab(_ tab: WorkspaceTab) { onAction(.selectTab(tab.id)) }
+    func closeTab(_ tab: WorkspaceTab) { onAction(.closeTab(tab.id)) }
     func reviewStateChanged(force: Bool = false) {
         let inputs = reviewInputs
         if force || previousReviewInputs != inputs {

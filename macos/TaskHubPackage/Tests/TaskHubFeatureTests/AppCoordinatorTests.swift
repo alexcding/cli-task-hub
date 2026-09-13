@@ -73,6 +73,28 @@ import Testing
     #expect(restarts == 1 && coordinator.canPresent)
 }
 
+@MainActor @Test func workspaceTabCallbacksResolveCurrentOwnedTabsAndRespectPresentationGates() throws {
+    let context = WorkspaceContext(id: "tabs", sourceURL: "", title: "Tabs")
+    let runtime = WorkspaceCoordinatorFixture(), model = SessionWorkspaceViewModel(context: context, service: runtime)
+    let coordinator = AppCoordinator(factory: NativeCreationFlowFactory(chooseFolder: { nil }))
+    coordinator.bindWorkspace(model, context: context, runtime: runtime)
+    let first = try #require(context.open("https://example.test/first"))
+    let second = try #require(context.open("https://example.test/second"))
+    model.selectTab(.page(first)); #expect(context.activeID == first.id)
+    runtime.owns = false
+    model.selectTab(.page(second)); model.closeTab(.page(first))
+    #expect(context.activeID == first.id && context.pages.count == 2)
+    runtime.owns = true; coordinator.presentRestart {}
+    model.closeTab(.page(first)); #expect(context.pages.count == 2)
+    coordinator.dismissRestart(id: try #require(coordinator.restartConfirmation).id)
+    let foreign = WorkspaceContext(id: "foreign", sourceURL: "", title: "Foreign")
+    let tab = try #require(foreign.open("https://example.test/foreign"))
+    model.selectTab(.page(tab)); model.closeTab(.page(tab))
+    #expect(context.activeID == first.id && context.pages.count == 2)
+    model.closeTab(.page(first)); model.closeTab(.page(first))
+    #expect(context.pages.count == 1 && context.activeID == second.id)
+}
+
 private actor CreationProjectService: ProjectService {
     private var pending: CheckedContinuation<Project, any Error>?
     private var waiting: CheckedContinuation<Void, Never>?

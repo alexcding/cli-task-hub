@@ -45,7 +45,7 @@ actor FileFixture: FileDocumentService {
         return .init(content: content, version: version, dirty: version != saved)
     }
     func acknowledge(version: Int) async throws -> Bool { saved = version; return self.version != saved }
-    func unfreeze() async throws { frozen = false }
+    func unfreeze() async throws { try Task.checkCancellation(); frozen = false }
     var appearances: [AppAppearance] = []
     var fonts: [CodeFont] = []
     func setAppearance(_ value: AppAppearance) { appearances.append(value) }
@@ -133,24 +133,27 @@ actor FileFixture: FileDocumentService {
     model.show(appearance: .system); await model.waitForLoad()
     surface.edit("last keystroke", notify: false)
     #expect(!model.dirty) // The async WebKit notification has not arrived.
+    let presenter = EditorClosePresenterFixture(), coordinator = EditorCloseCoordinator(presenter: presenter)
     var prompts = 0
-    let approved = await EditorCloseCoordinator.confirm([model]) { document in
+    presenter.chooseAction = { _ in
         prompts += 1
-        #expect(document.dirty && surface.frozen)
+        #expect(model.dirty && surface.frozen)
         surface.edit("must not be accepted")
         return .cancel
     }
+    let approved = await coordinator.close([model], commit: { model.dispose() })
     #expect(!approved && prompts == 1 && !surface.frozen && !model.closing)
     #expect(surface.content == "last keystroke" && !surface.disposed)
     await service.fail(true)
     prompts = 0
-    #expect(await EditorCloseCoordinator.confirm([model]) { _ in
+    presenter.chooseAction = { _ in
         prompts += 1
         return prompts == 1 ? .save : .cancel
-    } == false)
+    }
+    #expect(await coordinator.close([model], commit: { model.dispose() }) == false)
     #expect(prompts == 2 && model.dirty && !surface.disposed)
-    #expect(await EditorCloseCoordinator.confirm([model]) { _ in .discard })
-    model.dispose()
+    presenter.chooseAction = { _ in .discard }
+    #expect(await coordinator.close([model], commit: { model.dispose() }))
     #expect(surface.disposed)
 }
 

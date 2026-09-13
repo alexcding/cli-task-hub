@@ -57,6 +57,7 @@ public final class AppStore {
          logsFactory: any LogsFeatureFactory = NativeLogsFeatureFactory(),
          settingsFactory: (any SettingsFeatureFactory)? = nil,
          documentFactory: any DocumentFeatureFactory = NativeDocumentFeatureFactory(),
+         documentClosePresenter: any EditorClosePresenting = NativeEditorClosePresenter(),
          selectionStore: any SidebarSelectionPersisting = UserDefaultsSidebarSelectionStore(),
          router: any DeepLinkRouting = TaskHubRouter(),
          projectFactory: (any ProjectFeatureFactory)? = nil,
@@ -67,12 +68,14 @@ public final class AppStore {
         self.documentFactory = documentFactory
         self.copy = copy
         self.projectFactory = projectFactory ?? NativeProjectFeatureFactory(creation: creationFactory, desktop: desktop, copy: copy)
+        let documentCloser = EditorCloseCoordinator(factory: documentFactory, presenter: documentClosePresenter)
         coordinator = AppCoordinator(factory: creationFactory, selectionStore: selectionStore, workspaceFactory: workspaceFactory, router: router,
+            documentCloseCoordinator: documentCloser,
             canOpenExternalRoute: {
                 NSApplication.shared.modalWindow == nil && !NSApplication.shared.windows.contains { $0.attachedSheet != nil }
             })
         viewer = ViewerStore(cacheURL: try? PtydConfiguration.current().directory.appendingPathComponent("page-tabs.json"),
-                             memoryPressure: NativeMemoryPressureMonitor(), pageFactory: BrowserPageFactory(desktop: desktop), documentFactory: documentFactory)
+                             memoryPressure: NativeMemoryPressureMonitor(), pageFactory: BrowserPageFactory(desktop: desktop), documentFactory: documentFactory, closeCoordinator: documentCloser)
         viewer.setPageLimit(shell.remotePageLimit)
         shell.remotePageLimitChanged = { [weak viewer] in viewer?.setPageLimit($0) }
         coordinator.appearance = shell.appearance

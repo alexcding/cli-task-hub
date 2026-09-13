@@ -93,6 +93,8 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
     @ObservationIgnored var changed: () -> Void = {}
     @ObservationIgnored var activateDocument: (EditorDocumentViewModel) -> Void = { _ in }
     @ObservationIgnored var activatePage: (BrowserPage) -> Void = { _ in }
+    @ObservationIgnored var isOwned: () -> Bool = { true }
+    @ObservationIgnored private let closeCoordinator: EditorCloseCoordinator
     @ObservationIgnored private let pageFactory: BrowserPageFactory
     @ObservationIgnored private let documentFactory: any DocumentFeatureFactory
     private(set) var workspaceViewModel: SessionWorkspaceViewModel?
@@ -104,10 +106,12 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
 
     init(id: String, sourceURL: String, title: String, snapshot: ContextSnapshot? = nil,
          pageFactory: BrowserPageFactory = BrowserPageFactory(),
-         documentFactory: any DocumentFeatureFactory = NativeDocumentFeatureFactory()) {
+         documentFactory: any DocumentFeatureFactory = NativeDocumentFeatureFactory(),
+         closeCoordinator: EditorCloseCoordinator? = nil) {
         self.id = id; self.sourceURL = sourceURL
         self.pageFactory = pageFactory
         self.documentFactory = documentFactory
+        self.closeCoordinator = closeCoordinator ?? EditorCloseCoordinator(factory: documentFactory)
         if let snapshot {
             legacyDocuments = snapshot.legacyDocuments ?? []
             legacyFileHistory = snapshot.legacyFileHistory ?? []
@@ -197,7 +201,14 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
     }
     func close(_ tab: WorkspaceTab) {
         switch tab { case .page(let page): close(page)
-        case .file(let file): Task { if await EditorCloseCoordinator.confirm([file]) { remove(file) } } }
+        case .file(let file):
+            closeCoordinator.requestClose([file], isOwned: { [weak self, weak file] in
+                guard let self, let file else { return false }
+                return isOwned() && documents.contains { $0 === file }
+            }, commit: { [weak self, weak file] in
+                if let file { self?.remove(file) }
+            })
+        }
     }
     func remove(_ file: EditorDocumentViewModel) {
         guard documents.contains(where: { $0 === file }) else { return }
@@ -236,7 +247,7 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
     func apply(_ snapshot: ContextSnapshot) {
         // Used only for the first backend load, before the user edits this context.
         pages.forEach { $0.evict() }; documents.forEach { $0.dispose() }
-        let restored = WorkspaceContext(id: id, sourceURL: sourceURL, title: "", snapshot: snapshot, pageFactory: pageFactory, documentFactory: documentFactory)
+        let restored = WorkspaceContext(id: id, sourceURL: sourceURL, title: "", snapshot: snapshot, pageFactory: pageFactory, documentFactory: documentFactory, closeCoordinator: closeCoordinator)
         pages = restored.pages; activeID = restored.activeID; history = restored.history; pane = restored.pane
         reviewSection = restored.reviewSection
         documents = restored.documents; tabOrder = restored.tabOrder; fileHistory = restored.fileHistory; historyOrder = restored.historyOrder
@@ -274,6 +285,7 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
 }
 
 @MainActor @Observable final class ViewerStore {
+    let closeCoordinator: EditorCloseCoordinator
     private(set) var contexts: [String: WorkspaceContext] = [:]
     private(set) var activeContextID: String? {
         didSet {
@@ -302,10 +314,12 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
     private struct Cache: Codable { let snapshots: [String: ContextSnapshot]; let pending: Set<String> }
     init(limit: Int = RemotePageRetention.defaultLimit, cacheURL: URL? = nil, memoryPressure: (any MemoryPressureMonitoring)? = nil,
          pageFactory: BrowserPageFactory = BrowserPageFactory(),
-         documentFactory: any DocumentFeatureFactory = NativeDocumentFeatureFactory()) {
+         documentFactory: any DocumentFeatureFactory = NativeDocumentFeatureFactory(),
+         closeCoordinator: EditorCloseCoordinator? = nil) {
         pageLimit = RemotePageRetention.clamp(limit); self.cacheURL = cacheURL
         self.pageFactory = pageFactory
         self.documentFactory = documentFactory
+        self.closeCoordinator = closeCoordinator ?? EditorCloseCoordinator(factory: documentFactory)
         self.memoryPressure = memoryPressure
         if let cacheURL, let data = try? Data(contentsOf: cacheURL), let cache = try? JSONDecoder().decode(Cache.self, from: data) {
             saved = cache.snapshots; dirty = cache.pending; edited = cache.pending
@@ -342,8 +356,13 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
                 context.documents.filter { affected($0, context: context) }.map { (context, $0) }
             }
             if targets.isEmpty { return true }
-            guard await EditorCloseCoordinator.confirm(targets.map { $0.1 }) else { return false }
-            for (context, document) in targets { context.remove(document) }
+            guard await closeCoordinator.close(targets.map { $0.1 }, isOwned: {
+                targets.allSatisfy { context, document in
+                    contexts[context.id] === context && context.documents.contains { $0 === document }
+                }
+            }, commit: {
+                for (context, document) in targets { context.remove(document) }
+            }) else { return false }
             // A previously open file picker can complete while a close sheet awaits.
             // Include any newly opened document before reporting that Quit is safe.
         }
@@ -399,8 +418,12 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
     }
     @discardableResult func select(id: String, url: String, title: String, legacy: SavedTab? = nil) -> WorkspaceContext {
         let context = contexts[id] ?? WorkspaceContext(id: id, sourceURL: url, title: title,
-                                                       snapshot: saved[id] ?? legacy.map(ContextSnapshot.importing), pageFactory: pageFactory, documentFactory: documentFactory)
+                                                       snapshot: saved[id] ?? legacy.map(ContextSnapshot.importing), pageFactory: pageFactory, documentFactory: documentFactory, closeCoordinator: closeCoordinator)
         contexts[id] = context
+        context.isOwned = { [weak self, weak context] in
+            guard let self, let context else { return false }
+            return contexts[context.id] === context
+        }
         prepareContext(context)
         context.restoring = restoring
         context.changed = { [weak self, weak context] in

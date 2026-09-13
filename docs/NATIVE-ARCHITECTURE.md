@@ -620,6 +620,30 @@ focus or request find-field focus. Feature sources contain no `.task(id:)`
 handlers or `ObservableObject` wrappers. Runtime/platform extraction and terminal
 acceptance still have separate outstanding work.
 
+## Implemented: document close ownership
+
+`EditorCloseViewModel` owns batch freezing, dirty-buffer decisions, save retries
+and rollback. It emits typed, identified prompt requests through `onAction`; the
+coordinator presents them using an injected `EditorClosePresenting` dependency and
+returns the matching choice. Old or duplicate responses cannot resolve a later
+prompt. `DocumentFeatureFactory` assembles a fresh model for each close attempt.
+
+The root and viewer share one `EditorCloseCoordinator` across individual tabs,
+session/worktree removal and Quit. Requests reserve presentation ownership before
+starting asynchronous work. Concurrent attempts are rejected; root presentations
+and external deep links wait until the owning close flow ends. Workspace tab
+buttons emit typed select/close actions; the root resolves IDs against the current
+owned context and checks presentation availability before acting.
+
+Every target buffer is frozen before the first prompt. Cancellation or loss of
+ownership rolls back locks acquired by that attempt; a lock owned by another
+attempt is preserved. Caller cancellation cannot approve a late prompt response,
+and rollback finishes in a cleanup task that is independent of that cancellation.
+After all approvals, the coordinator rechecks ownership and removes the approved
+documents synchronously before yielding. The viewer repeats its batch scan to
+include a file picker that completed while confirmation awaited. A failed save
+preserves the buffer and returns a fresh prompt with its error for retry.
+
 ## Remaining extraction
 
 The architecture extraction remains in progress:

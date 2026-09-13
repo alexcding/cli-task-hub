@@ -1,6 +1,7 @@
 import Foundation
 
 @MainActor protocol DocumentFeatureFactory {
+    func editorClose(documents: [EditorDocumentViewModel]) -> EditorCloseViewModel
     func editor(record: FileDocumentRecord) -> EditorDocumentViewModel
     func editorSurface(baseURL: URL) -> any EditorSurface
     func changes(worktree: String, service: any GitChangesService, didChange: @escaping () -> Void) -> GitChangesActions
@@ -16,6 +17,7 @@ import Foundation
 // Shared assembly keeps nested creation on the injected factory as well: history
 // patches and git actions must not silently fall back to a new native factory.
 extension DocumentFeatureFactory {
+    func editorClose(documents: [EditorDocumentViewModel]) -> EditorCloseViewModel { EditorCloseViewModel(documents: documents) }
     func editor(record: FileDocumentRecord) -> EditorDocumentViewModel { EditorDocumentViewModel(record: record) }
     func editorSurface(baseURL: URL) -> any EditorSurface { WebEditorSurface(baseURL: baseURL) }
     func changes(worktree: String, service: any GitChangesService, didChange: @escaping () -> Void) -> GitChangesActions {

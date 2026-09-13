@@ -114,10 +114,10 @@ struct SessionWorkspaceView: View {
                     HStack(spacing: 6) {
                         ForEach(context.tabs) { page in
                             HStack(spacing: 6) {
-                                Button { context.select(page) } label: {
+                                Button { model.selectTab(page) } label: {
                                     Text((page.dirty ? "● " : "") + page.title).lineLimit(1).frame(maxWidth: 190)
                                 }.buttonStyle(.plain)
-                                Button("Close \(page.title)", systemImage: "xmark") { context.close(page) }
+                                Button("Close \(page.title)", systemImage: "xmark") { model.closeTab(page) }
                                     .labelStyle(.iconOnly).buttonStyle(.plain)
                             }.padding(.horizontal, 10).padding(.vertical, 7)
                                 .background(context.activeID == page.id ? Color.accentColor.opacity(0.15) : Color.secondary.opacity(0.08),

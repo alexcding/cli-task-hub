@@ -43,7 +43,7 @@ import Observation
     }
     private(set) var restartConfirmation: RestartConfirmation?
     var canPresent: Bool {
-        sheet == nil && restartConfirmation == nil && logsCoordinator?.isPresenting != true && !projectCoordinators.values.contains { $0.isPresenting }
+        sheet == nil && restartConfirmation == nil && !documentCloseCoordinator.isPresenting && logsCoordinator?.isPresenting != true && !projectCoordinators.values.contains { $0.isPresenting }
     }
     @ObservationIgnored private let factory: any CreationFlowFactory
     @ObservationIgnored private let workspaceFactory: any WorkspaceFeatureFactory
@@ -61,6 +61,7 @@ import Observation
     var dashboardCoordinator: DashboardCoordinator?
     var logsCoordinator: LogsCoordinator?
     var settingsCoordinator: SettingsCoordinator?
+    let documentCloseCoordinator: EditorCloseCoordinator
     @ObservationIgnored var pendingDeepLink: DeepLink?
     @ObservationIgnored var routingReady = false
     var routingError: String?
@@ -69,12 +70,15 @@ import Observation
          workspaceFactory: any WorkspaceFeatureFactory = NativeWorkspaceFeatureFactory(),
          router: any DeepLinkRouting = TaskHubRouter(),
          projectCoordinatorFactory: any ProjectCoordinatorFactory = NativeProjectCoordinatorFactory(),
+         documentCloseCoordinator: EditorCloseCoordinator = EditorCloseCoordinator(),
          canOpenExternalRoute: @escaping () -> Bool = { true }) {
         self.factory = factory; self.selectionStore = selectionStore
         self.workspaceFactory = workspaceFactory
         self.router = router; self.projectCoordinatorFactory = projectCoordinatorFactory
         self.canOpenExternalRoute = canOpenExternalRoute
+        self.documentCloseCoordinator = documentCloseCoordinator
         selection = selectionStore.load() ?? .overview
+        documentCloseCoordinator.presentationEnded = { [weak self] in self?.schedulePendingDeepLink() }
     }
 
     func navigate(to destination: SidebarDestination) {

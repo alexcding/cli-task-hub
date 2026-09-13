@@ -18,6 +18,12 @@ extension AppCoordinator {
 
     private func handle(_ action: SessionWorkspaceViewModel.Action, context: WorkspaceContext, runtime: any WorkspaceCoordinating) {
         switch action {
+        case .selectTab(let id):
+            guard canPresent, let tab = context.tab(id) else { return }
+            context.select(tab)
+        case .closeTab(let id):
+            guard canPresent, let tab = context.tab(id) else { return }
+            context.close(tab)
         case .operation(let operation): runtime.performWorkspaceOperation(operation, in: context)
         case .run: presentBuild { runtime.makeWorkspaceBuild(in: context) }
         case .remove: presentRemoval { runtime.makeWorkspaceRemoval(in: context) }

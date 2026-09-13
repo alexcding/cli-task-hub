@@ -101,6 +101,30 @@ func deepLinksWaitForActivityClearConfirmationToFinish(confirm: Bool) async thro
     func project(model: ProjectPageViewModel) -> ProjectCoordinator { creations += 1; return ProjectCoordinator(model: model) }
 }
 
+@MainActor @Test(.timeLimit(.minutes(1)), arguments: [false, true])
+func deepLinksWaitForDocumentCloseAndResumeAfterSaveOrCancel(save: Bool) async throws {
+    let presenter = EditorClosePresenterFixture(), gate = ProjectPageGate()
+    let closer = EditorCloseCoordinator(presenter: presenter)
+    let coordinator = AppCoordinator(factory: NativeCreationFlowFactory(chooseFolder: { nil }), documentCloseCoordinator: closer)
+    let runtime = DeepLinkRuntime(); runtime.coordinator = coordinator; coordinator.rootRuntime = runtime
+    coordinator.setRoutingReady(true)
+    let (document, surface, _) = await closeFixtureDocument("/tmp/deep-link.swift")
+    presenter.chooseAction = { _ in try? await gate.wait(); return save ? .save : .cancel }
+    closer.requestClose([document], isOwned: { true }, commit: { document.dispose() })
+    #expect(!coordinator.canPresent) // Reserved before the prompt task runs.
+    coordinator.presentNewProject(service: DeepLinkProjectService(), didSave: { _ in })
+    #expect(coordinator.sheet == nil)
+    await gate.waitForStart()
+    coordinator.handle(url: URL(string: "taskhub://app/settings")!)
+    #expect(coordinator.selection == .overview && coordinator.pendingDeepLink != nil)
+    await gate.finish()
+    while coordinator.pendingDeepLink != nil { await Task.yield() }
+    #expect(coordinator.selection == .settings && coordinator.canPresent)
+    #expect(surface.disposed == save)
+    if !save { #expect(document.dirty && !document.closing && !surface.frozen) }
+    document.dispose()
+}
+
 @MainActor @Test func deepLinkCoordinatorDefersUntilSnapshotAndForwardsProjectRemainder() throws {
     let factory = DeepLinkProjectFactory()
     let coordinator = AppCoordinator(factory: NativeCreationFlowFactory(chooseFolder: { nil }), projectCoordinatorFactory: factory)

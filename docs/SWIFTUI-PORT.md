@@ -2092,6 +2092,37 @@ does not).
   The existing terminal mount publication warning remains unresolved; this phase
   does not close terminal fidelity/performance or other M1–M6 acceptance gates.
 
+### Document close view model and shared coordinator — 2026-09-13
+
+- `EditorCloseViewModel` owns batch buffer freezing, save/discard decisions,
+  retry state and rollback. Typed identified callbacks request confirmation from
+  a coordinator with an injected AppKit presenter; the document factory creates
+  each model. Old or duplicate prompt replies cannot resolve a later request.
+- Root and viewer share one close coordinator for individual tabs, session/worktree
+  removal and Quit. Presentation ownership is reserved synchronously. Overlapping
+  close attempts are rejected, competing root presentations are gated, and queued
+  external routes resume after close completion. Workspace tab select/close buttons
+  emit typed callbacks resolved against the current owned context.
+- Every target freezes before prompting. Cancellation rolls back the locks acquired
+  by that attempt, preserving prior locks and buffers. Cleanup is independent of
+  caller cancellation, including cancellation-aware editor bridges. Ownership is
+  rechecked before synchronous removal; a viewer batch still rescans for files
+  opened by a picker while confirmation awaited.
+- Thirty-six focused editor/factory/workspace/coordinator/deeplink tests pass in
+  `swift_package_test_2026-09-13T18-55-30-137Z_pid98490_deb21308.log`. Coverage includes
+  save failure/retry, latest unreported input, duplicate and stale replies, batch
+  cancellation, preexisting locks, cancelled callers, ownership loss, overlapping
+  tab/Quit requests, newly opened files and queued routes.
+- Native editor Save/Cancel/Discard/History passes on the final implementation in
+  `test_macos_2026-09-13T18-55-59-094Z_pid98713_0dbdb5fc.log`.
+  An earlier run failed after XCTest found the History item and reactivated the app,
+  losing its open menu (`test_macos_2026-09-13T18-51-21-760Z_pid96879_fc2f7cdd.log`);
+  the unchanged rerun passed (`test_macos_2026-09-13T18-53-05-414Z_pid97552_6e7a97a2.log`).
+  Browser find/navigation/close and session-sheet integration pass in
+  `test_macos_2026-09-13T18-53-55-954Z_pid97867_80b5f8dd.log`; its existing WebKit QoS
+  warning remains open. Remaining platform/runtime extraction and M1–M6 acceptance
+  requirements continue separately.
+
 ## Why now, and why native
 
 The Tauri shell works, but roughly half of `src-tauri/` exists to work around what a DOM
