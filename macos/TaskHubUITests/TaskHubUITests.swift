@@ -855,10 +855,59 @@ final class TaskHubUITests: XCTestCase {
         app.buttons["Cancel"].click()
         app.buttons["Remove Session"].click()
         XCTAssertTrue(app.buttons["Forget Session"].waitForExistence(timeout: 10))
+        app.sheets.buttons["Cancel"].click()
+        let removalDismissed = expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: app.sheets.firstMatch)
+        wait(for: [removalDismissed], timeout: 5)
+        XCTAssertTrue(session.exists)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: directory.appendingPathComponent("sidebar-1").path))
+        app.buttons["Remove Session"].click()
+        XCTAssertTrue(app.buttons["Forget Session"].waitForExistence(timeout: 10))
         app.buttons["Forget Session"].click()
         let removed = expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: session)
         wait(for: [removed], timeout: 10)
         XCTAssertTrue(FileManager.default.fileExists(atPath: directory.appendingPathComponent("sidebar-1").path))
+    }
+
+    @MainActor
+    func testNativeBuildDestinationRetainsSelectionAndKeepsFailureForRetry() async throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard let base = environment["TASKHUB_UI_BACKEND_URL"],
+              let path = environment["TASKHUB_UI_DATA_DIR"], let socket = environment["TASKHUB_UI_PTY_SOCKET"] else {
+            throw XCTSkip("Run macos/scripts/test-browser-ui.sh with its isolated build fixture.")
+        }
+        let app = XCUIApplication()
+        app.launchArguments = ["--backend-url", base, "--data-dir", path, "--pty-socket", socket]
+        app.launch()
+        let session = app.outlines["workspace-sidebar"].staticTexts["sidebar-2"].firstMatch
+        XCTAssertTrue(session.waitForExistence(timeout: 10)); session.click()
+        let open = app.buttons["Run…"]
+        XCTAssertTrue(open.waitForExistence(timeout: 5)); open.click()
+        let scheme = app.sheets.popUpButtons["build-scheme"]
+        let simulator = app.sheets.popUpButtons["build-simulator"]
+        XCTAssertTrue(scheme.waitForExistence(timeout: 5))
+        let enabled = expectation(for: NSPredicate(format: "enabled == true"), evaluatedWith: app.sheets.buttons["Run"])
+        await fulfillment(of: [enabled], timeout: 10)
+        scheme.click(); app.menuItems["Fixture Beta"].click()
+        simulator.click(); app.menuItems["Fixture B · Fixture OS"].click()
+        app.sheets.buttons["Cancel"].click()
+        let dismissed = expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: app.sheets.firstMatch)
+        await fulfillment(of: [dismissed], timeout: 5)
+        open.click()
+        XCTAssertTrue(scheme.waitForExistence(timeout: 5))
+        XCTAssertEqual(scheme.value as? String, "Fixture Beta")
+        XCTAssertEqual(simulator.value as? String, "Fixture B · Fixture OS")
+        app.sheets.buttons["Run"].click()
+        XCTAssertTrue(app.sheets.staticTexts["Fixture build preparation rejected"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.sheets.buttons["Run"].isEnabled)
+        XCTAssertEqual(scheme.value as? String, "Fixture Beta")
+        app.sheets.buttons["Cancel"].click()
+        XCTAssertTrue(app.buttons["Open Terminal"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["Stop Build"].exists)
+        let (data, _) = try await URLSession.shared.data(from: URL(string: base + "/fixture/build-requests")!)
+        let requests = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Int])
+        XCTAssertEqual(requests["settings"], 1)
+        XCTAssertEqual(requests["schemes"], 2)
+        XCTAssertEqual(requests["simulators"], 2)
     }
 
     @MainActor

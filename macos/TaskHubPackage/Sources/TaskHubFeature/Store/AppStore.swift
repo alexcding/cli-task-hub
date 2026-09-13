@@ -59,7 +59,7 @@ public final class AppStore {
         self.workspaceFactory = workspaceFactory
         self.copy = copy
         self.projectFactory = projectFactory ?? NativeProjectFeatureFactory(creation: creationFactory, desktop: desktop, copy: copy)
-        coordinator = AppCoordinator(factory: creationFactory, selectionStore: selectionStore, router: router,
+        coordinator = AppCoordinator(factory: creationFactory, selectionStore: selectionStore, workspaceFactory: workspaceFactory, router: router,
             canOpenExternalRoute: {
                 NSApplication.shared.modalWindow == nil && !NSApplication.shared.windows.contains { $0.attachedSheet != nil }
             })
@@ -480,7 +480,6 @@ public final class AppStore {
                     await viewer.remove(id: key)
                 }
                 sessions.removeAll { record in removed.contains { $0.id == record.id } }
-                select(.overview)
                 refresh()
             }, finished: { [weak self] in
                 if let self, let ids = removalLocks.removeValue(forKey: operationID) { changingSessions.subtract(ids) }

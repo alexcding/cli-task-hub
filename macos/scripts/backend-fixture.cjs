@@ -3,6 +3,28 @@ const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
 process.env.TASKHUB_DATA_DIR ||= fs.mkdtempSync(path.join(os.tmpdir(), 'taskhub-native-fixture-'));
+if (process.env.TASKHUB_BUILD_FIXTURE === '1') {
+  // Replace registration before bootstrap so these UI checks never call Xcode
+  // or start a build. Real CLI/build acceptance is a separate integration gate.
+  require('../../src/server/routes/xcode').register = app => {
+    const { ROUTES } = require('../../src/shared/routes.mjs');
+    const requests = { schemes: 0, simulators: 0, settings: 0 };
+    app.get(ROUTES.XCODE_SCHEMES, (_req, res) => {
+      requests.schemes += 1;
+      res.json({ target: path.join(process.env.TASKHUB_DATA_DIR, 'Fixture.xcodeproj'), schemes: ['Fixture Alpha', 'Fixture Beta'] });
+    });
+    app.get(ROUTES.XCODE_SIMULATORS, (_req, res) => {
+      requests.simulators += 1;
+      res.json(['A', 'B'].map((suffix, index) => ({ udid: `12345678-1234-1234-1234-123456789ab${index}`,
+        name: `Fixture ${suffix}`, runtime: 'Fixture OS' })));
+    });
+    app.get(ROUTES.XCODE_BUILD_SETTINGS, (_req, res) => {
+      requests.settings += 1;
+      res.status(500).json({ error: 'Fixture build preparation rejected' });
+    });
+    app.get('/fixture/build-requests', (_req, res) => res.json(requests));
+  };
+}
 const { app } = require('../../src/server/app');
 const db = require('../../src/server/database/db');
 const sse = require('../../src/server/routes/sse');
@@ -43,6 +65,7 @@ app.get('/browse/:key', (_req, res) => res.type('html').send('<!doctype html><ti
 if (!db.getProjects().length) {
   db.addProject({ name: 'Native integration fixture', repo: '', color: '#64748b', workspace: process.env.TASKHUB_FIXTURE_WORKSPACE || '/tmp' });
 }
+if (process.env.TASKHUB_BUILD_FIXTURE === '1') db.updateProject(db.getProjects()[0].id, { ide: 'xcode' });
 if (process.env.TASKHUB_BOARD_FIXTURE === '1') {
   const project = db.getProjects()[0];
   db.updateProject(project.id, { jiraProjectKey: 'REC' });

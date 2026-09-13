@@ -42,15 +42,16 @@ private final class BuildHTTPFixture: URLProtocol, @unchecked Sendable {
     let build = BuildTerminalRecorder()
     var factories = 0
     var reveals = 0
-    let model = BuildWorkspaceViewModel(api: api, project: project, session: session,
+    let model = BuildWorkspaceViewModel(service: APIBuildService(api: api), project: project, session: session,
         terminalFactory: { factories += 1; return build }, reveal: { reveals += 1 })
-    await model.load()
-    #expect(model.canRun)
     let coordinator = AppCoordinator(factory: NativeCreationFlowFactory(chooseFolder: { nil }))
     coordinator.presentBuild { model }
     let presentation = try #require(coordinator.sheet)
-    async let first: Void = model.run()
-    async let second: Void = model.run()
+    guard case .build(let destination) = presentation.destination else { Issue.record("Wrong destination"); return }
+    await destination.load()
+    #expect(destination.canRun)
+    async let first: Void = destination.run()
+    async let second: Void = destination.run()
     for _ in 0..<100 {
         if model.starting { break }
         try await Task.sleep(for: .milliseconds(10))
@@ -61,6 +62,9 @@ private final class BuildHTTPFixture: URLProtocol, @unchecked Sendable {
     _ = await (first, second)
     #expect(model.running && build.commands.count == 1 && factories == 1 && reveals == 1)
     #expect(coordinator.sheet == nil)
+    #expect(destination.retired && !destination.canRun)
+    await destination.run()
+    #expect(build.commands.count == 1 && model.running)
     await model.stop()
     #expect(build.interrupts == 1)
     model.disconnect()
@@ -78,7 +82,8 @@ private final class BuildHTTPFixture: URLProtocol, @unchecked Sendable {
     let coordinator = AppCoordinator(factory: NativeCreationFlowFactory(chooseFolder: { nil }))
     coordinator.presentBuild { model }
     let sheet = try #require(coordinator.sheet)
-    await model.load(); await model.run()
+    guard case .build(let destination) = sheet.destination else { Issue.record("Wrong destination"); return }
+    await destination.load(); await destination.run()
     #expect(model.error == "Runtime closed" && !model.running && model.canRun)
     #expect(coordinator.sheet?.id == sheet.id && sheet.canDismiss)
     coordinator.dismissSheet(id: sheet.id)

@@ -42,6 +42,30 @@ struct BuildSettings: Decodable, Sendable {
     }
 }
 
+protocol BuildServing: Sendable {
+    func destinations(project: Project, session: WorkspaceSession) async throws -> (BuildSchemes, [BuildSimulator])
+    func settings(project: Project, session: WorkspaceSession, scheme: String, simulator: String) async throws -> BuildSettings
+    func saveDestination(projectID: String, scheme: String, simulator: String) async throws
+}
+
+struct APIBuildService: BuildServing {
+    let api: APIClient
+    func destinations(project: Project, session: WorkspaceSession) async throws -> (BuildSchemes, [BuildSimulator]) {
+        async let schemes: BuildSchemes = api.get(APIClient.query(Routes.XCODE_SCHEMES,
+            ["path": session.worktree, "rel": project.ideTarget ?? ""]), timeout: 100)
+        async let simulators: [BuildSimulator] = api.get(Routes.XCODE_SIMULATORS, timeout: 100)
+        return try await (schemes, simulators)
+    }
+    func settings(project: Project, session: WorkspaceSession, scheme: String, simulator: String) async throws -> BuildSettings {
+        try await api.get(APIClient.query(Routes.XCODE_BUILD_SETTINGS,
+            ["path": session.worktree, "rel": project.ideTarget ?? "", "scheme": scheme, "sim": simulator]), timeout: 100)
+    }
+    func saveDestination(projectID: String, scheme: String, simulator: String) async throws {
+        let _: Project = try await api.request(Routes.project(projectID), method: "PUT",
+            body: ["runScheme": scheme, "runSim": simulator])
+    }
+}
+
 @MainActor @Observable final class BuildWorkspaceViewModel {
     var scheme: String
     var simulator: String
@@ -51,93 +75,157 @@ struct BuildSettings: Decodable, Sendable {
     private(set) var starting = false
     private(set) var running = false
     private(set) var error: String?
-    private let api: APIClient
+    private let service: any BuildServing
     private let project: Project
     private let session: WorkspaceSession
     private let terminalFactory: () throws -> any BuildTerminal
     private let reveal: () -> Void
     @ObservationIgnored private var terminal: (any BuildTerminal)?
-    @ObservationIgnored private var monitor: Task<Void, Never>?
+    @ObservationIgnored private var monitor: Task<Void, Never>? { didSet { oldValue?.cancel() } }
+    private var monitorGeneration = UUID()
+    private var loadGeneration = UUID()
+    private var presentationID: UUID?
     private var valid = true
-    @ObservationIgnored var didStart: () -> Void = {}
 
-    init(api: APIClient, project: Project, session: WorkspaceSession,
+    init(service: any BuildServing, project: Project, session: WorkspaceSession,
          terminalFactory: @escaping () throws -> any BuildTerminal, reveal: @escaping () -> Void) {
-        self.api = api; self.project = project; self.session = session
+        self.service = service; self.project = project; self.session = session
         self.terminalFactory = terminalFactory; self.reveal = reveal
         scheme = project.runScheme ?? ""; simulator = project.runSim ?? ""
     }
     var canRun: Bool { valid && !loading && !starting && !running && schemes.contains(scheme) && simulators.contains { $0.udid == simulator } }
-    func load() async {
-        guard !loading else { return }
+    fileprivate func beginPresentation(_ id: UUID) -> Bool {
+        guard valid, !starting else { return false }
+        presentationID = id; loadGeneration = UUID(); loading = false
+        return true
+    }
+    fileprivate func endPresentation(_ id: UUID) {
+        guard presentationID == id else { return }
+        presentationID = nil; loadGeneration = UUID(); loading = false
+    }
+    fileprivate func isCurrent(_ id: UUID) -> Bool { valid && presentationID == id }
+    fileprivate func load(presentation id: UUID) async {
+        guard isCurrent(id), !Task.isCancelled, !loading, !starting else { return }
+        let generation = UUID(); loadGeneration = generation
         loading = true; error = nil
-        defer { loading = false }
+        defer { if loadGeneration == generation { loading = false } }
         do {
-            async let schemes: BuildSchemes = api.get(APIClient.query(Routes.XCODE_SCHEMES,
-                ["path": session.worktree, "rel": project.ideTarget ?? ""]), timeout: 100)
-            async let simulators: [BuildSimulator] = api.get(Routes.XCODE_SIMULATORS, timeout: 100)
-            let values = try await (schemes, simulators)
+            let values = try await service.destinations(project: project, session: session)
             try Task.checkCancellation()
+            guard isCurrent(id), loadGeneration == generation else { return }
             self.schemes = values.0.schemes; self.simulators = values.1
             if !self.schemes.contains(scheme) { scheme = self.schemes.first ?? "" }
             if !self.simulators.contains(where: { $0.udid == simulator }) { simulator = self.simulators.first?.udid ?? "" }
-        } catch { if !Task.isCancelled { self.error = error.localizedDescription } }
+        } catch { if isCurrent(id) && loadGeneration == generation && !Task.isCancelled { self.error = error.localizedDescription } }
     }
-    func run() async {
-        guard canRun else { return }
+    fileprivate func run(presentation id: UUID) async -> Bool {
+        guard isCurrent(id), canRun, !Task.isCancelled else { return false }
+        let scheme = scheme, simulator = simulator
         starting = true; error = nil
         defer { starting = false }
         do {
-            let settings: BuildSettings = try await api.get(APIClient.query(Routes.XCODE_BUILD_SETTINGS,
-                ["path": session.worktree, "rel": project.ideTarget ?? "", "scheme": scheme, "sim": simulator]), timeout: 100)
-            let command = try settings.command(scheme: scheme, simulator: simulator)
-            let _: Project = try await api.request(Routes.project(project.id), method: "PUT",
-                                                   body: ["runScheme": scheme, "runSim": simulator])
+            let settings = try await service.settings(project: project, session: session, scheme: scheme, simulator: simulator)
             try Task.checkCancellation()
-            guard valid else { return }
+            guard isCurrent(id), self.scheme == scheme, self.simulator == simulator else { return false }
+            let command = try settings.command(scheme: scheme, simulator: simulator)
+            try await service.saveDestination(projectID: project.id, scheme: scheme, simulator: simulator)
+            try Task.checkCancellation()
+            guard isCurrent(id) else { return false }
             let terminal = try terminalFactory()
             self.terminal = terminal
             reveal()
             try await terminal.waitUntilReady()
             try await Task.sleep(for: .seconds(1))
-            guard valid else { return }
-            if try await terminal.atShell() { try await terminal.submit(command) }
+            guard isCurrent(id) else { return false }
+            let atShell = try await terminal.atShell()
+            try Task.checkCancellation()
+            guard isCurrent(id) else { return false }
+            if atShell { try await terminal.submit(command) }
+            guard isCurrent(id) else { return false }
             // A detached build already running is adopted without injecting a
             // second command. Only this build PTY is polled or interrupted.
             running = true
-            monitor?.cancel()
+            let generation = UUID(); monitorGeneration = generation
             monitor = Task { [weak self, weak terminal] in
-                while !Task.isCancelled {
+                while !Task.isCancelled && self?.monitorGeneration == generation {
                     do {
                         try await Task.sleep(for: .milliseconds(1200))
-                        guard let terminal else { break }
+                        guard self?.monitorGeneration == generation, let terminal else { break }
                         if try await terminal.atShell() { break }
-                    } catch { if !Task.isCancelled { self?.error = error.localizedDescription }; break }
+                    } catch {
+                        if !Task.isCancelled && self?.monitorGeneration == generation { self?.error = error.localizedDescription }
+                        break
+                    }
                 }
-                self?.running = false
+                if self?.monitorGeneration == generation { self?.running = false }
             }
-            didStart()
-        } catch { if !Task.isCancelled { self.error = error.localizedDescription } }
+            return true
+        } catch { if isCurrent(id) && !Task.isCancelled { self.error = error.localizedDescription } }
+        return false
     }
     func stop() async {
+        guard valid, running else { return }
         do { try await terminal?.interrupt() }
-        catch { self.error = error.localizedDescription }
+        catch { if valid { self.error = error.localizedDescription } }
     }
-    func disconnect() { valid = false; monitor?.cancel(); monitor = nil; running = false }
+    func disconnect() {
+        valid = false; presentationID = nil; loadGeneration = UUID(); monitorGeneration = UUID()
+        monitor = nil; terminal = nil; running = false; loading = false
+    }
+}
+
+/// One model per sheet; retiring it leaves the cached build and its PTY running.
+@MainActor @Observable final class BuildDestinationViewModel {
+    enum Action { case started }
+    @ObservationIgnored var onAction: (Action) -> Void = { _ in }
+    private let runtime: BuildWorkspaceViewModel
+    private let id = UUID()
+    private(set) var retired = false
+
+    init(runtime: BuildWorkspaceViewModel) {
+        self.runtime = runtime
+        retired = !runtime.beginPresentation(id)
+    }
+    private var active: Bool { !retired && runtime.isCurrent(id) }
+    var scheme: String {
+        get { runtime.scheme }
+        set { if active && !runtime.starting { runtime.scheme = newValue } }
+    }
+    var simulator: String {
+        get { runtime.simulator }
+        set { if active && !runtime.starting { runtime.simulator = newValue } }
+    }
+    var schemes: [String] { runtime.schemes }
+    var simulators: [BuildSimulator] { runtime.simulators }
+    var loading: Bool { active && runtime.loading }
+    var starting: Bool { active && runtime.starting }
+    var error: String? { runtime.error }
+    var canRun: Bool { active && runtime.canRun }
+    func load() async { if active { await runtime.load(presentation: id) } }
+    func run() async {
+        guard active, await runtime.run(presentation: id), active else { return }
+        let action = onAction
+        retire()
+        action(.started)
+    }
+    func retire() {
+        retired = true; onAction = { _ in }
+        runtime.endPresentation(id)
+    }
 }
 
 struct BuildDestinationView: View {
-    @Bindable var model: BuildWorkspaceViewModel
+    @Bindable var model: BuildDestinationViewModel
     let cancel: () -> Void
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Run Destination").font(.title2.weight(.semibold))
             Picker("Scheme", selection: $model.scheme) {
                 ForEach(model.schemes, id: \.self) { Text($0).tag($0) }
-            }
+            }.disabled(model.starting).accessibilityIdentifier("build-scheme")
             Picker("Simulator", selection: $model.simulator) {
                 ForEach(model.simulators) { Text("\($0.name) · \($0.runtime)").tag($0.udid) }
-            }
+            }.disabled(model.starting).accessibilityIdentifier("build-simulator")
             if model.loading { ProgressView("Loading destinations…") }
             if let error = model.error { Text(error).foregroundStyle(.orange).textSelection(.enabled) }
             HStack {

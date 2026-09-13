@@ -108,8 +108,7 @@ late lookup results and cannot restart reference loading. Failure preserves an
 active draft for retry. These checks prevent new obsolete operations; they do not
 roll back a backend write that already started. Busy writes still block dismissal.
 Build models are cached runtime features, while removal models carry operation
-cleanup callbacks. Their presentation lifetimes are a separate extraction; this
-phase does not retire either when its sheet closes.
+cleanup callbacks. Their separate presentation lifetimes are described below.
 
 The lifetime follow-up passes 24 focused tests and native UI checks for project
 create/edit/delete, browser/session creation and removal, and cold/warm deeplinks
@@ -347,6 +346,43 @@ create/edit/delete, workflow ordering/save/draft retention, automation recovery,
 web board movement/assignment/native opening and cold/warm deeplink delivery.
 The broader terminal and release gates remain open.
 
+## Implemented: build and removal presentation lifetimes
+
+`WorkspaceFeatureFactory` supplies a fresh `BuildDestinationViewModel` for every
+build sheet, while `AppStore` retains the existing `BuildWorkspaceViewModel` and
+terminal. The destination forwards rendering state and guarded commands through
+an identified presentation. Cancelled or completed destinations cannot load, run,
+change selection or complete a replacement sheet. Retiring a destination leaves
+the build monitor and PTY alive, so Stop still addresses the running build.
+
+Build data access is injected through `BuildServing`. Loads validate presentation
+identity and request generation before applying results. Preparation captures
+scheme/simulator values and rechecks lifetime before persisting preferences or
+submitting a command, including after the asynchronous shell-state check.
+Disconnect invalidates requests, clears the terminal reference and cancels the
+monitor without interrupting the detached shell. Monitor replacement uses guarded
+generation checks and task cancellation in `didSet`.
+
+Removal models use `SessionRemoving` and retire on cancellation or completion.
+Duplicate previews are coalesced; late responses cannot restore a retired plan.
+Completed models cannot repeat removal. A failure retains its preview for retry,
+and an operation that already started retains runtime cleanup and lock release
+even if its presentation is retired. Retirement is not a rollback mechanism.
+
+Both destinations emit typed `onAction` completions handled by the coordinator.
+Removal cleanup no longer navigates from `AppStore`; the coordinator returns to
+Overview only if the selected session was removed. An unrelated selection is
+preserved. Views render these models without adding state-driven view observers.
+
+Twenty-eight focused tests pass, including held requests during dismissal,
+replacement and disconnect, no command submission after a stale shell check,
+running-build retention, retries, single-use removal and cleanup after retirement.
+Native UI checks pass for build selection/cancel/reopen/failure recovery, removal
+cancel/reopen/confirmation, and actual shell input/navigation/restart/Quit.
+Evidence is recorded in `SWIFTUI-PORT.md`; actual Xcode build/run/stop and terminal
+fidelity/performance acceptance remain separate requirements. Existing terminal
+mount publication and WebKit QoS warnings remain open.
+
 ## Remaining extraction
 
 The architecture extraction remains in progress:
@@ -360,9 +396,8 @@ The architecture extraction remains in progress:
 - Expand factories to settings and document feature assembly;
   `AppStore` still constructs several concrete services and models. Complete
   child presentation ownership/model retirement and project PR/Jira/board action
-  forwarding as the remaining shared action services are extracted. Add separate
-  presentation lifetimes for cached build models and removal operations, and move
-  project deletion confirmation into its child coordinator.
+  forwarding as the remaining shared action services are extracted. Move project
+  deletion confirmation into its child coordinator.
 - Separate application runtime/backend lifecycle from feature navigation without
   changing ownership, cancellation, detached-shell retention or update shutdown.
 - Audit every rendering view and web/AppKit adapter for remaining business rules.

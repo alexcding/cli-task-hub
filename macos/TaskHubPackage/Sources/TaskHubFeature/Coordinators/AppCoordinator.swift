@@ -10,18 +10,18 @@ import Observation
             case newSession(NewSessionViewModel)
             case addPage(AddPageViewModel)
             case removal(SessionRemovalViewModel)
-            case build(BuildWorkspaceViewModel)
+            case build(BuildDestinationViewModel)
         }
         let id: UUID
         let destination: Destination
 
-        @MainActor func retireCreation() {
+        @MainActor func retire() {
             switch destination {
             case .newProject(let model): model.retire()
             case .newSession(let model): model.retire()
             case .addPage(let model): model.retire()
-            // Build runtime and removal cleanup have separate operation lifetimes.
-            case .removal, .build: break
+            case .removal(let model): model.retire()
+            case .build(let model): model.retire()
             }
         }
 
@@ -44,6 +44,7 @@ import Observation
     private(set) var restartConfirmation: RestartConfirmation?
     var canPresent: Bool { sheet == nil && restartConfirmation == nil }
     @ObservationIgnored private let factory: any CreationFlowFactory
+    @ObservationIgnored private let workspaceFactory: any WorkspaceFeatureFactory
     private(set) var selection: SidebarDestination
     @ObservationIgnored let selectionStore: any SidebarSelectionPersisting
     @ObservationIgnored weak var rootRuntime: (any RootCoordinating)?
@@ -57,10 +58,12 @@ import Observation
     var routingError: String?
 
     init(factory: any CreationFlowFactory, selectionStore: any SidebarSelectionPersisting = TransientSidebarSelectionStore(),
+         workspaceFactory: any WorkspaceFeatureFactory = NativeWorkspaceFeatureFactory(),
          router: any DeepLinkRouting = TaskHubRouter(),
          projectCoordinatorFactory: any ProjectCoordinatorFactory = NativeProjectCoordinatorFactory(),
          canOpenExternalRoute: @escaping () -> Bool = { true }) {
         self.factory = factory; self.selectionStore = selectionStore
+        self.workspaceFactory = workspaceFactory
         self.router = router; self.projectCoordinatorFactory = projectCoordinatorFactory
         self.canOpenExternalRoute = canOpenExternalRoute
         selection = selectionStore.load() ?? .overview
@@ -115,16 +118,25 @@ import Observation
     }
 
     func presentRemoval(_ makeModel: () -> SessionRemovalViewModel?) {
-        guard canPresent, let model = makeModel() else { return }
+        guard canPresent, let model = makeModel(), !model.retired, !model.completed else { return }
         let id = UUID()
-        model.didComplete = { [weak self] in _ = self?.complete(id) }
+        model.onAction = { [weak self] action in
+            guard let self, case .removed(let sessions) = action, complete(id) else { return }
+            if case .session(let selected) = selection, sessions.contains(where: { $0.id == selected }) {
+                navigate(to: .overview)
+            }
+        }
         sheet = Sheet(id: id, destination: .removal(model))
     }
 
     func presentBuild(_ makeModel: () -> BuildWorkspaceViewModel?) {
-        guard canPresent, let model = makeModel() else { return }
+        guard canPresent, let runtime = makeModel() else { return }
+        let model = workspaceFactory.buildDestination(runtime: runtime)
+        guard !model.retired else { return }
         let id = UUID()
-        model.didStart = { [weak self] in _ = self?.complete(id) }
+        model.onAction = { [weak self] action in
+            switch action { case .started: _ = self?.complete(id) }
+        }
         sheet = Sheet(id: id, destination: .build(model))
     }
 
@@ -147,7 +159,7 @@ import Observation
     private func complete(_ id: UUID) -> Bool {
         guard let sheet, sheet.id == id else { return false }
         self.sheet = nil
-        sheet.retireCreation()
+        sheet.retire()
         schedulePendingDeepLink()
         return true
     }

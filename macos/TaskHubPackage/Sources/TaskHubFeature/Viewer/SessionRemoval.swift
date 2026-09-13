@@ -13,7 +13,12 @@ struct SessionRemovalPlan: Sendable {
     static func path(_ value: String) -> String { URL(fileURLWithPath: value).standardizedFileURL.resolvingSymlinksInPath().path }
 }
 
-struct SessionRemovalService: Sendable {
+protocol SessionRemoving: Sendable {
+    func prepare(record: WorkspaceSession, projects: [Project], sessions: [WorkspaceSession]) async throws -> SessionRemovalPlan
+    func remove(_ plan: SessionRemovalPlan, discardChanges: Bool) async throws
+}
+
+struct SessionRemovalService: SessionRemoving {
     let api: APIClient
     let stopTerminals: @Sendable (Set<String>) async throws -> Void
 
@@ -56,39 +61,58 @@ struct SessionRemovalService: Sendable {
 }
 
 @MainActor @Observable final class SessionRemovalViewModel {
+    enum Action { case removed([WorkspaceSession]) }
+    @ObservationIgnored var onAction: (Action) -> Void = { _ in }
     private(set) var plan: SessionRemovalPlan?
     private(set) var loading = true
     private(set) var removing = false
     private(set) var completed = false
+    private(set) var retired = false
     private(set) var error: String?
     var discardChanges = false
-    private let service: SessionRemovalService
+    private var service: (any SessionRemoving)?
+    private var loadGeneration = UUID()
+    private var preparing = false
     private let record: WorkspaceSession
     private let projects: [Project]
     private let sessions: [WorkspaceSession]
     private let didRemove: ([WorkspaceSession]) async -> Void
     private let finished: () -> Void
-    @ObservationIgnored var didComplete: () -> Void = {}
-    init(service: SessionRemovalService, record: WorkspaceSession, projects: [Project], sessions: [WorkspaceSession],
+    init(service: any SessionRemoving, record: WorkspaceSession, projects: [Project], sessions: [WorkspaceSession],
          didRemove: @escaping ([WorkspaceSession]) async -> Void, finished: @escaping () -> Void) {
         self.service = service; self.record = record; self.projects = projects; self.sessions = sessions; self.didRemove = didRemove
         self.finished = finished
     }
+    var canRemove: Bool { !retired && !completed && !loading && !removing && plan != nil }
+    func retire() {
+        retired = true; service = nil; onAction = { _ in }
+        loadGeneration = UUID(); loading = false; plan = nil
+    }
     func load() async {
-        defer { loading = false }
-        do { plan = try await service.prepare(record: record, projects: projects, sessions: sessions) }
-        catch { self.error = error.localizedDescription }
+        guard !retired, !completed, !preparing, !removing, !Task.isCancelled, let service else { return }
+        let generation = UUID(); loadGeneration = generation
+        preparing = true; loading = true; error = nil; plan = nil
+        defer { preparing = false; if loadGeneration == generation { loading = false } }
+        do {
+            let plan = try await service.prepare(record: record, projects: projects, sessions: sessions)
+            guard !retired, loadGeneration == generation, !Task.isCancelled else { return }
+            self.plan = plan
+        } catch { if !retired && loadGeneration == generation && !Task.isCancelled { self.error = error.localizedDescription } }
     }
     func remove() async {
-        guard let plan, !removing else { return }
+        guard canRemove, !Task.isCancelled, let plan, let service else { return }
         removing = true; error = nil
+        // Once removal starts, retain cleanup even if its presentation is retired.
+        let action = onAction
         defer { removing = false; finished() }
         do {
             try await service.remove(plan, discardChanges: discardChanges)
             await didRemove(plan.sessions)
             completed = true
-            didComplete()
-        } catch { self.error = error.localizedDescription }
+            let shouldComplete = !retired
+            retire()
+            if shouldComplete { action(.removed(plan.sessions)) }
+        } catch { if !retired { self.error = error.localizedDescription } }
     }
 }
 
@@ -120,7 +144,7 @@ struct SessionRemovalView: View {
                 if model.removing { ProgressView().controlSize(.small) }
                 Button(model.plan?.removesWorktree == true ? "Remove Worktree" : "Forget Session", role: .destructive) {
                     Task { await model.remove() }
-                }.disabled(model.plan == nil || model.loading)
+                }.disabled(!model.canRemove)
             }.disabled(model.removing)
         }.padding(24).frame(width: 520)
         .interactiveDismissDisabled(model.removing)

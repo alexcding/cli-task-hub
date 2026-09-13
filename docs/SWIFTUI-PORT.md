@@ -1715,6 +1715,46 @@ does not).
 - Remaining coordinator/runtime extraction and terminal/release acceptance gates
   remain open. The existing WebKit QoS warning is still emitted by native UI tests.
 
+### Build and removal presentation lifetimes — 2026-09-13
+
+- Build sheets now receive a fresh factory-created `BuildDestinationViewModel`
+  over the retained build runtime. Dismissed/completed destinations cannot issue
+  commands or mutate a replacement sheet. Scheme/simulator choices survive
+  reopening. Retiring a destination leaves the build monitor and detached PTY
+  intact, while runtime disconnection invalidates pending operations and prevents
+  an obsolete model from interrupting a retained shell.
+- `BuildServing` supplies data access through injection. Destination reads reject
+  stale presentation/generation results; preparation captures its selection and
+  checks lifetime before persistence and after the asynchronous shell-state check
+  before submitting a command. Monitor replacement cancels the previous task via
+  `didSet` and guards completion by generation.
+- Removal uses an injected `SessionRemoving` service, coalesces preview loads and
+  permanently retires cancelled/completed models. Late previews cannot restore a
+  removal plan. Busy removal prevents dismissal; failures allow retry. Started
+  operations retain cleanup and lock release through retirement. This does not
+  roll back a removal already in progress.
+- Build/removal completions are typed coordinator actions. Removal cleanup in
+  `AppStore` no longer chooses navigation; the coordinator returns to Overview
+  only when the selected session was removed. Views retain rendering/lifecycle
+  forwarding, without new state-driven view observers or legacy observation APIs.
+- Twenty-eight focused tests pass in
+  `swift_package_test_2026-09-13T16-25-10-009Z_pid46660_31fb7002.log`, including held
+  requests through replacement/disconnect, stale shell checks, running-build
+  retention, retry, single-use removal and cleanup after retirement. Native build
+  selection/cancel/reopen and preparation-error recovery pass in
+  `test_macos_2026-09-13T16-22-20-832Z_pid45468_c73dbfdc.log`. That test replaces
+  Xcode route registration only in its isolated fixture; it starts no Xcode build
+  and does not establish real build/install/launch acceptance.
+  Browser/session navigation and removal cancel/reopen/confirmation pass in
+  `test_macos_2026-09-13T16-23-40-198Z_pid46003_20324fbf.log`; the unlinked fixture
+  folder remains after forgetting its session. The existing WebKit QoS warning
+  is still emitted in this test.
+  Real shell input, visibility/navigation, cancelled/confirmed restart and explicit
+  Quit pass in `test_macos_2026-09-13T16-25-37-448Z_pid46881_3bd52a24.log`; the
+  existing terminal mount publication warning remains reproducible.
+- Remaining project confirmation/action boundaries, settings/document factories,
+  runtime extraction and terminal/release acceptance gates remain open.
+
 ## Why now, and why native
 
 The Tauri shell works, but roughly half of `src-tauri/` exists to work around what a DOM
