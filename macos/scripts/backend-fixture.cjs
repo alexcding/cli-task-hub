@@ -11,6 +11,10 @@ const fixturePoller = require('../../src/server/services/poller');
 fixturePoller.syncProject = fixturePoller.syncProjectJira = fixturePoller.syncProjectBoard = async () => {};
 require('../../src/server/services/webhook-forwarder').sync = () => {};
 require('../../src/server/repositories/jira').listVersions = async () => [{ name: 'ios-1.2.3' }];
+if (process.env.TASKHUB_WORKFLOW_PAGE_FIXTURE === '1') {
+  require('../../src/server/repositories/jira').searchLean = async () => [{ key: 'REC-42', summary: 'Workflow handoff' }];
+  require('../../src/server/repositories/github').lookupPr = async () => ({ repo: 'fixture/repo', title: 'Review handoff', headRefName: 'review/pr-42' });
+}
 if (process.env.TASKHUB_CLI_FIXTURE === '1') {
   require('../../src/server/services/cli-tools').detect = async () => ({
     claude: { present: true }, codex: { present: false }, gh: { present: true, authed: false }, acli: { present: true, authed: null },

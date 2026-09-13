@@ -64,8 +64,8 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
     }
 }
 
-@MainActor @Observable final class WorkspaceContext: Identifiable {
-    let id: String
+@MainActor @Observable final class WorkspaceContext: @MainActor Identifiable {
+    fileprivate(set) var id: String
     let sourceURL: String
     private(set) var pages: [BrowserPage] = []
     private(set) var documents: [EditorDocumentViewModel] = []
@@ -137,6 +137,21 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
     }
     func setReviewSection(_ value: ReviewSection) { reviewSection = value; changed() }
     func setPane(_ value: WorkspacePane) { pane = value; changed() }
+    fileprivate func absorb(_ source: WorkspaceContext) {
+        let pageIDs = Set(pages.map(\.id)), documentIDs = Set(documents.map(\.id))
+        let incomingPages = source.pages.filter { !pageIDs.contains($0.id) }
+        let incomingDocuments = source.documents.filter { !documentIDs.contains($0.id) }
+        pages += incomingPages; documents += incomingDocuments
+        incomingPages.forEach(wire); incomingDocuments.forEach(wire)
+        tabOrder = Self.order(tabOrder + source.tabOrder, ids: pages.map(\.id) + documents.map(\.id))
+        history += source.history.filter { value in !history.contains { $0.id == value.id } }
+        fileHistory += source.fileHistory.filter { value in !fileHistory.contains { $0.id == value.id } }
+        historyOrder = Self.order(historyOrder + source.historyOrder, ids: history.map(\.id) + fileHistory.map(\.id))
+        trimHistory()
+        if let selected = source.activeID, tabOrder.contains(selected) { activeID = selected }
+        source.changed = {}; source.activatePage = { _ in }; source.activateDocument = { _ in }
+        source.pages = []; source.documents = []; source.tabOrder = []; source.activeID = nil
+    }
     func select(_ page: BrowserPage) { activeID = page.id; pane = .term; activatePage(page); changed() }
     func select(_ tab: WorkspaceTab) {
         switch tab { case .page(let page): select(page)
@@ -365,6 +380,24 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
         return context
     }
     func deactivate() { activeContextID = nil }
+    func promoteContext(from sourceID: String, to destinationID: String) throws {
+        guard sourceID != destinationID, let source = contexts[sourceID] else {
+            throw BackendError.operation("The source page is no longer available. Open its session to continue.")
+        }
+        // Move the actual objects, including dirty documents and live WebKit
+        // pages. Recreating them from a snapshot would discard unsaved buffers.
+        contexts.removeValue(forKey: sourceID)
+        let context: WorkspaceContext
+        if let existing = contexts[destinationID] {
+            existing.absorb(source); context = existing
+        } else {
+            source.id = destinationID; contexts[destinationID] = source; context = source
+        }
+        if activeContextID == sourceID { activeContextID = destinationID }
+        context.setPane(.term)
+        // Keep the old persisted snapshot as history for reopening the page.
+        // Outstanding writes under its old key cannot overwrite this context.
+    }
     func remove(id: String) async {
         let context = contexts.removeValue(forKey: id)
         context?.changed = {}

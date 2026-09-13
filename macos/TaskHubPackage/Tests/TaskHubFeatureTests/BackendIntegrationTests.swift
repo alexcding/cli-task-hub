@@ -31,6 +31,7 @@ private actor StoppedSessions {
     env["TASKHUB_DATA_DIR"] = directory.path
     env["TASKHUB_READY_FILE"] = ready.path
     env["TASKHUB_INSTANCE_ID"] = "external-fixture"
+    env["TASKHUB_WORKFLOW_PAGE_FIXTURE"] = "1"
     env["PORT"] = "0"
     fixture.environment = env
     fixture.standardOutput = FileHandle.nullDevice
@@ -125,6 +126,44 @@ private actor StoppedSessions {
     let afterRemoval: [WorkspaceSession] = try await api.get(Routes.TASKS)
     #expect(afterRemoval.isEmpty)
     #expect(!FileManager.default.fileExists(atPath: record.worktree))
+    var workflowPageProject = Project(id: project.id, name: project.name, repo: "fixture/repo", color: nil, workspace: checkout.path)
+    workflowPageProject.jiraProjectKey = "REC"
+    let preparation = APIWorkflowPagePreparation(operations: operations)
+    let target = try #require(WorkflowPageTarget.resolve(url: "https://jira.test/browse/REC-42", projects: [workflowPageProject]))
+    let prepared = try await preparation.prepare(target, project: workflowPageProject)
+    #expect(prepared.branch == "feature/rec-42-workflow-handoff")
+    #expect(prepared.cli == "" && prepared.sessionId == "")
+    #expect(FileManager.default.fileExists(atPath: prepared.worktree + "/.git"))
+    let handoffFile = URL(fileURLWithPath: prepared.worktree).appendingPathComponent("keep.txt")
+    try "Existing checkout work".write(to: handoffFile, atomically: true, encoding: .utf8)
+    let reused = try await preparation.prepare(target, project: workflowPageProject)
+    #expect(SessionRemovalPlan.path(reused.worktree) == SessionRemovalPlan.path(prepared.worktree))
+    #expect(reused.branch == prepared.branch)
+    #expect(try String(contentsOf: URL(fileURLWithPath: reused.worktree).appendingPathComponent("keep.txt"), encoding: .utf8) == "Existing checkout work")
+    let workflowSessions: [WorkspaceSession] = try await api.get(Routes.TASKS)
+    #expect(workflowSessions.count == 2 && workflowSessions.allSatisfy(target.matches))
+    let preparedPlan = try await removal.prepare(record: prepared, projects: [workflowPageProject], sessions: workflowSessions)
+    try await removal.remove(preparedPlan, discardChanges: true)
+    try git(["branch", "review/pr-42", "main"])
+    let pullTarget = try #require(WorkflowPageTarget.resolve(url: "https://github.com/fixture/repo/pull/42", projects: [workflowPageProject]))
+    let pullSession = try await preparation.prepare(pullTarget, project: workflowPageProject)
+    #expect(pullSession.branch == "review/pr-42" && FileManager.default.fileExists(atPath: pullSession.worktree + "/.git"))
+    let pullPlan = try await removal.prepare(record: pullSession, projects: [workflowPageProject], sessions: [pullSession])
+    try await removal.remove(pullPlan, discardChanges: false)
+    var canonicalProject = Project(id: project.id, name: project.name, repo: "fixture/repo", color: nil,
+                                   workspace: SessionRemovalPlan.path(checkout.path))
+    canonicalProject.jiraProjectKey = "REC"
+    let collision = try await operations.create(project: canonicalProject,
+        draft: SessionDraft(branch: "other/pr-42", base: "main", agent: .shell))
+    do {
+        _ = try await preparation.prepare(pullTarget, project: canonicalProject)
+        Issue.record("Workflow preparation accepted a same-folder checkout on another branch")
+    } catch { #expect(error.localizedDescription.contains("does not match branch") || error.localizedDescription.contains("folder already exists")) }
+    let collisionSessions: [WorkspaceSession] = try await api.get(Routes.TASKS)
+    #expect(collisionSessions.count == 1 && collisionSessions.first?.id == collision.id)
+    #expect(FileManager.default.fileExists(atPath: collision.worktree + "/.git"))
+    let collisionPlan = try await removal.prepare(record: collision, projects: [canonicalProject], sessions: collisionSessions)
+    try await removal.remove(collisionPlan, discardChanges: false)
     let orphanFolder = directory.appendingPathComponent("orphan")
     try FileManager.default.createDirectory(at: orphanFolder, withIntermediateDirectories: true)
     let orphan = WorkspaceSession(id: "orphan", projectId: "deleted-project", workspace: checkout.path,

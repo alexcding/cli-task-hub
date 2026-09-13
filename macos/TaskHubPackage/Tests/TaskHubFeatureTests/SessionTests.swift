@@ -26,6 +26,9 @@ private final class SessionHTTPFixture: URLProtocol, @unchecked Sendable {
             let query = request.url!.query ?? ""
             if request.httpMethod == "POST" { body = #"{"path":"/tmp/fixture.worktrees/native"}"# }
             else if query.contains("RECORD-12") { body = #"{"matched":true,"isWorktree":true,"branch":"RECORD-12-existing","path":"/tmp/existing"}"# }
+            else if let branch = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "branch" })?.value {
+                body = String(decoding: try! JSONSerialization.data(withJSONObject: ["matched": true, "isWorktree": true, "branch": branch, "path": "/tmp/fixture.worktrees/native"]), as: UTF8.self)
+            }
             else { body = #"{"matched":false,"isWorktree":false,"branch":"","path":""}"# }
         default: body = #"{"ok":true}"#
         }
@@ -63,4 +66,48 @@ private final class SessionHTTPFixture: URLProtocol, @unchecked Sendable {
     #expect(SessionAgent.codex.command(sessionID: "saved") == "codex resume 'saved'")
     #expect(SessionAgent.codex.command(sessionID: "") == "codex")
     #expect(SessionAgent.quote("a'$(touch /tmp/no);b") == "'a'\"'\"'$(touch /tmp/no);b'")
+}
+
+@Test func workflowPagePreparationUsesWorkflowBranchAndReusesResolvedWorktrees() async throws {
+    let configuration = URLSessionConfiguration.ephemeral
+    configuration.protocolClasses = [SessionHTTPFixture.self]
+    let api = try APIClient(baseURL: URL(string: "http://127.0.0.1:12345")!, session: URLSession(configuration: configuration))
+    var project = Project(id: "fixture", name: "Fixture", repo: "fixture/repo", color: nil, workspace: "/tmp/fixture")
+    project.jiraProjectKey = "RECORD"
+    let service = APIWorkflowPagePreparation(operations: SessionOperations(api: api))
+    let fresh = try #require(WorkflowPageTarget.resolve(url: "https://jira.test/browse/RECORD-13", projects: [project]))
+    let created = try await service.prepare(fresh, project: project)
+    #expect(created.branch == "feature/record-13-native-sidebar")
+    #expect(created.cli == "" && created.sessionId == "")
+    #expect(created.jiraKey == "RECORD-13" && fresh.matches(created))
+    let existing = try #require(WorkflowPageTarget.resolve(url: "https://jira.test/browse/RECORD-12", projects: [project]))
+    let reused = try await service.prepare(existing, project: project)
+    #expect(reused.branch == "RECORD-12-existing" && reused.worktree == "/tmp/existing")
+    let pull = try #require(WorkflowPageTarget.resolve(url: "https://github.com/fixture/repo/pull/42/files", projects: [project]))
+    let pr = try await service.prepare(pull, project: project)
+    #expect(pr.branch == "feature/native" && pr.kind == "github")
+    #expect(pull.matches(pr))
+    let canonical = try #require(WorkflowPageTarget.resolve(url: "https://github.com/FIXTURE/repo/pull/42?diff=split", projects: [project]))
+    #expect(canonical.identity == pull.identity && canonical.matches(pr))
+    #expect(WorkflowPageTarget.resolve(url: "https://github.com/elsewhere/repo/pull/42", projects: [project]) == nil)
+    #expect(WorkflowPageTarget.resolve(url: fresh.page.url, projects: [project, project]) == nil)
+}
+
+@MainActor @Test func workflowPagePromotionRetainsLiveContextObjectsAndMergesExistingContext() throws {
+    let viewer = ViewerStore()
+    let pageID = "tab:https://jira.test/browse/REC-1"
+    let context = viewer.select(id: pageID, url: "", title: "Issue")
+    let document = try #require(context.openFile("/tmp/Workflow.swift"))
+    let selection = context.activeID
+    try viewer.promoteContext(from: pageID, to: "task:prepared")
+    #expect(viewer.contexts[pageID] == nil)
+    #expect(viewer.active === context && context.id == "task:prepared")
+    #expect(context.documents.first === document && context.activeID == selection)
+    let other = viewer.select(id: "task:other", url: "", title: "Other")
+    let otherDocument = try #require(other.openFile("/tmp/Other.swift"))
+    _ = viewer.select(id: "task:prepared", url: "", title: "")
+    try viewer.promoteContext(from: "task:prepared", to: "task:other")
+    #expect(viewer.contexts["task:prepared"] == nil && viewer.active === other)
+    #expect(other.documents.first === otherDocument && other.documents.last === document)
+    #expect(other.activeDocument === document && context.documents.isEmpty)
 }

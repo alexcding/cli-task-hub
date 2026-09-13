@@ -85,8 +85,13 @@ Saved recipes can run from native session workspaces. Run/Stop controls show the
 current step and advisory summary; the Cocoa sidebar shows step progress. The runner
 requires installed hooks, freezes the recipe for each run, allows one retry per step,
 and halts on conversation/foreground/connection changes. Multi-line commands use
-bracketed paste followed by a separate Enter. Workflow launch directly from a PR/Jira
-page without an existing session and real-agent acceptance checks remain in progress.
+bracketed paste followed by a separate Enter. PR/Jira pages also expose the runner
+when they map to one project. Preparation creates or reuses a worktree and transfers
+the live page/editor context into a native session, retaining unsaved buffers. New
+Jira workflow branches use the default branch; exact checkout verification rejects
+unrelated branches sharing a folder. Stop drains a checkout already being created,
+saves a recoverable shell session, and skips agent launch. Real-agent acceptance
+checks remain in progress.
 
 **Automation** is native too: forward GitHub events, set a Fix Version, then transition
 linked Jira tickets when a PR merges. Its injected view model preserves drafts and

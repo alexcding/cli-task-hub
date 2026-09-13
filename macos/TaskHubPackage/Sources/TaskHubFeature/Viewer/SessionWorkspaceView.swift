@@ -93,8 +93,8 @@ struct SessionWorkspaceView: View {
                     Text("Terminal").font(.headline)
                 } else {
                     Text(context.activeDocument?.title ?? context.activePage?.title ?? "Workspace").font(.headline).lineLimit(1)
-                    Button("Create Session", systemImage: "terminal.badge.plus") { store.creatingSession = true }
-                        .disabled(store.projects.isEmpty || store.connection != "Connected")
+                    Button("Create Session", systemImage: "terminal.badge.plus") { store.perform(.newSession) }
+                        .disabled(!store.canPerform(.newSession))
                 }
                 Spacer()
                 Menu("History", systemImage: "clock.arrow.circlepath") {
@@ -138,7 +138,7 @@ struct SessionWorkspaceView: View {
                     }.disabled(context.activeID == nil)
                 }
             }.labelStyle(.iconOnly).padding(12)
-            if let session, let workflow = store.workflowRuns[session.id], !workflow.recipes.isEmpty || workflow.running {
+            if let workflow = store.workflowModel(in: context), !workflow.recipes.isEmpty || workflow.running {
                 WorkflowRunView(model: workflow, openHookSettings: store.openWorkflowHookSettings)
             }
             if !context.tabs.isEmpty {

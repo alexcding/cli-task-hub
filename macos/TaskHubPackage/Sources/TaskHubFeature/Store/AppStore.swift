@@ -27,6 +27,9 @@ public final class AppStore {
     private(set) var historyModels: [String: GitHistoryViewModel] = [:]
     private(set) var diffModels: [String: DiffViewModel] = [:]
     private(set) var workflowRuns: [String: WorkflowRunViewModel] = [:]
+    private(set) var pageWorkflowRuns: [String: WorkflowRunViewModel] = [:]
+    @ObservationIgnored private var pageWorkflowTargets: [String: WorkflowPageTarget] = [:]
+    @ObservationIgnored private var preparingWorkflowPages: Set<String> = []
     @ObservationIgnored private var pendingPins: Set<String> = []
     @ObservationIgnored private var removalLocks: [UUID: Set<String>] = [:]
     @ObservationIgnored private var owner: BackendProcess?
@@ -158,7 +161,7 @@ public final class AppStore {
     public func canPerform(_ command: ShellCommand) -> Bool {
         switch command {
         case .newProject: connection == "Connected"
-        case .newSession: connection == "Connected" && !projects.isEmpty
+        case .newSession: connection == "Connected" && !projects.isEmpty && pageWorkflowRuns[viewer.activeContextID ?? ""]?.running != true
         case .back: viewer.active?.activePage?.canGoBack == true
         case .forward: viewer.active?.activePage?.canGoForward == true
         case .openFile: viewer.active != nil && connection == "Connected"
@@ -175,7 +178,7 @@ public final class AppStore {
     public func perform(_ command: ShellCommand) {
         switch command {
         case .newProject: creatingProject = true
-        case .newSession: creatingSession = true
+        case .newSession: if canPerform(.newSession) { creatingSession = true }
         case .openFile: if let context = viewer.active { viewer.openFile(in: context) }
         case .saveFile: if let document = viewer.active?.activeDocument { Task { await document.save() } }
         case .closePage: if let context = viewer.active, let id = context.activeID, let tab = context.tab(id) { context.close(tab) }
@@ -290,7 +293,8 @@ public final class AppStore {
         case .terminal:
             viewer.select(id: "scratch", url: "", title: "Terminal")
         case .tab(let url):
-            viewer.select(id: "tab:\(url)", url: url, title: tabs.first { $0.url == url }?.title ?? url, legacy: tabs.first { $0.url == url })
+            let context = viewer.select(id: "tab:\(url)", url: url, title: tabs.first { $0.url == url }?.title ?? url, legacy: tabs.first { $0.url == url })
+            preparePageWorkflowModel(context)
         default: viewer.deactivate()
         }
     }
@@ -320,6 +324,77 @@ public final class AppStore {
         })
         workflowRuns[record.id] = model
         return model
+    }
+
+    func workflowModel(in context: WorkspaceContext) -> WorkflowRunViewModel? {
+        if let record = sessions.first(where: { "task:\($0.id)" == context.id }) { return workflowRuns[record.id] }
+        return pageWorkflowRuns[context.id]
+    }
+
+    private func preparePageWorkflowModel(_ context: WorkspaceContext) {
+        guard let api, let target = WorkflowPageTarget.resolve(url: context.sourceURL, projects: projects),
+              let project = projects.first(where: { $0.id == target.projectID }) else {
+            if pageWorkflowRuns[context.id]?.running != true {
+                pageWorkflowRuns.removeValue(forKey: context.id); pageWorkflowTargets.removeValue(forKey: context.id)
+            }
+            return
+        }
+        if let model = pageWorkflowRuns[context.id], pageWorkflowTargets[context.id] == target || model.running {
+            if pageWorkflowTargets[context.id] == target { model.update(project.workflows ?? []) }
+            return
+        }
+        let sourceID = context.id
+        var preparedSession: WorkspaceSession?
+        let service = APIWorkflowPagePreparation(operations: SessionOperations(api: api))
+        let model = WorkflowRunViewModel(recipes: project.workflows ?? [], service: APIWorkflowRunService(api: api), context: { [weak self] in
+            guard let preparedSession else { return [:] }
+            let latest = self?.sessions.first { $0.id == preparedSession.id } ?? preparedSession
+            let project = self?.projects.first { $0.id == target.projectID } ?? project
+            return WorkflowRunContext.values(project: project, session: latest)
+        }, prepare: { [weak self] cli in
+            guard let self else { throw BackendError.operation("The workspace closed.") }
+            if let preparedSession {
+                return try await prepareWorkflowTerminal(sessionID: preparedSession.id, cli: cli)
+            }
+            let record = try await prepareWorkflowPage(target, sourceID: sourceID, service: service)
+            preparedSession = record
+            try Task.checkCancellation()
+            return try await prepareWorkflowTerminal(sessionID: record.id, cli: cli)
+        })
+        pageWorkflowRuns[sourceID] = model
+        pageWorkflowTargets[sourceID] = target
+    }
+
+    private func prepareWorkflowPage(_ target: WorkflowPageTarget, sourceID: String,
+                                     service: any WorkflowPagePreparing) async throws -> WorkspaceSession {
+        guard let project = projects.first(where: { $0.id == target.projectID }),
+              WorkflowPageTarget.resolve(url: target.page.url, projects: projects) == target,
+              let model = pageWorkflowRuns[sourceID],
+              preparingWorkflowPages.insert(target.identity).inserted else {
+            throw BackendError.operation("The page's project changed or another workflow is preparing this page.")
+        }
+        defer { preparingWorkflowPages.remove(target.identity) }
+        let record: WorkspaceSession
+        if let existing = sessions.first(where: target.matches) {
+            guard workflowRuns[existing.id]?.running != true, !changingSessions.contains(existing.id) else {
+                throw BackendError.operation("This page already has an active session operation. Open its session to continue.")
+            }
+            record = existing
+        } else {
+            record = try await service.prepare(target, project: project)
+        }
+        // Once creation succeeds, retain the durable result even when Stop raced
+        // the HTTP response. Cancellation is checked before any agent startup.
+        if !sessions.contains(where: { $0.id == record.id }) { sessions.append(record) }
+        let destination = "task:\(record.id)"
+        let wasSelected = selection == .tab(target.page.url)
+        try viewer.promoteContext(from: sourceID, to: destination)
+        pageWorkflowRuns.removeValue(forKey: sourceID)
+        pageWorkflowTargets.removeValue(forKey: sourceID)
+        workflowRuns[record.id] = model
+        if wasSelected { select(.session(record.id)) }
+        refresh()
+        return record
     }
 
     func openWorkflowHookSettings() {
@@ -553,6 +628,7 @@ public final class AppStore {
         defer { actions.forEach { $0.resume() } }
         guard await viewer.closeDocuments() else { throw CancellationError() }
         for model in workflowRuns.values { await model.stop() }
+        for model in pageWorkflowRuns.values { await model.stop() }
         for terminal in terminals.values { await terminal.stopConnecting() }
         let host = PtydHost(configuration: try PtydConfiguration.current())
         try await host.stopExisting()
@@ -635,7 +711,8 @@ public final class AppStore {
                     if case .project(let id) = selection, let model = projectModels[id], model.section == .prs && model.state == "open" {
                         await model.refresh()
                     }
-                    if !sidebarEntries.flatMap(\.descendants).contains(where: { $0.destination == selection }) { select(.overview) }
+                    if !sidebarEntries.flatMap(\.descendants).contains(where: { $0.destination == selection }),
+                       pageWorkflowRuns[viewer.activeContextID ?? ""]?.running != true { select(.overview) }
                     lastUpdate = Date()
                     error = nil
                 } catch {
@@ -710,6 +787,9 @@ public final class AppStore {
 
     public func stop() async {
         started = false
+        for model in pageWorkflowRuns.values { await model.stop() }
+        pageWorkflowRuns.removeAll()
+        pageWorkflowTargets.removeAll()
         for model in workflowRuns.values { await model.stop() }
         workflowRuns.removeAll()
         terminals.values.forEach { $0.agentTurns.setStreamAvailable(false) }

@@ -96,6 +96,33 @@ private actor FileFixture: FileDocumentService {
     #expect(!model.dirty)
 }
 
+@MainActor @Test func workflowPagePromotionPreservesUnsavedEditorBuffer() async throws {
+    let viewer = ViewerStore()
+    let context = viewer.select(id: "tab:workflow", url: "session:fixture", title: "Workflow")
+    let model = try #require(context.openFile("/tmp/workflow-unsaved.swift"))
+    let surface = BufferFixture()
+    model.connect(service: FileFixture(), makeSurface: { surface })
+    model.show(appearance: .system); await model.waitForLoad()
+    surface.edit("Unsaved before preparation")
+    try viewer.promoteContext(from: "tab:workflow", to: "task:workflow")
+    #expect(viewer.active === context && context.activeDocument === model)
+    #expect(model.loaded && model.dirty && surface.content == "Unsaved before preparation")
+    #expect(!surface.disposed && !surface.frozen)
+    let existing = viewer.select(id: "task:existing", url: "session:existing", title: "Existing")
+    let existingModel = try #require(existing.openFile("/tmp/existing-unsaved.swift"))
+    let existingSurface = BufferFixture()
+    existingModel.connect(service: FileFixture(), makeSurface: { existingSurface })
+    existingModel.show(appearance: .system); await existingModel.waitForLoad()
+    existingSurface.edit("Existing session edits")
+    _ = viewer.select(id: "task:workflow", url: "session:fixture", title: "Workflow")
+    try viewer.promoteContext(from: "task:workflow", to: "task:existing")
+    #expect(viewer.active === existing && existing.activeDocument === model)
+    #expect(existing.documents.count == 2 && existingModel.dirty && model.dirty)
+    #expect(existingSurface.content == "Existing session edits" && surface.content == "Unsaved before preparation")
+    #expect(!existingSurface.disposed && !surface.disposed)
+    await viewer.stop(); model.dispose(); existingModel.dispose()
+}
+
 @MainActor @Test func nativeEditorCloseFreezesQueriesLatestBufferAndCancelKeepsEveryDocument() async throws {
     let service = FileFixture(), surface = BufferFixture()
     let model = EditorDocumentViewModel(record: .init(path: "/tmp/close.swift"), service: service, makeSurface: { surface })

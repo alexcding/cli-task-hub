@@ -38,8 +38,8 @@ public struct ContentView: View {
             .toolbar {
                 Button("New Project", systemImage: "folder.badge.plus") { store.creatingProject = true }
                     .disabled(store.connection != "Connected")
-                Button("New Session", systemImage: "plus") { store.creatingSession = true }
-                    .disabled(store.connection != "Connected" || store.projects.isEmpty)
+                Button("New Session", systemImage: "plus") { store.perform(.newSession) }
+                    .disabled(!store.canPerform(.newSession))
                 Button("Reviews & Usage", systemImage: "menubar.rectangle", action: showTray)
                 Button("Refresh", systemImage: "arrow.clockwise") { store.refresh() }
                     .disabled(store.connection != "Connected")

@@ -45,7 +45,7 @@ struct SessionOperations: Sendable {
     func references(_ project: Project) async throws -> GitReferences {
         try await api.get(APIClient.query(Routes.GIT_REFS, ["path": project.workspace]))
     }
-    func create(project: Project, draft: SessionDraft) async throws -> WorkspaceSession {
+    func create(project: Project, draft: SessionDraft, requireExactBranch: Bool = false) async throws -> WorkspaceSession {
         let branch = draft.branch.trimmingCharacters(in: .whitespacesAndNewlines)
         let sourceURL = draft.url.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !branch.isEmpty, !project.workspace.isEmpty else { throw BackendError.operation("Choose a project workspace and branch.") }
@@ -67,6 +67,14 @@ struct SessionOperations: Sendable {
                 WorktreeRequest(path: project.workspace, branch: branch, create: draft.createBranch, base: draft.base))
         }
         guard !worktree.path.isEmpty else { throw BackendError.operation("Git did not return a worktree.") }
+        if requireExactBranch {
+            let verified: ResolvedWorktree = try await api.get(APIClient.query(Routes.WORKTREE,
+                ["path": project.workspace, "branch": branch, "strict": "1"]))
+            guard verified.matched, verified.isWorktree, verified.branch == branch,
+                  SessionRemovalPlan.path(verified.path) == SessionRemovalPlan.path(worktree.path) else {
+                throw BackendError.operation("The checkout at \(worktree.path) does not match branch \(branch). It has been kept; resolve the branch or folder conflict before running this workflow.")
+            }
+        }
         let id = UUID().uuidString.lowercased()
         let session = WorkspaceSession(id: id, projectId: project.id, workspace: project.workspace, worktree: worktree.path,
             title: draft.title.isEmpty ? branch : draft.title, branch: branch,
@@ -81,7 +89,7 @@ struct SessionOperations: Sendable {
     struct ResolvedWorktree: Decodable, Sendable {
         let path: String; let branch: String; let matched: Bool; let isWorktree: Bool
     }
-    func resolvePage(_ raw: String, project: Project, draft: SessionDraft) async throws -> SessionDraft {
+    func resolvePage(_ raw: String, project: Project, draft: SessionDraft, workflow: Bool = false) async throws -> SessionDraft {
         guard let page = SessionPage.parse(raw) else { throw BackendError.operation("Enter a GitHub pull request or Jira issue URL, or type a branch name.") }
         var result = draft
         result.url = page.url; result.kind = page.kind; result.jiraKey = page.key
@@ -101,7 +109,7 @@ struct SessionOperations: Sendable {
             let response: Search? = try? await api.request(Routes.JIRA_SEARCH, method: "POST", body: Query(jql: "key = \(page.key)"))
             let summary = response?.items.first?.summary ?? ""
             result.title = summary.isEmpty ? page.key : "\(page.key) \(summary)"
-            result.branch = SessionPage.jiraBranch(key: page.key, summary: summary)
+            result.branch = workflow ? WorkflowText.branch(key: page.key, summary: summary) : SessionPage.jiraBranch(key: page.key, summary: summary)
             result.createBranch = true
         }
         let match = page.kind == "jira" ? ["key": page.key] : ["branch": result.branch]

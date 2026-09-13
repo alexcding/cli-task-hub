@@ -1218,6 +1218,34 @@ does not).
   startup/interaction acceptance, and the remaining M1–M6/final architecture gates
   are still open. Sprint Board remains web-based.
 
+### M4 workflow preparation from PR/Jira pages — 2026-09-12
+
+- Taskless PR/Jira pages expose native recipe controls for an unambiguous project
+  mapping. Hook validation precedes worktree/session creation. Repeated Run is
+  coalesced, and canonical page identities prevent parallel preparation through
+  alternate PR URLs. Existing matching sessions are reused.
+- The injected preparation service resolves the PR head or Jira summary/worktree.
+  New Jira workflow branches follow `feature/<key>-<summary>` from the repository's
+  default branch. Existing worktrees retain their branch and contents. Exact branch
+  and canonical path verification rejects unrelated checkouts sharing a folder.
+  Folder conflicts are reported without replacing their contents.
+- Handoff moves the live context objects into the session, merging open tabs when
+  it already has context. Pages, editor objects and unsaved buffers are retained;
+  the same runner continues under the session and supports subsequent runs. Local
+  context persistence moves to the session key while the prior snapshot stays as
+  page history. New session creation for that active page is disabled during a run.
+- Once checkout creation starts, Stop drains the durable record write, retains a
+  shell-only session and skips agent startup. It does not mint an unused agent
+  conversation ID. Preparation before that boundary remains cancellable.
+- Verification: nine focused Swift tests pass, including actual isolated Git
+  creation/reuse, PR branch checkout, branch-folder collision rejection, context
+  merging and dirty editor preservation. A separate cancellation regression proves
+  that Stop during checkout creation finishes the record write. The native UI test
+  verifies both existing-session and taskless Jira recipe controls, and proves that
+  missing hooks do not create a session.
+- Real Claude/Codex interaction acceptance, remaining M1–M6 acceptance/release work
+  and the final coordinator/view-model/DI pass remain open. Sprint Board stays web.
+
 ## Why now, and why native
 
 The Tauri shell works, but roughly half of `src-tauri/` exists to work around what a DOM

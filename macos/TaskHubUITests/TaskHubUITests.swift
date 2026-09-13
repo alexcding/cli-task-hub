@@ -418,6 +418,14 @@ final class TaskHubUITests: XCTestCase {
         ]])
         let (_, response) = try await URLSession.shared.data(for: request)
         XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
+        var pageRequest = URLRequest(url: try XCTUnwrap(URL(string: base + "/api/tabs")))
+        pageRequest.httpMethod = "POST"
+        pageRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        pageRequest.httpBody = try JSONSerialization.data(withJSONObject: [
+            "url": base + "/browse/REC-3", "kind": "jira", "title": "Workflow ticket"
+        ])
+        let (_, pageResponse) = try await URLSession.shared.data(for: pageRequest)
+        XCTAssertEqual((pageResponse as? HTTPURLResponse)?.statusCode, 200)
         let app = XCUIApplication()
         app.launchArguments = ["--backend-url", base, "--data-dir", path, "--pty-socket", socket]
         app.launch()
@@ -434,6 +442,18 @@ final class TaskHubUITests: XCTestCase {
         let attachment = XCTAttachment(screenshot: screenshot); attachment.lifetime = .keepAlways; add(attachment)
         app.buttons["Open CLI Settings"].click()
         XCTAssertTrue(app.buttons["hook-toggle-claude"].waitForExistence(timeout: 5))
+        let ticket = app.outlines["workspace-sidebar"].staticTexts["Workflow ticket"]
+        XCTAssertTrue(ticket.waitForExistence(timeout: 5)); ticket.click()
+        XCTAssertTrue(app.buttons["Create Session"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["Run Workflow"].waitForExistence(timeout: 5))
+        app.buttons["Run Workflow"].click()
+        XCTAssertTrue(app.staticTexts["Install Claude hooks in Settings → CLIs before running a workflow."].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["Create Session"].exists)
+        let pageScreenshot = XCTAttachment(screenshot: app.screenshot())
+        pageScreenshot.lifetime = .keepAlways; add(pageScreenshot)
+        let (sessionData, _) = try await URLSession.shared.data(from: try XCTUnwrap(URL(string: base + "/api/tasks")))
+        let sessions = try XCTUnwrap(JSONSerialization.jsonObject(with: sessionData) as? [[String: Any]])
+        XCTAssertFalse(sessions.contains { $0["url"] as? String == base + "/browse/REC-3" })
     }
 
     @MainActor
