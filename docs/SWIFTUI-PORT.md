@@ -1755,6 +1755,37 @@ does not).
 - Remaining project confirmation/action boundaries, settings/document factories,
   runtime extraction and terminal/release acceptance gates remain open.
 
+### Project deletion through the child coordinator — 2026-09-13
+
+- `ProjectEditorView` now emits a typed deletion request instead of owning an alert
+  or calling deletion. The request identifies its project and connection generation;
+  the editor rejects stale/recreated-model or reconnected-backend tokens before a
+  write. The child coordinator owns confirmation identity, cancellation and retry.
+  `ProjectCoordinatorView` renders the child content and confirmation sheet.
+- The root presentation gate includes child confirmations and in-flight deletion.
+  Competing creation/restart requests and external deeplinks wait. Cancelled,
+  duplicate or obsolete confirmations cannot act. Busy deletion prevents dismissal;
+  failure preserves the confirmation for retry. Leaving the screen ends the sheet,
+  while a write already started finishes against its original project. Unrelated
+  navigation is preserved after completion.
+- Removed/replaced child coordinators retire their editor and clear callbacks.
+  Current inventory and runtime ownership are checked before accepting an action.
+  Cancellation/completion/removal schedules queued deeplinks after the originating
+  callbacks. Application observation remains `@Observable`; there is no new view
+  `.onChange`/`.task(id:)` business work.
+- Twenty-five focused tests pass in
+  `swift_package_test_2026-09-13T16-34-29-151Z_pid49525_37901fc0.log`, including held
+  deletion failure/retry, cancelled/stale confirmations, connection changes,
+  removed/recreated models, released owners, unrelated navigation and queued links.
+  Native project creation, editing, cancellation and confirmed deletion pass in
+  `test_macos_2026-09-13T16-35-15-284Z_pid49887_dbba75da.log`.
+  Cold/warm links, preservation of creation/deletion sheets, disabled competing
+  creation and resumed navigation after cancellation pass in
+  `test_macos_2026-09-13T16-36-27-117Z_pid50359_4ea4010c.log`.
+- Remaining shared project PR/Jira/board actions, settings/document factories,
+  platform/runtime extraction and the terminal/release gates remain open. The
+  native project test still emits the existing WebKit QoS warning.
+
 ## Why now, and why native
 
 The Tauri shell works, but roughly half of `src-tauri/` exists to work around what a DOM

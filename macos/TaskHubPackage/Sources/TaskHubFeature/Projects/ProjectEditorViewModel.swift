@@ -2,7 +2,13 @@ import Foundation
 import Observation
 
 @MainActor @Observable final class ProjectEditorViewModel {
-    enum Action: Equatable { case saved(Project), deleted(String) }
+    struct DeletionRequest: Identifiable, Equatable, Sendable {
+        let id = UUID()
+        let projectID: String
+        let name: String
+        fileprivate let generation: UUID
+    }
+    enum Action: Equatable { case saved(Project), deleted(String), requestDeletion(DeletionRequest) }
     @ObservationIgnored var onAction: (Action) -> Void = { _ in }
     let id: String?
     var draft: ProjectDraft
@@ -13,7 +19,6 @@ import Observation
     private(set) var retired = false
     private var completedCreation = false
     private var generation = UUID()
-    var confirmingDelete = false
     private var service: (any ProjectService)?
     private let chooseFolder: () async -> String?
 
@@ -24,6 +29,23 @@ import Observation
     var dirty: Bool { draft != baseline }
     private var active: Bool { !retired && !completedCreation }
     var canSave: Bool { active && service != nil && !busy && draft.validationError == nil && (id == nil || dirty) }
+    var canDelete: Bool { active && id != nil && service != nil && !busy }
+    func makeDeletionRequest() -> DeletionRequest? {
+        guard canDelete, let id else { return nil }
+        return DeletionRequest(projectID: id, name: baseline.name, generation: generation)
+    }
+    func requestDeletion() {
+        if let request = makeDeletionRequest() { error = nil; onAction(.requestDeletion(request)) }
+    }
+    func canDelete(_ request: DeletionRequest) -> Bool {
+        canDelete && request.projectID == id && request.generation == generation
+    }
+    func deletionError(for request: DeletionRequest) -> String? {
+        guard active, request.projectID == id, request.generation == generation else {
+            return "The project or backend connection changed. Cancel and reopen deletion to review the current project."
+        }
+        return error
+    }
     func connect(_ service: (any ProjectService)?) {
         guard !retired else { return }
         if service == nil { generation = UUID() }
@@ -31,7 +53,7 @@ import Observation
     }
     func retire() {
         retired = true; service = nil; generation = UUID()
-        onAction = { _ in }; confirmingDelete = false
+        onAction = { _ in }
     }
     var ideChoices: [IDEChoice] {
         IDEChoice.all.contains(where: { $0.id == draft.ide }) ? IDEChoice.all : IDEChoice.all + [.init(id: draft.ide, title: draft.ide)]
@@ -80,11 +102,11 @@ import Observation
             onAction(.saved(project))
         } catch { if active && self.generation == generation { self.error = error.localizedDescription } }
     }
-    func delete(confirmed: Bool) async {
-        guard active, !Task.isCancelled, let id, !busy, confirmed, let service else { return }
+    func delete(_ request: DeletionRequest) async {
+        guard canDelete(request), !Task.isCancelled, let id, let service else { return }
         let generation = generation
         busy = true; error = nil
-        defer { busy = false; confirmingDelete = false }
+        defer { busy = false }
         do {
             try await service.delete(id)
             guard active, self.generation == generation else { return }

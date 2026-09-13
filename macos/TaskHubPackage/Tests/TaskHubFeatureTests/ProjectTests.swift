@@ -38,9 +38,14 @@ private actor ProjectFixture: ProjectService {
     let initial = await service.load("p")
     var saved: Project?
     var removed: String?
+    var deletion: ProjectEditorViewModel.DeletionRequest?
     let editor = ProjectEditorViewModel(project: initial, service: service, chooseFolder: { "/tmp/picked" })
     editor.onAction = { action in
-        switch action { case .saved(let value): saved = value; case .deleted(let id): removed = id }
+        switch action {
+        case .saved(let value): saved = value
+        case .deleted(let id): removed = id
+        case .requestDeletion(let request): deletion = request
+        }
     }
     await editor.pickFolder()
     await editor.detectRepository()
@@ -54,13 +59,14 @@ private actor ProjectFixture: ProjectService {
     await service.fail(false)
     await editor.save()
     #expect(saved?.name == "Unsaved name" && !editor.dirty && editor.saved)
-    await editor.delete(confirmed: false)
+    editor.requestDeletion()
     #expect(await service.deleted.isEmpty)
+    let request = try #require(deletion)
     await service.fail(true)
-    await editor.delete(confirmed: true)
+    await editor.delete(request)
     #expect(removed == nil && editor.error == "Delete unavailable")
     await service.fail(false)
-    await editor.delete(confirmed: true)
+    await editor.delete(request)
     #expect(removed == "p")
 }
 

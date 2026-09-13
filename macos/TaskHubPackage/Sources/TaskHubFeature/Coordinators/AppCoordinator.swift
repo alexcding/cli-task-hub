@@ -42,7 +42,9 @@ import Observation
         let perform: () -> Void
     }
     private(set) var restartConfirmation: RestartConfirmation?
-    var canPresent: Bool { sheet == nil && restartConfirmation == nil }
+    var canPresent: Bool {
+        sheet == nil && restartConfirmation == nil && !projectCoordinators.values.contains { $0.isPresenting }
+    }
     @ObservationIgnored private let factory: any CreationFlowFactory
     @ObservationIgnored private let workspaceFactory: any WorkspaceFeatureFactory
     private(set) var selection: SidebarDestination
@@ -70,6 +72,7 @@ import Observation
     }
 
     func navigate(to destination: SidebarDestination) {
+        if selection != destination { projectCoordinator?.endPresentation() }
         routingError = nil
         selection = destination
         selectionStore.save(destination)

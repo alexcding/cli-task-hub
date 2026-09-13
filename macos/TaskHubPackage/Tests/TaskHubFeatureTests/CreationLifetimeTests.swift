@@ -73,7 +73,8 @@ private actor LifetimeSessionService: SessionCreating {
     model.draft = ProjectDraft(lifetimeProject)
     coordinator.dismissSheet(id: sheet.id)
     model.connect(service) // Reconnection must not revive a dismissed editor.
-    await model.save(); await model.detectRepository(); await model.pickFolder(); await model.delete(confirmed: true)
+    await model.save(); await model.detectRepository(); await model.pickFolder(); model.requestDeletion()
+    #expect(model.makeDeletionRequest() == nil)
     #expect(model.retired && !model.canSave && saved == 0 && folderCalls == 0)
     #expect(await service.saves == 0)
     #expect(await service.detections == 0)
@@ -89,8 +90,9 @@ private actor LifetimeSessionService: SessionCreating {
     editor.draft.name = "First edit"; await editor.save()
     editor.draft.name = "Second edit"; await editor.save()
     #expect(await service.saves == 3) // Existing project editing remains reusable.
-    await editor.delete(confirmed: true)
-    editor.connect(service); await editor.delete(confirmed: true); await editor.save()
+    let deletion = try #require(editor.makeDeletionRequest())
+    await editor.delete(deletion)
+    editor.connect(service); await editor.delete(deletion); await editor.save()
     #expect(await service.deletes == 1)
     #expect(await service.saves == 3)
 }

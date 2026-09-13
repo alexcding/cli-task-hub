@@ -80,8 +80,10 @@ struct AppCoordinatorView: View {
                 Button("Open native terminal", systemImage: "terminal", action: model.openTerminal)
                     .buttonStyle(.borderedProminent)
             }
-        case .project(let project, let dashboard):
-            ProjectPageView(model: project, actions: dashboard, appearance: model.shell.appearance).id(project.project.id)
+        case .project(_, let dashboard):
+            if let child = coordinator.projectCoordinator {
+                ProjectCoordinatorView(coordinator: child, actions: dashboard, appearance: model.shell.appearance).id(child.model.project.id)
+            }
         case .session(let session):
                 VStack(alignment: .leading, spacing: 16) {
                     Text(session.title).font(.headline)

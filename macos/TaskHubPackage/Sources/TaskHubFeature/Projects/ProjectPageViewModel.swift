@@ -4,6 +4,7 @@ import Observation
 @MainActor @Observable final class ProjectPageViewModel {
     enum Action: Equatable {
         case selectSection(ProjectSection), saved(Project, ProjectSaveSource), deleted(String)
+        case requestDeletion(ProjectEditorViewModel.DeletionRequest)
     }
     @ObservationIgnored var onAction: (Action) -> Void = { _ in } {
         didSet {
@@ -13,6 +14,7 @@ import Observation
                 switch action {
                 case .saved(let project): onAction(.saved(project, .configuration))
                 case .deleted(let id): onAction(.deleted(id))
+                case .requestDeletion(let request): onAction(.requestDeletion(request))
                 }
             }
             workflows?.onAction = { [onAction] action in

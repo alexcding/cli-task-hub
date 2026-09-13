@@ -37,7 +37,7 @@ struct ProjectEditorView: View {
             }
             HStack {
                 if model.id != nil {
-                    Button("Delete Project…", role: .destructive) { model.confirmingDelete = true }.disabled(model.busy)
+                    Button("Delete Project…", role: .destructive, action: model.requestDeletion).disabled(!model.canDelete)
                     Spacer()
                     if model.saved && !model.dirty { Text("Saved").foregroundStyle(.secondary) }
                     Button("Revert", action: model.revert).disabled(!model.dirty || model.busy)
@@ -46,12 +46,6 @@ struct ProjectEditorView: View {
                 Button(model.id == nil ? "Create Project" : "Save Project") { Task { await model.save() } }
                     .buttonStyle(.borderedProminent).disabled(!model.canSave)
             }
-        }
-        .alert("Delete this project?", isPresented: $model.confirmingDelete) {
-            Button("Cancel", role: .cancel) {}
-            Button("Delete Project", role: .destructive) { Task { await model.delete(confirmed: true) } }
-        } message: {
-            Text("This removes the project configuration and PR/Jira links. Sessions remain under Sessions, and workspace folders and running terminals are kept.")
         }
     }
 }

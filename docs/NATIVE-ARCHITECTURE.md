@@ -383,6 +383,34 @@ Evidence is recorded in `SWIFTUI-PORT.md`; actual Xcode build/run/stop and termi
 fidelity/performance acceptance remain separate requirements. Existing terminal
 mount publication and WebKit QoS warnings remain open.
 
+## Implemented: project deletion confirmation in the child coordinator
+
+`ProjectEditorView` emits a typed deletion request. The request carries its project
+ID, displayed name and backend-connection generation. The editor validates that
+request before persistence; it rejects tokens from another model, a disconnected
+backend or a retired project. The view no longer stores confirmation state or
+calls deletion directly.
+
+`ProjectCoordinator` owns the identified confirmation and in-flight state.
+`ProjectCoordinatorView` renders the project's content and confirmation sheet.
+Cancellation and duplicate/stale confirmations cannot start a write. Busy deletion
+blocks dismissal; failure keeps the same sheet available for retry. Leaving the
+screen ends the presentation while an already started operation finishes against
+its original project. Completion preserves an unrelated selected screen.
+
+The root's presentation gate includes child confirmations and active deletions.
+Competing creation/restart flows and external deeplinks wait until the project
+presentation ends. Parent inventory and runtime ownership are checked before a
+child can act; removed or replaced coordinators retire their editor and clear
+callbacks. Queued links are retried after cancellation, completion or removal.
+No view state observers or legacy observation APIs are introduced.
+
+Twenty-five focused tests pass for cancellation, request replacement, held deletion
+failure/retry, stale connections, removed/recreated IDs, released runtime owners,
+unrelated navigation and deferred links. Native project create/edit/delete and
+warm deeplink deferral through deletion confirmation also pass. Evidence is
+recorded in `SWIFTUI-PORT.md`; broader migration acceptance remains open.
+
 ## Remaining extraction
 
 The architecture extraction remains in progress:
@@ -396,8 +424,7 @@ The architecture extraction remains in progress:
 - Expand factories to settings and document feature assembly;
   `AppStore` still constructs several concrete services and models. Complete
   child presentation ownership/model retirement and project PR/Jira/board action
-  forwarding as the remaining shared action services are extracted. Move project
-  deletion confirmation into its child coordinator.
+  forwarding as the remaining shared action services are extracted.
 - Separate application runtime/backend lifecycle from feature navigation without
   changing ownership, cancellation, detached-shell retention or update shutdown.
 - Audit every rendering view and web/AppKit adapter for remaining business rules.
