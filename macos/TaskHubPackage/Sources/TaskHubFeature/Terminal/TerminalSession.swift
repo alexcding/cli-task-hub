@@ -8,10 +8,10 @@ final class TerminalSession: Identifiable {
     let pairKey: String
     let cwd: String
     let paired: Bool
-    var showsSurface = true
+    var showsSurface = true { didSet { if oldValue != showsSurface { presentation?.visibilityChanged(showsSurface) } } }
     @ObservationIgnored private(set) var presentation: TerminalPaneViewModel!
     private(set) var surface = TerminalViewState()
-    private(set) var surfaceGeneration = UUID()
+    private(set) var surfaceGeneration = UUID() { didSet { presentation?.surfaceChanged() } }
     private(set) var status = "Connecting"
     private(set) var error: String?
     private(set) var shellPID: UInt32?

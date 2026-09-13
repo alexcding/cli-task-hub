@@ -44,7 +44,6 @@ struct BrowserPane: View {
             else { ContentUnavailableView("Page suspended", systemImage: "globe", description: Text("Select this tab to reload it.")) }
         }
         .onAppear(perform: model.synchronizeAddress)
-        .onChange(of: page.url) { _, _ in model.synchronizeAddress() }
         .onChange(of: editingAddress) { _, value in model.setEditingAddress(value) }
         .onDisappear { model.setEditingAddress(false) }
         .onChange(of: context.findVisible) { _, value in if value { finding = true } }
@@ -180,9 +179,5 @@ struct SessionWorkspaceView: View {
                 }
             }.frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .onAppear { model.setActive(active) }
-        .onDisappear { model.setActive(false) }
-        .onChange(of: model.reviewInputs) { _, _ in model.prepareChanges() }
-        .onChange(of: active) { _, value in model.setActive(value) }
     }
 }

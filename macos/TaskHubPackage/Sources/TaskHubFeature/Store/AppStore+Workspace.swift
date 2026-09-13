@@ -1,6 +1,10 @@
 import Foundation
 
 extension AppStore: WorkspaceCoordinating {
+    func updateWorkspaceReviewState() {
+        for context in viewer.contexts.values { context.workspaceViewModel?.reviewStateChanged() }
+    }
+
     func workspaceState(in context: WorkspaceContext) -> SessionWorkspaceState {
         guard viewer.contexts[context.id] === context else { return SessionWorkspaceState() }
         let session = sessions.first { "task:\($0.id)" == context.id }

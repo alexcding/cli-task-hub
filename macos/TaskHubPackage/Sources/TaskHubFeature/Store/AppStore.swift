@@ -16,11 +16,11 @@ public final class AppStore {
     private(set) var settings: SettingsViewModel!
     let workspaceLaunch = WorkspaceLaunchViewModel(launcher: NativeWorkspaceCommandLauncher())
     public private(set) var projects: [Project] = []
-    public private(set) var connection = "Connecting"
+    public private(set) var connection = "Connecting" { didSet { if oldValue != connection { updateWorkspaceReviewState() } } }
     public private(set) var error: String?
     public private(set) var lastUpdate: Date?
     public private(set) var backendAddress = ""
-    private(set) var sessions: [WorkspaceSession] = []
+    private(set) var sessions: [WorkspaceSession] = [] { didSet { if oldValue != sessions { updateWorkspaceReviewState() } } }
     private(set) var tabs: [SavedTab] = []
     var selection: SidebarDestination { coordinator.selection }
     private(set) var terminals: [String: TerminalSession] = [:]
@@ -72,6 +72,7 @@ public final class AppStore {
         }, copy: {
             NSPasteboard.general.clearContents(); NSPasteboard.general.setString($0, forType: .string)
         })
+        dashboard.snapshotChanged = { [weak self] in self?.updateWorkspaceReviewState() }
         settings = SettingsViewModel(clis: CLISettingsViewModel(copy: {
             NSPasteboard.general.clearContents(); NSPasteboard.general.setString($0, forType: .string)
         }, openBrowser: { desktop.openBrowser($0) }), diagnostics: DiagnosticsViewModel(),

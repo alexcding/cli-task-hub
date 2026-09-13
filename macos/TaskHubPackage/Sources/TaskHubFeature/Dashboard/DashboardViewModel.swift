@@ -2,7 +2,8 @@ import Foundation
 import Observation
 
 @MainActor @Observable final class DashboardViewModel {
-    private(set) var projects: [DashboardProject] = []
+    private(set) var projects: [DashboardProject] = [] { didSet { if oldValue != projects { snapshotChanged() } } }
+    @ObservationIgnored var snapshotChanged: () -> Void = {}
     private(set) var loading = false
     private(set) var updated: Date?
     private(set) var error: String?

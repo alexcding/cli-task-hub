@@ -27,7 +27,9 @@ import Observation
         }
     }
     var address: String
-    private(set) var editingAddress = false
+    private(set) var editingAddress = false {
+        didSet { if oldValue != editingAddress && !editingAddress { synchronizeAddress() } }
+    }
     private(set) var actionError: ActionError?
     // The page owns its controls. Controls must not keep a closed page alive.
     @ObservationIgnored private weak var page: (any BrowserControlling)?

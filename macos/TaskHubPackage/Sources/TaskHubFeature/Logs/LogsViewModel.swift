@@ -2,8 +2,8 @@ import Foundation
 import Observation
 
 @MainActor @Observable final class LogsViewModel {
-    var category = "event"
-    var errorsOnly = false
+    var category = "event" { didSet { if oldValue != category { refresh() } } }
+    var errorsOnly = false { didSet { if oldValue != errorsOnly { refresh() } } }
     var search = ""
     var confirmingClear = false
     private(set) var clearCategory: String?

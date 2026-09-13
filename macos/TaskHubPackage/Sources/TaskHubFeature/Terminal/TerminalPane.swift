@@ -43,9 +43,7 @@ struct TerminalPane: View {
         .background(.background)
         .onAppear { model.appear(active: active) }
         .onDisappear(perform: model.disappear)
-        .onChange(of: visible) { _, shown in model.visibilityChanged(shown) }
         .onChange(of: active) { _, value in model.setActive(value) }
-        .onChange(of: session.surfaceGeneration) { _, _ in model.surfaceChanged() }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didChangeOcclusionStateNotification), perform: model.windowOcclusionChanged)
         .onChange(of: font) { _, value in model.setFont(value) }
         .task { await model.start(font: font) }

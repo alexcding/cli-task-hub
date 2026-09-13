@@ -80,18 +80,25 @@ import WebKit
     }
     #expect(page.error == nil)
     #expect(page.title == "Native Browser Fixture")
+    let controls = page.controls
+    #expect(controls.address == page.url)
     page.find("quokka")
     for _ in 0..<100 {
         if page.found != nil { break }
         try await Task.sleep(for: .milliseconds(20))
     }
     #expect(page.found == true)
+    controls.setEditingAddress(true)
+    controls.address = "https://example.test/unsaved-draft"
     page.navigate(base.appendingPathComponent("fixture/next").absoluteString)
     for _ in 0..<200 {
         if page.title == "Next Fixture Page" && !page.loading { break }
         try await Task.sleep(for: .milliseconds(25))
     }
     #expect(page.canGoBack)
+    #expect(controls.address == "https://example.test/unsaved-draft")
+    controls.setEditingAddress(false)
+    #expect(controls.address == page.url)
     let cookie = try await page.webView?.evaluateJavaScript("document.cookie.includes('taskhub_native_fixture=retained')")
     #expect(cookie as? Bool == true)
     page.back()
@@ -100,6 +107,7 @@ import WebKit
         try await Task.sleep(for: .milliseconds(25))
     }
     #expect(page.canGoForward)
+    #expect(controls.address == page.url, "Back navigation updates the address without a mounted view observer")
     let second = try #require(context.open(base.appendingPathComponent("fixture/next").absoluteString))
     let third = try #require(context.open(base.appendingPathComponent("fixture/page").absoluteString + "?third=1"))
     #expect(viewer.livePageCount == 2 && page.webView == nil)

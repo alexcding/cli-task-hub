@@ -1619,6 +1619,35 @@ does not).
   rendering-view `.onChange` or `.task(id:)`. That extraction is next. Migration
   acceptance and remaining coordinator/DI work remain open; Sprint Board stays web-based.
 
+### Record-style model property observers — 2026-09-13
+
+- Read Record's Search, Settings, Download Settings and Sign In models. TaskHub's
+  Activity filters, project PR state and session project selection now react inside
+  guarded `didSet` observers. Replacement tasks cancel their predecessors and
+  retain generation checks. Unchanged selections do not reload or clear drafts.
+- Browser URL/blur synchronization and terminal visibility/surface-generation
+  reactions now originate in the owning models. The viewer store owns workspace
+  activity; pane, review section, backend and snapshot changes notify the workspace
+  model directly. Views no longer drive these effects through `.onChange`.
+  Existing emulator, context, document and shell identities are preserved.
+- No view `.task(id:)` remains. Initial/cancel lifecycle events and SwiftUI focus,
+  environment/font and surface-visibility forwarding remain at the rendering
+  boundary. TaskHub-owned models and coordinators still use only `@Observable`.
+- Twenty-two focused tests pass in
+  `swift_package_test_2026-09-13T15-29-56-072Z_pid28138_bf596716.log`, including
+  automatic loading without views, repeated-value guards, cancelled requests,
+  stale-response rejection, context promotion and real WebKit address changes.
+  Native shell/input/restart/Quit passes in
+  `test_macos_2026-09-13T15-30-26-279Z_pid28485_62a0605c.log`; Activity filters and
+  confirmed clearing pass in `test_macos_2026-09-13T15-31-56-026Z_pid29078_a0d973f7.log`;
+  browser navigation/session creation and removal pass in
+  `test_macos_2026-09-13T15-32-51-717Z_pid29405_4523a85c.log`.
+  History section changes, pagination and read-only patches pass in
+  `test_macos_2026-09-13T15-34-18-267Z_pid29945_de537626.log`.
+- The existing terminal mount publication warning and WebKit QoS warning remain
+  open. Full terminal/release acceptance and the remaining feature factories,
+  callbacks and runtime extraction continue. Sprint Board remains web-based.
+
 ## Why now, and why native
 
 The Tauri shell works, but roughly half of `src-tauri/` exists to work around what a DOM

@@ -9,7 +9,7 @@ import Observation
     let workflows: WorkflowEditorViewModel?
     let automation: AutomationViewModel?
     var section = ProjectSection.prs
-    var state = "open"
+    var state = "open" { didSet { if oldValue != state { requestRefresh() } } }
     var search = ""
     private(set) var prs: [DashboardPR] = []
     private(set) var loadedState: String?
@@ -17,15 +17,22 @@ import Observation
     private(set) var loading = false
     private var service: (any ProjectService)?
     private var generation = UUID()
+    @ObservationIgnored private var stateTask: Task<Void, Never>? { didSet { oldValue?.cancel() } }
     init(project: Project, service: any ProjectService, editor: ProjectEditorViewModel, board: WebBoardViewModel? = nil, tickets: JiraTicketsViewModel? = nil,
          workflows: WorkflowEditorViewModel? = nil, automation: AutomationViewModel? = nil) {
         self.project = project; self.service = service; self.editor = editor; self.board = board; self.tickets = tickets
         self.workflows = workflows; self.automation = automation
     }
     func connect(_ service: (any ProjectService)?) {
+        cancelRefresh()
         generation = UUID(); loading = false
         self.service = service; editor.connect(service)
     }
+    private func requestRefresh() {
+        loading = service != nil
+        stateTask = Task { [weak self] in await self?.refresh() }
+    }
+    func cancelRefresh() { stateTask = nil; generation = UUID(); loading = false }
     var rows: [DashboardRow] {
         guard loadedState == state else { return [] }
         var seen: Set<String> = []
@@ -43,7 +50,7 @@ import Observation
         if state == "open", let snapshot { prs = snapshot; loadedState = "open" }
     }
     func refresh() async {
-        guard let service else { return }
+        guard !Task.isCancelled, let service else { return }
         let generation = UUID(); self.generation = generation
         let requestedState = state
         loading = true; error = nil

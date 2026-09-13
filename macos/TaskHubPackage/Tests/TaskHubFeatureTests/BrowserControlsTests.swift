@@ -48,7 +48,6 @@ import Testing
     #expect(page.navigations == ["https://example.test/accepted"] && model.error == nil)
     #expect(model.address == "https://example.test/accepted")
     model.setEditingAddress(false)
-    model.synchronizeAddress()
     #expect(model.address == page.url)
     desktop.succeeds = false
     model.openExternally()

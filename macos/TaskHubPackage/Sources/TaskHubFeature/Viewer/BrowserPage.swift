@@ -10,7 +10,7 @@ struct WebPageRecord: Codable, Identifiable, Equatable, Sendable {
 
 @MainActor @Observable final class BrowserPage: NSObject, Identifiable, BrowserControlling, WKNavigationDelegate, WKUIDelegate {
     let id: String
-    private(set) var url: String
+    private(set) var url: String { didSet { if oldValue != url { controls.synchronizeAddress() } } }
     private(set) var title: String
     private(set) var loading = false
     private(set) var canGoBack = false

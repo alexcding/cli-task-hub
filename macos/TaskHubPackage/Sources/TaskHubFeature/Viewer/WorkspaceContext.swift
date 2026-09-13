@@ -74,8 +74,12 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
     private(set) var historyOrder: [String] = []
     private(set) var activeID: String?
     private(set) var history: [WebPageRecord] = []
-    private(set) var pane: WorkspacePane = .term
-    private(set) var reviewSection: ReviewSection = .changes
+    private(set) var pane: WorkspacePane = .term {
+        didSet { if oldValue != pane { workspaceViewModel?.reviewStateChanged() } }
+    }
+    private(set) var reviewSection: ReviewSection = .changes {
+        didSet { if oldValue != reviewSection { workspaceViewModel?.reviewStateChanged() } }
+    }
     var restoring = false
     var findVisible = false
     var findText = ""
@@ -264,7 +268,13 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
 
 @MainActor @Observable final class ViewerStore {
     private(set) var contexts: [String: WorkspaceContext] = [:]
-    private(set) var activeContextID: String?
+    private(set) var activeContextID: String? {
+        didSet {
+            guard oldValue != activeContextID else { return }
+            oldValue.flatMap { contexts[$0] }?.workspaceViewModel?.setActive(false)
+            active?.workspaceViewModel?.setActive(true)
+        }
+    }
     @ObservationIgnored var prepareContext: (WorkspaceContext) -> Void = { _ in }
     @ObservationIgnored private var api: APIClient?
     @ObservationIgnored private var saved: [String: ContextSnapshot] = [:]
@@ -403,6 +413,7 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
         contexts.removeValue(forKey: sourceID)
         let context: WorkspaceContext
         if let existing = contexts[destinationID] {
+            source.workspaceViewModel?.setActive(false)
             existing.absorb(source); context = existing
         } else {
             source.id = destinationID; contexts[destinationID] = source; context = source
@@ -414,6 +425,7 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
     }
     func remove(id: String) async {
         let context = contexts.removeValue(forKey: id)
+        context?.workspaceViewModel?.setActive(false)
         context?.changed = {}
         context?.pages.forEach { $0.evict() }
         context?.documents.forEach { $0.dispose() }

@@ -6,6 +6,8 @@ private actor ProjectFixture: ProjectService {
     var project = Project(id: "p", name: "Native", repo: "o/r", color: nil, workspace: "/tmp/repo")
     var fails = false
     var deleted: [String] = []
+    var requestedStates: [String] = []
+    var cancelledStates: [String] = []
     func fail(_ value: Bool) { fails = value }
     func load(_ id: String) -> Project { project }
     func save(_ draft: ProjectDraft, id: String?) throws -> Project {
@@ -21,7 +23,11 @@ private actor ProjectFixture: ProjectService {
     }
     func detectRepository(_ path: String) -> String { "detected/repo" }
     func pullRequests(_ id: String, state: String) async throws -> [DashboardPR] {
-        if state == "merged" { try await Task.sleep(for: .milliseconds(100)) }
+        requestedStates.append(state)
+        if state == "merged" {
+            do { try await Task.sleep(for: .milliseconds(100)) }
+            catch { cancelledStates.append(state); throw error }
+        }
         if fails { throw BackendError.operation("PRs unavailable") }
         return try JSONDecoder().decode([DashboardPR].self, from: Data("[{\"number\":1,\"title\":\"\(state) result\",\"url\":\"https://github.com/o/r/pull/1\",\"state\":\"\(state.uppercased())\",\"category\":\"other\"}]".utf8))
     }
@@ -56,24 +62,29 @@ private actor ProjectFixture: ProjectService {
     #expect(removed == "p")
 }
 
-@MainActor @Test func projectPRStateChangesRejectLateResponsesAndKeepOtherAuthors() async throws {
+@MainActor @Test(.timeLimit(.minutes(1))) func projectPRStateChangesRejectLateResponsesAndKeepOtherAuthors() async throws {
     let service = ProjectFixture()
     let project = await service.load("p")
     let editor = ProjectEditorViewModel(project: project, service: service, chooseFolder: { nil }, didSave: { _ in })
     let model = ProjectPageViewModel(project: project, service: service, editor: editor)
     model.state = "merged"
-    let slow = Task { await model.refresh() }
-    try await Task.sleep(for: .milliseconds(10))
+    while await service.requestedStates.isEmpty { try await Task.sleep(for: .milliseconds(5)) }
     model.state = "open"
-    await model.refresh()
-    await slow.value
+    while model.loading { try await Task.sleep(for: .milliseconds(5)) }
     #expect(model.rows.first?.title == "open result")
     #expect(model.rows.count == 1 && model.loadedState == "open")
+    #expect(await service.requestedStates == ["merged", "open"])
+    #expect(await service.cancelledStates == ["merged"])
+    model.state = "open"
+    await Task.yield()
+    #expect(await service.requestedStates == ["merged", "open"])
     await service.fail(true)
     await model.refresh()
     #expect(model.rows.count == 1 && model.error == "PRs unavailable")
     model.state = "merged"
     #expect(model.rows.isEmpty)
+    model.cancelRefresh()
+    #expect(!model.loading)
 }
 
 @Test func projectDraftValidatesPathsWithoutSerializingAutomationOrRunDestinations() throws {

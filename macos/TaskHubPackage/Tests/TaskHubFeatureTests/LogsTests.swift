@@ -6,9 +6,11 @@ private actor LogFixture: LogService {
     var fails = false
     var cleared: [String] = []
     var deleted = false
+    var reads: [(String, Bool)] = []
     func fail(_ value: Bool) { fails = value }
     func categories() -> [String] { ["event", "poller"] }
     func entries(category: String, errorsOnly: Bool) async throws -> [LogEntry] {
+        reads.append((category, errorsOnly))
         if category == "event" { try await Task.sleep(for: .milliseconds(80)) }
         if fails { throw BackendError.operation("Logs offline") }
         if deleted { return [] }
@@ -26,9 +28,17 @@ private actor LogFixture: LogService {
     model.connect(service)
     model.refresh()
     try await Task.sleep(for: .milliseconds(10))
-    model.category = "poller"; model.refresh()
+    model.category = "poller"
     while model.loading { try await Task.sleep(for: .milliseconds(10)) }
     #expect(model.rows.first?.category == "poller")
+    model.errorsOnly = true
+    while model.loading { try await Task.sleep(for: .milliseconds(5)) }
+    let last = await service.reads.last
+    #expect(last?.0 == "poller" && last?.1 == true)
+    let count = await service.reads.count
+    model.errorsOnly = true; model.category = "poller"
+    await Task.yield()
+    #expect(await service.reads.count == count)
     await service.fail(true)
     model.refresh()
     while model.loading { try await Task.sleep(for: .milliseconds(10)) }

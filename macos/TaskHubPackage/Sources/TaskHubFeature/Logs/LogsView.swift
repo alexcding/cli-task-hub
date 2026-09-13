@@ -44,8 +44,6 @@ struct LogsView: View {
             }
             Text("Latest 200 entries for the selected category and level.").font(.caption).foregroundStyle(.secondary)
         }.task { model.refresh() }
-            .onChange(of: model.category) { model.refresh() }
-            .onChange(of: model.errorsOnly) { model.refresh() }
             .alert("Clear \(model.clearScopeLabel)?", isPresented: $model.confirmingClear) {
                 Button("Cancel", role: .cancel) {}
                 Button("Clear Logs", role: .destructive) { Task { await model.clear(confirmed: true) } }

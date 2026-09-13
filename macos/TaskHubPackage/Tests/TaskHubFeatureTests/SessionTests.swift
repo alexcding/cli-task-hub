@@ -59,6 +59,29 @@ private final class SessionHTTPFixture: URLProtocol, @unchecked Sendable {
     #expect(jira.jiraKey == "RECORD-12" && jira.title == "RECORD-12 Native sidebar")
 }
 
+@MainActor @Test(.timeLimit(.minutes(1))) func sessionProjectChangesLoadReferencesWithoutViewObservers() async throws {
+    let configuration = URLSessionConfiguration.ephemeral
+    configuration.protocolClasses = [SessionHTTPFixture.self]
+    let api = try APIClient(baseURL: URL(string: "http://127.0.0.1:12345")!, session: URLSession(configuration: configuration))
+    let project = Project(id: "fixture", name: "Fixture", repo: "fixture/repo", color: nil, workspace: "/tmp/fixture")
+    let model = NewSessionViewModel(projects: [project], selectedProject: "", operations: SessionOperations(api: api), didCreate: { _ in })
+    model.draft.branch = "Keep my branch"
+    model.draft.base = "old-base"; model.draft.reuseWorktree = "/tmp/old-worktree"
+    model.projectID = project.id
+    #expect(model.loading && model.draft.base.isEmpty && model.draft.reuseWorktree == nil)
+    while model.loading { try await Task.sleep(for: .milliseconds(5)) }
+    #expect(model.branches == ["main"] && model.draft.base == "main" && model.draft.branch == "Keep my branch")
+    model.draft.base = "chosen-base"
+    model.projectID = project.id // Reassigning the same selection must not reset its draft.
+    await Task.yield()
+    #expect(model.draft.base == "chosen-base" && !model.loading)
+    model.projectID = "missing"
+    model.projectID = project.id
+    model.cancelReferenceLoading()
+    await Task.yield()
+    #expect(!model.loading && model.branches.isEmpty && model.draft.base.isEmpty)
+}
+
 @Test func agentCommandsResumeExactIDsAndQuoteShellMetacharacters() {
     #expect(SessionAgent.shell.command(sessionID: nil) == nil)
     #expect(SessionAgent.claude.command(sessionID: "saved") == "claude --resume 'saved'")

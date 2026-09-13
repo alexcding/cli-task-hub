@@ -40,11 +40,15 @@ enum WorkspaceOperation: Equatable {
         let section: ReviewSection?
         let connected: Bool
         let base: String?
+        let sessionID: String?
     }
     @ObservationIgnored private weak var context: WorkspaceContext?
     @ObservationIgnored private weak var service: (any WorkspaceServing)?
     @ObservationIgnored var onAction: (Action) -> Void = { _ in }
-    private(set) var active = false
+    @ObservationIgnored private var previousReviewInputs: ReviewInputs?
+    private(set) var active = false {
+        didSet { if oldValue != active { reviewStateChanged(force: true) } }
+    }
 
     init(context: WorkspaceContext, service: any WorkspaceServing) {
         self.context = context; self.service = service
@@ -89,10 +93,16 @@ enum WorkspaceOperation: Equatable {
     var canRestart: Bool { session != nil && state.canPresent && !state.changingSession }
     var canToggleContext: Bool { context?.activeID != nil }
     var reviewInputs: ReviewInputs {
-        .init(pane: context?.pane, section: context?.reviewSection, connected: state.connected, base: state.reviewBase)
+        .init(pane: context?.pane, section: context?.reviewSection, connected: state.connected, base: state.reviewBase, sessionID: state.session?.id)
     }
 
-    func setActive(_ value: Bool) { active = value; prepareChanges() }
+    func setActive(_ value: Bool) { active = value }
+    func reviewStateChanged(force: Bool = false) {
+        let inputs = reviewInputs
+        guard force || previousReviewInputs != inputs else { return }
+        previousReviewInputs = inputs
+        prepareChanges()
+    }
     func prepareChanges() { if active && showsChanges { perform(.prepareChanges) } }
     func reveal() { if session != nil { perform(.reveal) } }
     func openEditor() { if canOpenExternal && editorLabel != nil { perform(.openEditor) } }

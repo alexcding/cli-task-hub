@@ -60,6 +60,14 @@ action callbacks and deeplinks:
   `RecordDeepLinkResolver.swift` validate external destinations, bound resolution
   and deduplication, and suppress stale asynchronous resolutions. The OneLink and
   authentication details are specific to Record and are not TaskHub dependencies.
+- `Record/Scenes/Search/SearchViewModel.swift` guards `query.didSet`, starts
+  debounced work in the model and cancels a replaced task through `didSet`.
+  `Scenes/Profile/Settings/SettingsViewModel.swift` and its `DownloadSettings`
+  model persist selection/preferences in property observers; the latter also
+  updates its injected download scheduler there.
+- `Record/Scenes/Auth/SignInViewModel.swift` forwards a newly assigned action
+  callback to its child session controller through `action.didSet`, keeping the
+  coordinator callback chain synchronized without a view observer.
 
 TaskHub's root and workspace ViewModels emit typed action callbacks, bound to
 the coordinator before rendering. External links resolve through injected parsers
@@ -252,12 +260,42 @@ deferred navigation after cancellation, project tickets and missing targets. The
 test verifies warm delivery stays in the same process; selecting the session leaves
 its shell unopened. Broader terminal and release acceptance remain separate gates.
 
+## Implemented: state reactions in observable models
+
+Following Record's guarded property-observer pattern, Activity category/error
+filters refresh through `LogsViewModel.didSet`. Project PR state and new-session
+project selection own their replacement tasks, cancelling the previous task and
+rejecting obsolete responses. Changing a session's project immediately clears
+dependent base/worktree values while retaining the entered branch. Reassigning an
+unchanged value does not issue another request or reset the draft.
+
+`BrowserPage.url.didSet` synchronizes its controls without requiring a mounted view.
+Controls preserve an address being edited and synchronize on blur. Terminal
+visibility and surface-generation changes notify the retained presentation model
+directly; deferred drawing/focus policy and detached-shell ownership are preserved.
+
+The viewer store owns active workspace state. Context pane/review-section changes,
+backend connection/session changes and Dashboard snapshot changes notify workspace
+models, which deduplicate review inputs and prepare only active reviews. Views no
+longer watch these model values to trigger business work. Context promotion retains
+the model and its documents; removed/absorbed contexts lose activity.
+
+No rendering `.task(id:)` remains. Initial appearance/cancellation still forwards
+lifecycle events. Remaining `.onChange` handlers adapt SwiftUI focus, environment
+appearance/fonts and mounted surface visibility; those are UI events, not data
+request triggers. Application observation remains exclusively `@Observable`.
+
+Twenty-two focused tests pass, including automatic model loading, cancellation,
+repeated-value guards, stale responses, context promotion and real WebKit address
+synchronization. Native UI checks pass for actual shell input/navigation/restart,
+Activity filtering/confirmed clearing, browser/session creation and removal, and
+history section changes/pagination/read-only patches. The existing terminal mount
+publication warning and WebKit QoS warning remain open.
+
 ## Remaining extraction
 
 The architecture extraction remains in progress:
 
-- Move remaining state-change effects out of rendering views into the owning
-  ViewModels, following Record's `didSet` and task-cancellation pattern.
 - Extend the typed action-callback pattern to the remaining feature/completion
   flows and child coordinators as their runtime dependencies are extracted.
 - Complete the remaining terminal/UI-adapter audit, including the mount warning,

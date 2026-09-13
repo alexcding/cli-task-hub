@@ -41,6 +41,7 @@ struct NewSessionView: View {
             }
         }.padding(24).frame(width: 520)
         .interactiveDismissDisabled(model.creating)
-        .task(id: model.projectID) { await model.loadReferences() }
+        .task { await model.loadReferences() }
+        .onDisappear(perform: model.cancelReferenceLoading)
     }
 }

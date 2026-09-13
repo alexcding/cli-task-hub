@@ -121,6 +121,7 @@ struct ProjectPageView: View {
                     }
                 }
             }
-        }.task(id: model.state) { await model.refresh() }
+        }.task { await model.refresh() }
+        .onDisappear(perform: model.cancelRefresh)
     }
 }

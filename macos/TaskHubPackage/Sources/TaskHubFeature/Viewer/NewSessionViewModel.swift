@@ -3,7 +3,7 @@ import Observation
 
 @MainActor @Observable final class NewSessionViewModel {
     let projects: [Project]
-    var projectID: String
+    var projectID: String { didSet { if oldValue != projectID { requestReferences() } } }
     var draft = SessionDraft()
     private(set) var branches: [String] = []
     private(set) var loading = false
@@ -14,6 +14,7 @@ import Observation
     private let operations: SessionOperations?
     private let didCreate: (WorkspaceSession) -> Void
     private var generation = UUID()
+    @ObservationIgnored private var referenceTask: Task<Void, Never>? { didSet { oldValue?.cancel() } }
     init(projects: [Project], selectedProject: String, operations: SessionOperations?, didCreate: @escaping (WorkspaceSession) -> Void) {
         self.projects = projects; self.projectID = selectedProject; self.operations = operations; self.didCreate = didCreate
     }
@@ -22,9 +23,18 @@ import Observation
     var canCreate: Bool { !busy && project != nil && !draft.branch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     var canResolve: Bool { !busy && project != nil && (SessionPage.parse(draft.branch) != nil || SessionPage.parse(draft.url) != nil) }
     func editBranch(_ value: String) { draft.branch = value; draft.reuseWorktree = nil }
+    private func requestReferences() {
+        cancelReferenceLoading()
+        branches = []; draft.base = ""; draft.reuseWorktree = nil; error = nil
+        loading = project != nil && operations != nil
+        referenceTask = Task { [weak self] in await self?.loadReferences() }
+    }
+    func cancelReferenceLoading() { referenceTask = nil; generation = UUID(); loading = false }
     func loadReferences() async {
+        guard !Task.isCancelled else { return }
         let generation = UUID(); self.generation = generation
         branches = []; draft.base = ""; draft.reuseWorktree = nil; error = nil
+        loading = false
         guard let project, let operations else { return }
         loading = true
         defer { if self.generation == generation { loading = false } }
