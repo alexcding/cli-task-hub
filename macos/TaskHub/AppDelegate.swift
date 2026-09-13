@@ -91,7 +91,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPo
         case .checkForUpdates: updater?.checkForUpdates()
         case .closePage:
             if store.hasActivePage { store.perform(command) } else { window?.orderOut(nil) }
-        case .hide: window?.orderOut(nil)
+        case .hide:
+            store.cancelBrowserPresentation()
+            window?.orderOut(nil)
         case .tray: toggleTray()
         case .sidebar:
             showWindow()
@@ -136,9 +138,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPo
     }
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {
+        store.cancelBrowserPresentation()
         sender.orderOut(nil)
         return false
     }
+
+    func windowDidMiniaturize(_ notification: Notification) { store.cancelBrowserPresentation() }
+    func applicationDidHide(_ notification: Notification) { store.cancelBrowserPresentation() }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         showWindow()
@@ -150,6 +156,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPo
         case .now: return .terminateNow
         case .later: return .terminateLater
         case .hide:
+            store.cancelBrowserPresentation()
             window?.orderOut(nil)
             return .terminateCancel
         }

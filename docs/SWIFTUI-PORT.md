@@ -2277,6 +2277,42 @@ does not).
   submissions; it does not complete full-app/Tauri CPU/GPU/RSS comparison, physical
   key-to-display latency, hardware/agent fidelity or the full M1 acceptance gate.
 
+### Native browser prompt and file-panel lifetime — 2026-09-13
+
+- Added native JavaScript text prompts and file selection; moved existing alert
+  and confirmation presentation through an injected AppKit adapter, shared
+  coordinator and per-page `@Observable` model with typed action callbacks.
+- Guarded model property changes cancel requests on tab/workspace deactivation.
+  Navigation, eviction/removal, window hiding/minimizing and shutdown also drain
+  requests. Root drafts and browser sheets share presentation eligibility, and
+  pending deeplinks resume after browser presentation ends.
+- **21 focused tests pass**, covering single completion, empty versus cancelled
+  prompts, synchronous rejection, cross-page serialization, stale ownership,
+  factory rebinding, eviction, root draft preservation and model-driven activity.
+  A real AppKit integration test clicks the native prompt's OK button and checks
+  file-panel options/cancellation. It runs in XCTest before the concurrent Swift
+  Testing models so its global AppKit sheet cannot interfere with them. Log:
+  `swift_package_test_2026-09-13T22-10-29-964Z_pid58074_a22e6d25.log`.
+- Direct native interaction checks against isolated localhost fixtures verified
+  prompt default/changed/empty values and Cancel, confirmation OK/Cancel, alert
+  dismissal, file-panel cancellation, and a successful upload of the generated
+  `browser-upload-fixture.txt` (39 bytes). The page reported `Fixture upload received`.
+  These runs used private fixture directories `taskhub-browser-ui.NiXALm` and
+  `taskhub-browser-ui.ZS8EnR`; their manual apps and backends were stopped afterward.
+- **Automated UI acceptance remains open.** The new full workflow test initially
+  hit XCTest accessibility recursion at the sidebar. Querying the outline row
+  containing the session text resolved selection. Targeting keyboard input at the
+  address field fixed corrupted application-level typing and reached the prompt.
+  XCTest then stalled repeatedly while querying the prompt sheet; the isolated
+  app was stopped after capturing a sample whose main thread remained in the
+  AppKit event loop. Final failed run:
+  `test_macos_2026-09-13T22-00-17-497Z_pid55154_1ec3395b.log` (302.1 seconds).
+  The test is retained without a skip or weakened assertions. Manual checks and
+  AppKit/model tests do not establish a passing full XCUITest workflow.
+- This completes the dialog implementation, not M3 acceptance. Real browser
+  authentication/relaunch retention, build/run workflows and the broader M1–M6
+  gates remain required.
+
 ## Why now, and why native
 
 The Tauri shell works, but roughly half of `src-tauri/` exists to work around what a DOM

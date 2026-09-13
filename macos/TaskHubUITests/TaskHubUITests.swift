@@ -1025,6 +1025,70 @@ final class TaskHubUITests: XCTestCase {
     }
 
     @MainActor
+    func testNativeBrowserPromptsConfirmationsAndFileUpload() async throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard let base = environment["TASKHUB_UI_BACKEND_URL"], let path = environment["TASKHUB_UI_DATA_DIR"],
+              let socket = environment["TASKHUB_UI_PTY_SOCKET"] else {
+            throw XCTSkip("Run macos/scripts/test-browser-ui.sh for the isolated browser fixture.")
+        }
+        let app = XCUIApplication()
+        app.launchArguments = ["--backend-url", base, "--data-dir", path, "--pty-socket", socket]
+        app.launch()
+        let row = app.outlines["workspace-sidebar"].outlineRows.containing(.staticText, identifier: "sidebar-1").element(boundBy: 0)
+        XCTAssertTrue(row.waitForExistence(timeout: 10), app.debugDescription); row.click()
+        let address = app.textFields["Page address"]
+        XCTAssertTrue(address.waitForExistence(timeout: 10))
+        address.click(); address.typeKey("a", modifierFlags: .command); address.typeText(base + "/fixture/dialogs")
+        XCTAssertEqual(address.value as? String, base + "/fixture/dialogs", "Address input must finish before navigation")
+        address.typeKey(.return, modifierFlags: [])
+        XCTAssertTrue(app.webViews.staticTexts["Browser dialog fixture"].waitForExistence(timeout: 10))
+        let prompt = app.webViews.buttons["Prompt fixture"]
+        prompt.click()
+        let input = app.sheets.textFields["browser-dialog-input"]
+        XCTAssertTrue(input.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertEqual(input.value as? String, "Original value")
+        XCTAssertFalse(app.buttons["New Project"].isEnabled)
+        input.click(); app.typeKey("a", modifierFlags: .command); app.typeText("Changed value")
+        app.sheets.buttons["OK"].click()
+        XCTAssertTrue(app.webViews.staticTexts["Prompt: Changed value"].waitForExistence(timeout: 5))
+        prompt.click(); XCTAssertTrue(input.waitForExistence(timeout: 5))
+        app.sheets.buttons["Cancel"].click()
+        XCTAssertTrue(app.webViews.staticTexts["Prompt cancelled"].waitForExistence(timeout: 5))
+        prompt.click(); XCTAssertTrue(input.waitForExistence(timeout: 5))
+        input.click(); app.typeKey("a", modifierFlags: .command); app.typeKey(.delete, modifierFlags: [])
+        app.sheets.buttons["OK"].click()
+        XCTAssertTrue(app.webViews.staticTexts["Prompt: empty"].waitForExistence(timeout: 5))
+        let confirm = app.webViews.buttons["Confirm fixture"]
+        confirm.click(); XCTAssertTrue(app.sheets.buttons["Cancel"].waitForExistence(timeout: 5))
+        app.sheets.buttons["Cancel"].click()
+        XCTAssertTrue(app.webViews.staticTexts["Confirmation cancelled"].waitForExistence(timeout: 5))
+        confirm.click(); XCTAssertTrue(app.sheets.buttons["OK"].waitForExistence(timeout: 5))
+        app.sheets.buttons["OK"].click()
+        XCTAssertTrue(app.webViews.staticTexts["Confirmation accepted"].waitForExistence(timeout: 5))
+        app.webViews.buttons["Alert fixture"].click()
+        XCTAssertTrue(app.sheets.buttons["OK"].waitForExistence(timeout: 5))
+        app.sheets.buttons["OK"].click()
+        XCTAssertTrue(app.webViews.staticTexts["Alert dismissed"].waitForExistence(timeout: 5))
+        let upload = app.webViews.buttons["Upload fixture file"]
+        XCTAssertTrue(upload.waitForExistence(timeout: 5), app.debugDescription)
+        upload.click()
+        XCTAssertTrue(app.sheets.buttons["Open"].waitForExistence(timeout: 5), app.debugDescription)
+        app.typeKey("g", modifierFlags: [.command, .shift])
+        app.typeText(URL(fileURLWithPath: path).appendingPathComponent("browser-upload-fixture.txt").path)
+        app.typeKey(.return, modifierFlags: [])
+        let open = app.sheets.buttons["Open"]
+        XCTAssertTrue(open.waitForExistence(timeout: 5)); open.click()
+        XCTAssertTrue(app.webViews.staticTexts["Fixture upload received"].waitForExistence(timeout: 10), app.debugDescription)
+        upload.click(); XCTAssertTrue(app.sheets.buttons["Cancel"].waitForExistence(timeout: 5))
+        app.sheets.buttons["Cancel"].click()
+        let (data, _) = try await URLSession.shared.data(from: URL(string: base + "/fixture/browser-upload-count")!)
+        let result = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Int])
+        XCTAssertEqual(result["uploads"], 1)
+        XCTAssertFalse(app.sheets.firstMatch.exists)
+        XCTAssertTrue(app.buttons["New Project"].isEnabled)
+    }
+
+    @MainActor
     func testContextPageFindNavigationCloseAndNewSessionSheet() throws {
         let environment = ProcessInfo.processInfo.environment
         guard let base = environment["TASKHUB_UI_BACKEND_URL"],

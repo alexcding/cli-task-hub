@@ -111,6 +111,31 @@ app.get('/fixture/page', (_req, res) => {
   res.setHeader('Set-Cookie', 'taskhub_native_fixture=retained; Path=/; Max-Age=3600; SameSite=Lax');
   res.type('html').send('<!doctype html><title>Native Browser Fixture</title><h1>Native browser fixture</h1><p>Find the quokka.</p><a href="/fixture/next">Next page</a><a href="/fixture/next" target="_blank">Popup page</a>');
 });
+if (process.env.TASKHUB_BROWSER_FIXTURE === '1') {
+  const uploadText = 'TaskHub isolated browser upload fixture';
+  fs.writeFileSync(path.join(process.env.TASKHUB_DATA_DIR, 'browser-upload-fixture.txt'), uploadText);
+  let uploads = 0;
+  app.post('/fixture/browser-upload', require('express').text({ type: 'text/plain', limit: '16kb' }), (req, res) => {
+    if (req.body !== uploadText) return res.status(400).send('Unexpected fixture content');
+    uploads += 1; res.send('Fixture upload received');
+  });
+  app.get('/fixture/browser-upload-count', (_req, res) => res.json({ uploads }));
+  app.get('/fixture/dialogs', (_req, res) => res.type('html').send(`<!doctype html>
+    <title>Browser Dialog Fixture</title><h1>Browser dialog fixture</h1>
+    <button onclick="const value=prompt('Fixture prompt','Original value'); document.getElementById('prompt-result').textContent=value===null?'Prompt cancelled':'Prompt: '+(value||'empty');">Prompt fixture</button>
+    <p id="prompt-result">Prompt ready</p>
+    <button onclick="document.getElementById('confirm-result').textContent=confirm('Fixture confirmation')?'Confirmation accepted':'Confirmation cancelled';">Confirm fixture</button>
+    <p id="confirm-result">Confirmation ready</p>
+    <button onclick="alert('Fixture alert');document.getElementById('alert-result').textContent='Alert dismissed';">Alert fixture</button>
+    <p id="alert-result">Alert ready</p>
+    <label>Upload fixture file <input type="file" aria-label="Upload fixture file" onchange="upload(this)"></label>
+    <p id="upload-result">Upload ready</p>
+    <script>async function upload(input) {
+      if (!input.files[0]) return;
+      const response=await fetch('/fixture/browser-upload',{method:'POST',headers:{'Content-Type':'text/plain'},body:await input.files[0].text()});
+      document.getElementById('upload-result').textContent=await response.text();
+    }</script>`));
+}
 app.get('/fixture/next', (_req, res) => res.type('html').send('<!doctype html><title>Next Fixture Page</title><h1>Next page</h1><a href="/fixture/page">Back to fixture</a>'));
 app.get('/browse/:key', (_req, res) => res.type('html').send('<!doctype html><title>Native ticket fixture</title><h1>Native ticket fixture</h1>'));
 if (!db.getProjects().length) {

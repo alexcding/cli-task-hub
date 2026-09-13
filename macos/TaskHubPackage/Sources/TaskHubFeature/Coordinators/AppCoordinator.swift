@@ -43,7 +43,7 @@ import Observation
     }
     private(set) var restartConfirmation: RestartConfirmation?
     var canPresent: Bool {
-        sheet == nil && restartConfirmation == nil && !documentCloseCoordinator.isPresenting && logsCoordinator?.isPresenting != true && !projectCoordinators.values.contains { $0.isPresenting }
+        sheet == nil && restartConfirmation == nil && !browserDialogCoordinator.isPresenting && !documentCloseCoordinator.isPresenting && logsCoordinator?.isPresenting != true && !projectCoordinators.values.contains { $0.isPresenting }
     }
     @ObservationIgnored private let factory: any CreationFlowFactory
     @ObservationIgnored private let workspaceFactory: any WorkspaceFeatureFactory
@@ -63,6 +63,7 @@ import Observation
     var settingsCoordinator: SettingsCoordinator?
     var trayCoordinator: TrayCoordinator?
     var notificationCoordinator: NotificationCoordinator?
+    let browserDialogCoordinator: BrowserDialogCoordinator
     let documentCloseCoordinator: EditorCloseCoordinator
     @ObservationIgnored var pendingDeepLink: DeepLink?
     @ObservationIgnored var routingReady = false
@@ -73,14 +74,21 @@ import Observation
          router: any DeepLinkRouting = TaskHubRouter(),
          projectCoordinatorFactory: any ProjectCoordinatorFactory = NativeProjectCoordinatorFactory(),
          documentCloseCoordinator: EditorCloseCoordinator = EditorCloseCoordinator(),
+         browserDialogCoordinator: BrowserDialogCoordinator = BrowserDialogCoordinator(),
          canOpenExternalRoute: @escaping () -> Bool = { true }) {
         self.factory = factory; self.selectionStore = selectionStore
         self.workspaceFactory = workspaceFactory
         self.router = router; self.projectCoordinatorFactory = projectCoordinatorFactory
         self.canOpenExternalRoute = canOpenExternalRoute
         self.documentCloseCoordinator = documentCloseCoordinator
+        self.browserDialogCoordinator = browserDialogCoordinator
         selection = selectionStore.load() ?? .overview
         documentCloseCoordinator.presentationEnded = { [weak self] in self?.schedulePendingDeepLink() }
+        browserDialogCoordinator.canPresent = { [weak self] in
+            guard let self else { return false }
+            return canPresent && canOpenExternalRoute()
+        }
+        browserDialogCoordinator.presentationEnded = { [weak self] in self?.schedulePendingDeepLink() }
     }
 
     func navigate(to destination: SidebarDestination) {

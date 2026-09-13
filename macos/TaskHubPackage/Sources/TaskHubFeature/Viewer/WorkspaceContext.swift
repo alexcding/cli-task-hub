@@ -274,6 +274,10 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
     }
     private func wire(_ file: EditorDocumentViewModel) { file.changed = { [weak self] in self?.changed() } }
     private func wire(_ page: BrowserPage) {
+        page.isOwned = { [weak self, weak page] in
+            guard let self, let page else { return false }
+            return isOwned() && pages.contains { $0 === page }
+        }
         page.changed = { [weak self, weak page] in
             guard let self, let page else { return }
             noteHistory(page.record); changed()

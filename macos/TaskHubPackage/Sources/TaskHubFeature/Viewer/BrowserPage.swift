@@ -18,6 +18,8 @@ struct WebPageRecord: Codable, Identifiable, Equatable, Sendable {
     private(set) var error: String?
     private(set) var webView: WKWebView?
     private(set) var found: Bool?
+    let dialogs = BrowserDialogViewModel()
+    @ObservationIgnored var isOwned: () -> Bool = { false }
     @ObservationIgnored var changed: () -> Void = {}
     @ObservationIgnored var openPopup: ((URL, WKWebViewConfiguration) -> WKWebView?)?
     @ObservationIgnored private var observations: [NSKeyValueObservation] = []
@@ -53,6 +55,7 @@ struct WebPageRecord: Codable, Identifiable, Equatable, Sendable {
     }
 
     func evict() {
+        dialogs.cancel()
         update()
         observations.removeAll()
         webView?.stopLoading()
@@ -95,7 +98,10 @@ struct WebPageRecord: Codable, Identifiable, Equatable, Sendable {
         if record != previous { changed() }
     }
 
-    func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) { error = nil; update() }
+    func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+        guard self.webView === webView else { return }
+        dialogs.cancel(); error = nil; update()
+    }
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { error = nil; update() }
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { failed(error) }
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) { failed(error) }
@@ -104,6 +110,8 @@ struct WebPageRecord: Codable, Identifiable, Equatable, Sendable {
         update()
     }
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        guard self.webView === webView else { return }
+        dialogs.cancel()
         error = "This page stopped responding. Reload to recover it."
         loading = false
     }
@@ -125,18 +133,35 @@ struct WebPageRecord: Codable, Identifiable, Equatable, Sendable {
               safeWebURL(url.absoluteString) != nil || url.absoluteString == "about:blank" else { return nil }
         return openPopup?(url, configuration)
     }
+    private func requestDialog(_ kind: BrowserDialogViewModel.Kind, from webView: WKWebView, frame: WKFrameInfo,
+                               completion: @escaping (BrowserDialogViewModel.Response) -> Void) {
+        guard self.webView === webView, isOwned() else { completion(.cancel); return }
+        dialogs.begin(kind, origin: frame.request.url?.host ?? "Web page", completion: completion)
+    }
+
     func webView(_ webView: WKWebView, runJavaScriptAlertPanelWithMessage message: String,
                  initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping @MainActor () -> Void) {
-        guard let window = webView.window else { completionHandler(); return }
-        let alert = NSAlert(); alert.messageText = frame.request.url?.host ?? "Web page"; alert.informativeText = message
-        alert.addButton(withTitle: "OK")
-        alert.beginSheetModal(for: window) { _ in completionHandler() }
+        requestDialog(.alert(message), from: webView, frame: frame) { _ in completionHandler() }
     }
     func webView(_ webView: WKWebView, runJavaScriptConfirmPanelWithMessage message: String,
                  initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping @MainActor (Bool) -> Void) {
-        guard let window = webView.window else { completionHandler(false); return }
-        let alert = NSAlert(); alert.messageText = frame.request.url?.host ?? "Web page"; alert.informativeText = message
-        alert.addButton(withTitle: "OK"); alert.addButton(withTitle: "Cancel")
-        alert.beginSheetModal(for: window) { completionHandler($0 == .alertFirstButtonReturn) }
+        requestDialog(.confirm(message), from: webView, frame: frame) { result in
+            if case .confirm(let accepted) = result { completionHandler(accepted) } else { completionHandler(false) }
+        }
+    }
+    func webView(_ webView: WKWebView, runJavaScriptTextInputPanelWithPrompt prompt: String,
+                 defaultText: String?, initiatedByFrame frame: WKFrameInfo,
+                 completionHandler: @escaping @MainActor (String?) -> Void) {
+        requestDialog(.prompt(prompt, defaultText: defaultText ?? ""), from: webView, frame: frame) { result in
+            if case .text(let text) = result { completionHandler(text) } else { completionHandler(nil) }
+        }
+    }
+    func webView(_ webView: WKWebView, runOpenPanelWith parameters: WKOpenPanelParameters,
+                 initiatedByFrame frame: WKFrameInfo,
+                 completionHandler: @escaping @MainActor @Sendable ([URL]?) -> Void) {
+        requestDialog(.files(multiple: parameters.allowsMultipleSelection, directories: parameters.allowsDirectories),
+                      from: webView, frame: frame) { result in
+            if case .files(let urls) = result { completionHandler(urls) } else { completionHandler(nil) }
+        }
     }
 }

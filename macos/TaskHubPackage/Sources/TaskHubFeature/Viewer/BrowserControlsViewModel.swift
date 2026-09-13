@@ -88,6 +88,14 @@ import Observation
 
 @MainActor struct BrowserPageFactory {
     let desktop: any DesktopActions
-    init(desktop: any DesktopActions = NativeDesktopActions()) { self.desktop = desktop }
-    func make(_ record: WebPageRecord) -> BrowserPage { BrowserPage(record, desktop: desktop) }
+    let dialogs: BrowserDialogCoordinator
+    init(desktop: any DesktopActions = NativeDesktopActions(), dialogs: BrowserDialogCoordinator = BrowserDialogCoordinator()) {
+        self.desktop = desktop; self.dialogs = dialogs
+    }
+    func make(_ record: WebPageRecord) -> BrowserPage {
+        let page = BrowserPage(record, desktop: desktop)
+        dialogs.bind(page.dialogs, isOwned: { [weak page] in page?.isOwned() == true },
+                     window: { [weak page] in page?.webView?.window })
+        return page
+    }
 }

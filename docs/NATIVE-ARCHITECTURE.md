@@ -719,6 +719,28 @@ cannot clear newer task bookkeeping. Review announcement markers survive backend
 reconnects. Native delegate callbacks require the currently installed delivery;
 retired models and released runtime owners cannot dispatch new actions.
 
+## Implemented: native browser dialogs
+
+Each browser page owns an `@Observable` dialog model. Its typed present/cancel
+actions are bound by the injected page factory to one shared dialog coordinator.
+The AppKit presenter renders alerts, confirmations, text prompts and file selection;
+the model owns completion lifetime and distinguishes an empty prompt from Cancel.
+The request identifies the initiating frame's host in the native sheet.
+
+The coordinator reserves presentation across all retained pages and participates
+in the root's existing presentation gate. Pending deeplinks resume when the sheet
+ends. Requests require the current owned, active page and a visible window without
+another sheet. Workspace model property observers deactivate dialogs on tab/pane
+changes; eviction, navigation, page removal, hiding/minimizing and shutdown cancel
+pending requests. Late native callbacks cannot complete a replaced request, and
+completion clears ownership before returning to WebKit to allow reentrant page
+actions. Cancelled shutdown restores the previous dialog availability.
+
+The native adapter implements Apple's [text prompt delegate](https://developer.apple.com/documentation/webkit/wkuidelegate/webview(_:runjavascripttextinputpanelwithprompt:defaulttext:initiatedbyframe:completionhandler:))
+and [file selection delegate](https://developer.apple.com/documentation/webkit/wkuidelegate/webview(_:runopenpanelwith:initiatedbyframe:completionhandler:)).
+File selection forwards WebKit's multiple-selection and directory options; Cancel
+returns no URLs. No browser business reactions were added to view `.onChange`.
+
 ## Implemented: terminal appearance publication lifetime
 
 The terminal mount warning had two independent sources in the pinned wrapper.

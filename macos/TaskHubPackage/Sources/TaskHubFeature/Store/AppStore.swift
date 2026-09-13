@@ -59,6 +59,7 @@ public final class AppStore {
          settingsFactory: (any SettingsFeatureFactory)? = nil,
          documentFactory: any DocumentFeatureFactory = NativeDocumentFeatureFactory(),
          documentClosePresenter: any EditorClosePresenting = NativeEditorClosePresenter(),
+         browserDialogPresenter: any BrowserDialogPresenting = NativeBrowserDialogPresenter(),
          trayFactory: any TrayFeatureFactory = NativeTrayFeatureFactory(),
          notificationFactory: any NotificationFeatureFactory = NativeNotificationFeatureFactory(),
          selectionStore: any SidebarSelectionPersisting = UserDefaultsSidebarSelectionStore(),
@@ -74,13 +75,14 @@ public final class AppStore {
         self.copy = copy
         self.projectFactory = projectFactory ?? NativeProjectFeatureFactory(creation: creationFactory, desktop: desktop, copy: copy)
         let documentCloser = EditorCloseCoordinator(factory: documentFactory, presenter: documentClosePresenter)
+        let browserDialogs = BrowserDialogCoordinator(presenter: browserDialogPresenter)
         coordinator = AppCoordinator(factory: creationFactory, selectionStore: selectionStore, workspaceFactory: workspaceFactory, router: router,
-            documentCloseCoordinator: documentCloser,
+            documentCloseCoordinator: documentCloser, browserDialogCoordinator: browserDialogs,
             canOpenExternalRoute: {
                 NSApplication.shared.modalWindow == nil && !NSApplication.shared.windows.contains { $0.attachedSheet != nil }
             })
         viewer = ViewerStore(cacheURL: try? PtydConfiguration.current().directory.appendingPathComponent("page-tabs.json"),
-                             memoryPressure: NativeMemoryPressureMonitor(), pageFactory: BrowserPageFactory(desktop: desktop), documentFactory: documentFactory, closeCoordinator: documentCloser)
+                             memoryPressure: NativeMemoryPressureMonitor(), pageFactory: BrowserPageFactory(desktop: desktop, dialogs: browserDialogs), documentFactory: documentFactory, closeCoordinator: documentCloser)
         viewer.setPageLimit(shell.remotePageLimit)
         shell.remotePageLimitChanged = { [weak viewer] in viewer?.setPageLimit($0) }
         coordinator.appearance = shell.appearance
@@ -658,7 +660,13 @@ public final class AppStore {
         try await prepareToTerminate(stopShells: false)
     }
 
+    public func cancelBrowserPresentation() { coordinator.browserDialogCoordinator.cancel() }
+
     private func prepareToTerminate(stopShells: Bool) async throws {
+        let browserDialogs = coordinator.browserDialogCoordinator
+        let browserWasEnabled = browserDialogs.enabled
+        browserDialogs.enabled = false
+        defer { if started { browserDialogs.enabled = browserWasEnabled } }
         let actions = diffModels.values.compactMap(\.actions)
         for action in actions { await action.suspendAndWait() }
         defer { actions.forEach { $0.resume() } }
@@ -676,6 +684,7 @@ public final class AppStore {
 
     public func start() async {
         guard !started else { return }
+        coordinator.browserDialogCoordinator.enabled = true
         coordinator.setRoutingReady(false)
         started = true
         settings?.resources.connect(NativeResourceUsageService(api: nil, pty: try? PtydConfiguration.current()))
@@ -834,6 +843,7 @@ public final class AppStore {
     }
 
     public func stop() async {
+        coordinator.browserDialogCoordinator.enabled = false
         started = false
         coordinator.setRoutingReady(false)
         for model in pageWorkflowRuns.values { await model.stop() }
