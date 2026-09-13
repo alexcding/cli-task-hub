@@ -4,7 +4,7 @@ import Observation
 
 @MainActor @Observable
 public final class AppStore {
-    public let shell = ShellStore()
+    public let shell: ShellStore
     let viewer: ViewerStore
     let coordinator: AppCoordinator
     private(set) var root: RootViewModel!
@@ -60,11 +60,13 @@ public final class AppStore {
          documentFactory: any DocumentFeatureFactory = NativeDocumentFeatureFactory(),
          documentClosePresenter: any EditorClosePresenting = NativeEditorClosePresenter(),
          trayFactory: any TrayFeatureFactory = NativeTrayFeatureFactory(),
+         notificationFactory: any NotificationFeatureFactory = NativeNotificationFeatureFactory(),
          selectionStore: any SidebarSelectionPersisting = UserDefaultsSidebarSelectionStore(),
          router: any DeepLinkRouting = TaskHubRouter(),
          projectFactory: (any ProjectFeatureFactory)? = nil,
          copy: @escaping (String) -> Void = { NativeClipboard.copy($0) }) {
         self.creationFactory = creationFactory
+        self.shell = ShellStore(notifications: notificationFactory.notifications())
         self.desktop = desktop
         self.workspaceFactory = workspaceFactory
         self.documentFactory = documentFactory
@@ -104,6 +106,7 @@ public final class AppStore {
             if let model = context.workspaceViewModel { coordinator.bindWorkspace(model, context: context, runtime: self) }
         }
         root = coordinator.makeRoot(factory: rootFactory, runtime: self, shell: shell, viewer: viewer)
+        coordinator.installNotifications(shell.notifications, runtime: self, desktop: desktop)
     }
 
     var sidebarEntries: [SidebarEntry] {

@@ -3,10 +3,15 @@ import Foundation
 extension AppCoordinator {
     @discardableResult func handle(url: URL) -> Bool {
         guard let link = router.deepLink(for: url), link.destination != nil else { return false }
+        enqueue(link)
+        return true
+    }
+
+    func enqueue(_ link: DeepLink) {
+        guard link.destination != nil else { return }
         pendingDeepLink = link // Latest valid external intent wins while navigation is deferred.
         routingError = nil
         processPendingDeepLink()
-        return true
     }
 
     func setRoutingReady(_ ready: Bool) {

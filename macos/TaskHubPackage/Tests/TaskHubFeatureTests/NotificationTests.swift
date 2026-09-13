@@ -22,7 +22,7 @@ private func review(_ number: Int = 1, at marker: String? = "first", category: S
     #expect(tracker.consume([review(2)]).map(\.number) == [2])
 }
 
-@MainActor private final class RecordingNotifications: NotificationDelivery {
+@MainActor final class RecordingNotifications: NotificationDelivery {
     var status = NotificationAccess(permission: .authorized, soundAllowed: true)
     var notices: [NativeNotice] = []
     var sounds: [String] = []
@@ -55,6 +55,10 @@ private func review(_ number: Int = 1, at marker: String? = "first", category: S
     store.receiveReviews([review(at: "new")], sound: "system")
     await store.waitForDelivery()
     #expect(recorder.notices.count == 2 && recorder.sounds.count == 1)
+    recorder.status.permission = .notDetermined
+    store.refreshAuthorization()
+    await store.waitForDelivery()
+    store.onAction = { [weak store] action in if action == .enable { store?.requestAuthorization() } }
     store.enable()
     await store.waitForDelivery()
     #expect(recorder.requests == 1 && store.permission == .authorized)
@@ -99,9 +103,11 @@ private func activity(_ stamp: String, type: String = "pr_merged", url: String =
     await store.waitForDelivery()
     #expect(store.recent.count == 20 && recorder.notices.count == 1)
     var opened: NativeNotice?
-    store.onOpen = { opened = $0 }
-    store.open(recorder.notices[0])
-    #expect(opened?.url == "https://example.com/pr/1" && store.toast == nil)
+    store.onAction = { action in if case .openDelivered(let notice) = action { opened = notice } }
+    store.openDelivered(recorder.notices[0])
+    #expect(opened?.url == "https://example.com/pr/1")
+    // Emitting an action alone cannot dismiss a toast before navigation succeeds.
+    #expect(store.toast != nil)
     await store.stop()
 }
 

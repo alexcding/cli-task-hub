@@ -10,7 +10,7 @@ struct NotificationPreferencesView: View {
             Text(shell.notifications.permission.label).font(.caption).foregroundStyle(.secondary)
             if shell.notifications.permission == .notDetermined {
                 Button("Enable Notifications") { shell.notifications.enable() }
-                    .disabled(shell.notifications.requesting)
+                    .disabled(!shell.notifications.canEnable)
             } else if shell.notifications.permission == .denied {
                 Text("Allow TaskHub Native in System Settings → Notifications.").font(.caption)
             }
@@ -25,6 +25,7 @@ struct NotificationPreferencesView: View {
                 }
             }
             if let error = shell.notifications.error { Text(error).font(.caption).foregroundStyle(.orange) }
+            if let error = shell.notifications.actionError { Text(error).font(.caption).foregroundStyle(.orange) }
         }
     }
 }
@@ -58,12 +59,14 @@ struct ActivityToastView: View {
                     VStack(alignment: .leading, spacing: 3) {
                         Text(notice.title).fontWeight(.semibold)
                         if !notice.body.isEmpty { Text(notice.body).font(.callout).lineLimit(3) }
-                    }.frame(maxWidth: .infinity, alignment: .leading)
-                }.buttonStyle(.plain)
+                        if let error = notifications.actionError { Text(error).font(.caption).foregroundStyle(.orange) }
+                    }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
+                }.buttonStyle(.plain).accessibilityIdentifier("activity-toast-open")
                 Button("Dismiss activity", systemImage: "xmark", action: notifications.dismissToast)
                     .labelStyle(.iconOnly).buttonStyle(.plain)
             }
             .padding(12).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
+            .accessibilityElement(children: .contain)
             .accessibilityIdentifier("activity-toast")
         }
     }

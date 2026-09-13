@@ -687,6 +687,37 @@ state; opening Settings performs reads only, and no backend/UserDefaults prefere
 is used to register automatically. Real packaged registration/approval and login
 acceptance remain separate M6 checks.
 
+## Implemented: notification actions and delivery lifetime
+
+The injected notification factory assembles the shared `@Observable` model before
+the root installs its notification coordinator. Enable, sound preview and notice
+opens emit typed callbacks. Permission requests and previews require an owned,
+live coordinator and visible General Settings or tray, with no competing root or
+AppKit presentation. The AppKit host supplies window focus and window presentation;
+browser navigation and review acknowledgment are handled by the coordinator.
+
+In-app notice actions resolve the current toast/history entry by ID, so a stale
+view cannot open an evicted or changed row. OS notification clicks are a separate
+input and remain valid after bounded history eviction. URLs are validated again
+before opening. Only successful review opens acknowledge the review; failures
+retain the toast and expose an action error. Opening an older OS notice does not
+dismiss a newer toast. Activity-only opens use the same typed deferred route queue
+as deeplinks, preserving startup readiness and open drafts.
+
+The toast is an accessibility container with separate action/dismiss buttons. Its
+plain action button defines a rectangular hit area across the full label width,
+so clicking the empty portion of the row activates it too. These rendering details
+follow Apple's [container](https://developer.apple.com/documentation/swiftui/accessibilitychildbehavior/contain)
+and [hit-testing shape](https://developer.apple.com/documentation/swiftui/view/contentshape(_:eofill:)) APIs.
+
+The model owns foreground toast policy, permission-read coalescing, explicit
+authorization requests, delivery batches and sound eligibility. Delivery replacement
+and stop invalidate operation generations synchronously. Late reads, failures and
+sound continuations cannot update the new delivery state, and draining old work
+cannot clear newer task bookkeeping. Review announcement markers survive backend
+reconnects. Native delegate callbacks require the currently installed delivery;
+retired models and released runtime owners cannot dispatch new actions.
+
 ## Remaining extraction
 
 The architecture extraction remains in progress:
@@ -695,8 +726,8 @@ The architecture extraction remains in progress:
   flows and child coordinators as their runtime dependencies are extracted.
 - Complete the remaining terminal/UI-adapter audit, including the mount warning,
   while retaining native input and emulator ownership.
-- Finish tray navigation/window coordination and move any remaining platform
-  actions behind injected dependencies.
+- Move remaining shared shell appearance and platform actions behind injected
+  dependencies.
 - `AppStore` still constructs several concrete backend/platform services. Complete
   child presentation ownership/model retirement as the remaining shared action
   services are extracted.

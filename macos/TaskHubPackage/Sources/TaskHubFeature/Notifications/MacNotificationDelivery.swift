@@ -74,11 +74,8 @@ import UserNotifications
         willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
         let notice = Self.notice(notification)
         return await MainActor.run {
-            if notice.kind == .activity, let store, store.isMainWindowFocused() {
-                store.showToast(notice)
-                return []
-            }
-            return [.banner, .list]
+            guard let store, store.accepts(self) else { return [] }
+            return store.shouldPresentBanner(for: notice) ? [.banner, .list] : []
         }
     }
 
@@ -86,17 +83,9 @@ import UserNotifications
         didReceive response: UNNotificationResponse) async {
         guard response.actionIdentifier == UNNotificationDefaultActionIdentifier else { return }
         let notice = Self.notice(response.notification)
-        await MainActor.run { store?.open(notice) }
-    }
-}
-
-extension NotificationStore {
-    public func configureNativeDelivery(openURL: @escaping (URL, String?, Int?) -> Void,
-                                        openActivity: @escaping () -> Void) {
-        onOpen = { notice in
-            if let url = notice.url.flatMap(safeWebURL) { openURL(url, notice.repo, notice.number) }
-            else { openActivity() }
+        await MainActor.run {
+            guard let store, store.accepts(self) else { return }
+            store.openDelivered(notice)
         }
-        configure(MacNotificationDelivery(store: self))
     }
 }

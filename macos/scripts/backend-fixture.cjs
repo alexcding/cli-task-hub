@@ -50,6 +50,15 @@ if (process.env.TASKHUB_PROJECT_ACTION_FIXTURE === '1') {
 }
 const db = require('../../src/server/database/db');
 const sse = require('../../src/server/routes/sse');
+if (process.env.TASKHUB_NOTIFICATION_FIXTURE === '1') {
+  // XCTest's runner cannot write the fixture directory. Keep event injection
+  // confined to this test server; production routes are unchanged.
+  app.post('/fixture/activity-notification', (_req, res) => {
+    sse.publishActivity({ type: 'sync_failed', payload: { repo: 'fixture/taskhub', error: 'Sample notification acceptance check' },
+      created_at: new Date().toISOString() });
+    res.json({ ok: true });
+  });
+}
 // Project writes exercise real validation/storage without starting external syncs.
 const fixturePoller = require('../../src/server/services/poller');
 fixturePoller.syncProject = fixturePoller.syncProjectJira = fixturePoller.syncProjectBoard = async () => {};

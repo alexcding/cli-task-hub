@@ -46,14 +46,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPo
         self.window = window
         NotificationCenter.default.addObserver(self, selector: #selector(sheetDidEnd),
             name: NSWindow.didEndSheetNotification, object: nil)
-        store.shell.notifications.isMainWindowFocused = { [weak self] in self?.window?.isKeyWindow == true }
-        store.shell.notifications.configureNativeDelivery(openURL: { [weak self] url, repo, number in
-            guard NSWorkspace.shared.open(url) else { return }
-            if let repo, let number { self?.store.shell.acknowledgeReview(repo: repo, number: number) }
-        }, openActivity: { [weak self] in
-            self?.showWindow()
-            self?.store.perform(.activity)
-        })
+        store.configureNativeNotifications(isMainWindowFocused: { [weak self] in self?.window?.isKeyWindow == true },
+            showWindow: { [weak self] in self?.showWindow() })
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         item.button?.image = NSImage(systemSymbolName: "square.stack.3d.up", accessibilityDescription: "TaskHub Native")
         item.button?.image?.isTemplate = true

@@ -4,7 +4,7 @@ import Observation
 
 // Independent tasks keep a slow usage source out of the PR/sidebar refresh path.
 @MainActor @Observable public final class ShellStore {
-    public let notifications = NotificationStore()
+    public let notifications: NotificationStore
     private(set) var activityNotify: Bool
     private(set) var reviewSound: String
     private(set) var prs: [TrayPR] = []
@@ -47,7 +47,8 @@ import Observation
     @ObservationIgnored private var pendingSettings: [String: String]
     @ObservationIgnored private var pendingReviewOpens: [String: (repo: String, number: Int)] = [:]
 
-    public init(preferences: UserDefaults = .standard) {
+    public init(preferences: UserDefaults = .standard, notifications: NotificationStore? = nil) {
+        self.notifications = notifications ?? NotificationStore()
         self.preferences = preferences
         pendingSettings = preferences.dictionary(forKey: "native.pendingSettings") as? [String: String] ?? [:]
         appearance = AppAppearance(rawValue: preferences.string(forKey: "native.theme") ?? "auto") ?? .system

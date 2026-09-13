@@ -2182,6 +2182,43 @@ does not).
 - These checks use service fixtures and read-only debug UI. Actual packaged login
   registration, approval and logout/login remain M6 acceptance work.
 
+### Notification coordinator, delivery lifetime and native toast — 2026-09-13
+
+- The shared `@Observable` notification model is assembled through an injected
+  factory and bound to a root-owned coordinator. Enable, preview and open actions
+  use typed callbacks. Permission/preview actions require active General Settings
+  or tray and available presentation; retired, unowned and released-runtime
+  callbacks cannot act. AppDelegate supplies focus/window presentation only.
+- In-app clicks re-resolve current notice IDs; OS clicks remain usable after
+  bounded history eviction. Validated browser opens acknowledge reviews only on
+  success. Failures retain the toast and show an action error; opening an older
+  notice preserves a newer toast. Non-URL activity uses the existing typed deferred
+  route queue, including startup readiness and open-draft protection.
+- The model owns foreground presentation policy, coalesced permission reads,
+  explicit authorization and batch delivery. Generations reject late permission,
+  delivery-error and sound continuations. Stop invalidates synchronously and drains
+  captured tasks without clearing newer work. Announcement markers survive
+  reconnect; old native delegate instances cannot route through new delivery.
+- Forty-four focused notification, deeplink, Settings and tray tests passed in
+  `swift_package_test_2026-09-13T19-41-14-870Z_pid14177_05410a26.log`. Node fixture
+  and shell harness syntax checks pass.
+- Native toast click-to-Activity and dismiss-without-navigation pass in
+  `test_macos_2026-09-13T19-45-15-126Z_pid15896_f9e8389b.log`. The test exercises
+  synthetic SSE through a fixture-only HTTP route and does not request permission.
+  It exposed and verified a fix for the full-width plain button's empty-area hit
+  testing. The toast now also exposes an accessibility container and distinct
+  action/dismiss controls.
+- Earlier UI attempts revealed test assumptions about restored selection, runner
+  access to temporary files and combined accessible labels. The harness now selects
+  Overview explicitly, injects through its test server and queries the button label.
+  The failed click before the hit-area correction is recorded in
+  `test_macos_2026-09-13T19-43-51-822Z_pid15360_c0e6ea4b.log`.
+- Quiet startup, tray opening and read-only native Settings pass in
+  `test_macos_2026-09-13T19-46-04-526Z_pid16213_40ade75e.log`.
+- Real background OS banner/click and audible sound acceptance remain open, along
+  with the terminal and release gates. This phase adds no new permission prompts
+  on startup, snapshot refresh or foreground activity.
+
 ## Why now, and why native
 
 The Tauri shell works, but roughly half of `src-tauri/` exists to work around what a DOM

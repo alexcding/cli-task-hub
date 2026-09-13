@@ -523,6 +523,41 @@ final class TaskHubUITests: XCTestCase {
     }
 
     @MainActor
+    func testNativeActivityToastRoutesAndDismissesWithoutRequestingPermission() async throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard let base = environment["TASKHUB_UI_BACKEND_URL"], let path = environment["TASKHUB_UI_DATA_DIR"],
+              let socket = environment["TASKHUB_UI_PTY_SOCKET"] else {
+            throw XCTSkip("Run macos/scripts/test-browser-ui.sh with the isolated notification fixture.")
+        }
+        let app = XCUIApplication()
+        app.launchArguments = ["--backend-url", base, "--data-dir", path, "--pty-socket", socket]
+        app.launch()
+        XCTAssertTrue(app.outlines["workspace-sidebar"].waitForExistence(timeout: 10))
+        app.outlines["workspace-sidebar"].staticTexts["Overview"].click()
+        XCTAssertTrue(app.staticTexts["Pull requests"].waitForExistence(timeout: 10), app.debugDescription)
+        app.activate()
+        func emitActivity() async throws {
+            var request = URLRequest(url: URL(string: base + "/fixture/activity-notification")!)
+            request.httpMethod = "POST"
+            let (_, response) = try await URLSession.shared.data(for: request)
+            XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
+        }
+        try await emitActivity()
+        let toast = app.buttons["activity-toast-open"]
+        XCTAssertTrue(toast.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(toast.label.contains("Sample notification acceptance check"), toast.label)
+        toast.click()
+        XCTAssertFalse(toast.exists, app.debugDescription)
+        XCTAssertTrue(app.buttons["Clear Logs…"].waitForExistence(timeout: 5), app.debugDescription)
+        app.outlines["workspace-sidebar"].staticTexts["Overview"].click()
+        try await emitActivity()
+        XCTAssertTrue(toast.waitForExistence(timeout: 5), app.debugDescription)
+        app.buttons["Dismiss activity"].click()
+        XCTAssertFalse(toast.exists)
+        XCTAssertTrue(app.staticTexts["Pull requests"].exists)
+    }
+
+    @MainActor
     func testQuietStartupLoadsTrayAndOpensNativeWindow() throws {
         let environment = ProcessInfo.processInfo.environment
         guard let base = environment["TASKHUB_UI_BACKEND_URL"],
