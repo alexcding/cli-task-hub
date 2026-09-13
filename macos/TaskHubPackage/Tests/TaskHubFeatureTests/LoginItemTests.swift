@@ -4,7 +4,7 @@ import Foundation
 import Testing
 @testable import TaskHubFeature
 
-private actor LoginItemFixture: LoginItemService {
+actor LoginItemFixture: LoginItemService {
     var value = LoginItemState(status: .notRegistered, registrationUnavailableReason: nil)
     var nextStatus = LoginItemStatus.requiresApproval
     var failure: String?
@@ -39,8 +39,9 @@ private actor LoginItemFixture: LoginItemService {
 @MainActor @Test(.timeLimit(.minutes(1))) func loginItemReflectsApprovalFailureAndExternalChangesWithoutOptimisticState() async throws {
     let service = LoginItemFixture()
     let subject = LoginItemViewModel(service: service)
+    subject.onAction = { [weak subject] in subject?.perform($0) }
     #expect(subject.state == nil && !subject.canToggle)
-    subject.refresh()
+    subject.setActive(true)
     try await waitForLoginItem { !subject.loading }
     #expect(!subject.registered && subject.canToggle && subject.statusText == "Off")
     #expect(await service.writes.isEmpty)
@@ -62,6 +63,7 @@ private actor LoginItemFixture: LoginItemService {
     subject.setEnabled(false)
     await subject.stop() // Shutdown drains an authorized OS mutation.
     #expect(!subject.registered && !subject.changing)
+    subject.setActive(true); try await waitForLoginItem { !subject.loading }
     await service.fail("Approval was denied")
     subject.setEnabled(true)
     try await waitForLoginItem { !subject.changing }
@@ -81,7 +83,8 @@ private actor LoginItemFixture: LoginItemService {
     let service = LoginItemFixture()
     await service.configure(.notRegistered, unavailable: "Development build")
     let model = LoginItemViewModel(service: service)
-    model.refresh(); try await waitForLoginItem { !model.loading }
+    model.onAction = { [weak model] in model?.perform($0) }
+    model.setActive(true); try await waitForLoginItem { !model.loading }
     #expect(!model.canToggle)
     model.setEnabled(true)
     #expect(await service.writes.isEmpty)
@@ -95,7 +98,7 @@ private actor LoginItemFixture: LoginItemService {
     model.refresh()
     await model.stop()
     await service.configure(.notFound)
-    model.refresh(); try await waitForLoginItem { !model.loading }
+    model.setActive(true); try await waitForLoginItem { !model.loading }
     #expect(model.state?.status == .notFound && !model.canToggle)
     await service.configure(.unknown)
     model.refresh(); try await waitForLoginItem { !model.loading }

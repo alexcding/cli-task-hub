@@ -665,6 +665,28 @@ duplicate open inputs, and successful window/dismiss/Quit actions deactivate bef
 calling the host, rejecting repeated or hidden actions. Explicit Quit still passes
 through the existing termination coordinator and its document/PTY safeguards.
 
+## Implemented: login-item action and operation lifetime
+
+Login-item registration and System Settings buttons emit typed actions through the
+parent callback's `didSet` forwarding. The Settings coordinator requires its live
+runtime, current ownership, active General section and presentation availability
+before dispatching them to the injected OS service. An unwired or retired model
+cannot register, unregister or open System Settings.
+
+Guarded login-model activation owns status reads and cancels pending settings-window
+opens when hidden. Accepted root dialogs also cancel pending opens. The platform
+adapter checks cancellation on the main actor immediately before opening System
+Settings, and generation checks prevent an old open from clearing a newer task.
+
+Accepted registration changes coalesce and finish across navigation or shutdown.
+Settings replacement inherits the pending operation, keeps its toggle disabled,
+then reads its own OS service and preserves any failure message. It does not issue
+another registration request. Retired models reject new actions and do not apply
+late status/results to their former UI. macOS remains the authority for login-item
+state; opening Settings performs reads only, and no backend/UserDefaults preference
+is used to register automatically. Real packaged registration/approval and login
+acceptance remain separate M6 checks.
+
 ## Remaining extraction
 
 The architecture extraction remains in progress:

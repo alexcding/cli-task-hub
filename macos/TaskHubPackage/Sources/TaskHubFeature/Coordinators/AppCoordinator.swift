@@ -95,6 +95,7 @@ import Observation
     }
 
     private func cancelPageActions() {
+        settingsCoordinator?.cancelNavigation()
         projectCoordinator?.model.cancelActions(); dashboardCoordinator?.model.cancelActions()
         logsCoordinator?.model.cancelActions()
     }

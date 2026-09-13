@@ -33,8 +33,11 @@ import Observation
         model.onAction = { [weak self] in self?.handle($0) }
     }
     func handle(_ action: SettingsViewModel.Action) {
-        guard !retired, isOwned() else { return }
+        guard !retired, isOwned(), runtime != nil else { return }
         switch action {
+        case .loginItem(let action):
+            guard model.active, model.section == .general, canPresent() else { return }
+            model.loginItem.perform(action)
         case .cli(let action):
             guard model.active, model.section == .clis, canPresent() else { return }
             model.clis.perform(action)
@@ -50,10 +53,14 @@ import Observation
     }
     func setActive(_ value: Bool) {
         guard !retired, isOwned(), model.active != value else { return }
-        if value { runtime?.activateSettings() }
+        if value {
+            guard let runtime else { return }
+            runtime.activateSettings()
+        }
         model.setActive(value)
     }
     func waitForCompletion() async { await completion?.value }
+    func cancelNavigation() { model.loginItem.cancelSettingsOpen() }
     func retire() {
         retired = true; isOwned = { false }; canPresent = { false }; completion?.cancel(); completion = nil
         runtime = nil; model.retire()
@@ -64,6 +71,7 @@ import Observation
 extension AppCoordinator {
     @discardableResult func installSettings(_ model: SettingsViewModel, runtime: any SettingsCoordinating) -> SettingsCoordinator {
         if let existing = settingsCoordinator, existing.model === model { return existing }
+        model.loginItem.inheritRegistration(from: settingsCoordinator?.model.loginItem)
         settingsCoordinator?.retire()
         let child = SettingsCoordinator(model: model, runtime: runtime)
         child.isOwned = { [weak self, weak model] in

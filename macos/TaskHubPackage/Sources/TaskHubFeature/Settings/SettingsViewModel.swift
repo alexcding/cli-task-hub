@@ -2,9 +2,13 @@ import Foundation
 import Observation
 
 @MainActor @Observable final class SettingsViewModel {
-    enum Action: Equatable { case saved([String: String]), cli(CLISettingsViewModel.Action) }
+    enum Action: Equatable { case saved([String: String]), cli(CLISettingsViewModel.Action), loginItem(LoginItemViewModel.Action) }
     @ObservationIgnored var onAction: (Action) -> Void = { _ in } {
-        didSet { let callback = onAction; clis.onAction = { callback(.cli($0)) } }
+        didSet {
+            let callback = onAction
+            clis.onAction = { callback(.cli($0)) }
+            loginItem.onAction = { callback(.loginItem($0)) }
+        }
     }
     private(set) var retired = false
     var section = SettingsSection.general {
@@ -52,6 +56,7 @@ import Observation
         guard !retired else { return }
         diagnostics.setVisible(active && section == .diagnostics)
         resources.setVisible(active && section == .resources)
+        loginItem.setActive(active && section == .general)
         if active && section == .general { loginItem.refresh(); fonts.refresh() }
         else { _ = loginItem.cancelRead(); _ = fonts.cancelRead() }
         if active && section == .clis { clis.refresh() } else { clis.cancelReads() }
@@ -117,7 +122,7 @@ import Observation
         connection = UUID(); cancelRead(); service = nil
     }
     private func cancelRead() { readGeneration = UUID(); task?.cancel(); task = nil; loading = false }
-    func retire() { active = false; retired = true; onAction = { _ in }; clis.retire(); disconnect() }
+    func retire() { active = false; retired = true; onAction = { _ in }; clis.retire(); loginItem.retire(); disconnect() }
     func stop() async {
         let read = task; active = false; disconnect(); diagnostics.stop()
         resources.stop()

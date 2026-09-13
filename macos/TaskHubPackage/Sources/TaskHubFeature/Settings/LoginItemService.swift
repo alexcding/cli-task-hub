@@ -63,6 +63,9 @@ actor NativeLoginItemService: LoginItemService {
         }
     }
     func openSystemSettings() async {
-        await MainActor.run { SMAppService.openSystemSettingsLoginItems() }
+        await MainActor.run {
+            guard !Task.isCancelled else { return }
+            SMAppService.openSystemSettingsLoginItems()
+        }
     }
 }

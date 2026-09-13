@@ -2156,6 +2156,32 @@ does not).
 - Settings/platform child callbacks, shared notification actions and runtime
   extraction continue, along with the remaining M1–M6 acceptance gates.
 
+### Architecture — login-item callbacks and operation lifetime — 2026-09-13
+
+- Login-item controls emit typed actions through the Settings model's callback
+  forwarding. The coordinator requires current ownership, a live runtime, the
+  active General section and available presentation before dispatching an action.
+- Guarded model activation owns status reads and cancellation of pending System
+  Settings opens. Root dialogs cancel pending opens; generations prevent stale
+  completion from clearing a newer operation. The platform adapter checks
+  cancellation immediately before opening System Settings.
+- Accepted registration writes coalesce and drain across navigation and shutdown.
+  A replacement Settings model inherits the pending operation, disables its toggle,
+  then reads OS status and preserves any registration failure without a second
+  write. Retired and unwired models reject new actions.
+- Rechecked Record's Search and Profile Settings models: state-driven work belongs
+  in model property observers. The TaskHub Swift audit found only three remaining
+  view `.onChange` handlers, all adapting keyboard focus, and no `.task(id:)`.
+- Verification: 34 focused Swift tests passed in
+  `swift_package_test_2026-09-13T19-23-48-244Z_pid8437_54c8983e.log`.
+  Native quiet startup/read-only login status passed in
+  `test_macos_2026-09-13T19-22-33-156Z_pid7956_8e918b64.log`; Settings save/revert,
+  draft retention and menu navigation passed in
+  `test_macos_2026-09-13T19-24-47-118Z_pid8818_cd07ac1e.log`.
+  The latter emitted XCTest DisplayManager diagnostics but had no test failures.
+- These checks use service fixtures and read-only debug UI. Actual packaged login
+  registration, approval and logout/login remain M6 acceptance work.
+
 ## Why now, and why native
 
 The Tauri shell works, but roughly half of `src-tauri/` exists to work around what a DOM
