@@ -18,6 +18,7 @@ let package = Package(
         // Generated from the locked upstream revisions and maintained patches.
         // Prepare with macos/scripts/build-ghostty-native.py before resolving.
         .package(name: "GhosttyKit", path: "../.build/ghostty-native/package"),
+        .package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.9.6"),
     ],
     targets: [
         .executableTarget(name: "TaskHubTerminalStress", dependencies: ["TaskHubFeature"]),
@@ -25,7 +26,10 @@ let package = Package(
         // Targets can depend on other targets in this package and products from dependencies.
         .target(
             name: "TaskHubFeature",
-            dependencies: [.product(name: "GhosttyTerminal", package: "GhosttyKit")]
+            dependencies: [
+                .product(name: "GhosttyTerminal", package: "GhosttyKit"),
+                .product(name: "Sparkle", package: "Sparkle"),
+            ]
         ),
         .testTarget(
             name: "TaskHubFeatureTests",

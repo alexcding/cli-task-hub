@@ -419,8 +419,36 @@ root to check all packaged board/diff/editor assets using the bundled Node helpe
 
 Distribution is a direct Mac app without App Sandbox: TaskHub orchestrates local CLIs,
 worktrees, and detached PTYs. Developer ID signing, hardened-runtime entitlements,
-notarization, and Sparkle remain M6 work. The separate development bundle identifier
+notarization, and signed update installation acceptance remain M6 work. The separate development bundle identifier
 is `tv.accedo.taskhub.native`.
+
+### Native updates
+
+Sparkle **2.9.6** is pinned in the Swift package and embedded by Xcode, including
+its installer and XPC services. The bundle script includes its upstream license
+at `Contents/Resources/Licenses/Sparkle-LICENSE`. The native application menu has
+**Check for Updates…**, enabled only after a packaged Release app successfully
+starts its updater. Debug builds, unbundled builds, and builds without a valid
+HTTPS feed and 32-byte Ed25519 public key leave the updater inactive.
+
+Release configuration supplies `TASKHUB_UPDATE_FEED_URL` and
+`TASKHUB_UPDATE_PUBLIC_KEY`; `Config/App-Info.plist` maps these into `SUFeedURL` and
+`SUPublicEDKey` alongside Xcode's generated app metadata. In an xcconfig, escape the URL's double slash with an empty build
+setting (`https:/$()/updates.example.org/appcast.xml`) to avoid a comment. Supply
+the real release endpoint and public key; keep private update keys out of the app
+and repository. No feed or signing key has been provisioned by this migration.
+Sparkle retains its standard permission prompt and automatic-check preference.
+
+An update restart waits at AppKit's termination boundary for the existing
+Save/Discard/Cancel editor flow and outstanding workspace operations. Cancel
+keeps the app open and permits the installer to retry. On approval, TaskHub stops
+its workflow automation and owned Node backend, disconnects terminal surfaces,
+and leaves the detached PTY daemon and shells alive for reattachment. Explicit
+tray Quit still reaps those shells; Command-Q still hides the window. A daemon
+preserved across an upgrade keeps running its old executable until explicit Quit;
+future protocol changes must retain attachment compatibility or require a planned
+terminal shutdown. Real signed feed download/install/relaunch and upgrade/rollback
+acceptance remain release gates.
 
 ## Verify
 

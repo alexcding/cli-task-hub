@@ -828,11 +828,19 @@ final class TaskHubUITests: XCTestCase {
 
     @MainActor
     func testNativeMenusNavigateAndCommandQHidesWithoutQuitting() throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard let path = environment["TASKHUB_UI_DATA_DIR"], let socket = environment["TASKHUB_UI_PTY_SOCKET"] else {
+            throw XCTSkip("Run macos/scripts/test-browser-ui.sh to provide isolated storage.")
+        }
         let app = XCUIApplication()
-        app.launchArguments = ["--backend-url", "http://127.0.0.1:1"]
+        app.launchArguments = ["--backend-url", "http://127.0.0.1:1", "--data-dir", path, "--pty-socket", socket]
         app.launch()
         XCTAssertTrue(app.outlines["workspace-sidebar"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.menuBars.menuBarItems["Edit"].waitForExistence(timeout: 5), app.debugDescription)
+        app.menuBars.menuBarItems["TaskHub"].click()
+        XCTAssertTrue(app.menuItems["Check for Updates…"].waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertFalse(app.menuItems["Check for Updates…"].isEnabled)
+        app.typeKey(.escape, modifierFlags: [])
         app.typeKey("1", modifierFlags: .command)
         XCTAssertTrue(app.staticTexts["Pull requests"].waitForExistence(timeout: 5))
         app.typeKey("q", modifierFlags: .command)
@@ -840,7 +848,7 @@ final class TaskHubUITests: XCTestCase {
         app.activate()
         app.menuBars.menuBarItems["Go"].click()
         app.menuItems["Overview"].click()
-        XCTAssertTrue(app.outlines["workspace-sidebar"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.outlines["workspace-sidebar"].waitForExistence(timeout: 5), app.debugDescription)
         XCTAssertTrue(app.staticTexts["Pull requests"].exists)
     }
 }

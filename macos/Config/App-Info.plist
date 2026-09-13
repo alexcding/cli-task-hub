@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Empty values leave Sparkle inactive. Release builds supply the real feed
+         and public key through build settings; private keys never enter the app. -->
+    <key>SUFeedURL</key>
+    <string>$(TASKHUB_UPDATE_FEED_URL)</string>
+    <key>SUPublicEDKey</key>
+    <string>$(TASKHUB_UPDATE_PUBLIC_KEY)</string>
+</dict>
+</plist>

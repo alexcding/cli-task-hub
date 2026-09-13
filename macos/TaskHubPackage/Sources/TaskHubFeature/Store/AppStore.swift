@@ -623,6 +623,16 @@ public final class AppStore {
     }
 
     public func quit() async throws {
+        try await prepareToTerminate(stopShells: true)
+    }
+
+    /// An app update reconnects to the detached daemon on launch. Explicit tray
+    /// Quit remains the only normal lifecycle action that reaps its shells.
+    public func prepareForUpdate() async throws {
+        try await prepareToTerminate(stopShells: false)
+    }
+
+    private func prepareToTerminate(stopShells: Bool) async throws {
         let actions = diffModels.values.compactMap(\.actions)
         for action in actions { await action.suspendAndWait() }
         defer { actions.forEach { $0.resume() } }
@@ -630,8 +640,10 @@ public final class AppStore {
         for model in workflowRuns.values { await model.stop() }
         for model in pageWorkflowRuns.values { await model.stop() }
         for terminal in terminals.values { await terminal.stopConnecting() }
-        let host = PtydHost(configuration: try PtydConfiguration.current())
-        try await host.stopExisting()
+        if stopShells {
+            let host = PtydHost(configuration: try PtydConfiguration.current())
+            try await host.stopExisting()
+        }
         for terminal in terminals.values { terminal.disconnect() }
         await stop()
     }

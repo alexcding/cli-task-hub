@@ -1359,6 +1359,34 @@ does not).
   clean-Mac upgrades/rollback, terminal release acceptance and the final architecture
   pass remain open.
 
+### M6 native updater integration — 2026-09-13
+
+- Pinned Sparkle 2.9.6 (`ac2def288cbff5cfc7df3ffef6abdf45b72bcb0a`) through SwiftPM.
+  Xcode embeds its framework, installer and XPC services; native bundling includes
+  the upstream license. The menu exposes Check for Updates. Debug, unbundled and
+  unconfigured Release apps never start the updater. A packaged Release requires
+  an HTTPS appcast and a valid-length Ed25519 public key supplied at build time.
+  Custom keys use an explicit Info.plist merged with generated app metadata;
+  arbitrary `INFOPLIST_KEY_*` settings were experimentally omitted by Xcode.
+  A build-only feed/key fixture verifies both final plist values, then the normal
+  unconfigured Release bundle is rebuilt. The fixture app is never launched.
+- An injected termination coordinator serializes tray Quit and update restarts.
+  Sparkle's restart callback arms AppKit's asynchronous termination gate; existing
+  document confirmation may cancel and later retry without double cleanup. Approved
+  update restarts stop workflow automation and the owned backend, then disconnect
+  terminal clients while preserving the detached daemon/shells. Explicit tray Quit
+  still reaps the daemon; Command-Q still hides the window.
+- Three focused configuration/cancellation/retry/failure tests pass. The arm64
+  Release app builds, bundles, and passes deep/strict ad-hoc signature verification.
+  The native menu UI test verifies disabled development updates and Command-Q
+  hide/reopen. Its first run failed at window reappearance; a diagnostic rerun
+  passed without app changes, so that UI interaction remains potentially flaky.
+- These checks do not exercise a real signed update. Feed/key provisioning,
+  Developer ID signing/notarization, clean-Mac install/relaunch, retained-terminal
+  compatibility across versions and rollback/data restoration remain release gates.
+  The other migration gates and final elevate-ios coordinator/VM/DI pass remain
+  open. Sprint Board stays web-based.
+
 ## Why now, and why native
 
 The Tauri shell works, but roughly half of `src-tauri/` exists to work around what a DOM

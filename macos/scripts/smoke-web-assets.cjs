@@ -39,6 +39,11 @@ async function main() {
       assert.equal((await fetch(`${origin}/${legacy}`)).status, 404, `${legacy} must not be in the native bundle`);
     }
     assert.ok(fs.statSync(path.join(app, 'Contents/Resources/Licenses/Node-LICENSE')).size > 0, 'Node license must be bundled');
+    assert.ok(fs.statSync(path.join(app, 'Contents/Resources/Licenses/Sparkle-LICENSE')).size > 0, 'Sparkle license must be bundled');
+    for (const component of ['Sparkle', 'Autoupdate', 'Updater.app/Contents/MacOS/Updater',
+      'XPCServices/Installer.xpc/Contents/MacOS/Installer', 'XPCServices/Downloader.xpc/Contents/MacOS/Downloader']) {
+      fs.accessSync(path.join(app, 'Contents/Frameworks/Sparkle.framework/Versions/Current', component), fs.constants.X_OK);
+    }
     assert.equal(fs.existsSync(path.join(app, 'Contents/Resources/backend/node_modules/@tauri-apps')), false, 'Tauri tooling must not be packaged');
     console.log(`Packaged backend served ${servedAssets.length} focused web assets; full SPA absent.`);
   } finally {

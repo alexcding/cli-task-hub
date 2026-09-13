@@ -29,6 +29,7 @@
 		8BD71C1E2DEE424400CEDD92 /* Exceptions for "Config" folder in "TaskHub" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
+				"App-Info.plist",
 				Debug.xcconfig,
 				Release.xcconfig,
 				Shared.xcconfig,

@@ -9,8 +9,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var window: NSWindow?
     private var statusItem: NSStatusItem?
     private let popover = NSPopover()
-    private var quitting = false
-    private var terminationApproved = false
+    private var updater: AppUpdater?
+    private lazy var termination = AppTerminationCoordinator(prepare: { [weak self] reason in
+        guard let self else { throw CancellationError() }
+        switch reason {
+        case .quit: try await self.store.quit()
+        case .update: try await self.store.prepareForUpdate()
+        }
+    }, finished: { reason, approved in
+        if reason == .update { NSApp.reply(toApplicationShouldTerminate: approved) }
+        else if approved { NSApp.terminate(nil) }
+    }, failed: { [weak self] error in
+        self?.showTerminationError(error)
+    })
     private var menus: NativeMenus?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -53,8 +64,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             dismiss: { [weak self] in self?.popover.performClose(nil) },
             quit: { [weak self] in self?.quitFromTray() }))
         observeStatus()
+        updater = AppUpdater()
         menus = NativeMenus(perform: { [weak self] command in self?.perform(command) },
-                            enabled: { [weak self] command in self?.store.canPerform(command) == true })
+                            enabled: { [weak self] command in
+            guard let self else { return false }
+            if command == .checkForUpdates { return self.termination.pending == nil && self.updater?.canCheckForUpdates == true }
+            return self.store.canPerform(command)
+        })
         menus?.install()
         Task { await store.start() }
         if !quiet { showWindow() }
@@ -62,6 +78,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     private func perform(_ command: ShellCommand) {
         switch command {
+        case .checkForUpdates: updater?.checkForUpdates()
         case .closePage:
             if store.hasActivePage { store.perform(command) } else { window?.orderOut(nil) }
         case .hide: window?.orderOut(nil)
@@ -117,30 +134,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        if terminationApproved { return .terminateNow }
-        window?.orderOut(nil)
-        return .terminateCancel
+        switch termination.systemTermination(updateRequested: updater?.restartRequested == true) {
+        case .now: return .terminateNow
+        case .later: return .terminateLater
+        case .hide:
+            window?.orderOut(nil)
+            return .terminateCancel
+        }
     }
 
     @objc private func quitFromTray() {
-        guard !quitting else { return }
-        quitting = true
         popover.performClose(nil)
+        termination.quit()
+    }
+
+    private func showTerminationError(_ error: Error) {
+        showWindow()
+        if error is CancellationError { return }
         Task {
-            do {
-                try await store.quit()
-                terminationApproved = true
-                NSApp.terminate(nil)
-            } catch {
-                quitting = false
-                showWindow()
-                let alert = NSAlert()
-                if error is CancellationError { return }
-                alert.messageText = "TaskHub could not quit"
-                alert.informativeText = error.localizedDescription
-                alert.addButton(withTitle: "OK")
-                if let window { _ = await alert.beginSheetModal(for: window) }
-            }
+            let alert = NSAlert()
+            alert.messageText = "TaskHub could not quit"
+            alert.informativeText = error.localizedDescription
+            alert.addButton(withTitle: "OK")
+            if let window { _ = await alert.beginSheetModal(for: window) }
         }
     }
 }
