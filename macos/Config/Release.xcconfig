@@ -5,5 +5,5 @@
 #include "Shared.xcconfig"
 INFOPLIST_FILE = Config/App-Info.plist
 
-// No additional release-specific overrides needed
-// All release settings use Xcode project defaults
+// Direct distribution. Developer ID identity is supplied at packaging time.
+ENABLE_HARDENED_RUNTIME = YES

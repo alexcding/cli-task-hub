@@ -51,18 +51,29 @@ placements, animation frames/state and unfinished image/frame transfers. Both
 runtimes enable the same PNG decoder and share image/transfer limits. Snapshot
 imports rebase cache generations and restore pins against completed history,
 without replaying image commands or host effects. Headless and native libraries
-compile; no UI/unit tests were added or run. UI/config-dependent offline reply
-ownership remains the next implementation phase.
+compile; no UI/unit tests were added or run. Graphics and glyph replies now come from the daemon under the negotiated
+`daemon-geometry-graphics-v2` owner, including without a native viewer; views apply
+state while suppressing duplicate replies. Font/theme reloads retain the daemon's
+image policy. UI/config-dependent offline reply ownership remains implementation
+work.
+
+A self-contained arm64 Release review package has been produced at
+`macos/.build/review-20260913-v3/`: app, ZIP, DMG and checksum manifest. It includes
+Node, the Rust PTY helper, production backend dependencies, focused web assets and
+runtime licenses. This is a local ad-hoc package; no Apple submission or update
+feed publication occurred. The app has not been launched or UI-tested in this
+phase. The Release build succeeded with the terminal graphics policy fix.
 
 The current implementation queue is:
 
 1. Complete ownership of UI/config-dependent terminal replies while detached,
    without replaying clipboard or other host side effects on reattachment.
-2. Produce the self-contained native app for user review. Native dashboard and
-   Cocoa sidebar stay native; Sprint Board/diff/editor keep their focused web hosts.
-3. Finish direct-distribution configuration where credentials permit. Developer ID,
-   notarization credentials and the user's signed update feed require external
-   configuration; do not invent credentials or publish an unsigned update as signed.
+2. Refresh the self-contained review package after the remaining terminal work.
+   Native dashboard/Cocoa sidebar and focused Sprint Board/diff/editor hosts are implemented.
+3. Direct-distribution packaging is implemented in `package-direct.py`: staged app,
+   ZIP/DMG, nested signing, Node JIT entitlements and notarization/stapling. Actual
+   Developer ID/notarization and the user's signed update feed require external
+   credentials/configuration; no unsigned feed is published as signed.
 
 The coordinator/view-model/factory implementation pass is implemented. Historical
 acceptance checklists below do not add UI/unit testing back to this queue.

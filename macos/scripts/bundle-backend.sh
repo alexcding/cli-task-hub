@@ -40,6 +40,9 @@ cp "$NODE_SIDECAR" "$APP/Contents/Helpers/taskhub-node"
 mkdir -p "$APP/Contents/Resources/Licenses"
 cp "$NODE_LICENSE" "$APP/Contents/Resources/Licenses/Node-LICENSE"
 cp "$ROOT/macos/licenses/Sparkle-LICENSE" "$APP/Contents/Resources/Licenses/Sparkle-LICENSE"
+cp "$ROOT/macos/.build/ghostty-native/source/LICENSE" "$APP/Contents/Resources/Licenses/Ghostty-LICENSE"
+cp "$ROOT/macos/.build/ghostty-native/package/LICENSE" "$APP/Contents/Resources/Licenses/GhosttyTerminal-LICENSE"
+cp "$ROOT/macos/.build/ghostty-native/package/Sources/GhosttyTheme/LICENSE" "$APP/Contents/Resources/Licenses/GhosttyTheme-LICENSE"
 cp "$ROOT/crates/taskhub-ptyd/target/release/taskhub-ptyd" "$APP/Contents/Helpers/taskhub-ptyd"
 # Replace the complete generated resource tree. Re-bundling must not retain
 # renderer files removed from the native allowlist or stale npm dependencies.

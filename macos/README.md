@@ -458,8 +458,9 @@ Run `node macos/scripts/smoke-web-assets.cjs /absolute/path/TaskHub.app` from th
 root to check all packaged board/diff/editor assets using the bundled Node helper and isolated data.
 
 Distribution is a direct Mac app without App Sandbox: TaskHub orchestrates local CLIs,
-worktrees, and detached PTYs. Developer ID signing, hardened-runtime entitlements,
-notarization, and signed update installation acceptance remain M6 work. The native
+worktrees, and detached PTYs. Developer ID signing, hardened-runtime entitlements and notarization are wired
+through `scripts/package-direct.py`; execution with real credentials and signed
+update installation remain external release work. The native
 bundle identifier is `com.alexcding.taskhub`, owned by Alex Ding. UI tests use
 `com.alexcding.taskhub.uitests`. The earlier development identifier is retired; its
 UserDefaults/WebKit identity is separate. The shared SQLite data directory remains
@@ -570,3 +571,48 @@ before **Discard Block**; Cancel makes no changes. The backend verifies the revi
 diff revision again when applying, so stale confirmations ask for refresh and review.
 Failed operations retain their error and proposal. Block selection is typed and
 scoped to the originating worktree; the renderer never submits arbitrary patches.
+
+## Direct-distribution packaging
+
+`macos/scripts/package-direct.py` stages the completed bundle into a new output
+directory and produces `TaskHub.app`, `TaskHub.zip`, `TaskHub.dmg` and a checksum
+manifest. It preserves the input app and never installs or publishes anything.
+Use a new output directory on every invocation. UI/unit testing and benchmarking
+remain deferred by user direction; packaging does not run them.
+
+For a local review build, first build the Release scheme with XcodeBuildMCP and
+run `bundle-backend.sh`, then:
+
+```sh
+python3 macos/scripts/package-direct.py --local \
+  --app /absolute/path/to/TaskHub.app --output /absolute/path/to/new-review-directory
+```
+
+For a release, supply your existing Developer ID Application identity and an
+existing notarytool Keychain profile:
+
+```sh
+python3 macos/scripts/package-direct.py \
+  --app /absolute/path/to/TaskHub.app --output /absolute/path/to/new-release-directory \
+  --identity 'Developer ID Application: YOUR NAME (TEAMID)' \
+  --notary-profile TASKHUB_NOTARY
+```
+
+The script signs embedded code from the inside out with hardened runtime, gives
+Node its JIT entitlements, notarizes the app archive, staples the app, then creates,
+signs, notarizes and staples the disk image. A rejected notarization cannot be
+reported as a release. Release mode requires a Release build with the personal
+bundle ID. No signing identities, Apple credentials or update private keys are
+stored by the script. The native bundle includes Ghostty, wrapper and theme
+licenses alongside Node and Sparkle notices.
+
+Developer ID and notarization credentials have not been provisioned. The signed
+release path is implemented but has not been executed. Configure the real HTTPS
+Sparkle feed and public key when building a release; sign the final archive with
+your private Ed25519 key before publishing an appcast. No feed is published here.
+
+The current local review artifacts are in `macos/.build/review-20260913-v3/`.
+They were produced from the arm64 Release build, with the official Node runtime,
+production backend dependencies and release Rust PTY helper included. App, ZIP,
+and DMG creation succeeded. The app was not launched and no UI or unit tests ran.
+This local package is ad-hoc signed, not notarized; no update feed was published.
