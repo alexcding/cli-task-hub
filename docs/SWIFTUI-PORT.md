@@ -2384,6 +2384,20 @@ does not).
   key-to-display latency and mitigation of regressions remain required. Build and
   startup evidence do not close the terminal performance gate.
 
+### Scope update — benchmarking skipped at user direction
+
+The user explicitly requested skipping benchmarking. The timed native/Tauri
+comparison, CPU/GPU/RSS benchmark, latency target measurement and benchmark-led
+optimization are no longer completion gates for this migration. Earlier results
+and preparation notes remain historical evidence; this change does not claim
+that an unrun benchmark passed. The experimental uncommitted benchmark runner
+was discarded, and its isolated app, backend, daemon and ten workload processes
+were stopped.
+
+Continue terminal correctness, bounded transport/lifecycle behavior, functional
+parity, coordinator/ViewModel/DI extraction and M2–M6 release work. This scope
+update supersedes earlier sections that list performance benchmarking as pending.
+
 ## Why now, and why native
 
 The Tauri shell works, but roughly half of `src-tauri/` exists to work around what a DOM
@@ -2532,7 +2546,7 @@ package revision, Mac model, macOS version, workloads, and results with the mile
 | Attach and lifecycle | Output generated during attach has no gaps/duplicates; exit during attach is handled; crash/rebuild reconnects to the same shell PID; window close hides; explicit tray Quit stops all PTYs and daemon. |
 | Terminal fidelity | Interactive shell, Claude Code, Codex, and a full-screen TUI pass keyboard/IME/paste, mouse, Unicode, selection, scrollback, resize, and alternate-screen checks. Restored screen matches the live state after ring truncation. |
 | Flow and isolation | A sustained output flood and a slow/disconnected client keep queues bounded; another session remains usable; disconnect while paused recovers; hidden terminals continue progressing. |
-| Performance | Benchmark one active terminal with nine hidden sessions for at least 10 minutes. Initial targets: p95 key-to-display latency below 50 ms in the interactive workload, no continuously growing output queue, and no steady-state draw work for hidden surfaces. Record CPU/GPU/RSS versus the existing app on the same Mac; regressions need mitigation before the gate passes. |
+| Performance benchmarking | Skipped at the user's explicit direction; no timed comparison or measured latency/CPU/GPU/RSS target is required for migration completion. Bounded transport and hidden-session correctness remain covered by the functional gates above. |
 | Product integration | File/URL links target the owning session, Option-click opens the browser, focus survives tab/split changes, hooks update activity, and workflow tail reads reflect hidden-terminal output. Link destination completion is rechecked in M3/M5. |
 
 The terminal implementation remains unverified until these checks run. Any dependency
