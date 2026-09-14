@@ -20,7 +20,7 @@
 +    @MainActor
 +    @discardableResult
 +    public func restoreSnapshot(_ snapshot: Data) -> Bool {
-+        guard !snapshot.isEmpty, snapshot.count <= 32 * 1024 * 1024 else { return false }
++        guard !snapshot.isEmpty, snapshot.count <= 192 * 1024 * 1024 else { return false }
 +        surfaceAccess.waitForPendingOutput()
 +        return surfaceAccess.withCurrentSurface { surface in
 +            snapshot.withUnsafeBytes { bytes in

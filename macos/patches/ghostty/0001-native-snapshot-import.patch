@@ -224,7 +224,7 @@
 +/// interaction. The caller serializes this with surface input on the UI thread.
 +/// Failed validation preserves the original terminal and parser.
 +pub fn restoreSnapshot(self: *Termio, bytes: []const u8) !void {
-+    if (bytes.len == 0 or bytes.len > 32 * 1024 * 1024) return error.InvalidSnapshotSize;
++    if (bytes.len == 0 or bytes.len > 192 * 1024 * 1024) return error.InvalidSnapshotSize;
 +    var source: std.Io.Reader = .fixed(bytes);
 +    var decoded = try terminalpkg.snapshot.decodeExact(self.alloc, global.io(), &source, .{
 +        .max_continuation_bytes = 1024 * 1024,

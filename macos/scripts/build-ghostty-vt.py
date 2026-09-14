@@ -54,9 +54,10 @@ def main():
     output = (args.output or build / "runtime").resolve()
     query_patch = Path(__file__).resolve().parents[1] / "patches/ghostty/0003-terminal-query-validation.patch"
     glyph_patch = Path(__file__).resolve().parents[1] / "patches/ghostty/0007-glyph-snapshot.patch"
+    graphics_patch = Path(__file__).resolve().parents[1] / "patches/ghostty/0008-graphics-snapshot.patch"
     applied = []
     try:
-        for patch in [query_patch, glyph_patch]:
+        for patch in [query_patch, glyph_patch, graphics_patch]:
             run("git", "apply", "--check", patch, cwd=source)
             run("git", "apply", patch, cwd=source)
             applied.append(patch)
@@ -74,6 +75,7 @@ def main():
     (output / "taskhub-ghostty-revision").write_text(revision + "\n")
     (output / "taskhub-ghostty-query-patch").write_bytes(query_patch.read_bytes())
     (output / "taskhub-ghostty-glyph-patch").write_bytes(glyph_patch.read_bytes())
+    (output / "taskhub-ghostty-graphics-patch").write_bytes(graphics_patch.read_bytes())
     print(f"Pinned terminal snapshot runtime: {output}")
 
 

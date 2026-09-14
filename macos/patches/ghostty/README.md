@@ -45,9 +45,12 @@ native app consumes the generated local Swift package for download/import and
 ordered live resizes. Transient transport loss reconnects through a fresh surface
 only when input delivery was settled; uncertain input requires manual recovery.
 Offline query response ownership, native default/config synchronization and
-snapshot-v1 omissions (Kitty images and glyph registrations) also remain open.
+UI-dependent effects remain follow-up work. TaskHub v3 preserves glyph registrations
+and Kitty graphics through `0007-glyph-snapshot.patch` and
+`0008-graphics-snapshot.patch`, applied to both builds. See
+`crates/taskhub-ptyd/SNAPSHOTS.md` for ownership, resource limits and restoration.
 
-Build and run the separate real-surface integration suite:
+Historical integration commands (UI/unit runs are currently deferred by user direction):
 
 ```sh
 python3 macos/scripts/build-ghostty-vt.py

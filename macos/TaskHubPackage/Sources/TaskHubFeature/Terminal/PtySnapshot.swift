@@ -1,8 +1,8 @@
 import Foundation
 
 struct PtySnapshot: Sendable {
-    static let revision = "82938b633ba646db38591d969c3c526332bd7e65-taskhub-glyph-v2"
-    static let limit = 32 * 1024 * 1024
+    static let revision = "82938b633ba646db38591d969c3c526332bd7e65-taskhub-graphics-v3"
+    static let limit = 192 * 1024 * 1024
     static let chunkBytes = 128 * 1024
 
     struct Header: Decodable, Sendable {

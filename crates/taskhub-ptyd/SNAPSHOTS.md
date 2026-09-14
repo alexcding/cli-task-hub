@@ -51,7 +51,7 @@ Protocol 2 gains optional operations, available only in feature builds:
    at most its single bounded capture until disconnect or its next snapshot operation.
 
 Tokens have meaning only on the connection that created them. Capturing does not
-pause or kill the shell. The 32 MiB snapshot cap is independent of the 8 MiB socket
+pause or kill the shell. The 192 MiB snapshot cap is independent of the 8 MiB socket
 outbox cap; whole snapshots are never queued to the outbox. The client may use the
 existing connection-owned flow pause while downloading if its live-event buffer
 would otherwise overflow. Connection loss releases that pause.
@@ -211,3 +211,31 @@ verifies native working-directory/file-link state and command exit markers, then
 reattaches a fresh native surface to the same PID. Resource bounds/lifetime and
 Bash environment preservation have automated coverage. Executing Homebrew Bash
 still needs acceptance on a machine with that shell installed.
+
+## Graphics snapshot v3
+
+The negotiated revision now ends in `-taskhub-graphics-v3`. It retains v2 glyph
+registrations and adds one CRC-framed graphics record per screen after history.
+The native client completes the entire import before delivering post-cut output;
+v3 is not an interleaved live-history import format.
+
+Records own decoded image pixels (or pending payload lengths), pinned/virtual/
+relative placements, animation frames and playback state, generated ID counters,
+and unfinished chunked image/frame transmission metadata and bytes. Placement
+pins use distance from the bottom of the complete screen; expired history pins
+and orphaned relative descendants are dropped. Image generations are rebased in
+age order, preserving eviction order without colliding with native texture caches.
+A frame transmission keeps its target-generation relationship. Playback resumes
+the captured frame on a fresh renderer clock.
+
+Both builds enable Wuffs PNG decoding and use a 32 MiB image budget per screen,
+including animation frames, plus a 32 MiB unfinished-transfer limit. Image loading
+uses direct payloads in daemon-owned sessions. Import does not reopen image files,
+access shared memory, send replies, move the cursor, or replay host effects. Each
+graphics record is bounded at 80 MiB; the full snapshot is bounded at 192 MiB.
+Malformed, duplicate, oversized or incompatible records reject restoration rather
+than partially installing images. Native and Rust build scripts require the same
+maintained graphics patch. Existing incompatible helpers/shells remain preserved.
+
+This implementation was compiled for the headless runtime, native renderer and
+helper. No new UI or unit tests were added or run, per the user's direction.

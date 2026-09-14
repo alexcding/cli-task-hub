@@ -1,10 +1,10 @@
 //! Owned, exclusively accessed headless Ghostty state for daemon snapshots.
 //! The renderer and daemon share the pinned runtime and TaskHub snapshot format.
-//! Snapshot v2 retains glyph registrations; Kitty image payloads remain separate.
+//! Snapshot v3 retains glyph registrations, Kitty images, placements and transfers.
 use std::{ffi::c_void, fmt, ptr::NonNull};
 
-pub const GHOSTTY_REVISION: &str = "82938b633ba646db38591d969c3c526332bd7e65-taskhub-glyph-v2";
-pub const SNAPSHOT_LIMIT: usize = 32 * 1024 * 1024;
+pub const GHOSTTY_REVISION: &str = "82938b633ba646db38591d969c3c526332bd7e65-taskhub-graphics-v3";
+pub const SNAPSHOT_LIMIT: usize = 192 * 1024 * 1024;
 pub const RESPONSE_LIMIT: usize = 256 * 1024;
 /// Fixed ownership contract; extending this set requires a new version.
 pub const STATE_RESPONSE_OWNER: &str = "daemon-state-v1";

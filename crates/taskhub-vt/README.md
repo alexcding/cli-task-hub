@@ -21,7 +21,7 @@ archive under a unique name so Apple ld cannot substitute the upstream dylib.
 Every terminal operation requires exclusive mutable access. Snapshots retain primary
 and alternate screens, saved cursor, modes, styles, hyperlinks and scrollback, plus
 up to 1 MiB of unfinished parser input. Scrollback is limited to 8 MiB, subject to
-Ghostty's page-sized allocation granularity. Encoded snapshots are capped at 32 MiB;
+Ghostty's page-sized allocation granularity. Encoded snapshots are capped at 192 MiB;
 truncated, corrupted and trailing data is rejected. Diagnostic VT formatting is not
 used to restore state.
 
@@ -37,7 +37,7 @@ See the [pinned snapshot format source](https://github.com/ghostty-org/ghostty/b
 
 The daemon now parses every output batch, serializes kernel/parser resizes on its
 I/O thread, and captures an atomic sequence boundary. Its connection-owned transfer
-returns at most 128 KiB per read, with one snapshot of at most 32 MiB per connection.
+returns at most 128 KiB per read, with one snapshot of at most 192 MiB per connection.
 See [the daemon snapshot protocol](../taskhub-ptyd/SNAPSHOTS.md).
 
 The native app imports state into a fresh surface before applying newer output
@@ -88,5 +88,5 @@ mismatched marker, preventing accidental use of an older unpatched archive. Thes
 query changes do not alter the upstream revision. Both builds additionally apply
 `0007-glyph-snapshot.patch`, and the Rust build requires its exact marker. Glyph
 records allow up to 1,024 entries, cap each raw registration at the existing 1 MiB
-parser limit, and cap the record at 16 MiB within the complete snapshot's 32 MiB
+parser limit, and cap the record at 16 MiB within the complete snapshot's 192 MiB
 limit. Oversized captures fail explicitly instead of omitting glyphs.

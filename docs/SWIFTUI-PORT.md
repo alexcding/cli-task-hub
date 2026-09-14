@@ -46,22 +46,21 @@ with typed model callbacks and root/deep-link presentation reservations. Reopeni
 history also routes through the workspace coordinator. These implementation phases
 add no further UI or unit tests.
 
-TaskHub snapshot v2 now serializes glyph registrations, preserving FIFO order,
-metrics, width and rendering constraints through reattachment. Both runtimes apply
-the same maintained patch and negotiate `-taskhub-glyph-v2` before shell creation
-or attachment. Decoding validates registrations without replaying output into the
-live parser. Kitty image state and UI/config-dependent offline queries remain
-implementation work. No UI/unit validation accompanies this phase, per direction.
+TaskHub snapshot v3 retains glyph registrations and now restores Kitty images,
+placements, animation frames/state and unfinished image/frame transfers. Both
+runtimes enable the same PNG decoder and share image/transfer limits. Snapshot
+imports rebase cache generations and restore pins against completed history,
+without replaying image commands or host effects. Headless and native libraries
+compile; no UI/unit tests were added or run. UI/config-dependent offline reply
+ownership remains the next implementation phase.
 
 The current implementation queue is:
 
-1. Preserve Kitty image payloads, placements, animation and in-progress image
-   transmission state in snapshots, with matching daemon/native resource policies.
-2. Complete ownership of UI/config-dependent terminal replies while detached,
+1. Complete ownership of UI/config-dependent terminal replies while detached,
    without replaying clipboard or other host side effects on reattachment.
-3. Produce the self-contained native app for user review. Native dashboard and
+2. Produce the self-contained native app for user review. Native dashboard and
    Cocoa sidebar stay native; Sprint Board/diff/editor keep their focused web hosts.
-4. Finish direct-distribution configuration where credentials permit. Developer ID,
+3. Finish direct-distribution configuration where credentials permit. Developer ID,
    notarization credentials and the user's signed update feed require external
    configuration; do not invent credentials or publish an unsigned update as signed.
 

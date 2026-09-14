@@ -47,6 +47,15 @@ fn main() {
         fs::read(glyph_patch).expect("missing shared glyph snapshot patch"),
         "The daemon and native renderer require the same glyph snapshot extension"
     );
+    let graphics_patch = root.join("../../macos/patches/ghostty/0008-graphics-snapshot.patch");
+    let applied_graphics_patch = runtime.join("taskhub-ghostty-graphics-patch");
+    println!("cargo:rerun-if-changed={}", graphics_patch.display());
+    println!("cargo:rerun-if-changed={}", applied_graphics_patch.display());
+    assert_eq!(
+        fs::read(applied_graphics_patch).expect("Rebuild the headless runtime with build-ghostty-vt.py"),
+        fs::read(graphics_patch).expect("missing shared graphics snapshot patch"),
+        "The daemon and native renderer require the same graphics snapshot extension"
+    );
     let archive = runtime.join("lib/libghostty-vt.a");
     println!("cargo:rerun-if-changed={}", archive.display());
     // Apple ld can prefer a same-named dylib for -l arguments. Give the bundled
