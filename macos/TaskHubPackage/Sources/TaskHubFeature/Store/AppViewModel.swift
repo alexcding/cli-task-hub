@@ -5,6 +5,8 @@ import Observation
 @MainActor @Observable
 public final class AppViewModel {
     public let shell: ShellStore
+    @ObservationIgnored private let shellFactory: any ShellFeatureFactory
+    @ObservationIgnored private let shellCoordinator: ShellCoordinator
     let viewer: ViewerStore
     let coordinator: AppCoordinator
     private(set) var root: RootViewModel!
@@ -54,6 +56,7 @@ public final class AppViewModel {
 
     init(creationFactory: any CreationFlowFactory, desktop: any DesktopActions = NativeDesktopActions(),
          backendRuntime: any BackendRuntimeServing = BackendRuntime(),
+         shellFactory: any ShellFeatureFactory = NativeShellFeatureFactory(),
          workspaceFactory: any WorkspaceFeatureFactory = NativeWorkspaceFeatureFactory(),
          rootFactory: any RootFeatureFactory = NativeRootFeatureFactory(),
          dashboardFactory: any DashboardFeatureFactory = NativeDashboardFeatureFactory(),
@@ -70,7 +73,10 @@ public final class AppViewModel {
          copy: @escaping (String) -> Void = { NativeClipboard.copy($0) }) {
         self.creationFactory = creationFactory
         self.backendRuntime = backendRuntime
-        self.shell = ShellStore(notifications: notificationFactory.notifications())
+        self.shellFactory = shellFactory
+        let shell = shellFactory.shell(notifications: notificationFactory.notifications())
+        self.shell = shell
+        self.shellCoordinator = shellFactory.coordinator(model: shell)
         self.desktop = desktop
         self.workspaceFactory = workspaceFactory
         self.documentFactory = documentFactory
@@ -703,7 +709,7 @@ public final class AppViewModel {
             let connectedAPI = try await backendRuntime.start()
             guard started, startGeneration == generation else { return }
             api = connectedAPI
-            if let api { shell.connect(api); viewer.connect(api); dashboard?.connect(APIDashboardService(api: api)); shell.refreshUsage() }
+            if let api { shell.connect(shellFactory.data(api: api)); viewer.connect(api); dashboard?.connect(APIDashboardService(api: api)); shell.refreshUsage() }
             if let api { for model in projectModels.values {
                 model.connect(APIProjectService(api: api)); model.board?.connect(baseURL: api.baseURL)
                 model.tickets?.connect(APIJiraService(api: api))

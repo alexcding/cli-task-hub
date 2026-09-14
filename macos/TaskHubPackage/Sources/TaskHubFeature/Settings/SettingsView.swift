@@ -20,7 +20,7 @@ struct SettingsView: View {
                     Section("Appearance") {
                         Picker("Theme", selection: Binding(get: { shell.appearance }, set: shell.setAppearance)) {
                             ForEach(AppAppearance.allCases) { Text($0.title).tag($0) }
-                        }
+                        }.accessibilityIdentifier("settings-theme")
                         Picker("Default session agent", selection: Binding(get: { shell.defaultAgent }, set: shell.setDefaultAgent)) {
                             ForEach(SessionAgent.allCases) { Text($0.label).tag($0) }
                         }.accessibilityIdentifier("settings-default-agent")

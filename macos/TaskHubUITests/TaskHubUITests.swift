@@ -301,6 +301,10 @@ final class TaskHubUITests: XCTestCase {
         app.radioButtons["General"].click()
         let family = app.popUpButtons["settings-diff-font-family"]
         XCTAssertTrue(family.waitForExistence(timeout: 5), app.debugDescription)
+        let theme = app.popUpButtons["settings-theme"]
+        XCTAssertTrue(theme.waitForExistence(timeout: 5))
+        theme.click(); app.menuItems["Dark"].click()
+        XCTAssertEqual(theme.value as? String, "Dark")
         family.click(); app.menuItems["Menlo"].click()
         app.buttons["Reset Code and diffs Size"].click()
         app.typeKey("=", modifierFlags: .command)
@@ -312,6 +316,11 @@ final class TaskHubUITests: XCTestCase {
         app.typeKey(",", modifierFlags: .command)
         let retained = expectation(for: NSPredicate(format: "value == 'Menlo' OR title == 'Menlo'"), evaluatedWith: family)
         wait(for: [retained], timeout: 5)
+        XCTAssertEqual(theme.value as? String, "Dark")
+        theme.click(); app.menuItems["Light"].click()
+        XCTAssertEqual(theme.value as? String, "Light")
+        theme.click(); app.menuItems["System"].click()
+        XCTAssertEqual(theme.value as? String, "System")
     }
 
     @MainActor

@@ -1,9 +1,11 @@
-import AppKit
 import Foundation
 import Observation
 
 // Independent tasks keep a slow usage source out of the PR/sidebar refresh path.
 @MainActor @Observable public final class ShellStore {
+    enum Action { case applyAppearance(AppAppearance) }
+    @ObservationIgnored var onAction: (Action) -> Void = { _ in }
+    @ObservationIgnored var actionBinding = UUID()
     public let notifications: NotificationStore
     private(set) var activityNotify: Bool
     private(set) var reviewSound: String
@@ -15,7 +17,7 @@ import Observation
     private(set) var usageError: String?
     private(set) var usageLoading = false
     public private(set) var appearance: AppAppearance {
-        didSet { if oldValue != appearance { documentStyleChanged() } }
+        didSet { if oldValue != appearance { documentStyleChanged(); applyAppearance() } }
     }
     private(set) var usageAgent: String
     private(set) var defaultAgent: SessionAgent
@@ -31,11 +33,13 @@ import Observation
     }
     @ObservationIgnored var documentStyleChanged: () -> Void = {}
     @ObservationIgnored var terminalStyleChanged: () -> Void = {}
-    private(set) var remotePageLimit: Int
+    private(set) var remotePageLimit: Int {
+        didSet { if oldValue != remotePageLimit { remotePageLimitChanged(remotePageLimit) } }
+    }
     @ObservationIgnored var remotePageLimitChanged: (Int) -> Void = { _ in }
     private(set) var settingsError: String?
     private(set) var acknowledging: Set<String> = []
-    @ObservationIgnored private var api: APIClient?
+    @ObservationIgnored private var service: (any ShellDataServing)?
     @ObservationIgnored private var trayTask: Task<Void, Never>?
     @ObservationIgnored private var usageTask: Task<Void, Never>?
     @ObservationIgnored private var settingsTask: Task<Void, Never>?
@@ -70,17 +74,11 @@ import Observation
     var pendingReviews: [TrayPR] { prs.filter(\.pendingReview) }
     public var pendingReviewCount: Int { pendingReviews.count }
 
-    public func applyAppearance() {
-        switch appearance {
-        case .system: NSApp.appearance = nil
-        case .light: NSApp.appearance = NSAppearance(named: .aqua)
-        case .dark: NSApp.appearance = NSAppearance(named: .darkAqua)
-        }
-    }
+    public func applyAppearance() { onAction(.applyAppearance(appearance)) }
 
-    func connect(_ api: APIClient) {
+    func connect(_ service: any ShellDataServing) {
         generation += 1
-        self.api = api
+        self.service = service
         let opened = pendingReviewOpens.values
         pendingReviewOpens.removeAll()
         for review in opened { acknowledgeReview(repo: review.repo, number: review.number) }
@@ -93,14 +91,14 @@ import Observation
 
     func refresh() {
         refreshPending = true
-        guard trayTask == nil, let api else { return }
+        guard trayTask == nil, let service else { return }
         trayLoading = true
         trayTask = Task {
             defer { trayTask = nil; trayLoading = false }
             while refreshPending && !Task.isCancelled {
                 refreshPending = false
                 do {
-                    let result: [TrayPR] = try await api.get(Routes.PRS_TRAY)
+                    let result: [TrayPR] = try await service.reviews()
                     try Task.checkCancellation()
                     var seen: Set<String> = []
                     prs = result.filter { seen.insert($0.id).inserted }
@@ -113,12 +111,12 @@ import Observation
     }
 
     func refreshUsage() {
-        guard usageTask == nil, let api else { return }
+        guard usageTask == nil, let service else { return }
         usageLoading = true
         usageTask = Task {
             defer { usageTask = nil; usageLoading = false }
             do {
-                let value: UsageSnapshot = try await api.get(Routes.USAGE)
+                let value: UsageSnapshot = try await service.usage()
                 try Task.checkCancellation()
                 usage = value
                 usageError = nil
@@ -141,7 +139,7 @@ import Observation
 
     public func acknowledgeReview(repo: String, number: Int) {
         let id = "\(repo)#\(number)"
-        guard let api else {
+        guard let service else {
             // A notification click can launch the app before backend readiness.
             pendingReviewOpens[id] = (repo, number)
             return
@@ -151,7 +149,7 @@ import Observation
         Task {
             defer { if generation == currentGeneration { acknowledging.remove(id) } }
             do {
-                try await api.acknowledgeReview(repo: repo, number: number)
+                try await service.acknowledgeReview(repo: repo, number: number)
                 guard generation == currentGeneration else { return }
                 if let index = prs.firstIndex(where: { $0.id == id }) { prs[index].reviewPending = false }
                 refresh()
@@ -174,7 +172,6 @@ import Observation
 
     public func setAppearance(_ value: AppAppearance) {
         appearance = value
-        applyAppearance()
         preferences.set(value.rawValue, forKey: "native.theme")
         saveSetting("theme", value: value.rawValue)
     }
@@ -217,7 +214,6 @@ import Observation
         guard value != remotePageLimit else { return }
         remotePageLimit = value
         preferences.set(String(value), forKey: "native.remotePageLimit")
-        remotePageLimitChanged(value)
         saveSetting("native.remotePageLimit", value: String(value), debounce: true)
     }
     func setFont(_ kind: CodeFontKind, family: String? = nil, size: Int? = nil) {
@@ -238,7 +234,7 @@ import Observation
         preferences.set(pendingSettings, forKey: "native.pendingSettings")
         settingsRevision += 1
         let revision = settingsRevision
-        guard let api else { settingsError = "Preference saved locally; connect to sync it."; return }
+        guard let service else { settingsError = "Preference saved locally; connect to sync it."; return }
         let previous = settingsWrite
         settingsWrite = Task {
             await previous?.value // Preserve rapid user changes in their original order.
@@ -249,7 +245,7 @@ import Observation
                     try await Task.sleep(for: .milliseconds(250))
                     guard pendingSettings[key] == value else { return }
                 }
-                try await api.setSetting(key, value: value)
+                try await service.setSetting(key, value: value)
                 if pendingSettings[key] == value {
                     pendingSettings.removeValue(forKey: key)
                     preferences.set(pendingSettings, forKey: "native.pendingSettings")
@@ -262,14 +258,14 @@ import Observation
     }
 
     func loadSettings() {
-        guard settingsTask == nil, let api else { return }
+        guard settingsTask == nil, let service else { return }
         let revision = settingsRevision
         settingsTask = Task {
             defer { settingsTask = nil }
             // Wait for our writes before accepting a snapshot of the settings.
             await settingsWrite?.value
             do {
-                let settings: [String: String?] = try await api.get(Routes.SETTINGS)
+                let settings: [String: String?] = try await service.settings()
                 try Task.checkCancellation()
                 guard revision == settingsRevision else { return }
                 if pendingSettings["theme"] == nil {
@@ -300,7 +296,6 @@ import Observation
                 if pendingSettings["native.remotePageLimit"] == nil {
                     remotePageLimit = RemotePageRetention.clamp(Int((settings["native.remotePageLimit"] ?? nil) ?? "") ?? RemotePageRetention.defaultLimit)
                     preferences.set(String(remotePageLimit), forKey: "native.remotePageLimit")
-                    remotePageLimitChanged(remotePageLimit)
                 }
                 preferences.set(appearance.rawValue, forKey: "native.theme")
                 preferences.set(usageAgent, forKey: "native.usageAgent")
@@ -309,7 +304,6 @@ import Observation
                 preferences.set(defaultAgent.rawValue, forKey: "native.defaultCli")
                 preferences.set(gitClient, forKey: "native.gitClient")
                 preferences.set(gitClientCommand, forKey: "native.gitClientCmd")
-                applyAppearance()
                 if pendingSettings.isEmpty { settingsError = nil }
             } catch { if !Task.isCancelled { settingsError = error.localizedDescription } }
         }
@@ -323,6 +317,6 @@ import Observation
         await settingsWrite?.value
         await notifications.stop()
         trayTask = nil; usageTask = nil; settingsTask = nil; settingsWrite = nil
-        api = nil
+        service = nil
     }
 }

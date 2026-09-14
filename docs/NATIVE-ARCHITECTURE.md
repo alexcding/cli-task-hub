@@ -812,6 +812,28 @@ for that cleanup. Detached terminal ownership and explicit Quit/update behavior
 continue through their existing coordinators. This extraction leaves feature
 service assembly and other platform dependencies as separate remaining work.
 
+## Implemented: shell appearance and data injection
+
+`ShellFeatureFactory` supplies the shared observable shell model, its coordinator,
+and a typed data service. The root retains their lifetime. `ShellDataServing`
+separates review/usage/settings reads and writes from the concrete HTTP client;
+the live adapter keeps the same snapshot API routes. Offline preference storage
+remains injected through the factory, and pending writes retain their existing
+ordered synchronization and failure recovery.
+
+The shell model emits typed appearance actions. `ShellCoordinator` validates the
+current binding and selected value before calling the injected platform adapter.
+Retained callbacks from a replaced binding, another model or retired coordinator
+cannot change application appearance. The AppKit host forwards initial appearance
+application before mounting its window; backend-loaded and user-selected changes
+use the same model/coordinator path. Theme application remains global while
+Settings is hidden. The shell model no longer imports AppKit.
+
+Guarded `appearance.didSet` and `remotePageLimit.didSet` own their reactions for both
+local edits and backend snapshots. Duplicate values do not repeat platform or
+retention updates. Views render bindings and forward user input; this extraction
+adds no view `.onChange` or `.task(id:)` behavior.
+
 ## Remaining extraction
 
 The architecture extraction remains in progress:
@@ -820,8 +842,8 @@ The architecture extraction remains in progress:
   flows and child coordinators as their runtime dependencies are extracted.
 - Complete the remaining terminal/UI-adapter audit while retaining native input
   and emulator ownership; the measured appearance mount warning is resolved above.
-- Move remaining shared shell appearance and platform actions behind injected
-  dependencies.
+- Complete the remaining platform-action audit; shared shell appearance and data
+  access now use the injected boundaries described above.
 - `AppViewModel` still constructs several concrete backend/platform services. Complete
   child presentation ownership/model retirement as the remaining shared action
   services are extracted.

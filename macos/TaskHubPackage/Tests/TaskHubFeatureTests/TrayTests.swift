@@ -71,7 +71,7 @@ import Testing
     var appliedLimits: [Int] = []
     shell.remotePageLimitChanged = { appliedLimits.append($0) }
     shell.setRemotePageLimit(3)
-    shell.connect(api)
+    shell.connect(APIShellDataService(api: api))
     shell.refreshUsage()
     for _ in 0..<100 {
         if shell.prs.count == 3 { break }
@@ -105,7 +105,7 @@ import Testing
     await shell.stop()
     // A notification body click may precede backend readiness after launch.
     shell.acknowledgeReview(repo: review.repo, number: review.number)
-    shell.connect(api)
+    shell.connect(APIShellDataService(api: api))
     for _ in 0..<100 {
         if shell.pendingReviewCount == 0 { break }
         try await Task.sleep(for: .milliseconds(20))

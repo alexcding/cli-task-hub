@@ -2580,6 +2580,38 @@ Validation:
 - No benchmarking was run. Shared feature-service/platform extraction and remaining
   functional/release gates remain open.
 
+### Shared shell coordinator and data injection — 2026-09-13
+
+`ShellFeatureFactory` now supplies the shared model, appearance coordinator and
+snapshot data adapter. The observable shell model emits typed appearance actions;
+the coordinator checks model/binding ownership and the current theme before using
+an injected AppKit adapter. Retired or replaced callbacks cannot apply a theme.
+The model no longer imports AppKit or owns a concrete API client.
+
+Guarded model observers drive theme and remote-page retention changes for both
+local edits and backend snapshots. Duplicate snapshots do not repeat platform or
+retention callbacks. Offline preference writes remain locally persisted, ordered,
+and retried through the injected data service; stale reads cannot overwrite newer
+edits or unrelated settings. The HTTP routes and independent review/usage tasks
+remain the same.
+
+Validation:
+
+- Seven focused tests pass, including factory/binding ownership, native appearance
+  mapping, duplicate snapshots, offline write failure recovery and the real backend
+  review/usage/preference regression.
+  Log: `swift_package_test_2026-09-14T01-00-01-484Z_pid27426_5f0650d1.log`.
+- The strengthened stale-snapshot test also passes, asserting that an outdated
+  response cannot change an unrelated usage-agent preference.
+  Log: `swift_package_test_2026-09-14T01-02-12-190Z_pid28704_03f1f065.log`.
+- Native Debug app/UI targets build. The isolated UI regression passes Dark/Light/
+  System selection, font selection, code-size shortcuts and retention through
+  navigation. Log: `test_macos_2026-09-14T01-00-58-097Z_pid28168_1eee5c68.log`.
+
+This completes the shared shell appearance/data boundary; other runtime/platform
+extraction and functional/release acceptance remain open. Benchmarking remains
+excluded by user direction.
+
 ## Product rules that must survive (from `CLAUDE.md`)
 
 - Sidebar = project → **session**; sessions are the only rows; task-less tabs live in one
