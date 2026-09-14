@@ -38,10 +38,10 @@ import Foundation
     #expect(throws: BackendError.self) { _ = try parser.feed(65) }
 }
 
-@Test func configurationRequiresExplicitDevelopmentRuntime() throws {
-    #expect(throws: BackendError.self) {
-        try BackendConfiguration.current(arguments: ["TaskHub", "--backend-root", "/tmp/repo"], environment: [:])
-    }
+@Test func configurationResolvesRustDevelopmentRuntime() throws {
+    let development = try BackendConfiguration.current(arguments: ["TaskHub", "--backend-root", "/tmp/repo"], environment: [:])
+    guard case .owned(let executable, _) = development.mode else { Issue.record("Expected owned mode"); return }
+    #expect(executable.path == "/tmp/repo/crates/taskhub-backend/target/debug/taskhub-backend")
     #expect(throws: BackendError.self) {
         try BackendConfiguration.current(arguments: ["TaskHub", "--backend-url"], environment: [:])
     }

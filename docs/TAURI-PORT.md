@@ -1,5 +1,9 @@
 # Tauri Port — status & plan
 
+> Legacy client: the production SwiftUI app now launches the Rust backend in
+> `crates/taskhub-backend`. Tauri and its Node sidecar are not bundled into the
+> native app.
+
 Porting the TaskHub desktop shell from Electron to **Tauri v2** (macOS/WKWebView).
 Branch: `feat/tauri-port`.
 

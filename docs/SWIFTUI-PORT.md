@@ -1,5 +1,30 @@
 # SwiftUI Native Port — plan
 
+> Cutover update: the native client now launches `crates/taskhub-backend`, and
+> its Sprint Board, working diff, and editor are native SwiftUI/AppKit surfaces.
+> Node and bundled TaskHub JavaScript are no longer part of the native package.
+
+## Rust migration closeout — 2026-09-14
+
+The backend, SQLite stores, API/SSE, GitHub/Jira polling, merge automation, hooks,
+usage cache, worktree/git/file APIs, and recovery now live in `crates/taskhub-backend`.
+The native client launches that executable. Sprint Board, diff, and editor are
+SwiftUI/AppKit surfaces. Packaging excludes Node and bundled TaskHub JavaScript.
+
+The Rust helper implements backup/verify/restore with legacy snapshot compatibility
+and a packaged pre-migration checkpoint under the existing native ownership lock.
+Polling and webhooks share merge detection; Jira transitions, Fix Version templates,
+and manual ticket links use the same automation path. Old JavaScript version scripts
+must be replaced with templates in Automation; existing scripts are not executed.
+
+The current local review output is `macos/.build/review-20260914-rust-final/`. Release
+compilation and local signing/packaging are the closeout checks. Unit/UI execution
+and benchmarking remain deferred, and manual app acceptance is pending. Developer
+ID signing, notarization and publishing an update feed are separate owner operations.
+
+Everything below is the historical SwiftUI migration record. Its Node packaging,
+web board/editor, and optional backend rewrite descriptions are superseded above.
+
 Porting the TaskHub desktop client from a Tauri-hosted web renderer to a **native
 macOS app (SwiftUI + AppKit where needed)**, with the terminal on **libghostty**.
 Diff and code editing may remain web-based, embedded as focused `WKWebView` views.

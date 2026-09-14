@@ -8,6 +8,7 @@ struct JiraTicket: Decodable, Identifiable, Equatable, Sendable {
     var priority: String?
     var assignee: String?
     var assigneeId: String?
+    var statusId: String?
     var id: String { key }
     var projectKey: String { String(key.split(separator: "-").first ?? "") }
 }

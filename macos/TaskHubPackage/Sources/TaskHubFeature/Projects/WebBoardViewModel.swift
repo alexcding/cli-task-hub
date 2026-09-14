@@ -1,6 +1,5 @@
-import AppKit
+import Foundation
 import Observation
-import WebKit
 
 struct BoardTicketLink: Decodable, Equatable {
     let type: String
@@ -9,129 +8,198 @@ struct BoardTicketLink: Decodable, Equatable {
     let external: Bool
 
     static func parse(_ body: Any, source: URL?, expected: URL, mainFrame: Bool) -> Self? {
-        guard mainFrame, source == expected,
-              JSONSerialization.isValidJSONObject(body),
+        guard mainFrame, source == expected, JSONSerialization.isValidJSONObject(body),
               let data = try? JSONSerialization.data(withJSONObject: body), data.count <= 8192,
-              let link = try? JSONDecoder().decode(Self.self, from: data),
-              link.type == "openTicket", SessionPage.parse(link.url)?.kind == "jira" else { return nil }
+              let link = try? JSONDecoder().decode(Self.self, from: data), link.type == "openTicket",
+              SessionPage.parse(link.url)?.kind == "jira" else { return nil }
         return link
     }
 }
 
-@MainActor @Observable final class WebBoardViewModel: NSObject, WKNavigationDelegate {
+struct BoardColumn: Decodable, Equatable, Sendable {
+    let name: String
+    var statusIds: [String] = []
+    var statuses: [BoardStatus]?
+}
+
+struct BoardStatus: Decodable, Equatable, Sendable {
+    let id: String
+    let name: String
+}
+
+struct BoardSprint: Decodable, Equatable, Sendable {
+    var name: String?
+    var endDate: String?
+}
+
+struct BoardSnapshot: Decodable, Sendable {
+    var items: [JiraTicket]
+    var lastSynced: String?
+    var error: String?
+    var sprint: BoardSprint?
+    var query: String?
+    var columns: [BoardColumn]?
+}
+
+protocol BoardService: Sendable {
+    func snapshot(projectID: String, force: Bool) async throws -> BoardSnapshot
+    func site() async throws -> JiraSite
+    func settings() async throws -> [String: String]
+    func saveFilter(_ value: String, projectID: String) async throws
+    func transition(key: String, status: String) async throws
+    func assign(key: String, assignee: String) async throws
+}
+
+struct APIBoardService: BoardService {
+    let api: APIClient
+    func snapshot(projectID: String, force: Bool) async throws -> BoardSnapshot {
+        try await api.get(Routes.projectBoard(projectID) + (force ? "?refresh=1" : ""), timeout: force ? 130 : 30)
+    }
+    func site() async throws -> JiraSite { try await api.get(Routes.JIRA_SITE, timeout: 30) }
+    func settings() async throws -> [String: String] { try await api.get(Routes.SETTINGS) }
+    func saveFilter(_ value: String, projectID: String) async throws { try await api.setSetting("board_filter_" + projectID, value: value) }
+    func transition(key: String, status: String) async throws {
+        let _: OperationOK = try await api.request(Routes.jiraKeyTransition(key), method: "POST", body: ["transition": status])
+    }
+    func assign(key: String, assignee: String) async throws {
+        let _: OperationOK = try await api.request(Routes.jiraKeyAssign(key), method: "POST", body: ["assignee": assignee])
+    }
+}
+
+@MainActor @Observable final class WebBoardViewModel {
     enum Action: Equatable { case openTicket(BoardTicketLink) }
     @ObservationIgnored var onAction: (Action) -> Void = { _ in }
     let navigation: PageActionViewModel
     private(set) var retired = false
     let projectID: String
-    private(set) var webView: WKWebView?
+    private(set) var snapshot: BoardSnapshot?
     private(set) var error: String?
-    private var baseURL: URL
-    var appearance = AppAppearance.system { didSet { if oldValue != appearance && !retired { applyState() } } }
-    var active = false {
-        didSet {
-            guard oldValue != active, !retired else { return }
-            if active { _ = materialize(); applyState() }
-            else { cancelActions(); releaseSurface() }
-        }
-    }
-    private var connected = true { didSet { if oldValue != connected && !connected { cancelActions() } } }
+    private(set) var loading = false
+    private(set) var busy: Set<String> = []
+    private(set) var siteURL: URL?
+    var assigneeFilter = "" { didSet { if oldValue != assigneeFilter { persistFilter() } } }
+    var appearance = AppAppearance.system
+    var active = false { didSet { if active && !oldValue { refresh() } else if !active { cancelActions() } } }
+    @ObservationIgnored private var service: any BoardService
+    @ObservationIgnored private var task: Task<Void, Never>?
+    @ObservationIgnored private var preferenceTask: Task<Void, Never>?
+    @ObservationIgnored private var generation = UUID()
+    @ObservationIgnored private var preferencesLoaded = false
 
     init(projectID: String, baseURL: URL, pageActions: any PageActionServing) {
-        self.projectID = projectID; self.baseURL = baseURL
+        self.projectID = projectID
+        let api = try! APIClient(baseURL: baseURL)
+        service = APIBoardService(api: api)
         navigation = PageActionViewModel(service: pageActions)
-        super.init()
     }
-    var pageURL: URL {
-        var parts = URLComponents(url: baseURL, resolvingAgainstBaseURL: false)!
-        parts.path = "/native/board.html"
-        parts.queryItems = [URLQueryItem(name: "project", value: projectID)]
-        return parts.url!
+
+    var tickets: [JiraTicket] {
+        let items = snapshot?.items ?? []
+        if assigneeFilter == "__unassigned__" { return items.filter { ($0.assigneeId ?? "").isEmpty } }
+        if !assigneeFilter.isEmpty { return items.filter { $0.assigneeId == assigneeFilter } }
+        return items
     }
+    var columns: [String] {
+        var result: [String] = []
+        // Jira columns may contain multiple workflow statuses. Render each status
+        // as a lane so moving a card always names a real transition destination.
+        for column in snapshot?.columns ?? [] {
+            for id in column.statusIds {
+                let name = column.statuses?.first(where: { $0.id == id })?.name
+                let status = (name?.isEmpty == false ? name : nil)
+                    ?? snapshot?.items.first(where: { $0.statusId == id })?.status
+                if let status, !status.isEmpty, !result.contains(status) { result.append(status) }
+            }
+        }
+        for status in (snapshot?.items ?? []).compactMap(\.status) where !status.isEmpty && !result.contains(status) { result.append(status) }
+        return result
+    }
+    func tickets(in column: String) -> [JiraTicket] { tickets.filter { $0.status == column } }
+    var assignees: [(id: String, name: String)] {
+        var people: [String: String] = [:]
+        for ticket in snapshot?.items ?? [] {
+            if let id = ticket.assigneeId, !id.isEmpty { people[id] = ticket.assignee ?? id }
+        }
+        return people.map { ($0.key, $0.value) }.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    }
+
     func connect(baseURL: URL) {
-        guard !retired else { return }
-        connected = true
-        if self.baseURL != baseURL {
-            cancelActions()
-            self.baseURL = baseURL
-            webView?.load(URLRequest(url: pageURL))
-        } else { applyState() }
+        guard !retired, let api = try? APIClient(baseURL: baseURL) else { return }
+        generation = UUID(); task?.cancel(); task = nil; service = APIBoardService(api: api)
+        preferencesLoaded = false
+        if active { refresh() }
     }
-    func pause() { connected = false; applyState() }
-    func materialize() -> WKWebView {
-        guard !retired else { return WKWebView() }
-        if let webView { return webView }
-        let config = WKWebViewConfiguration()
-        config.websiteDataStore = .nonPersistent()
-        config.userContentController.add(BoardMessageReceiver(owner: self), name: "board")
-        let view = WKWebView(frame: .zero, configuration: config)
-        view.navigationDelegate = self
-        view.setAccessibilityIdentifier("sprint-board-webview")
-        webView = view
-        view.load(URLRequest(url: pageURL))
-        return view
+    func pause() { task?.cancel(); task = nil; generation = UUID(); cancelActions() }
+    func show(appearance: AppAppearance) { self.appearance = appearance; active = true }
+    func refresh(force: Bool = false) {
+        guard !retired, active, task == nil else { return }
+        let generation = generation, service = service
+        loading = true; error = nil
+        task = Task {
+            defer { if self.generation == generation { loading = false; task = nil } }
+            do {
+                async let board = service.snapshot(projectID: projectID, force: force)
+                async let site = service.site()
+                let value = try await board
+                try Task.checkCancellation()
+                guard self.generation == generation else { return }
+                snapshot = value
+                if let message = value.error { error = message }
+                if let location = try? await site { siteURL = safeWebURL(location.baseUrl) }
+                if !preferencesLoaded, let settings = try? await service.settings() {
+                    assigneeFilter = settings["board_filter_" + projectID] ?? ""
+                    preferencesLoaded = true
+                }
+            } catch { if !Task.isCancelled, self.generation == generation { self.error = error.localizedDescription } }
+        }
     }
-    func show(appearance: AppAppearance) {
-        guard !retired else { return }
-        self.appearance = appearance; active = true
-    }
-    private func applyState() {
-        let command = "window.nativeBoard?.setTheme('\(appearance.rawValue)'); window.nativeBoard?.setActive(\(active && connected ? "true" : "false"));"
-        webView?.evaluateJavaScript(command, completionHandler: nil)
-    }
-    func refresh() { webView?.evaluateJavaScript("window.nativeBoard?.refresh()", completionHandler: nil) }
-    func reload() { guard !retired else { return }; cancelActions(); error = nil; materialize().reload() }
+    func reload() { error = nil; refresh(force: true) }
     func cancelActions() { navigation.cancel() }
-    func retire() { suspend(); retired = true; onAction = { _ in }; connected = false }
-    func suspend() {
-        active = false
-        cancelActions(); releaseSurface()
+    func retire() { suspend(); retired = true; onAction = { _ in } }
+    func suspend() { active = false; pause() }
+
+    private func persistFilter() {
+        guard preferencesLoaded, !retired else { return }
+        preferenceTask?.cancel()
+        let value = assigneeFilter, service = service
+        preferenceTask = Task {
+            do { try await service.saveFilter(value, projectID: projectID) }
+            catch { if !Task.isCancelled { self.error = error.localizedDescription } }
+        }
     }
-    private func releaseSurface() {
-        webView?.evaluateJavaScript("window.nativeBoard?.setActive(false)", completionHandler: nil)
-        webView?.stopLoading()
-        webView?.configuration.userContentController.removeScriptMessageHandler(forName: "board")
-        webView?.navigationDelegate = nil
-        webView?.removeFromSuperview()
-        webView = nil
+    func move(_ ticket: JiraTicket, to status: String) {
+        guard !retired, active, ticket.status != status, !busy.contains(ticket.key) else { return }
+        busy.insert(ticket.key); error = nil
+        let service = service
+        Task {
+            defer { busy.remove(ticket.key) }
+            do { try await service.transition(key: ticket.key, status: status); refresh(force: true) }
+            catch { self.error = error.localizedDescription }
+        }
     }
-    fileprivate func receive(_ message: WKScriptMessage) {
-        guard !retired, active, connected, message.webView === webView else { return }
-        guard let link = BoardTicketLink.parse(message.body, source: message.frameInfo.request.url,
-                                              expected: pageURL, mainFrame: message.frameInfo.isMainFrame) else { return }
-        request(link)
+    func assign(_ ticket: JiraTicket, to assignee: String) {
+        guard !retired, active, !busy.contains(ticket.key) else { return }
+        busy.insert(ticket.key); error = nil
+        let service = service
+        Task {
+            defer { busy.remove(ticket.key) }
+            do { try await service.assign(key: ticket.key, assignee: assignee); refresh(force: true) }
+            catch { self.error = error.localizedDescription }
+        }
     }
-    func request(_ link: BoardTicketLink) {
-        guard !retired, active, connected else { return }
-        onAction(.openTicket(link))
+    func open(_ ticket: JiraTicket, external: Bool = false) {
+        guard let base = siteURL else { error = "Configure the Jira site before opening a ticket."; return }
+        let url = base.appendingPathComponent("browse").appendingPathComponent(ticket.key).absoluteString
+        onAction(.openTicket(.init(type: "openTicket", url: url, title: ticket.key, external: external)))
     }
     func perform(_ action: Action) {
-        guard !retired, active, connected else { return }
+        guard !retired, active else { return }
         switch action {
         case .openTicket(let link):
-            guard link.type == "openTicket", SessionPage.parse(link.url)?.kind == "jira", let url = safeWebURL(link.url) else { return }
+            guard let url = safeWebURL(link.url) else { return }
             if link.external { navigation.external(url) }
             else { navigation.open(OpenPageRequest(url: link.url, kind: "jira", title: link.title)) }
         }
     }
-    func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction,
-                 decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void) {
-        // No remote or secondary document can inherit this page's message handler.
-        decisionHandler(action.targetFrame?.isMainFrame == true && action.request.url == pageURL ? .allow : .cancel)
-    }
-    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { error = nil; applyState() }
-    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) { failed(error) }
-    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { failed(error) }
-    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) { error = "The board process stopped. Reload to reconnect." }
-    private func failed(_ error: Error) {
-        if (error as NSError).code != NSURLErrorCancelled { self.error = error.localizedDescription }
-    }
-}
-
-@MainActor private final class BoardMessageReceiver: NSObject, WKScriptMessageHandler {
-    weak var owner: WebBoardViewModel?
-    init(owner: WebBoardViewModel) { self.owner = owner }
-    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-        owner?.receive(message)
-    }
+    func request(_ link: BoardTicketLink) { perform(.openTicket(link)) }
 }

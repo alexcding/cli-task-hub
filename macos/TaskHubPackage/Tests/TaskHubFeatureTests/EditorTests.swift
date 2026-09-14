@@ -1,7 +1,6 @@
 import AppKit
 import Foundation
 import Testing
-import WebKit
 @testable import TaskHubFeature
 
 private struct FontDiffFixture: DiffService {
@@ -28,7 +27,7 @@ actor FileFixture: FileDocumentService {
 }
 
 @MainActor final class BufferFixture: EditorSurface {
-    var webView: WKWebView? { nil }
+    var view: NSView? { nil }
     var changed: (Bool) -> Void = { _ in }
     var failed: (String) -> Void = { _ in }
     var saveRequested: () -> Void = {}
@@ -196,7 +195,8 @@ actor FileFixture: FileDocumentService {
     #expect(restored.visits.map(\.title) == context.visits.map(\.title))
 }
 
-@MainActor @Test(.timeLimit(.minutes(1))) func nativeEditorWebKitLoadsSavesAndRejectsRemoteNavigation() async throws {
+#if false
+@MainActor @Test(.timeLimit(.minutes(1))) func removedWebEditorIntegration() async throws {
     _ = NSApplication.shared
     var root = URL(fileURLWithPath: #filePath)
     for _ in 0..<5 { root.deleteLastPathComponent() }
@@ -272,6 +272,30 @@ actor FileFixture: FileDocumentService {
     diff.setFont(CodeFont(family: "Monaco", size: 16))
     let retained = try await diffView.evaluateJavaScript("window.savedDiffRoot === document.querySelector('.diff-root') && document.documentElement.style.getPropertyValue('--diff-font-size') === '16px'")
     #expect(retained as? Bool == true)
+}
+#endif
+
+@MainActor @Test func nativeEditorSurfaceLoadsEditsAndTracksSavedVersions() async throws {
+    _ = NSApplication.shared
+    let surface = NativeEditorSurface()
+    try await surface.load(.init(content: "let title = \"Unicode 🦊\"\n", readOnly: false,
+                                 revision: String(repeating: "a", count: 64)), path: "/tmp/Fixture.swift")
+    let initial = try await surface.snapshot(freeze: false)
+    #expect(initial.content == "let title = \"Unicode 🦊\"\n" && !initial.dirty)
+    let textView = try #require(surface.view?.descendantTextView)
+    textView.string += "// edited\n"
+    textView.didChangeText()
+    let edited = try await surface.snapshot(freeze: false)
+    #expect(edited.dirty && edited.content.hasSuffix("// edited\n"))
+    #expect(try await surface.acknowledge(version: edited.version) == false)
+    surface.dispose()
+}
+
+private extension NSView {
+    var descendantTextView: NSTextView? {
+        if let text = self as? NSTextView { return text }
+        return subviews.lazy.compactMap(\.descendantTextView).first
+    }
 }
 
 

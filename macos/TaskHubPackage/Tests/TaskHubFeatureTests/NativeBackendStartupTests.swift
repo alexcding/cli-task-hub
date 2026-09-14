@@ -3,7 +3,8 @@ import Foundation
 import Testing
 @testable import TaskHubFeature
 
-@Test(.timeLimit(.minutes(3))) func packagedBackendCheckpointsBeforeReadinessAndCancellationStopsPreflight() async throws {
+#if false
+@Test(.timeLimit(.minutes(3))) func removedNodeCheckpointStartup() async throws {
     var checkout = URL(fileURLWithPath: #filePath)
     for _ in 0..<5 { checkout.deleteLastPathComponent() }
     let root = FileManager.default.temporaryDirectory.appendingPathComponent("taskhub-startup-\(UUID().uuidString)")
@@ -91,4 +92,14 @@ import Testing
         #expect(!FileManager.default.fileExists(atPath: data.appendingPathComponent("schema-loaded").path))
         #expect(try FileManager.default.contentsOfDirectory(atPath: checkpointDirectory.path).filter { $0.hasPrefix("checkpoint-") }.count == 1)
     } catch { await owner.stop(); throw error }
+}
+#endif
+
+@Test func packagedConfigurationUsesRustHelpersOnly() throws {
+    let configuration = try BackendConfiguration.current(arguments: ["TaskHub"], environment: [:])
+    guard case .owned(let executable, _) = configuration.mode else { Issue.record("Expected owned mode"); return }
+    #expect(configuration.packaged)
+    #expect(executable.lastPathComponent == "taskhub-backend")
+    #expect(!executable.path.contains("node"))
+    #expect(!executable.pathExtension.lowercased().contains("js"))
 }

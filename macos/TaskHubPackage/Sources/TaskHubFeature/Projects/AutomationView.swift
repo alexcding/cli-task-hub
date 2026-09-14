@@ -26,12 +26,12 @@ struct AutomationView: View {
                             .font(.caption).foregroundStyle(.secondary)
                         TextField("Platform prefix", text: $model.draft.fixVersionPrefix).accessibilityIdentifier("automation-prefix")
                         VStack(alignment: .leading, spacing: 8) {
-                            Text("Version script (JavaScript)")
-                            TextField("Version script", text: $model.draft.fixVersionScript, axis: .vertical)
+                            Text("Version template")
+                            TextField("Version template", text: $model.draft.fixVersionScript, axis: .vertical)
                                 .labelsHidden().multilineTextAlignment(.leading).lineLimit(3...8)
                                 .font(.system(.body, design: .monospaced)).accessibilityIdentifier("automation-script")
                         }
-                        Text("Return the version number using now, pr, versions, isoWeek() and pad(). The prefix is added to the result. Example: `0.${isoWeek(now)}`")
+                        Text("Use {year}, {month}, {day}, {isoWeek}, or {prNumber}. The prefix is added to the result. Example: 0.{isoWeek}")
                             .font(.caption).foregroundStyle(.secondary)
                         HStack {
                             Button("Preview Version") { Task { await model.previewVersion() } }.disabled(!model.canPreview)

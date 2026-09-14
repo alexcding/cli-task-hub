@@ -3,7 +3,7 @@ import Foundation
 public struct BackendConfiguration: Sendable {
     public enum Mode: Sendable {
         case external
-        case owned(node: URL, script: URL, dataDirectory: URL)
+        case owned(executable: URL, dataDirectory: URL)
     }
     public let baseURL: URL
     public let mode: Mode
@@ -36,21 +36,12 @@ public struct BackendConfiguration: Sendable {
         let dataPath = try argument("--data-dir") ?? environment["TASKHUB_DATA_DIR"]
         let dataDirectory = dataPath.map { URL(fileURLWithPath: $0, isDirectory: true) }
             ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/TaskHub")
-        let script: URL
-        let node: URL
         let root = try argument("--backend-root")
-        if let root {
-            script = URL(fileURLWithPath: root).appendingPathComponent("src/server/app.js")
-            guard let nodePath = try argument("--node-path") else {
-                throw BackendError.configuration("Development mode requires --node-path with an absolute Node executable path.")
-            }
-            node = URL(fileURLWithPath: nodePath)
-        } else {
-            script = Bundle.main.bundleURL.appendingPathComponent("Contents/Resources/backend/src/server/app.js")
-            node = Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/taskhub-node")
-        }
+        let executable = try argument("--backend-path").map { URL(fileURLWithPath: $0) }
+            ?? root.map { URL(fileURLWithPath: $0).appendingPathComponent("crates/taskhub-backend/target/debug/taskhub-backend") }
+            ?? Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/taskhub-backend")
         return Self(baseURL: URL(string: "http://127.0.0.1:\(port)")!,
-                    mode: .owned(node: node, script: script, dataDirectory: dataDirectory), packaged: root == nil)
+                    mode: .owned(executable: executable, dataDirectory: dataDirectory), packaged: root == nil)
     }
 }
 
@@ -70,11 +61,9 @@ public actor BackendProcess {
             return api
         }
         guard process == nil else { throw BackendError.startup("The backend is already starting or running.") }
-        guard case let .owned(node, script, directory) = configuration.mode else { throw BackendError.incompatible }
-        let entry = configuration.packaged ? script.deletingLastPathComponent().appendingPathComponent("native-launcher.js") : script
-        guard FileManager.default.isExecutableFile(atPath: node.path),
-              FileManager.default.fileExists(atPath: script.path), FileManager.default.fileExists(atPath: entry.path) else {
-            throw BackendError.startup("Backend resources are missing. Use --backend-url for an existing server or bundle the Node backend.")
+        guard case let .owned(executable, directory) = configuration.mode else { throw BackendError.incompatible }
+        guard FileManager.default.isExecutableFile(atPath: executable.path) else {
+            throw BackendError.startup("The Rust backend executable is missing. Build taskhub-backend, pass --backend-path, or use --backend-url.")
         }
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let logURL = directory.appendingPathComponent("native-backend.log")
@@ -83,20 +72,16 @@ public actor BackendProcess {
         try log.seekToEnd()
         let child = Process()
         let instanceID = UUID().uuidString
-        child.executableURL = node
-        child.arguments = [entry.path]
-        child.currentDirectoryURL = script.deletingLastPathComponent()
+        child.executableURL = executable
+        child.currentDirectoryURL = executable.deletingLastPathComponent()
         var environment = ProcessInfo.processInfo.environment
         environment["PORT"] = String(configuration.baseURL.port ?? 3000)
         environment["TASKHUB_DATA_DIR"] = directory.path
         environment["TASKHUB_INSTANCE_ID"] = instanceID
         environment["TASKHUB_PACKAGED"] = configuration.packaged ? "1" : "0"
-        // Xcode Stop can kill the app without running its normal shutdown.
-        // The source backend then exits when macOS reparents it.
-        environment["TASKHUB_NATIVE_PARENT_PID"] = configuration.packaged ? nil
-            : String(ProcessInfo.processInfo.processIdentifier)
+        environment["TASKHUB_NATIVE_PARENT_PID"] = String(ProcessInfo.processInfo.processIdentifier)
         // Finder launches have a small PATH; keep the user's entries and include
-        // standard CLI installation locations for the existing Node repositories.
+        // standard CLI installation locations for gh, acli, and agent CLIs.
         environment["PATH"] = (environment["PATH"] ?? "/usr/bin:/bin") + ":/opt/homebrew/bin:/usr/local/bin"
         child.environment = environment
         child.standardInput = FileHandle.nullDevice
@@ -106,8 +91,6 @@ public actor BackendProcess {
         process = child
         logHandle = log
         do {
-            // Packaged startup checkpoints existing data before loading any
-            // application store. It runs in this owned child, off the UI actor.
             let deadline = ContinuousClock.now + .seconds(configuration.packaged ? 120 : 12)
             while ContinuousClock.now < deadline {
                 try Task.checkCancellation()

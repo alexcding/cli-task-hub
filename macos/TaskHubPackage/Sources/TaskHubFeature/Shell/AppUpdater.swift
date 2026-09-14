@@ -33,7 +33,7 @@ enum UpdateConfiguration {
         #endif
         let bundle = Bundle.main
         let packaged = bundle.bundleURL.pathExtension == "app"
-            && FileManager.default.isExecutableFile(atPath: bundle.bundleURL.appendingPathComponent("Contents/Helpers/taskhub-node").path)
+            && FileManager.default.isExecutableFile(atPath: bundle.bundleURL.appendingPathComponent("Contents/Helpers/taskhub-backend").path)
             && FileManager.default.isExecutableFile(atPath: bundle.bundleURL.appendingPathComponent("Contents/Helpers/taskhub-ptyd").path)
         unavailableReason = UpdateConfiguration.unavailableReason(debug: debug, packaged: packaged, info: bundle.infoDictionary ?? [:])
         guard unavailableReason == nil else { return }

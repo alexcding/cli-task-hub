@@ -23,9 +23,15 @@ public struct BackendHealth: Decodable, Sendable {
     public let `protocol`: Int
     public let pid: Int32
     public let instanceId: String?
+    public let runtime: String?
+
+    public init(service: String, protocol: Int, pid: Int32, instanceId: String?, runtime: String? = nil) {
+        self.service = service; self.protocol = `protocol`; self.pid = pid
+        self.instanceId = instanceId; self.runtime = runtime
+    }
 
     public func validate(instanceID: String? = nil) throws {
-        guard service == "taskhub", self.protocol == 1,
+        guard service == "taskhub", self.protocol == 1, runtime == nil || runtime == "rust",
               instanceID == nil || instanceId == instanceID else { throw BackendError.incompatible }
     }
 }

@@ -48,7 +48,7 @@ import Testing
     root.navigate(to: .project(project.id))
     model.selectSection(.settings)
     #expect(root.projectCoordinator?.model === model && model.section == .settings)
-    #expect(model.board?.pageURL.absoluteString == "http://127.0.0.1:12345/native/board.html?project=p")
+    #expect(model.board?.projectID == "p")
     #expect(model.tickets != nil && model.workflows != nil && model.automation != nil)
     await model.editor.pickFolder()
     #expect(model.editor.draft.workspace == "/tmp/injected-project")

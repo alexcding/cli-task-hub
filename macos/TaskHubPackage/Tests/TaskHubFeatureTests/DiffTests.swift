@@ -22,7 +22,6 @@ actor DiffFixture: DiffService {
     await model.waitForRefresh()
     #expect(await service.calls == 1)
     #expect(model.snapshot?.diff == "diff for /tmp/diff-test")
-    #expect(model.webView == nil) // Loading data does not construct a web process.
     await service.fail(true)
     model.refresh(); await model.waitForRefresh()
     #expect(model.error == "Repository unavailable")
@@ -31,7 +30,7 @@ actor DiffFixture: DiffService {
     model.refresh()
     model.hide()
     try await Task.sleep(for: .milliseconds(100))
-    #expect(model.snapshot == nil && !model.loading && model.webView == nil)
+    #expect(model.snapshot == nil && !model.loading)
     model.refresh(); await model.waitForRefresh()
     #expect(model.snapshot != nil && model.error == nil)
     model.disconnect(); model.refresh()

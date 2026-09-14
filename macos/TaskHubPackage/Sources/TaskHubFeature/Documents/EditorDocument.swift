@@ -1,6 +1,6 @@
+import AppKit
 import Foundation
 import Observation
-import WebKit
 
 struct FileDocumentRecord: Codable, Identifiable, Equatable, Sendable {
     var id = UUID().uuidString
@@ -40,7 +40,7 @@ struct EditorBuffer: Codable, Sendable {
 }
 
 @MainActor protocol EditorSurface: AnyObject {
-    var webView: WKWebView? { get }
+    var view: NSView? { get }
     var changed: (Bool) -> Void { get set }
     var failed: (String) -> Void { get set }
     var saveRequested: () -> Void { get set }
@@ -79,7 +79,7 @@ struct EditorBuffer: Codable, Sendable {
     private(set) var loaded = false
     private(set) var error: String?
     private(set) var surface: (any EditorSurface)?
-    var webView: WKWebView? { surface?.webView }
+    var editorView: NSView? { surface?.view }
     @ObservationIgnored var changed: () -> Void = {}
     @ObservationIgnored private var service: (any FileDocumentService)?
     @ObservationIgnored private var makeSurface: (() -> any EditorSurface)?
@@ -169,7 +169,7 @@ struct EditorBuffer: Codable, Sendable {
                 let nextRevision = try await service.save(path: record.path, content: buffer.content, revision: revision)
                 try Self.validate(content: "", revision: nextRevision)
                 guard self.generation == generation else { return false }
-                // Persist the new revision even if WebKit fails during the ack.
+                // Persist the new revision even if the native surface fails during the ack.
                 self.revision = nextRevision
                 dirty = try await surface.acknowledge(version: buffer.version)
                 changed()

@@ -5,16 +5,15 @@ Apple silicon is the initial build target. Open `TaskHub.xcodeproj` in Xcode,
 select **TaskHub → My Mac**, and press **Run** (Command-R). The project directly
 references `TaskHubPackage`; no separate workspace is needed.
 
-The shared Run scheme starts the checkout's Node server through the app's existing
-backend owner, using the prepared Node runtime and Rust PTY helper. No separate
-`npm run dev` is needed. Normal Quit stops the owned server; Xcode Stop/crash also
+The shared Run scheme starts the checkout's Rust backend through the app's backend
+owner, alongside the Rust PTY helper. No separate server is needed. Normal Quit
+stops the owned server; Xcode Stop/crash also
 causes that development server to exit. An unrelated server on the same port is
-never terminated. The existing runtime preparation below is still required for a
-fresh checkout; these runtimes are already prepared in this working copy.
+never terminated. Build both Rust crates once before the first Xcode run.
 
 The current local Release package is `macos/.build/review-20260913-appearance/`
 (paths relative to the repository): `TaskHub.app`, ZIP, DMG and `release.json`.
-The app includes its Node backend and Rust PTY helper. It is ad-hoc signed for local
+The app includes its Rust backend and Rust PTY helper. It is ad-hoc signed for local
 review, not notarized for public distribution. Release compilation and packaging
 succeeded; no UI/unit tests or benchmarks were added or run in this closeout.
 
@@ -285,7 +284,7 @@ npm ci --ignore-scripts
 npm run gen:swift-routes
 python3 macos/scripts/build-ghostty-vt.py
 python3 macos/scripts/build-ghostty-native.py
-python3 macos/scripts/node_runtime.py
+cargo build --manifest-path crates/taskhub-backend/Cargo.toml
 cargo build --manifest-path crates/taskhub-ptyd/Cargo.toml --release --features terminal-snapshots --locked
 xcodebuildmcp macos build --project-path macos/TaskHub.xcodeproj --scheme TaskHub --derived-data-path macos/.build/xcode --arch arm64
 ```
@@ -299,9 +298,10 @@ arguments or the launch command's `--launch-args` option:
 
 - Existing server: `--backend-url http://127.0.0.1:3000`. The server must include the
   new `/api/backend/health` endpoint. The native app never stops an external server.
-- Development child: `--backend-root /absolute/path/to/repo --node-path /absolute/path/to/node`.
+- Development child: `--backend-root /absolute/path/to/repo`, or
+  `--backend-path /absolute/path/to/taskhub-backend`.
   Add `--backend-port 43187 --data-dir /absolute/path/to/isolated-data` to isolate it
-  from your daily app. Node must be 22.12 or later.
+  from your daily app.
 - Bundled child: disable the shared Run scheme's development arguments. The app expects the bundle resources below.
   It defaults to port 3000 and `~/Library/Application Support/TaskHub`, respecting
   `TASKHUB_DATA_DIR` or `--data-dir`.
@@ -312,30 +312,19 @@ session PTY, then exit. On launch, every saved session gets a new terminal and i
 Claude or Codex conversation is resumed. Quit waits for PTY teardown; a failure keeps
 the app open with an error so teardown can be retried.
 
-## Focused working diff (M5, in progress)
+## Native working diff
 
-Select a session and choose **Show Changes**. The existing web diff renderer runs
-inside the native split with syntax highlighting, file collapse, and untracked-file
-listing. Native controls own refresh and error recovery; failed reads preserve the
-last displayed patch. Hiding the pane or switching sessions releases its webview and
-patch storage while retaining the session's terminal.
-
-The focused page receives its snapshot from `DiffViewModel` through an injected
-`DiffService`. It cannot fetch APIs or navigate remotely. Its only message handler
-reports ready/error from that exact local main frame, and Swift waits for ready
-before supplying the patch. `macos/web-assets.txt` includes the reused renderer,
-parser/highlighter, styles, and shared dependencies for bundling.
-
-This first diff increment is read-only. Monaco editing, save/conflict recovery,
-dirty-close protection, file-tab migration, terminal file links, discard/commit,
-and document shortcuts remain part of M5.
+Select a session and choose **Show Changes**. A native SwiftUI diff displays tracked
+and untracked changes and supports file navigation, commit/push, and guarded
+single-block discard. `DiffViewModel` receives snapshots through an injected
+`DiffService`; parsing and rendering stay in Swift and no local web page is created.
 
 The shared editor save contract now uses `/api/file` revisions. Reads return an
 opaque revision; saves must submit it and retain the returned revision for the next
 save. A stale revision fails without replacing the observed newer file. Edits stage
 beside the destination before rename, preserving macOS file metadata and symlinks.
-Hard-linked files are read-only. The existing web editor now retains edits made while
-a save is in flight; this contract will also back the native document lifecycle.
+Hard-linked files are read-only. The AppKit editor retains edits made while a save
+is in flight.
 
 ## Native terminal
 
@@ -449,7 +438,7 @@ pane cancels recovery and rejects stale callbacks.
 ## Native editor documents (M5, in progress)
 
 Choose **Open File** (Command-O) from a session/page context. File tabs share the
-native page strip and History; Monaco renders the editor, while Swift owns file I/O,
+native page strip and History; AppKit renders the editor, while Swift owns file I/O,
 revision conflicts, and document lifecycle through injected services and factories.
 Command-S saves, Command-F finds, and Command-W closes with Save/Discard/Cancel when
 needed. Session removal and app termination check unsaved documents before stopping shells.
@@ -457,35 +446,23 @@ Hidden clean editors unload; unsaved editors retain their buffer and undo histor
 Unsaved text is not persisted for crash recovery. Files must be UTF-8 text, at most
 5 MB; hard-linked/unwritable files are read-only. Failed saves preserve edits.
 
-The focused editor has no HTTP file API or remote navigation. Its scoped bridge
-exchanges only the current document buffer and editor events. `web-assets.txt`
-includes the shared Monaco loader, same-origin worker bootstrap, and vendored assets.
-The sprint board remains web based; native diff actions and full terminal link parity are
-still in progress.
+The editor uses the revision-checked Rust file API. The Sprint Board and diff are
+native SwiftUI surfaces; browser tabs remain WebKit because they display GitHub and
+Jira themselves, not bundled TaskHub JavaScript.
 
 ## Local bundle smoke test
 
 ```bash
-python3 macos/scripts/node_runtime.py
 bash macos/scripts/bundle-backend.sh /absolute/path/to/TaskHub.app
 xcodebuildmcp macos launch --json '{"appPath":"/absolute/path/to/TaskHub.app","launchArgs":["--backend-port","43187","--data-dir","/absolute/path/to/isolated-data"]}'
 ```
 
-The bundle script includes the official Node executable, production npm dependencies,
-server/shared code, focused web assets listed in `web-assets.txt`, and the standalone Rust PTY helper, then signs the local bundle
-ad hoc. It runs after Xcode builds; repeat it when rebuilding the app. It prepares
-its own runtime under `macos/.build/node`, independent of Tauri and the developer's
-installed Node version. `node-runtime.lock.json` pins the official arm64 archive
-and SHA-256; every preparation verifies the archive, extracts only Node and its
-license, and checks the version and built-in SQLite. The first command above is
-optional because bundling runs it automatically. Downloads are cached for offline
-re-bundling. The license is included at `Contents/Resources/Licenses/Node-LICENSE`.
-For a custom runtime, provide both `TASKHUB_NODE_SIDECAR` and `TASKHUB_NODE_LICENSE`.
-Re-bundling replaces the generated backend tree so removed web assets and stale
-npm dependencies cannot survive a build.
+The bundle script builds and copies the release Rust backend and PTY daemon, copies
+only toolbar image resources, signs the helpers, then signs the app. It does not run
+npm or copy Node, `src/server`, `src/shared`, or renderer code.
 Use an absolute app path. This is a development bundle, not a notarized release.
-Run `node macos/scripts/smoke-web-assets.cjs /absolute/path/TaskHub.app` from the repo
-root to check all packaged board/diff/editor assets using the bundled Node helper and isolated data.
+Inspect `Contents/Helpers` to verify the two Rust helpers and confirm that no
+`Contents/Resources/backend` tree exists.
 
 Distribution is a direct Mac app without App Sandbox: TaskHub orchestrates local CLIs,
 worktrees, and detached PTYs. Developer ID signing, hardened-runtime entitlements and notarization are wired
@@ -516,22 +493,17 @@ Sparkle retains its standard permission prompt and automatic-check preference.
 An update restart waits at AppKit's termination boundary for the existing
 Save/Discard/Cancel editor flow and outstanding workspace operations. Cancel
 keeps the app open and permits the installer to retry. On approval, TaskHub stops
-its workflow automation, terminal sessions, PTY daemon, and owned Node backend.
+its workflow automation, terminal sessions, PTY daemon, and owned Rust backend.
 The relaunched app recreates saved sessions and resumes their CLI conversations.
 Real signed feed download/install/relaunch and upgrade/rollback acceptance remain
 release gates.
 
 ### Data recovery
 
-The bundled backend includes a standalone SQLite backup/verify/restore tool. It
-preserves the durable database, optional activity logs and pending native page
-metadata without executing application schema migrations. Restore only creates a
-new data directory. Packaged startup checkpoints existing data before opening its
-application stores when adopting data or changing releases. Failed/corrupt
-checkpoints stop startup; repeated launches reuse and verify the original checkpoint.
-The host waits up to two minutes and can cancel its owned preflight process.
-See [data recovery](../docs/DATA-RECOVERY.md) for commands, the
-state inventory, online-backup limits and the remaining upgrade/rollback gates.
+The Rust helper provides `backup`, `verify`, and `restore` commands and reads the
+previous format-1 snapshots. Packaged startup holds the native data ownership lock
+and verifies a pre-migration checkpoint before opening existing databases. See
+[Data recovery](../docs/DATA-RECOVERY.md) for the commands and state inventory.
 
 ## Verify
 
@@ -539,15 +511,14 @@ state inventory, online-backup limits and the remaining upgrade/rollback gates.
 npm run check:swift-routes
 node --test --test-force-exit test/contracts.test.js test/swift-routes.test.js test/api.test.js
 xcodebuildmcp swift-package test --package-path macos/TaskHubPackage
+cargo test --manifest-path crates/taskhub-backend/Cargo.toml
 cargo test --offline --manifest-path crates/taskhub-ptyd/Cargo.toml --features terminal-snapshots
 cargo check --offline --manifest-path src-tauri/Cargo.toml
 xcodebuildmcp macos test --project-path macos/TaskHub.xcodeproj --scheme TaskHub --derived-data-path macos/.build/ui-tests --extra-args '-only-testing:TaskHubUITests'
 ```
 
-Swift integration tests require Node, installed root dependencies, and the built
-debug PTY helper above. They launch the
-real Express routes with temporary data through `scripts/backend-fixture.cjs`; no
-pollers, GitHub/Jira CLIs, or production databases are used. Tests cover route escaping,
+Some legacy Swift integration fixtures still require Node; production builds do not.
+They use temporary data and never touch production databases. Tests cover route escaping,
 bounded SSE framing, Unicode, API identity, snapshots, real SSE, and backend ownership.
 Terminal tests use isolated sockets and temporary shell scripts; they never connect
 to daily TaskHub sessions. Native surface tests create an unshown Metal-backed
@@ -590,14 +561,14 @@ tracked changes, optionally includes untracked files, and uses the existing Git
 signing/hooks. A failed push preserves the successful local commit and offers
 Push without repeating Commit. Failed commit drafts survive; failed refreshes
 disable actions until disk state is loaded again. Quit waits for running Git
-operations. The focused web diff itself continues to render the patch.
+operations. The native SwiftUI diff renders the patch.
 
 
 Working diff blocks also offer **Discard**. A native sheet previews the exact patch
 before **Discard Block**; Cancel makes no changes. The backend verifies the reviewed
 diff revision again when applying, so stale confirmations ask for refresh and review.
 Failed operations retain their error and proposal. Block selection is typed and
-scoped to the originating worktree; the renderer never submits arbitrary patches.
+scoped to the originating worktree; the UI never submits arbitrary patches.
 
 ## Direct-distribution packaging
 
@@ -625,21 +596,19 @@ python3 macos/scripts/package-direct.py \
   --notary-profile TASKHUB_NOTARY
 ```
 
-The script signs embedded code from the inside out with hardened runtime, gives
-Node its JIT entitlements, notarizes the app archive, staples the app, then creates,
+The script signs embedded code from the inside out with hardened runtime,
+notarizes the app archive, staples the app, then creates,
 signs, notarizes and staples the disk image. A rejected notarization cannot be
 reported as a release. Release mode requires a Release build with the personal
 bundle ID. No signing identities, Apple credentials or update private keys are
 stored by the script. The native bundle includes Ghostty, wrapper and theme
-licenses alongside Node and Sparkle notices.
+licenses alongside the Sparkle notice.
 
 Developer ID and notarization credentials have not been provisioned. The signed
 release path is implemented but has not been executed. Configure the real HTTPS
 Sparkle feed and public key when building a release; sign the final archive with
 your private Ed25519 key before publishing an appcast. No feed is published here.
 
-The current local review artifacts are in `macos/.build/review-20260913-v3/`.
-They were produced from the arm64 Release build, with the official Node runtime,
-production backend dependencies and release Rust PTY helper included. App, ZIP,
-and DMG creation succeeded. The app was not launched and no UI or unit tests ran.
-This local package is ad-hoc signed, not notarized; no update feed was published.
+The current Rust review package is `macos/.build/review-20260914-rust-final/`, containing
+an app, ZIP, DMG and checksum manifest. Earlier review directories predate this
+cutover. This is an ad-hoc local package; manual review is still pending.

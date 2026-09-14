@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct EditorDocumentView: View {
@@ -19,8 +20,14 @@ struct EditorDocumentView: View {
                 }.padding(8)
             }
             Divider()
-            if let view = model.webView { BrowserSurface(webView: view) }
+            if let view = model.editorView { NativeEditorHost(view: view) }
             else { Color.clear }
         }
     }
+}
+
+private struct NativeEditorHost: NSViewRepresentable {
+    let view: NSView
+    func makeNSView(context: Context) -> NSView { view }
+    func updateNSView(_ nsView: NSView, context: Context) {}
 }

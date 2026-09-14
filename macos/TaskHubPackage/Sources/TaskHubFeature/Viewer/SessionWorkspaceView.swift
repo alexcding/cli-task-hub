@@ -53,7 +53,7 @@ private struct ToolbarBrandIcon: View {
     private static func load(_ name: String) -> NSImage? {
         let filename = name == "github" ? "github.svg" : "\(name).png"
         let bundled = Bundle.main.bundleURL
-            .appendingPathComponent("Contents/Resources/backend/src/renderer/img")
+            .appendingPathComponent("Contents/Resources/TaskHubImages")
             .appendingPathComponent(filename)
         if let image = NSImage(contentsOf: bundled) { return image }
 

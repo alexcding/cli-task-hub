@@ -1,96 +1,72 @@
 # Native upgrade and rollback data
 
-The native app uses `~/Library/Application Support/TaskHub` unless `--data-dir` or
-`TASKHUB_DATA_DIR` overrides it. An external backend owns its own data directory.
-Use the directory of the backend you intend to preserve, not a guessed directory
-from a bundle identifier. The snapshot command requires an explicit source path.
+The Rust backend owns recovery for the native app. Backup commands do not open
+application stores, run schema migrations, start a server, or invoke GitHub/Jira.
+The default data directory is `~/Library/Application Support/TaskHub`; recovery
+commands always require explicit paths.
 
-## Backup and restore
+## Backup, verify, and restore
 
-The standalone `src/server/database/data-snapshot.js` tool uses Node's SQLite backup
-API without importing application stores or running their schema changes. It ships
-with the native backend. Use the bundled Node executable, or Node 22.16 or newer.
+From a checkout, build `crates/taskhub-backend` and run:
 
-For a checkpoint across all files, save editor buffers and quit the frontend(s) and
-backend(s) using the data directory before backup. Closing or quitting the native app
-ends its PTYs. Online backups are also supported: each SQLite
-file is a consistent read snapshot, including committed WAL contents, but the
-database, rolling log and native JSON cache are captured separately. They are not
-one cross-file transaction. Unsaved editor buffers must be saved separately.
-
-From a checkout:
-
-```bash
-node src/server/database/data-snapshot.js backup \
+```sh
+crates/taskhub-backend/target/debug/taskhub-backend backup \
   '/absolute/path/to/data' '/absolute/path/to/new-backup'
-node src/server/database/data-snapshot.js verify '/absolute/path/to/new-backup'
-node src/server/database/data-snapshot.js restore \
+crates/taskhub-backend/target/debug/taskhub-backend verify \
+  '/absolute/path/to/new-backup'
+crates/taskhub-backend/target/debug/taskhub-backend restore \
   '/absolute/path/to/new-backup' '/absolute/path/to/new-restored-data'
 ```
 
-From an installed app, replace the command's executable and script with:
+From the installed app, use the same arguments with:
 
-```bash
-'/Applications/TaskHub.app/Contents/Helpers/taskhub-node' \
-  '/Applications/TaskHub.app/Contents/Resources/backend/src/server/database/data-snapshot.js' \
-  backup '/absolute/path/to/data' '/absolute/path/to/new-backup'
+```sh
+'/Applications/TaskHub.app/Contents/Helpers/taskhub-backend' backup \
+  '/absolute/path/to/data' '/absolute/path/to/new-backup'
 ```
 
-Backup and restore destinations must **not exist**, even as empty directories.
-Their parents must exist. Restore validates the complete manifest, checksums and
-SQLite integrity before creating the destination, then verifies each copied file
-again. It never replaces a live database. An interrupted operation leaves incomplete
-output for inspection, without a completed manifest/receipt. Choose a fresh path
-for a retry. Snapshot directories are created with mode `0700`, files with `0600`.
-They contain the same configuration secrets as the source database; keep them private.
+Save editor buffers and quit clients/backends for a checkpoint across all files.
+An online backup includes committed WAL contents in each SQLite database, but
+separate databases and the native page cache are not one cross-file transaction.
+Unsaved editor text, worktree contents and agent conversation files need separate
+preservation.
 
-Test the appropriate saved app version with `--data-dir /absolute/path/to/new-restored-data`
-and an unused backend port. Close the current frontend/backend first, or also provide
-a distinct `--pty-socket` when running isolated acceptance fixtures: changing the data
-directory alone does not change the native daemon's default socket. The data tool
-does not launch apps, poll GitHub/Jira, change login registration, run worktree
-commands, adopt existing PTYs, or write to your original data directory's databases.
+Backup and restore destinations must not exist, even as empty directories; their
+parents must exist. Files use mode `0600`, directories `0700`. The tool validates
+allowlisted paths, rejects symlink inputs/components and SQLite snapshot sidecars,
+checks SHA-256 digests and SQLite integrity, and publishes a manifest or restore
+receipt only after the copied data has been flushed. Interrupted operations may
+leave incomplete output for inspection. Choose a fresh path for a retry.
 
-Use the **pre-upgrade** snapshot when rolling the app back. Starting a newer backend
-may change its database schema, so copying a post-upgrade database to an older app
-is not a rollback guarantee. Keep the original data and old app until acceptance
-passes.
+Format-1 snapshots from the old Node tool remain readable, including `config.db`
+under its original filename. Restoring never overwrites the source or a live data
+directory. Use a **pre-upgrade** snapshot for rollback and keep the matching old
+app: a newer database is not guaranteed to work with an older backend.
+
+Open a restored directory with `--data-dir /absolute/path/to/new-restored-data`
+and an unused `--backend-port`. Stop the current app first. A different data
+directory alone does not change the PTY daemon's default socket.
 
 ## Automatic packaged startup checkpoint
 
-The packaged native app now runs `native-launcher.js` before importing any backend
-application stores. On first adoption of existing data, and whenever the packaged
-release identity changes, it creates and verifies a checkpoint under
-`DATA_DIR/native-backups/checkpoint-<UUID>`. This also protects the first backend
-launch after a Sparkle restart: the app binary has already been installed, but its
-database-opening/schema code has not run yet. It is not a backup of the old app binary.
+With `TASKHUB_PACKAGED=1`, startup acquires the existing SQLite ownership lock in
+`DATA_DIR/native-backups/owner.db` before opening any application store. The lock
+remains held until process exit and coordinates with older packaged Node owners.
+Standalone development and external backends do not acquire this lease; stop them
+before upgrading shared data.
 
-The release identity includes packaged backend/document source files and dependency manifests,
-the app's bundle identifier/version/build, and the running Node version. Re-bundling
-identical inputs keeps the identity stable. Distribution builds must increment
-`CFBundleVersion`; compiled Swift changes are identified through that app metadata.
-The `last-launch.json` receipt records
-the prepared identity and checkpoint only after snapshot files and metadata have
-been flushed. A repeated launch re-verifies the same checkpoint. A new transition,
-including returning to a previously used version, gets a new directory so previous
-rollback copies are retained. Fresh installations record their identity without an
-empty snapshot. Backups are not pruned automatically.
+First adoption of existing data and every release change creates and verifies a
+`native-backups/checkpoint-<UUID>` snapshot before database migrations. Fresh data
+records the release without an empty snapshot. Release identity hashes the Rust
+executable plus the bundled native executable and Info.plist; repeat launches of
+the same bundle reuse and verify the saved checkpoint. A changed app/backend or
+rollback creates another checkpoint. Backups are not pruned automatically.
 
-Backup failure or damaged/missing state stops startup before loading application
-stores. A damaged previous checkpoint is not silently replaced with a backup of
-already-upgraded data. Preserve the `native-backups` directory and inspect the
-reported error in `native-backend.log`; recovery uses a new data directory as above.
-The native host allows up to two minutes for checkpoint preparation plus backend
-readiness, and cancellation stops only its owned child. Incomplete checkpoint
-directories may remain for inspection after cancellation or a crash.
-
-A separate SQLite transaction in `native-backups/owner.db` serializes packaged
-native owners for the lifetime of their backend process. Normal exit and process
-death release its OS lock; the lock file is never deleted or replaced. This guards
-native packaged instances, not old Tauri or standalone backend processes, which do
-not participate. Stop those processes before a native upgrade, or use native
-external-backend mode for deliberate shared-backend development. External and
-unpackaged development launches do not run this checkpoint gate.
+`last-launch.json` is atomically replaced only after the checkpoint is complete.
+The format remains compatible with previous launch receipts. A corrupt receipt or
+missing/damaged previous checkpoint stops startup instead of silently replacing
+the rollback data. Errors appear in `native-backend.log`. The native host allows
+up to two minutes for startup; cancellation terminates its owned backend.
 
 ## State inventory
 
@@ -111,36 +87,10 @@ unpackaged development launches do not run this checkpoint gate.
 | Tauri localStorage layout | `taskhub.prRatio`, `taskhub.projCollapsed`, `taskhub.sidebarWidth`, `taskhub.histSplit` are web layout preferences. Native layouts use their own defaults; the web values are left untouched for rollback. |
 | Remote website logins/cookies, OS notification/login approvals | Browser and macOS stores; not moved by this tool. Cross-host login migration and real OS upgrade behavior still require acceptance. |
 
-## Evidence and remaining release gates
+## Validation status
 
-`test/data-snapshot.test.js` exercises committed-but-uncheckpointed WAL rows, unknown
-legacy schema, native pending pages, log history, Unicode, private permissions,
-corruption and symlink rejection, and refusal to overwrite existing destinations.
-It also seeds the real current backend with projects/workflows/sessions/tabs/settings/
-review state/activity, restores into another temporary directory, and compares the
-backend's full returned durable state after reopen. Tests never use production data
-or start polling/CLI automation.
-
-The seven focused tests pass. The live-WAL fixture takes about 30 seconds inside
-Node's asynchronous backup, with the full suite around 71 seconds on the development
-machine; these tests establish correctness, not a startup latency budget.
-`node macos/scripts/smoke-data-recovery.cjs /absolute/path/TaskHub.app` also copies the
-packaged Node helper and recovery script outside the checkout and exercises the
-documented backup/verify/restore commands. Its isolated legacy schema is preserved
-and the source database checksum is unchanged.
-
-`test/native-checkpoint.test.js` verifies startup ordering before a destructive
-fixture migration, repeat launch, successive upgrades/rollback, failure refusal,
-and interprocess ownership with recovery after a killed owner. A Swift integration
-test runs the real launcher with fixture application code, checks readiness ordering,
-and cancels an injected slow checkpoint before the application module loads.
-`test/native-launcher-lifetime.test.js` forces garbage collection after startup and
-verifies a competing process remains excluded; this reproduced and then verified
-the fix for a prematurely released ownership handle.
-The packaged recovery smoke test also runs copied launcher/checkpoint resources
-with a no-network fixture application module: first adoption creates a checkpoint,
-repeat launch reuses it, and corruption prevents the fixture module from loading.
-
-This proves snapshot and restoration behavior for those fixtures. Real previous
-release binaries, clean-Mac installation, signed Sparkle updates, browser
-authentication, and native UserDefaults migration remain release acceptance work.
+The Rust recovery implementation and release helper compile. Further unit/UI
+execution remains deferred by user direction. Earlier Node snapshot tests describe
+the previous implementation; they are not evidence that the Rust recovery paths
+have been exercised. Manual review, signed updates and clean-Mac acceptance remain
+separate from the implementation and local packaging work.

@@ -1,5 +1,25 @@
 # TaskHub Architecture
 
+## Current native runtime
+
+`macos` owns the SwiftUI/AppKit application, with Ghostty terminals and WebKit for
+remote pages. `crates/taskhub-backend` is the separate Rust API process:
+
+- `main.rs`, `lib.rs`: ownership, startup checkpoint, localhost HTTP and SSE.
+- `db.rs`, `schema_*.sql`: durable config, regenerable snapshots, rolling logs.
+- `poller.rs`, `github.rs`: coalesced sync, snapshot invalidation, PR lifecycle.
+- `jira.rs`: shared merge actions, Fix Version REST writes, board configuration.
+- `routes.rs`, `local.rs`: API contracts and local git/worktree/file operations.
+- `integrations.rs`, `usage.rs`: hooks, webhook forwarding and cached usage.
+- `recovery.rs`: standalone snapshots plus the packaged startup data lease.
+
+`crates/taskhub-ptyd` remains the detached terminal daemon. Native packages contain
+the two Rust helpers and no Node runtime or TaskHub JavaScript. See
+[Data recovery](DATA-RECOVERY.md) for upgrade behavior. Snapshot reads remain fast;
+background sync owns routine GitHub reads and publishes updates through SSE.
+
+The sections below document the retained legacy Node/Tauri development clients.
+
 This document describes the **target** layered architecture for TaskHub. It adapts the
 Clean-Architecture pattern (layers, services, repositories, shared contracts, one-way
 dependency flow, a hard transport boundary) to TaskHub's actual reality:

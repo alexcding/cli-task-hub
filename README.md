@@ -3,15 +3,12 @@
 **A local dashboard and macOS menu-bar app for developers who live in GitHub,
 Jira, and the terminal.**
 
-The native macOS client is in [`macos/`](macos/README.md): SwiftUI dashboard,
-Cocoa sidebar, native Ghostty terminal, and focused web Sprint Board/diff/editor.
-Its implementation is ready for manual review. See the
-[migration status](docs/SWIFTUI-PORT.md#implementation-status) for the current
-review package. The web and Tauri instructions below remain available for those clients.
+The production macOS client is in [`macos/`](macos/README.md): SwiftUI dashboard,
+Cocoa sidebar, native Ghostty terminal, native Sprint Board/diff/editor, and a
+separate Rust API process. It ships no Node runtime or TaskHub JavaScript.
 
 [![macOS](https://img.shields.io/badge/platform-macOS-black)](#quick-start)
-[![Node.js](https://img.shields.io/badge/runtime-Node.js-339933)](#quick-start)
-[![Tauri](https://img.shields.io/badge/desktop-Tauri-24C8DB)](#desktop-app)
+[![Rust](https://img.shields.io/badge/backend-Rust-b7410e)](#native-macos-app)
 [![Powered by gh](https://img.shields.io/badge/powered%20by-gh-24292f)](#cli-native)
 [![License: ISC](https://img.shields.io/badge/license-ISC-blue.svg)](#license)
 
@@ -40,56 +37,21 @@ review loop.
 - **Developer surfaces** - dashboard, project pages, activity logs, terminals,
   worktree actions, and Claude/Codex usage at a glance.
 
-## Quick Start
+## Native macOS App
 
-### Requirements
-
-- Node.js `>=22.12` and npm
-- GitHub CLI (`gh`) installed and authenticated
-- Atlassian CLI (`acli`) authenticated if you want Jira features
-- macOS for the desktop tray app
-
-### Run the dashboard
+Requires macOS, Xcode, Rust ≥1.88, authenticated `gh`, and `acli` for Jira features.
+Build the Rust helpers, then open the Xcode project:
 
 ```bash
-npm install
-npm start
+cargo build --manifest-path crates/taskhub-backend/Cargo.toml
+cargo build --manifest-path crates/taskhub-ptyd/Cargo.toml --features terminal-snapshots
+open macos/TaskHub.xcodeproj
 ```
 
-Open [http://localhost:3000](http://localhost:3000), create a project, and add a
-GitHub repo in `owner/repo` format. Add JQL and a merge transition when you want
-Jira integration.
-
-For hot reload while developing:
-
-```bash
-npm run dev
-```
-
-## Desktop App
-
-The native SwiftUI Mac port is in progress under [`macos/`](macos/README.md).
-Its current foundation builds separately; the terminal correctness milestone comes
-next. See [the migration plan](docs/SWIFTUI-PORT.md) for scope and status.
-
-The desktop shell is a [Tauri](https://tauri.app) (Rust) app. Run it in development:
-
-```bash
-bunx tauri dev
-```
-
-This starts the local server and opens a native window pointed at it. Build the
-packaged macOS app:
-
-```bash
-bunx tauri build
-```
-
-The app is arm64-focused today. The Rust host (`src-tauri/`) owns the window,
-tray, menus, terminals, and the embedded PR/Jira viewer; the same Express backend
-runs as a bundled Node sidecar, and user data is written outside the app bundle
-(`~/Library/Application Support/tv.accedo.taskhub`). See
-[docs/TAURI-PORT.md](docs/TAURI-PORT.md) for the host's internals.
+The shared scheme launches `crates/taskhub-backend/target/debug/taskhub-backend`.
+Packaged apps contain `taskhub-backend` and `taskhub-ptyd` in `Contents/Helpers`.
+The older Node web dashboard and Tauri client remain in the repository as legacy
+development clients, but are not copied into the native app.
 
 ## How It Works
 
@@ -102,7 +64,7 @@ poller + webhook forwarder
       |
 SQLite snapshots
       |
-Express API + SSE
+Rust API + SSE
       |
 dashboard + tray + terminals
 ```
@@ -136,13 +98,17 @@ terminal setup.
 
 | Path | Purpose |
 | --- | --- |
-| `src/server` | Express API, poller, repositories, local SQLite stores |
-| `src/renderer` | No-build vanilla ES-module web UI |
-| `src-tauri` | Tauri/Rust host — window, tray, native menus, updater, terminals, embedded viewer; `bridge.js` exposes `window.taskhub` |
+| `crates/taskhub-backend` | Production Rust API, poller, CLI integrations, and SQLite stores |
+| `crates/taskhub-ptyd` | Detached native terminal daemon |
+| `macos` | Production SwiftUI/AppKit macOS client and packaging |
+| `src/server`, `src/renderer`, `src-tauri` | Legacy Node web and Tauri clients; not shipped in the native app |
 | `src/shared` | HTTP routes + shared constants |
 | `docs` | Architecture notes and project images |
 
-## Development
+## Legacy web and Tauri development
+
+These clients require Node.js ≥22.12 and npm. They are retained for development
+and are not shipped in the native package. `npm start` serves localhost:3000.
 
 ```bash
 npm install
@@ -166,10 +132,13 @@ Useful notes:
 
 ## Releasing
 
-`bunx tauri build` creates local packaged artifacts (`.app`/`.dmg`). Auto-update
-is wired to GitHub Releases via `tauri-plugin-updater`; cutting a signed release
-(minisign key + `latest.json` manifest) is described in
-[docs/TAURI-PORT.md](docs/TAURI-PORT.md).
+Build the native Release scheme, run `macos/scripts/bundle-backend.sh`, and package
+with `macos/scripts/package-direct.py --local`. See [the native guide](macos/README.md)
+for exact commands and optional Developer ID/notarized distribution. The current
+local review package is `macos/.build/review-20260914-rust-final/`.
+
+The Rust helper also provides `backup`, `verify`, and `restore`; packaged startup
+checks existing data before migrations. See [data recovery](docs/DATA-RECOVERY.md).
 
 ## Ideas Worth Building
 

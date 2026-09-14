@@ -1,6 +1,5 @@
 import Foundation
 import Observation
-import WebKit
 
 struct DiffSnapshot: Codable, Equatable, Sendable {
     let diff: String
@@ -12,37 +11,118 @@ struct DiffSnapshot: Codable, Equatable, Sendable {
     var behind: Int? = nil
 }
 
-protocol DiffService: Sendable {
-    func load(worktree: String) async throws -> DiffSnapshot
-}
+protocol DiffService: Sendable { func load(worktree: String) async throws -> DiffSnapshot }
 
 struct APIDiffService: DiffService {
     let api: APIClient
     func load(worktree: String) async throws -> DiffSnapshot {
         struct Response: Decodable, Sendable {
-            let diff: String?
-            let untracked: [String]?
-            let branch: String?
-            let revision: String?
-            let ahead: Int?
-            let behind: Int?
-            let error: String?
+            let diff: String?, untracked: [String]?, branch: String?, revision: String?
+            let ahead: Int?, behind: Int?, error: String?
         }
         let result: Response = try await api.get(APIClient.query(Routes.DIFF, ["path": worktree]), timeout: 30)
         if let error = result.error { throw BackendError.operation(error) }
         guard let diff = result.diff else { throw BackendError.operation("The backend returned no diff.") }
-        return .init(diff: diff, untracked: result.untracked ?? [], branch: result.branch, revision: result.revision, ahead: result.ahead, behind: result.behind)
+        return .init(diff: diff, untracked: result.untracked ?? [], branch: result.branch,
+                     revision: result.revision, ahead: result.ahead, behind: result.behind)
     }
 }
 
-@MainActor @Observable final class DiffViewModel: NSObject, WKNavigationDelegate {
+enum NativeDiffLineKind: Sendable { case context, addition, deletion, metadata }
+
+struct NativeDiffLine: Identifiable, Sendable {
+    let id: Int
+    let text: String
+    let kind: NativeDiffLineKind
+    let oldLine: Int?
+    let newLine: Int?
+    let selection: [Int]?
+    let beginsBlock: Bool
+}
+
+struct NativeDiffFile: Identifiable, Sendable {
+    let id: Int
+    let path: String
+    let lines: [NativeDiffLine]
+    let additions: Int
+    let deletions: Int
+}
+
+enum NativeDiffParser {
+    static func parse(_ patch: String) -> [NativeDiffFile] {
+        struct Builder {
+            var path = "Changes"
+            var lines: [NativeDiffLine] = []
+            var additions = 0, deletions = 0
+            var oldLine: Int?, newLine: Int?
+            var hunk = -1, block = -1
+            var contextGap = 0
+        }
+        var files: [NativeDiffFile] = []
+        var current: Builder?
+        var rowID = 0
+        func finish(_ builder: Builder?, into files: inout [NativeDiffFile]) {
+            guard let builder else { return }
+            files.append(.init(id: files.count, path: builder.path, lines: builder.lines,
+                               additions: builder.additions, deletions: builder.deletions))
+        }
+        for rawLine in patch.split(separator: "\n", omittingEmptySubsequences: false).map(String.init) {
+            if rawLine.hasPrefix("diff --git ") {
+                finish(current, into: &files)
+                let pieces = rawLine.split(separator: " ")
+                let path = pieces.count >= 4 ? String(pieces[3]).replacingOccurrences(of: "b/", with: "", options: .anchored) : "Changes"
+                current = Builder(path: path)
+                continue
+            }
+            if current == nil { current = Builder() }
+            var builder = current!
+            if rawLine.hasPrefix("+++ ") {
+                let candidate = String(rawLine.dropFirst(4))
+                if candidate != "/dev/null" { builder.path = candidate.replacingOccurrences(of: "b/", with: "", options: .anchored) }
+            }
+            if rawLine.hasPrefix("@@ ") {
+                builder.hunk += 1; builder.block = -1; builder.contextGap = 0
+                if let expression = try? NSRegularExpression(pattern: #"@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@"#),
+                   let match = expression.firstMatch(in: rawLine, range: NSRange(rawLine.startIndex..., in: rawLine)),
+                   let oldRange = Range(match.range(at: 1), in: rawLine),
+                   let newRange = Range(match.range(at: 2), in: rawLine) {
+                    builder.oldLine = Int(rawLine[oldRange]); builder.newLine = Int(rawLine[newRange])
+                }
+                builder.lines.append(.init(id: rowID, text: rawLine, kind: .metadata,
+                                           oldLine: nil, newLine: nil, selection: nil, beginsBlock: false))
+                current = builder; rowID += 1; continue
+            }
+            let kind: NativeDiffLineKind
+            var old: Int?, new: Int?, selection: [Int]?
+            var beginsBlock = false
+            if rawLine.hasPrefix("+") && !rawLine.hasPrefix("+++") {
+                kind = .addition; new = builder.newLine; builder.newLine = (builder.newLine ?? 0) + 1; builder.additions += 1
+            } else if rawLine.hasPrefix("-") && !rawLine.hasPrefix("---") {
+                kind = .deletion; old = builder.oldLine; builder.oldLine = (builder.oldLine ?? 0) + 1; builder.deletions += 1
+            } else if rawLine.hasPrefix(" ") {
+                kind = .context; old = builder.oldLine; new = builder.newLine
+                builder.oldLine = (builder.oldLine ?? 0) + 1; builder.newLine = (builder.newLine ?? 0) + 1
+            } else { kind = .metadata }
+            if kind == .addition || kind == .deletion, builder.hunk >= 0 {
+                if builder.block < 0 || builder.contextGap > 3 { builder.block += 1; beginsBlock = true }
+                builder.contextGap = 0; selection = [files.count, builder.hunk, builder.block]
+            } else if kind == .context, builder.block >= 0 { builder.contextGap += 1 }
+            builder.lines.append(.init(id: rowID, text: rawLine, kind: kind, oldLine: old,
+                                       newLine: new, selection: selection, beginsBlock: beginsBlock))
+            current = builder; rowID += 1
+        }
+        finish(current, into: &files)
+        return files.filter { !$0.lines.isEmpty }
+    }
+}
+
+@MainActor @Observable final class DiffViewModel {
     enum Action { case showActions, openFile(DocumentLocation), hide }
     let coordinator: DiffCoordinator
     @ObservationIgnored var onAction: (Action) -> Void = { _ in }
     var presentation = DocumentPresentation() {
         didSet {
             guard oldValue != presentation else { return }
-            if oldValue.appearance != presentation.appearance { setAppearance(presentation.appearance) }
             if oldValue.font != presentation.font { setFont(presentation.font) }
             if oldValue.active != presentation.active {
                 if presentation.active { show(appearance: presentation.appearance) } else { hide() }
@@ -51,38 +131,26 @@ struct APIDiffService: DiffService {
     }
     let worktree: String
     private(set) var snapshot: DiffSnapshot?
+    private(set) var files: [NativeDiffFile] = []
     private(set) var loading = false
     private var loadError: String?
-    private var documentError: String?
-    var error: String? { documentError ?? loadError ?? actions?.error }
-    var showsActions: Bool {
-        get { coordinator.showsActions }
-        set { if newValue { requestActions() } else { coordinator.dismissActions() } }
-    }
+    var error: String? { loadError ?? actions?.error }
+    var showsActions: Bool { get { coordinator.showsActions } set { newValue ? requestActions() : coordinator.dismissActions() } }
     var isActive: Bool { active }
     private(set) var actions: GitChangesActions?
-    private(set) var webView: WKWebView?
-    private var baseURL: URL
+    private(set) var font = CodeFont(size: 12)
     @ObservationIgnored private var service: (any DiffService)?
     @ObservationIgnored private var task: Task<Void, Never>?
     @ObservationIgnored private var generation = UUID()
-    @ObservationIgnored private var documentScript: String?
-    @ObservationIgnored private var loaded = false
     @ObservationIgnored private var active = false
-    @ObservationIgnored private var appearance = AppAppearance.system
-    @ObservationIgnored private var font = CodeFont(size: 12)
-
     @ObservationIgnored private let allowsFileOpening: Bool
 
     init(worktree: String, baseURL: URL, service: (any DiffService)? = nil,
-         actionsService: (any GitChangesService)? = nil,
-         allowsFileOpening: Bool = true,
+         actionsService: (any GitChangesService)? = nil, allowsFileOpening: Bool = true,
          factory: any DocumentFeatureFactory = NativeDocumentFeatureFactory(),
          openFile: @escaping (DocumentLocation) -> Void = { _ in }) {
-        self.allowsFileOpening = allowsFileOpening
-        coordinator = factory.diffCoordinator()
-        self.worktree = worktree; self.baseURL = baseURL; self.service = service
-        super.init()
+        self.allowsFileOpening = allowsFileOpening; coordinator = factory.diffCoordinator()
+        self.worktree = worktree; self.service = service
         if let actionsService {
             actions = factory.changes(worktree: worktree, service: actionsService, didChange: { [weak self] in
                 guard let self, active else { return }
@@ -92,32 +160,11 @@ struct APIDiffService: DiffService {
         coordinator.bind(self, openFile: openFile)
     }
     func requestActions() { onAction(.showActions) }
-    var pageURL: URL { baseURL.appendingPathComponent("native/diff.html") }
     func connect(baseURL: URL, service: any DiffService) {
-        task?.cancel(); task = nil; generation = UUID(); loading = false
-        self.service = service
-        if self.baseURL != baseURL {
-            self.baseURL = baseURL; loaded = false
-            webView?.load(URLRequest(url: pageURL))
-        }
+        task?.cancel(); task = nil; generation = UUID(); loading = false; self.service = service
         if active { refresh() }
     }
-    func show(appearance: AppAppearance) {
-        active = true; self.appearance = appearance
-        if webView == nil {
-            let config = WKWebViewConfiguration()
-            config.websiteDataStore = .nonPersistent()
-            config.userContentController.add(DiffMessageReceiver(owner: self), name: "diff")
-            config.userContentController.addUserScript(WKUserScript(source: #"window.addEventListener('error', e => window.webkit.messageHandlers.diff.postMessage({type:'error', message:e.message || 'A changes-view asset failed to load.'}), true);"#,
-                injectionTime: .atDocumentStart, forMainFrameOnly: true))
-            let view = WKWebView(frame: .zero, configuration: config)
-            view.navigationDelegate = self
-            view.setAccessibilityIdentifier("working-diff-webview")
-            webView = view
-            view.load(URLRequest(url: pageURL))
-        }
-        refresh()
-    }
+    func show(appearance: AppAppearance) { active = true; refresh() }
     func refresh() {
         guard task == nil else { return }
         guard let service else { loadError = "Connect to the backend to load changes."; return }
@@ -128,103 +175,34 @@ struct APIDiffService: DiffService {
             do {
                 let value = try await service.load(worktree: worktree)
                 try Task.checkCancellation()
-                // A large patch is encoded once on a worker, never per frame or
-                // on appearance changes. The reused renderer also caps its rows.
-                let script = try await Task.detached(priority: .userInitiated) {
-                    guard value.diff.utf8.count <= 8 * 1024 * 1024,
-                          value.untracked.count <= 100_000 else {
+                let parsed = try await Task.detached(priority: .userInitiated) {
+                    guard value.diff.utf8.count <= 8 * 1024 * 1024, value.untracked.count <= 100_000 else {
                         throw BackendError.operation("Diff too large to display.")
                     }
-                    let data = try JSONEncoder().encode(value)
-                    guard data.count <= 16 * 1024 * 1024 else { throw BackendError.operation("Diff too large to display.") }
-                    return "window.nativeDiff.render(\(String(decoding: data, as: UTF8.self)))"
+                    return NativeDiffParser.parse(value.diff)
                 }.value
                 try Task.checkCancellation()
                 guard self.generation == generation else { return }
-                if snapshot != value { snapshot = value; documentScript = script; render() }
+                snapshot = value; files = parsed
             } catch { if !Task.isCancelled, self.generation == generation { self.loadError = error.localizedDescription } }
         }
     }
     func waitForRefresh() async { await task?.value }
-    func setAppearance(_ value: AppAppearance) {
-        appearance = value
-        if loaded { webView?.evaluateJavaScript("window.nativeDiff.setTheme('\(value.rawValue)')", completionHandler: nil) }
-    }
-    func setFont(_ value: CodeFont) {
-        font = value
-        if loaded { webView?.evaluateJavaScript("window.nativeDiff.setFont(\(value.json))", completionHandler: nil) }
-    }
-    func reload() { documentError = nil; loadError = nil; loaded = false; webView?.reload(); refresh() }
-    private func render() {
-        guard loaded, let documentScript else { return }
-        let generation = generation
-        webView?.evaluateJavaScript(documentScript) { [weak self] _, error in
-            guard let self, self.generation == generation, let error else { return }
-            let details = (error as NSError).userInfo["WKJavaScriptExceptionMessage"] as? String ?? error.localizedDescription
-            self.documentError = "Could not render changes: \(details)"
-        }
-    }
+    func setAppearance(_ value: AppAppearance) {}
+    func setFont(_ value: CodeFont) { font = value }
+    func reload() { loadError = nil; refresh() }
     func hide() {
-        active = false; loaded = false
-        onAction(.hide)
-        actions?.cancelDiscard()
-        task?.cancel(); task = nil; generation = UUID(); loading = false
-        webView?.stopLoading(); webView?.navigationDelegate = nil
-        webView?.configuration.userContentController.removeScriptMessageHandler(forName: "diff")
-        webView?.removeFromSuperview(); webView = nil
-        snapshot = nil; documentScript = nil
-        documentError = nil; loadError = nil
+        active = false; onAction(.hide); actions?.cancelDiscard(); task?.cancel(); task = nil
+        generation = UUID(); loading = false; snapshot = nil; files = []; loadError = nil
     }
     func disconnect() { presentation.active = false; hide(); service = nil; showsActions = false }
-    func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction,
-                 decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void) {
-        decisionHandler(action.targetFrame?.isMainFrame == true && action.request.url == pageURL ? .allow : .cancel)
+    func open(path: String, line: Int?) {
+        guard active, allowsFileOpening else { return }
+        do { onAction(.openFile(try WorkingFileLocation.resolve(path, line: line ?? 1, root: worktree))) }
+        catch { loadError = error.localizedDescription }
     }
-    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        // A document navigation finishing is not the renderer's readiness signal.
-        // The module posts ready after its imports and event wiring complete.
-    }
-    fileprivate func receive(_ message: WKScriptMessage) {
-        guard message.webView === webView, message.frameInfo.isMainFrame, message.frameInfo.request.url == pageURL,
-              let body = message.body as? [String: Any], body.count <= 3 else { return }
-        if body["type"] as? String == "ready" {
-            loaded = true; documentError = nil; setAppearance(appearance); setFont(font); render()
-        } else if body["type"] as? String == "error", let text = body["message"] as? String, text.utf8.count <= 4096 {
-            documentError = "Could not load changes: \(text)"
-        } else if let request = DiscardSelectionMessage.decode(body, revision: snapshot?.revision), active, loaded, !loading, let actions {
-            let generation = generation
-            Task {
-                guard self.generation == generation, active else { return }
-                await actions.prepareDiscard(revision: request.revision, selection: request.selection)
-            }
-        } else if body["type"] as? String == "open", let path = body["path"] as? String,
-                  let line = body["line"] as? Int, active, loaded, allowsFileOpening {
-            let generation = generation, root = worktree
-            Task {
-                do {
-                    let location = try await Task.detached(priority: .userInitiated) {
-                        try WorkingFileLocation.resolve(path, line: line, root: root)
-                    }.value
-                    guard self.generation == generation, active else { return }
-                    onAction(.openFile(location))
-                } catch { if self.generation == generation { loadError = error.localizedDescription } }
-            }
-        }
-    }
-    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) { failed(error) }
-    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { failed(error) }
-    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
-        loaded = false; documentError = "The changes view stopped. Reload to restore it."
-    }
-    private func failed(_ error: Error) {
-        if (error as NSError).code != NSURLErrorCancelled { documentError = error.localizedDescription }
-    }
-}
-
-@MainActor private final class DiffMessageReceiver: NSObject, WKScriptMessageHandler {
-    weak var owner: DiffViewModel?
-    init(owner: DiffViewModel) { self.owner = owner }
-    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-        owner?.receive(message)
+    func discard(_ selection: [Int]) {
+        guard active, !loading, let revision = snapshot?.revision, let actions else { return }
+        Task { await actions.prepareDiscard(revision: revision, selection: selection) }
     }
 }

@@ -40,9 +40,7 @@ def sign_app(app, identity, local):
     binaries = [path for path in app.rglob("*") if mach_o(path)]
     for binary in sorted(binaries, key=lambda p: (-len(p.parts), str(p))):
         entitlements = []
-        if binary == app / "Contents/Helpers/taskhub-node":
-            entitlements = ["--entitlements", config / "Node.entitlements"]
-        elif binary == app / "Contents/MacOS/TaskHub":
+        if binary == app / "Contents/MacOS/TaskHub":
             entitlements = ["--entitlements", config / "TaskHub.entitlements"]
         elif "Frameworks" in binary.parts:
             entitlements = ["--preserve-metadata=entitlements"]
@@ -103,10 +101,14 @@ def main():
         parser.error("Unexpected application bundle identity")
     if not args.local and info.get("TaskHubBuildConfiguration") != "Release":
         parser.error("Build the Release configuration before preparing a distribution")
-    for relative in ["Contents/Helpers/taskhub-node", "Contents/Helpers/taskhub-ptyd",
-                     "Contents/Resources/backend/release.json"]:
+    for relative in ["Contents/Helpers/taskhub-backend", "Contents/Helpers/taskhub-ptyd"]:
         if not (app / relative).is_file():
             parser.error("Run bundle-backend.sh before packaging: missing " + relative)
+    for relative in ["Contents/Helpers/taskhub-node", "Contents/Resources/backend"]:
+        if (app / relative).exists():
+            parser.error("Legacy Node bundle remains; rerun bundle-backend.sh: " + relative)
+    if any(path.suffix.lower() in {".js", ".mjs", ".cjs"} for path in app.rglob("*")):
+        parser.error("The native package must not contain bundled JavaScript files")
     destination.parent.mkdir(parents=True, exist_ok=True)
     # Publish the directory only after every packaging/signing operation succeeds.
     with tempfile.TemporaryDirectory(prefix=".taskhub-package-", dir=destination.parent) as temporary:
@@ -137,6 +139,8 @@ def main():
             run("xcrun", "stapler", "staple", dmg)
             run("xcrun", "stapler", "validate", dmg)
         manifest = {"bundleID": info["CFBundleIdentifier"],
+                    "backendRuntime": "rust",
+                    "backendSHA256": digest(staged_app / "Contents/Helpers/taskhub-backend"),
                     "version": info["CFBundleShortVersionString"], "build": info["CFBundleVersion"],
                     "distribution": "local-ad-hoc" if args.local else "developer-id-notarized",
                     "artifacts": {p.name: {"bytes": p.stat().st_size,

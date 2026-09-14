@@ -26,6 +26,9 @@ private actor StoppedSessions {
     let fixture = Process()
     fixture.executableURL = URL(fileURLWithPath: "/usr/bin/env")
     let script = root.appendingPathComponent("macos/scripts/backend-fixture.cjs")
+    let executable = directory.appendingPathComponent("backend-fixture")
+    try "#!/bin/sh\nexec /usr/bin/env node \"\(script.path)\"\n".write(to: executable, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: executable.path)
     fixture.arguments = ["node", script.path]
     var env = ProcessInfo.processInfo.environment
     env["TASKHUB_DATA_DIR"] = directory.path
@@ -210,9 +213,7 @@ private actor StoppedSessions {
     #expect(try await api.health().instanceId == "external-fixture")
 
     // A new owner must reject the occupied port, never adopt or kill the external server.
-    let nodePaths = (env["PATH"] ?? "").split(separator: ":").map { URL(fileURLWithPath: String($0)).appendingPathComponent("node") }
-    let node = try #require(nodePaths.first { FileManager.default.isExecutableFile(atPath: $0.path) })
-    let occupied = BackendProcess(configuration: .init(baseURL: base, mode: .owned(node: node, script: script, dataDirectory: directory)))
+    let occupied = BackendProcess(configuration: .init(baseURL: base, mode: .owned(executable: executable, dataDirectory: directory)))
     do { _ = try await occupied.start(); Issue.record("Accepted a port owned by another server") }
     catch { #expect(fixture.isRunning) }
     #expect(try await api.health().instanceId == "external-fixture")
@@ -223,7 +224,7 @@ private actor StoppedSessions {
         try await Task.sleep(for: .milliseconds(50))
     }
     #expect(!fixture.isRunning)
-    let owned = BackendProcess(configuration: .init(baseURL: base, mode: .owned(node: node, script: script, dataDirectory: directory)))
+    let owned = BackendProcess(configuration: .init(baseURL: base, mode: .owned(executable: executable, dataDirectory: directory)))
     let ownAPI = try await owned.start()
     let health = try await ownAPI.health()
     #expect(health.instanceId != nil && health.instanceId != "external-fixture")

@@ -29,8 +29,7 @@ enum LoginItemRegistrationPolicy {
         let configuration = try? BackendConfiguration.current()
         let bundle = Bundle.main.bundleURL
         let packaged = configuration?.packaged == true && bundle.pathExtension == "app"
-            && FileManager.default.isExecutableFile(atPath: bundle.appendingPathComponent("Contents/Helpers/taskhub-node").path)
-            && FileManager.default.fileExists(atPath: bundle.appendingPathComponent("Contents/Resources/backend/src/server/app.js").path)
+            && FileManager.default.isExecutableFile(atPath: bundle.appendingPathComponent("Contents/Helpers/taskhub-backend").path)
         return unavailableReason(debug: debug, packaged: packaged)
     }
 }

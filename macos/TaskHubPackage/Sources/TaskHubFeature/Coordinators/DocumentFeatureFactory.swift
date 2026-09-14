@@ -27,7 +27,7 @@ extension DocumentFeatureFactory {
     func editorClose(documents: [EditorDocumentViewModel]) -> EditorCloseViewModel { EditorCloseViewModel(documents: documents) }
     func editor(record: FileDocumentRecord) -> EditorDocumentViewModel { EditorDocumentViewModel(record: record) }
     func editorService(api: APIClient) -> any FileDocumentService { APIFileDocumentService(api: api) }
-    func editorSurface(baseURL: URL) -> any EditorSurface { WebEditorSurface(baseURL: baseURL) }
+    func editorSurface(baseURL: URL) -> any EditorSurface { NativeEditorSurface() }
     func changes(worktree: String, service: any GitChangesService, didChange: @escaping () -> Void) -> GitChangesActions {
         GitChangesActions(worktree: worktree, service: service, didChange: didChange)
     }
