@@ -33,6 +33,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPo
                               styleMask: [.titled, .closable, .miniaturizable, .resizable],
                               backing: .buffered, defer: false)
         window.title = "TaskHub Native"
+        window.titleVisibility = .hidden
+        window.toolbarStyle = .unifiedCompact
         let content = NSHostingView(rootView: ContentView(model: model, showTray: { [weak self] in self?.toggleTray() }))
         // The window owns its size. Deriving constraints from nested browser and
         // split-view ideal sizes can feed changes back into the same layout pass.

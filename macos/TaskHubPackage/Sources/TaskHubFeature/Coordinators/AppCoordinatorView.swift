@@ -8,17 +8,17 @@ struct AppCoordinatorView: View {
     var body: some View {
         NavigationSplitView {
             VStack(spacing: 0) {
-                HStack(spacing: 12) {
-                    Text("TaskHub").font(.system(size: 22, weight: .bold))
+                HStack(spacing: 10) {
+                    Text("TaskHub").font(.headline)
                     Spacer()
                     Button("New Project", systemImage: "plus") { model.newProject() }
-                        .labelStyle(.iconOnly).buttonStyle(.plain).font(.system(size: 18))
+                        .labelStyle(.iconOnly).buttonStyle(.borderless).controlSize(.small)
                         .disabled(!model.canCreateProject).help("New Project")
                     Button("Activity", systemImage: "bell") { showTray() }
-                        .labelStyle(.iconOnly).buttonStyle(.plain).font(.system(size: 17))
+                        .labelStyle(.iconOnly).buttonStyle(.borderless).controlSize(.small)
                         .accessibilityLabel("Reviews & Usage").help("Activity")
                 }
-                .padding(.horizontal, 18).padding(.top, 14).padding(.bottom, 18)
+                .padding(.horizontal, 14).padding(.vertical, 8)
 
                 CocoaSidebar(entries: model.entries, selection: model.selection,
                              pinnedIDs: model.pinnedIDs,
@@ -55,7 +55,8 @@ struct AppCoordinatorView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
-            .padding(model.hasWorkspace ? 0 : 28)
+            .padding(.horizontal, model.hasWorkspace ? 0 : 28)
+            .padding(.vertical, model.hasWorkspace ? 0 : model.showsDashboard ? 16 : 28)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .navigationTitle("")
             .inspector(isPresented: Binding(
@@ -91,6 +92,7 @@ struct AppCoordinatorView: View {
                         }
                         .labelsHidden()
                         .pickerStyle(.segmented)
+                        .controlSize(.small)
                         .fixedSize()
                         .accessibilityIdentifier("dashboard-agent")
                     }
@@ -170,7 +172,6 @@ private extension View {
             self
                 .toolbar(removing: .sidebarToggle)
                 .toolbar(removing: .title)
-                .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
         } else {
             self
         }
