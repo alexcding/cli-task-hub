@@ -20,7 +20,7 @@ backend rewrite. Preserve AppKit sidebar and terminal ownership during the refac
 
 ## Implementation status
 
-### Current execution direction — 2026-09-13
+### Implementation complete; manual review pending — 2026-09-13
 
 The user has stopped further validation work: no additional UI tests, unit tests,
 or benchmarking. Finish the remaining implementation and commit each phase; the
@@ -61,25 +61,29 @@ clipboard access or replay of completed UI requests after reconnect. Detached
 UI-dependent queries remain unanswered, allowing the caller's timeout/fallback.
 See `crates/taskhub-ptyd/SNAPSHOTS.md` for the supported boundary.
 
-A self-contained arm64 Release review package has been produced at
-`macos/.build/review-20260913-v3/`: app, ZIP, DMG and checksum manifest. It includes
+A refreshed self-contained arm64 Release review package has been produced at
+`macos/.build/review-20260913-appearance/`: app, ZIP, DMG and checksum manifest. It includes
 Node, the Rust PTY helper, production backend dependencies, focused web assets and
 runtime licenses. This is a local ad-hoc package; no Apple submission or update
 feed publication occurred. The app has not been launched or UI-tested in this
-phase. The Release build succeeded with the terminal graphics policy fix.
+phase. The Release build and helper compilation succeeded with the terminal
+appearance changes committed in `0ea1fe9`.
 
 Implementation closeout:
 
 1. Terminal appearance ownership and the native live UI policy are implemented.
 2. Native dashboard/Cocoa sidebar and focused Sprint Board/diff/editor hosts are implemented.
-   The updated self-contained review package is recorded below when packaging completes.
+   The updated self-contained review package is ready at the path above.
 3. Direct-distribution packaging is implemented in `package-direct.py`: staged app,
    ZIP/DMG, nested signing, Node JIT entitlements and notarization/stapling. Actual
    Developer ID/notarization and the user's signed update feed require external
    credentials/configuration; no unsigned feed is published as signed.
 
-The coordinator/view-model/factory implementation pass is implemented. Historical
-acceptance checklists below do not add UI/unit testing back to this queue.
+The coordinator/view-model/factory implementation pass is complete. No further
+implementation phases are scheduled before the user's manual review. Historical
+acceptance checklists below do not add UI/unit testing back to this queue. Public
+signing/notarization and feed publication remain optional distribution operations
+requiring the owner's credentials; local app completion does not depend on them.
 
 M0 foundation is committed as `bf0c7a6`; the M1 terminal spike is committed as
 `c05a57a`; the M2 Cocoa sidebar is committed as `609d889` and native tray/appearance

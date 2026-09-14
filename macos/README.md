@@ -1,7 +1,13 @@
 # TaskHub Native
 
-Native macOS client under implementation. macOS 14+, Xcode 16.3+ and Swift 6.1+;
+Native macOS client ready for manual review. macOS 14+, Xcode 16.3+ and Swift 6.1+;
 Apple silicon is the initial build target. Open `TaskHub.xcworkspace` in Xcode.
+
+The current local Release package is `macos/.build/review-20260913-appearance/`
+(paths relative to the repository): `TaskHub.app`, ZIP, DMG and `release.json`.
+The app includes its Node backend and Rust PTY helper. It is ad-hoc signed for local
+review, not notarized for public distribution. Release compilation and packaging
+succeeded; no UI/unit tests or benchmarks were added or run in this closeout.
 
 The app target owns AppKit lifecycle and hosts SwiftUI. `TaskHubPackage` holds the
 API client, SSE parser/client, injected backend runtime, `@Observable` AppViewModel, and views. The current
@@ -12,8 +18,8 @@ macOS app; there is no Apple App Store submission.
 
 The [coordinator and DI extraction](../docs/NATIVE-ARCHITECTURE.md) follows the
 `elevate-ios` responsibility split. Creation sheets now receive stable models from
-an injected factory and an application coordinator; remaining view and runtime
-boundaries are tracked there.
+an injected factory and an application coordinator. The completed view and runtime
+boundaries are documented there, including typed actions and injected deep links.
 
 Embedded frameworks must resolve from `Contents/Frameworks` in standalone launches.
 The shared build configuration adds `@loader_path/../Frameworks` to inherited

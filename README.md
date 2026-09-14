@@ -3,6 +3,12 @@
 **A local dashboard and macOS menu-bar app for developers who live in GitHub,
 Jira, and the terminal.**
 
+The native macOS client is in [`macos/`](macos/README.md): SwiftUI dashboard,
+Cocoa sidebar, native Ghostty terminal, and focused web Sprint Board/diff/editor.
+Its implementation is ready for manual review. See the
+[migration status](docs/SWIFTUI-PORT.md#implementation-status) for the current
+review package. The web and Tauri instructions below remain available for those clients.
+
 [![macOS](https://img.shields.io/badge/platform-macOS-black)](#quick-start)
 [![Node.js](https://img.shields.io/badge/runtime-Node.js-339933)](#quick-start)
 [![Tauri](https://img.shields.io/badge/desktop-Tauri-24C8DB)](#desktop-app)
