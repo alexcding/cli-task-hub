@@ -1,4 +1,5 @@
 import Foundation
+import Observation
 import Sparkle
 
 enum UpdateConfiguration {
@@ -19,10 +20,12 @@ enum UpdateConfiguration {
 
 /// The application retains this adapter because Sparkle holds its delegate weakly.
 /// Unconfigured and development apps never construct or start an updater.
-@MainActor public final class AppUpdater: NSObject, SPUUpdaterDelegate {
+@MainActor @Observable public final class AppUpdater: NSObject, SPUUpdaterDelegate {
     public private(set) var unavailableReason: String?
     public private(set) var restartRequested = false
-    private var controller: SPUStandardUpdaterController?
+    public private(set) var canCheckForUpdates = false
+    @ObservationIgnored private var controller: SPUStandardUpdaterController?
+    @ObservationIgnored private var availabilityObservation: NSKeyValueObservation?
 
     public override init() {
         super.init()
@@ -41,10 +44,15 @@ enum UpdateConfiguration {
         do {
             try controller.updater.start()
             self.controller = controller
+            availabilityObservation = controller.updater.observe(\.canCheckForUpdates, options: [.initial, .new]) { [weak self] _, _ in
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    canCheckForUpdates = self.controller?.updater.canCheckForUpdates == true
+                }
+            }
         } catch { unavailableReason = error.localizedDescription }
     }
 
-    public var canCheckForUpdates: Bool { controller?.updater.canCheckForUpdates == true }
     public func checkForUpdates() {
         guard canCheckForUpdates else { return }
         controller?.checkForUpdates(nil)

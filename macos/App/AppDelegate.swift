@@ -2,15 +2,15 @@ import AppKit
 import SwiftUI
 import Observation
 
-@MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverDelegate {
-    private let model = AppViewModel()
-    private var window: NSWindow?
-    private var statusItem: NSStatusItem?
+@MainActor @Observable
+final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
+    let model = AppViewModel()
+    @ObservationIgnored private weak var window: NSWindow?
+    @ObservationIgnored private var statusItem: NSStatusItem?
     private let popover = NSPopover()
-    private var tray: TrayCoordinator?
+    @ObservationIgnored private var tray: TrayCoordinator?
     private var updater: AppUpdater?
-    private lazy var termination = AppTerminationCoordinator(prepare: { [weak self] reason in
+    @ObservationIgnored private lazy var termination = AppTerminationCoordinator(prepare: { [weak self] reason in
         guard let self else { throw CancellationError() }
         switch reason {
         case .quit: try await self.model.quit()
@@ -22,29 +22,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPo
     }, failed: { [weak self] error in
         self?.showTerminationError(error)
     })
-    private var menus: NativeMenus?
-    private var receivedLaunchURL = false
+    @ObservationIgnored private var receivedLaunchURL = false
+    @ObservationIgnored private var finishedLaunching = false
+    @ObservationIgnored private var quietLaunch = false
+    @ObservationIgnored private var windowRequested = false
+
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        NSApp.setActivationPolicy(.accessory)
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        let quiet = AppLaunchContext.startsQuietly
+        quietLaunch = AppLaunchContext.startsQuietly
+        finishedLaunching = true
         model.shell.applyAppearance()
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1000, height: 680),
-                              styleMask: [.titled, .closable, .miniaturizable, .resizable],
-                              backing: .buffered, defer: false)
-        window.title = "TaskHub Native"
-        window.titleVisibility = .hidden
-        window.toolbarStyle = .unifiedCompact
-        let content = NSHostingView(rootView: ContentView(model: model, showTray: { [weak self] in self?.toggleTray() }))
-        // The window owns its size. Deriving constraints from nested browser and
-        // split-view ideal sizes can feed changes back into the same layout pass.
-        content.sizingOptions = []
-        window.contentMinSize = NSSize(width: 760, height: 480)
-        window.contentView = content
-        window.delegate = self
-        window.isReleasedWhenClosed = false
-        window.setFrameAutosaveName("TaskHubNativeMain")
-        window.center()
-        self.window = window
         NotificationCenter.default.addObserver(self, selector: #selector(sheetDidEnd),
             name: NSWindow.didEndSheetNotification, object: nil)
         model.configureNativeNotifications(isMainWindowFocused: { [weak self] in self?.window?.isKeyWindow == true },
@@ -65,15 +55,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPo
         popover.contentViewController = NSHostingController(rootView: NativeTrayView(model: tray.model))
         observeStatus()
         updater = AppUpdater()
-        menus = NativeMenus(perform: { [weak self] command in self?.perform(command) },
-                            enabled: { [weak self] command in
-            guard let self else { return false }
-            if command == .checkForUpdates { return self.termination.pending == nil && self.updater?.canCheckForUpdates == true }
-            return self.model.canPerform(command)
-        })
-        menus?.install()
         Task { await model.start() }
-        if !quiet || receivedLaunchURL { showWindow() }
+        if !quietLaunch || receivedLaunchURL || windowRequested { showWindow() }
+        else { window?.orderOut(nil); NSApp.hide(nil) }
+    }
+
+    func attachWindow(_ window: NSWindow) {
+        guard self.window !== window else { return }
+        self.window = window
+        window.titleVisibility = .hidden
+        window.setFrameAutosaveName("TaskHubNativeMain")
+        guard finishedLaunching else { return }
+        if !quietLaunch || receivedLaunchURL || windowRequested { showWindow() }
+        else { window.orderOut(nil) }
+    }
+
+    var canCheckForUpdates: Bool {
+        termination.pending == nil && updater?.canCheckForUpdates == true
     }
 
     func application(_ application: NSApplication, open urls: [URL]) {
@@ -86,7 +84,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPo
 
     @objc private func sheetDidEnd(_ notification: Notification) { model.resumePendingDeepLink() }
 
-    private func perform(_ command: ShellCommand) {
+    func perform(_ command: ShellCommand) {
         switch command {
         case .checkForUpdates: updater?.checkForUpdates()
         case .closePage:
@@ -105,7 +103,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPo
         }
     }
 
-    @objc private func toggleTray() {
+    @objc func toggleTray() {
         if popover.isShown { popover.performClose(nil); return }
         guard let button = statusItem?.button else { return }
         tray?.setActive(true)
@@ -128,18 +126,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPo
     }
 
     @objc private func showWindow() {
+        windowRequested = true
         NSApp.setActivationPolicy(.regular)
+        NSApp.unhide(nil)
         popover.performClose(nil)
         window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    func windowShouldClose(_ sender: NSWindow) -> Bool {
-        NSApp.terminate(sender)
-        return false
-    }
-
-    func windowDidMiniaturize(_ notification: Notification) { model.cancelBrowserPresentation() }
     func applicationDidHide(_ notification: Notification) { model.cancelBrowserPresentation() }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {

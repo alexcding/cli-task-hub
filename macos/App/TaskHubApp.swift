@@ -1,17 +1,43 @@
-import AppKit
+import SwiftUI
 
 @main
-struct TaskHubApp {
-    @MainActor static func main() {
-        // AppKit owns the window, menus, status item, and quit contract. SwiftUI
-        // remains the page renderer through NSHostingView; a dummy Settings scene
-        // otherwise replaces the native menu after launch and on focus changes.
-        let application = NSApplication.shared
-        let delegate = AppDelegate()
-        application.delegate = delegate
-        // Stay out of the Dock until the launch event tells us whether this is
-        // a quiet login launch. Showing the window promotes the app to regular.
-        application.setActivationPolicy(.accessory)
-        withExtendedLifetime(delegate) { application.run() }
+struct TaskHubApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
+
+    var body: some Scene {
+        Window("TaskHub Native", id: "main") {
+            ContentView(model: delegate.model, showTray: delegate.toggleTray)
+                .modifier(TaskHubWindowChrome())
+                .frame(minWidth: 760, minHeight: 480)
+                .environment(\.terminalFont, delegate.model.shell.font(.term))
+                .environment(\.documentFont, delegate.model.shell.font(.diff))
+                .overlay(alignment: .topTrailing) {
+                    ActivityToastView(notifications: delegate.model.shell.notifications)
+                        .frame(maxWidth: 420).padding(16)
+                }
+                .background {
+                    TaskHubWindowLifecycle(onAttach: delegate.attachWindow,
+                        onClose: { NSApp.terminate(nil) },
+                        onMiniaturize: delegate.model.cancelBrowserPresentation)
+                }
+        }
+        .defaultSize(width: 1000, height: 680)
+        .defaultPosition(.center)
+        .windowResizability(.contentMinSize)
+        .windowToolbarStyle(.unifiedCompact)
+        .commands {
+            TaskHubCommands(model: delegate.model, perform: delegate.perform,
+                            canCheckForUpdates: delegate.canCheckForUpdates)
+        }
+    }
+}
+
+private struct TaskHubWindowChrome: ViewModifier {
+    @ViewBuilder func body(content: Content) -> some View {
+        if #available(macOS 26.0, *) {
+            content.toolbar(removing: .sidebarToggle).toolbar(removing: .title)
+        } else {
+            content
+        }
     }
 }

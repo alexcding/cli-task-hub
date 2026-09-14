@@ -17,7 +17,7 @@ The app includes its Rust backend and Rust PTY helper. It is ad-hoc signed for l
 review, not notarized for public distribution. Release compilation and packaging
 succeeded; no UI/unit tests or benchmarks were added or run in this closeout.
 
-The app target owns AppKit lifecycle, SwiftUI views, the API client, SSE parser/client,
+The app target owns the SwiftUI lifecycle, views, API client, SSE parser/client,
 injected backend runtime, and `@Observable` AppViewModel. The current
 screen has a Cocoa sidebar with project/session selection, Pinned mirrors, saved
 Tabs, native terminal panes, and a native SwiftUI Dashboard.
@@ -52,6 +52,15 @@ the app entry point and delegate excluded; they have no application test host an
 do not launch the daily app. The terminal diagnostic target uses the same source
 membership and is built only through its separate scheme. Neither target copies
 application sources or depends on a TaskHub Swift package.
+
+`TaskHubApp: App` declares the single `Window` scene, default geometry, compact
+toolbar, font environment, notification overlay and `TaskHubCommands` menus.
+`AppDelegate` is connected through `NSApplicationDelegateAdaptor` for backend
+startup, the status-item popover, deep links and asynchronous quit/update cleanup.
+`TaskHubWindowLifecycle` extends the SwiftUI window delegate without replacing
+its other behavior, keeping the window alive while quit awaits document decisions.
+`ContentView` lays out the sidebar, inspector and toolbar; `AppCoordinatorView`
+renders destinations, retained workspaces and coordinator-owned presentations.
 
 GhosttyTerminal (the locally prepared GhosttyKit package) and Sparkle 2.9.6 remain
 direct Xcode package dependencies. `GhosttySnapshotTests` stays a separate package

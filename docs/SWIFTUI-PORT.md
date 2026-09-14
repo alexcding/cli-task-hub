@@ -2525,7 +2525,7 @@ source ownership:
 ```text
 macos/
   TaskHub.xcodeproj       App, unit test, UI test and terminal diagnostic targets
-  App/                   AppKit entry point, lifecycle and root state
+  App/                   SwiftUI App/Window scenes, native lifecycle hooks and root state
   Scenes/                Native feature views and ViewModels
   Coordinators/          Navigation and model lifetime by feature
   Components/            Reusable native views and adapters

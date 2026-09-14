@@ -248,11 +248,20 @@ are emitted through `onAction` and handled by the coordinator; an obsolete root
 callback cannot navigate a replacement root. Neither the root nor workspace
 ViewModel references its coordinator. The injected runtime services own operations.
 
-`ContentView` is the public scene entry and `AppCoordinatorView` renders the supplied
-models and coordinator presentations. The rendering code no longer looks up
+`TaskHubApp: App` owns the SwiftUI `Window` scene, window styling, shared font
+environment, notification overlay and declarative menus. `ContentView` owns the
+split layout using `SidebarView` and `TaskHubToolbar`; `AppCoordinatorView` only
+renders supplied destinations, retained workspaces and coordinator presentations.
+The rendering code no longer looks up
 projects/sessions, computes sidebar pin membership, parses tab URLs, chooses an
 operation's target or assembles feature models. It retains the Cocoa sidebar,
-native Dashboard and focused web Sprint Board.
+native Dashboard and native Sprint Board.
+
+The `NSApplicationDelegateAdaptor` retains the native startup, tray, deep-link,
+and quit/update hooks. It does not construct the main NSWindow or install a custom
+main menu. A window lifecycle adapter forwards the SwiftUI scene delegate's other
+callbacks while redirecting Close through the existing asynchronous quit contract.
+SwiftUI's standard editing menus keep copy/paste/undo on the responder chain.
 
 Twelve focused Swift tests pass for callback dispatch, stale root/context rejection,
 factory injection, selection persistence and retained workspace identity. Native UI

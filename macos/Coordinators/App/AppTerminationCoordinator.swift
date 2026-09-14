@@ -1,9 +1,10 @@
 import Foundation
+import Observation
 
 /// Serializes asynchronous document/terminal cleanup at AppKit's termination
 /// boundary. Window close, Command-Q, Dock/app-menu Quit, and updater restart
 /// all enter the same transaction.
-@MainActor public final class AppTerminationCoordinator {
+@MainActor @Observable public final class AppTerminationCoordinator {
     public enum Reason: Sendable { case quit, update }
     public enum Decision: Equatable { case later, now }
     public private(set) var pending: Reason?
