@@ -58,9 +58,29 @@ struct AppCoordinatorView: View {
             .padding(model.hasWorkspace ? 0 : 28)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .navigationTitle("")
+            .inspector(isPresented: Binding(
+                get: {
+                    guard let workspace = model.activeWorkspace else { return false }
+                    return workspace.model.showsTerminal && (workspace.model.showsPage || workspace.model.showsBuild)
+                },
+                set: { model.activeWorkspace?.model.setInspectorPresented($0) }
+            )) {
+                if let workspace = model.activeWorkspace {
+                    SessionWorkspaceInspectorContent(context: workspace.context, model: workspace.model)
+                        .inspectorColumnWidth(min: 320, ideal: 560, max: 900)
+                }
+            }
             .toolbar {
-                if #available(macOS 26.0, *) { ToolbarSpacer(.flexible) }
-                if model.showsDashboard {
+                if let workspace = model.activeWorkspace {
+                    ToolbarItem(placement: .automatic) {
+                        SessionWorkspaceLeadingToolbar(model: workspace.model)
+                    }
+                    if #available(macOS 26.0, *) { ToolbarSpacer(.flexible) }
+                    ToolbarItem(placement: .primaryAction) {
+                        SessionWorkspaceInspectorToolbarButton(model: workspace.model)
+                    }
+                } else if model.showsDashboard {
+                    if #available(macOS 26.0, *) { ToolbarSpacer(.flexible) }
                     ToolbarItem(placement: .primaryAction) {
                         Picker("Usage agent", selection: Binding(
                             get: { model.shell.usageAgent },
@@ -77,6 +97,7 @@ struct AppCoordinatorView: View {
                 }
             }
         }
+        .taskHubWindowToolbarChrome()
         .frame(minWidth: 760, minHeight: 480)
         .environment(\.terminalFont, model.shell.font(.term))
         .environment(\.documentFont, model.shell.font(.diff))
@@ -141,4 +162,17 @@ struct AppCoordinatorView: View {
         }
     }
 
+}
+
+private extension View {
+    @ViewBuilder func taskHubWindowToolbarChrome() -> some View {
+        if #available(macOS 26.0, *) {
+            self
+                .toolbar(removing: .sidebarToggle)
+                .toolbar(removing: .title)
+                .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
+        } else {
+            self
+        }
+    }
 }

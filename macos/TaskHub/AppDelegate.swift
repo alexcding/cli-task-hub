@@ -59,8 +59,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPo
         popover.delegate = self
         popover.contentSize = NSSize(width: 380, height: 580)
         let tray = model.makeTray(openWindow: { [weak self] in self?.showWindow() },
-            dismiss: { [weak self] in self?.popover.performClose(nil) },
-            quit: { [weak self] in self?.quitFromTray() })
+            dismiss: { [weak self] in self?.popover.performClose(nil) })
         self.tray = tray
         popover.contentViewController = NSHostingController(rootView: NativeTrayView(model: tray.model))
         observeStatus()
@@ -90,10 +89,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPo
         switch command {
         case .checkForUpdates: updater?.checkForUpdates()
         case .closePage:
-            if model.hasActivePage { model.perform(command) } else { window?.orderOut(nil) }
-        case .hide:
-            model.cancelBrowserPresentation()
-            window?.orderOut(nil)
+            if model.hasActivePage { model.perform(command) } else { window?.performClose(nil) }
         case .tray: toggleTray()
         case .sidebar:
             showWindow()
@@ -138,8 +134,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPo
     }
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {
-        model.cancelBrowserPresentation()
-        sender.orderOut(nil)
+        NSApp.terminate(sender)
         return false
     }
 
@@ -155,16 +150,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPo
         switch termination.systemTermination(updateRequested: updater?.restartRequested == true) {
         case .now: return .terminateNow
         case .later: return .terminateLater
-        case .hide:
-            model.cancelBrowserPresentation()
-            window?.orderOut(nil)
-            return .terminateCancel
         }
-    }
-
-    @objc private func quitFromTray() {
-        popover.performClose(nil)
-        termination.quit()
     }
 
     private func showTerminationError(_ error: Error) {

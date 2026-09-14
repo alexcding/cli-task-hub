@@ -1,7 +1,7 @@
 import AppKit
 
 public enum ShellCommand: String, Sendable {
-    case overview, terminal, activity, settings, sidebar, refresh, tray, hide, biggerFont, smallerFont, resetFont, checkForUpdates
+    case overview, terminal, activity, settings, sidebar, refresh, tray, biggerFont, smallerFont, resetFont, checkForUpdates
     case newProject, newSession, openFile, saveFile, closePage, findPage, back, forward, nextPage, previousPage, zoomIn, zoomOut, resetZoom
 }
 
@@ -49,7 +49,7 @@ public enum ShellCommand: String, Sendable {
         action(app, "Hide Others", #selector(NSApplication.hideOtherApplications(_:)), "h", [.command, .option])
         action(app, "Show All", #selector(NSApplication.unhideAllApplications(_:)))
         app.addItem(.separator())
-        command(app, "Hide Window (Keep Running)", .hide, "q")
+        action(app, "Quit TaskHub", #selector(NSApplication.terminate(_:)), "q")
         let file = menu("File")
         command(file, "New Project…", .newProject)
         command(file, "New Session…", .newSession, "n")

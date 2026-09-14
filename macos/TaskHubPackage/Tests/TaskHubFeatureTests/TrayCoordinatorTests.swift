@@ -28,7 +28,7 @@ import Testing
 @MainActor private final class TrayWindowFixture {
     var events: [String] = []
     var presentation: TrayPresentation {
-        .init(openWindow: { self.events.append("window") }, dismiss: { self.events.append("dismiss") }, quit: { self.events.append("quit") })
+        .init(openWindow: { self.events.append("window") }, dismiss: { self.events.append("dismiss") })
     }
 }
 
@@ -42,25 +42,23 @@ private func trayReview(_ number: Int, url: String? = nil, category: String = "r
            reviewPending: true, projectName: nil, ci: nil)
 }
 
-@MainActor @Test func trayCoordinatorOwnsActivationWindowAndQuitAndRejectsHiddenOrUnownedActions() {
+@MainActor @Test func trayCoordinatorOwnsActivationAndWindowAndRejectsHiddenOrUnownedActions() {
     let runtime = TrayRuntimeFixture(), window = TrayWindowFixture()
     let model = TrayViewModel(service: runtime, shell: trayShell())
     let coordinator = TrayCoordinator(model: model, runtime: runtime, desktop: ProjectPageActions(), presentation: window.presentation)
-    model.refresh(); model.openWindow(); model.quit()
+    model.refresh(); model.openWindow()
     #expect(runtime.refreshes == 0 && window.events.isEmpty)
     coordinator.setActive(true); coordinator.setActive(true)
     #expect(runtime.refreshes == 1 && model.active)
     model.refresh(); #expect(runtime.refreshes == 2)
     coordinator.isOwned = { false }
-    model.openWindow(); model.quit(); model.refresh()
+    model.openWindow(); model.refresh()
     #expect(runtime.refreshes == 2 && window.events.isEmpty)
     coordinator.isOwned = { true }
     model.openWindow(); model.openWindow()
     #expect(window.events == ["window"] && !model.active)
-    coordinator.setActive(true); model.quit(); model.quit()
-    #expect(window.events == ["window", "quit"] && !model.active && runtime.refreshes == 3)
-    coordinator.setActive(true); coordinator.setActive(false); model.quit()
-    #expect(window.events.count == 2)
+    coordinator.setActive(true); coordinator.setActive(false); model.openWindow()
+    #expect(window.events == ["window"])
 }
 
 @MainActor @Test func trayReviewsUseCurrentPendingRowsAndAcknowledgeOnlySuccessfulBrowserOpens() {
@@ -126,16 +124,16 @@ private func trayReview(_ number: Int, url: String? = nil, category: String = "r
     let stale = old.model.onAction
     let fresh = root!.makeTray(factory: factory, runtime: runtime!, shell: shell, desktop: desktop, presentation: window.presentation)
     #expect(factory.models.count == 2 && fresh.model.shell === shell && old.retired && old.model.retired)
-    old.setActive(true); old.model.refresh(); stale(.quit)
+    old.setActive(true); old.model.refresh(); stale(.openWindow)
     #expect(runtime?.refreshes == 1 && window.events.isEmpty && !old.model.active)
     fresh.setActive(true)
     #expect(runtime?.refreshes == 2)
     runtime = nil
     #expect(retainedRuntime == nil && !fresh.model.available)
-    fresh.model.openWindow(); fresh.model.quit()
+    fresh.model.openWindow()
     #expect(window.events.isEmpty)
     root = nil
     #expect(retainedRoot == nil)
-    fresh.handle(.quit)
+    fresh.handle(.openWindow)
     #expect(window.events.isEmpty)
 }

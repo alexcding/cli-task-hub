@@ -29,7 +29,13 @@ struct NewSessionView: View {
             }.formStyle(.grouped).frame(height: 370).disabled(model.busy)
             Text("The session uses a linked worktree beside the project workspace. An existing checkout for this branch can be reused.")
                 .font(.callout).foregroundStyle(.secondary)
-            if let reused = model.draft.reuseWorktree { Text("Reusing \(reused)").font(.caption).textSelection(.enabled) }
+            if let reused = model.draft.reuseWorktree {
+                LabeledContent("Existing checkout") {
+                    Text(reused).font(.caption).textSelection(.enabled)
+                }
+                Text("This session will use the checkout that already has the branch.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             if let error = model.error { Text(error).foregroundStyle(.orange).textSelection(.enabled) }
             HStack {
                 Button("Cancel", role: .cancel, action: cancel).keyboardShortcut(.cancelAction).disabled(model.creating)
@@ -41,7 +47,7 @@ struct NewSessionView: View {
             }
         }.padding(24).frame(width: 520)
         .interactiveDismissDisabled(model.creating)
-        .task { await model.loadReferences() }
+        .task { await model.prepare() }
         .onDisappear(perform: model.cancelReferenceLoading)
     }
 }

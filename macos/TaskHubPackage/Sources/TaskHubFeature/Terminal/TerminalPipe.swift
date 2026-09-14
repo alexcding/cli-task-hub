@@ -183,7 +183,7 @@ final class TerminalPipe: @unchecked Sendable {
             throw PtyError.connection("The terminal snapshot is incomplete.")
         }
         guard memory.restoreSnapshot(snapshot.bytes) else {
-            throw PtyError.connection("The terminal snapshot could not be imported. Reattach to retry with a fresh capture; the shell is still running.")
+            throw PtyError.connection("The terminal snapshot could not be imported; the shell is still running.")
         }
         if daemonOwnsGeometryResponses {
             guard memory.enableHostGeometryResponses() else {

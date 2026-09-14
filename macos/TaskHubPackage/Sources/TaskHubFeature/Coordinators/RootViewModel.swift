@@ -64,6 +64,7 @@ import Observation
             return Workspace(id: id, context: context, model: model, active: viewer.activeContextID == id)
         }
     }
+    var activeWorkspace: Workspace? { workspaces.first(where: \.active) }
     var title: String {
         let state = self.state
         switch state.selection {

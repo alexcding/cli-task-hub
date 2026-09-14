@@ -1273,8 +1273,8 @@ final class TaskHubUITests: XCTestCase {
             XCTAssertTrue((after["terms"] as? [[String: Any]])?.contains { $0["pairKey"] as? String == "sidebar-2" && $0["pid"] as? Int == shellPID && $0["alive"] as? Bool == true } == true)
             previousAppPID = appPID
         }
-        app.buttons["Reviews & Usage"].click()
-        XCTAssertTrue(app.buttons["Quit TaskHub"].waitForExistence(timeout: 5)); app.buttons["Quit TaskHub"].click()
+        app.activate()
+        app.typeKey("q", modifierFlags: .command)
         let exited = expectation(for: NSPredicate(format: "state == %d", XCUIApplication.State.notRunning.rawValue), evaluatedWith: app)
         await fulfillment(of: [exited], timeout: 15)
     }
@@ -1332,16 +1332,12 @@ final class TaskHubUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["--backend-url", base, "--data-dir", path, "--pty-socket", socket, "--ptyd-path", helper]
         app.launch()
-        // Explicit tray Quit owns only this fixture's daemon and shells. Also
-        // attempt cleanup if a UI assertion exits the test early.
+        // Command-Q owns this fixture's daemon and shells. Also attempt cleanup
+        // if a UI assertion exits the test early.
         defer {
             if app.state != .notRunning {
-                let tray = app.buttons["Reviews & Usage"]
-                if tray.exists {
-                    tray.click()
-                    let quit = app.buttons["Quit TaskHub"]
-                    if quit.waitForExistence(timeout: 5) { quit.click() }
-                }
+                app.activate()
+                app.typeKey("q", modifierFlags: .command)
             }
         }
         let row = app.outlines["workspace-sidebar"].staticTexts["sidebar-2"]
@@ -1382,9 +1378,8 @@ final class TaskHubUITests: XCTestCase {
         wait(for: [replaced], timeout: 15)
         XCTAssertTrue((pid.value as? String)?.hasPrefix("PID ") == true)
         XCTAssertTrue(row.exists)
-        app.buttons["Reviews & Usage"].click()
-        XCTAssertTrue(app.buttons["Quit TaskHub"].waitForExistence(timeout: 5))
-        app.buttons["Quit TaskHub"].click()
+        app.activate()
+        app.typeKey("q", modifierFlags: .command)
         let stopped = expectation(for: NSPredicate(format: "state == %d", XCUIApplication.State.notRunning.rawValue), evaluatedWith: app)
         wait(for: [stopped], timeout: 10)
     }
@@ -1429,15 +1424,16 @@ final class TaskHubUITests: XCTestCase {
         app.buttons["Reviews & Usage"].click()
         XCTAssertTrue(app.staticTexts["Review requested"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["Connect to load review requests"].exists)
-        XCTAssertTrue(app.buttons["Quit TaskHub"].exists)
+        XCTAssertTrue(app.buttons["Open TaskHub"].exists)
+        XCTAssertFalse(app.buttons["Quit TaskHub"].exists)
         app.typeKey(.escape, modifierFlags: [])
-        let dismissed = expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: app.buttons["Quit TaskHub"])
+        let dismissed = expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: app.buttons["Open TaskHub"])
         wait(for: [dismissed], timeout: 5)
         XCTAssertTrue(app.buttons["Reviews & Usage"].exists)
         app.buttons["Reviews & Usage"].click()
         XCTAssertTrue(app.buttons["Open TaskHub"].waitForExistence(timeout: 5))
         app.buttons["Open TaskHub"].click()
-        XCTAssertFalse(app.buttons["Quit TaskHub"].exists)
+        XCTAssertFalse(app.buttons["Open TaskHub"].exists)
     }
 
     @MainActor
@@ -1457,7 +1453,7 @@ final class TaskHubUITests: XCTestCase {
         sessionTab.click()
         XCTAssertTrue(app.webViews.staticTexts["Native browser fixture"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.buttons["Restart Session"].exists, "A saved tab matching a session must select the retained session.")
-        XCTAssertFalse(app.buttons["Quit TaskHub"].exists)
+        XCTAssertFalse(app.buttons["Open TaskHub"].exists)
         app.buttons["New Project"].click()
         let draft = app.sheets.textFields["project-name"]
         XCTAssertTrue(draft.waitForExistence(timeout: 5))
@@ -1479,7 +1475,7 @@ final class TaskHubUITests: XCTestCase {
     }
 
     @MainActor
-    func testNativeMenusNavigateAndCommandQHidesWithoutQuitting() throws {
+    func testNativeMenusNavigateAndCommandQQuits() throws {
         let environment = ProcessInfo.processInfo.environment
         guard let path = environment["TASKHUB_UI_DATA_DIR"], let socket = environment["TASKHUB_UI_PTY_SOCKET"] else {
             throw XCTSkip("Run macos/scripts/test-browser-ui.sh to provide isolated storage.")
@@ -1496,11 +1492,7 @@ final class TaskHubUITests: XCTestCase {
         app.typeKey("1", modifierFlags: .command)
         XCTAssertTrue(app.staticTexts["Pull requests"].waitForExistence(timeout: 5))
         app.typeKey("q", modifierFlags: .command)
-        XCTAssertNotEqual(app.state, .notRunning)
-        app.activate()
-        app.menuBars.menuBarItems["Go"].click()
-        app.menuItems["Overview"].click()
-        XCTAssertTrue(app.outlines["workspace-sidebar"].waitForExistence(timeout: 5), app.debugDescription)
-        XCTAssertTrue(app.staticTexts["Pull requests"].exists)
+        let stopped = expectation(for: NSPredicate(format: "state == %d", XCUIApplication.State.notRunning.rawValue), evaluatedWith: app)
+        wait(for: [stopped], timeout: 10)
     }
 }

@@ -33,11 +33,7 @@ public struct NativeTrayView: View {
             }
             if let error = model.actionError { Text(error).font(.caption).foregroundStyle(.orange).padding(.horizontal, 12) }
             Divider()
-            HStack {
-                Button("Open TaskHub", action: model.openWindow)
-                Spacer()
-                Button("Quit TaskHub", action: model.quit)
-            }.padding(12)
+            Button("Open TaskHub", action: model.openWindow).padding(12)
         }
         .frame(width: 380, height: 580)
         .accessibilityIdentifier("native-tray-panel")

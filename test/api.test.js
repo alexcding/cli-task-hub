@@ -427,6 +427,18 @@ test('GET /api/launch-target: configured target wins, Xcode probe backs it up', 
   fs.mkdirSync(path.join(dir, 'Root.xcodeproj'));   // depth 0 outranks the deeper workspace
   assert.equal((await q({ path: dir, kind: 'xcode' })).body.path, path.join(dir, 'Root.xcodeproj'));
 
+  // Target priority applies across sibling directories at the same depth. A package in an
+  // earlier sibling must not hide the application project in a later sibling.
+  fs.rmSync(path.join(dir, 'Root.xcodeproj'), { recursive: true });
+  fs.rmSync(path.join(dir, 'ios'), { recursive: true });
+  fs.mkdirSync(path.join(dir, 'Assemble'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'Assemble/Package.swift'), '// fixture');
+  fs.mkdirSync(path.join(dir, 'Record/Record.xcodeproj'), { recursive: true });
+  assert.equal((await q({ path: dir, kind: 'xcode' })).body.path, path.join(dir, 'Record/Record.xcodeproj'));
+
+  fs.mkdirSync(path.join(dir, 'Root.xcodeproj'));   // restore the configured-target fallback below
+  fs.mkdirSync(path.join(dir, 'ios/App.xcworkspace'), { recursive: true });
+
   // A configured (relative) target wins over the probe...
   const conf = await q({ path: dir, rel: 'ios/App.xcworkspace', kind: 'xcode' });
   assert.deepEqual([conf.body.path, conf.body.source], [path.join(dir, 'ios/App.xcworkspace'), 'configured']);

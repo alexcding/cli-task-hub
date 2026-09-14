@@ -419,7 +419,7 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
             } catch { if !Task.isCancelled { active?.error = "Could not restore page tabs: \(error.localizedDescription)" } }
         }
     }
-    @discardableResult func select(id: String, url: String, title: String, legacy: SavedTab? = nil) -> WorkspaceContext {
+    private func workspace(id: String, url: String, title: String, legacy: SavedTab?) -> WorkspaceContext {
         let context = contexts[id] ?? WorkspaceContext(id: id, sourceURL: url, title: title,
                                                        snapshot: saved[id] ?? legacy.map(ContextSnapshot.importing), pageFactory: pageFactory, documentFactory: documentFactory, closeCoordinator: closeCoordinator)
         contexts[id] = context
@@ -435,6 +435,13 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
         context.activatePage = { [weak self] in self?.activate($0) }
         context.activateDocument = { [weak self] in self?.configure($0) }
         context.documents.forEach(configure)
+        return context
+    }
+    @discardableResult func restore(id: String, url: String, title: String, legacy: SavedTab? = nil) -> WorkspaceContext {
+        workspace(id: id, url: url, title: title, legacy: legacy)
+    }
+    @discardableResult func select(id: String, url: String, title: String, legacy: SavedTab? = nil) -> WorkspaceContext {
+        let context = workspace(id: id, url: url, title: title, legacy: legacy)
         activeContextID = id
         if !restoring, let page = context.activePage { activate(page) }
         return context

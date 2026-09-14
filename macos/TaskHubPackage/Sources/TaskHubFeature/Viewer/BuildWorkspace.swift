@@ -114,7 +114,12 @@ struct APIBuildService: BuildServing {
             try Task.checkCancellation()
             guard isCurrent(id), loadGeneration == generation else { return }
             self.schemes = values.0.schemes; self.simulators = values.1
-            if !self.schemes.contains(scheme) { scheme = self.schemes.first ?? "" }
+            if !self.schemes.contains(scheme) {
+                let targetName = URL(fileURLWithPath: values.0.target).deletingPathExtension().lastPathComponent
+                scheme = self.schemes.first { $0.caseInsensitiveCompare(targetName) == .orderedSame }
+                    ?? self.schemes.first { $0.caseInsensitiveCompare(project.name) == .orderedSame }
+                    ?? self.schemes.first ?? ""
+            }
             if !self.simulators.contains(where: { $0.udid == simulator }) { simulator = self.simulators.first?.udid ?? "" }
         } catch { if isCurrent(id) && loadGeneration == generation && !Task.isCancelled { self.error = error.localizedDescription } }
     }

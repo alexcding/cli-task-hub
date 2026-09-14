@@ -69,7 +69,7 @@ struct SessionOperations: SessionServing {
         if let reused = draft.reuseWorktree {
             let found: ResolvedWorktree = try await api.get(APIClient.query(Routes.WORKTREE,
                 ["path": project.workspace, "branch": branch, "strict": "1"]))
-            guard found.matched, found.isWorktree, SessionRemovalPlan.path(found.path) == SessionRemovalPlan.path(reused) else {
+            guard found.matched, SessionRemovalPlan.path(found.path) == SessionRemovalPlan.path(reused) else {
                 throw BackendError.operation("The existing worktree changed. Resolve the page again before creating the session.")
             }
             worktree = .init(path: found.path)
@@ -81,7 +81,7 @@ struct SessionOperations: SessionServing {
         if requireExactBranch {
             let verified: ResolvedWorktree = try await api.get(APIClient.query(Routes.WORKTREE,
                 ["path": project.workspace, "branch": branch, "strict": "1"]))
-            guard verified.matched, verified.isWorktree, verified.branch == branch,
+            guard verified.matched, verified.branch == branch,
                   SessionRemovalPlan.path(verified.path) == SessionRemovalPlan.path(worktree.path) else {
                 throw BackendError.operation("The checkout at \(worktree.path) does not match branch \(branch). It has been kept; resolve the branch or folder conflict before running this workflow.")
             }
@@ -126,7 +126,7 @@ struct SessionOperations: SessionServing {
         let match = page.kind == "jira" ? ["key": page.key] : ["branch": result.branch]
         let found: ResolvedWorktree = try await api.get(APIClient.query(Routes.WORKTREE,
             ["path": project.workspace, "strict": "1"].merging(match) { _, new in new }))
-        if found.matched, found.isWorktree {
+        if found.matched {
             result.reuseWorktree = found.path; result.branch = found.branch; result.createBranch = false
         }
         return result

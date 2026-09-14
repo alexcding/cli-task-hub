@@ -74,7 +74,7 @@ private actor RecordingTerminalControl: TerminalRuntimeControlling {
     #expect(await platform.control.quits == 0) // Backend stop never owns detached shells.
 }
 
-@MainActor @Test(arguments: [false, true]) func appPlatformControlPreservesShellsForUpdateAndStopsOnQuit(update: Bool) async throws {
+@MainActor @Test(arguments: [false, true]) func appPlatformControlStopsShellsWheneverTheAppTerminates(update: Bool) async throws {
     _ = NSApplication.shared
     let suite = "platform-quit-\(UUID().uuidString)"
     let preferences = try #require(UserDefaults(suiteName: suite))
@@ -84,7 +84,7 @@ private actor RecordingTerminalControl: TerminalRuntimeControlling {
                             shellFactory: NativeShellFeatureFactory(preferences: preferences), platformFactory: platform,
                             selectionStore: TransientSidebarSelectionStore(.overview))
     if update { try await model.prepareForUpdate() } else { try await model.quit() }
-    #expect(await platform.control.quits == (update ? 0 : 1))
+    #expect(await platform.control.quits == 1)
     #expect(platform.pressure.stopped && platform.requests.isEmpty)
 }
 

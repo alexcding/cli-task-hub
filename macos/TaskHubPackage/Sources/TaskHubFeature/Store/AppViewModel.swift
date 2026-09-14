@@ -316,9 +316,9 @@ public final class AppViewModel {
         viewer.active?.open(request.url, title: request.title)
     }
 
-    public func makeTray(openWindow: @escaping () -> Void, dismiss: @escaping () -> Void, quit: @escaping () -> Void) -> TrayCoordinator {
+    public func makeTray(openWindow: @escaping () -> Void, dismiss: @escaping () -> Void) -> TrayCoordinator {
         coordinator.makeTray(factory: trayFactory, runtime: self, shell: shell, desktop: desktop,
-                             presentation: TrayPresentation(openWindow: openWindow, dismiss: dismiss, quit: quit))
+                             presentation: TrayPresentation(openWindow: openWindow, dismiss: dismiss))
     }
 
     func select(_ destination: SidebarDestination) {
@@ -343,6 +343,7 @@ public final class AppViewModel {
             if let session = sessions.first(where: { $0.id == id }) {
                 viewer.select(id: "task:\(id)", url: session.url, title: session.title, legacy: tabs.first { $0.url == session.url })
                 _ = workflowRunModel(for: session)
+                openTerminal()
             } else { viewer.deactivate() }
         case .terminal:
             viewer.select(id: "scratch", url: "", title: "Terminal")
@@ -622,8 +623,8 @@ public final class AppViewModel {
 
     func createdSession(_ session: WorkspaceSession) {
         if !sessions.contains(where: { $0.id == session.id }) { sessions.append(session) }
-        select(.session(session.id))
         terminals["task:\(session.id)"] = makeTerminal(session, fresh: true)
+        select(.session(session.id))
         refresh()
     }
 
@@ -641,27 +642,6 @@ public final class AppViewModel {
         }
     }
 
-    func reattachTerminal() {
-        if let key = activeTerminalKey { reattachTerminal(key: key) }
-    }
-
-    func reattachTerminal(key: String) {
-        guard let previous = terminals[key] else { return }
-        guard !changingSessions.contains(previous.pairKey) else { return }
-        Task {
-            await workflowRuns.removeValue(forKey: previous.pairKey)?.stop()
-            await previous.stopConnecting()
-            if terminals[key] === previous {
-                if let record = sessions.first(where: { $0.id == previous.pairKey }) { terminals[key] = makeTerminal(record) }
-                else {
-                    let replacement = platformFactory.terminal(.init(key: previous.pairKey, directory: previous.cwd, paired: previous.paired))
-                    replacement.openLink = previous.openLink
-                    terminals[key] = replacement
-                }
-            }
-        }
-    }
-
     func togglePin(_ id: String) {
         guard let api, let record = sessions.first(where: { $0.id == id }), pendingPins.insert(id).inserted else { return }
         Task {
@@ -674,19 +654,13 @@ public final class AppViewModel {
         }
     }
 
-    public func quit() async throws {
-        try await prepareToTerminate(stopShells: true)
-    }
+    public func quit() async throws { try await prepareToTerminate() }
 
-    /// An app update reconnects to the detached daemon on launch. Explicit tray
-    /// Quit remains the only normal lifecycle action that reaps its shells.
-    public func prepareForUpdate() async throws {
-        try await prepareToTerminate(stopShells: false)
-    }
+    public func prepareForUpdate() async throws { try await prepareToTerminate() }
 
     public func cancelBrowserPresentation() { coordinator.browserDialogCoordinator.cancel() }
 
-    private func prepareToTerminate(stopShells: Bool) async throws {
+    private func prepareToTerminate() async throws {
         let browserDialogs = coordinator.browserDialogCoordinator
         let browserWasEnabled = browserDialogs.enabled
         let picker = viewer.fileOpenCoordinator
@@ -701,11 +675,19 @@ public final class AppViewModel {
         for model in workflowRuns.values { await model.stop() }
         for model in pageWorkflowRuns.values { await model.stop() }
         for terminal in terminals.values { await terminal.stopConnecting() }
-        if stopShells {
-            try await terminalControl.stopExisting()
-        }
+        try await terminalControl.stopExisting()
         for terminal in terminals.values { terminal.disconnect() }
         await stop()
+    }
+
+    private func restoreSessionTerminals() {
+        for record in sessions {
+            let key = "task:\(record.id)"
+            _ = viewer.restore(id: key, url: record.url, title: record.title,
+                               legacy: tabs.first { $0.url == record.url })
+            _ = workflowRunModel(for: record)
+            if terminals[key] == nil { terminals[key] = makeTerminal(record) }
+        }
     }
 
     public func start() async {
@@ -794,6 +776,7 @@ public final class AppViewModel {
                         sessions = sessionSnapshot
                     }
                     if tabs != tabSnapshot.tabs { tabs = tabSnapshot.tabs }
+                    restoreSessionTerminals()
                     showSelectedContext()
                     if case .project(let id) = selection, let model = projectModels[id], model.section == .prs {
                         await model.refresh()

@@ -12,8 +12,8 @@ API without importing application stores or running their schema changes. It shi
 with the native backend. Use the bundled Node executable, or Node 22.16 or newer.
 
 For a checkpoint across all files, save editor buffers and quit the frontend(s) and
-backend(s) using the data directory before backup. Native tray Quit ends its PTYs;
-Command-Q only hides the window. Online backups are also supported: each SQLite
+backend(s) using the data directory before backup. Closing or quitting the native app
+ends its PTYs. Online backups are also supported: each SQLite
 file is a consistent read snapshot, including committed WAL contents, but the
 database, rolling log and native JSON cache are captured separately. They are not
 one cross-file transaction. Unsaved editor buffers must be saved separately.
@@ -104,7 +104,7 @@ unpackaged development launches do not run this checkpoint gate.
 | Activity and diagnostic history | `logs.db`; included when present as a separate consistent SQLite snapshot. |
 | Older durable filename | If `taskhub.db` is absent, `config.db` is captured/restored under its original name. Backup does not trigger the application's legacy rename or destructive schema changes. |
 | GitHub/Jira snapshots | `data.db`; regenerable, omitted. The normal poller repopulates the restored installation. |
-| Terminal screen state and live process metadata | Daemon memory and PTY manifests; omitted. Restoring files cannot restore OS processes. Sparkle restart preserves the existing daemon separately; explicit tray Quit terminates it. |
+| Terminal screen state and live process metadata | Daemon memory and PTY manifests; omitted. Closing or updating TaskHub terminates its PTYs; saved CLI conversation IDs recreate and resume sessions on launch. |
 | Native sidebar selection/collapse, window geometry | AppKit/UserDefaults in `com.alexcding.taskhub`; left in place during same-bundle upgrades. Not part of this data-directory snapshot. |
 | Native cached settings and pending preference writes | UserDefaults `native.*`; not copied by this tool. Synced values are in SQLite. Reconnect and let pending writes finish before taking an offline checkpoint. |
 | Tauri localStorage appearance | Theme is mirrored to SQLite; the database remains authoritative. |

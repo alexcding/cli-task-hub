@@ -1,11 +1,11 @@
 import Foundation
 
 /// Serializes asynchronous document/terminal cleanup at AppKit's termination
-/// boundary. Command-Q is still a hide command; only an updater restart or the
-/// explicit tray Quit enters this transaction.
+/// boundary. Window close, Command-Q, Dock/app-menu Quit, and updater restart
+/// all enter the same transaction.
 @MainActor public final class AppTerminationCoordinator {
     public enum Reason: Sendable { case quit, update }
-    public enum Decision: Equatable { case hide, later, now }
+    public enum Decision: Equatable { case later, now }
     public private(set) var pending: Reason?
     public private(set) var approved = false
     private let prepare: (Reason) async throws -> Void
@@ -20,15 +20,9 @@ import Foundation
 
     public func systemTermination(updateRequested: Bool) -> Decision {
         if approved { return .now }
-        if pending == .update { return .later }
-        guard pending == nil, updateRequested else { return .hide }
-        begin(.update)
+        guard pending == nil else { return .later }
+        begin(updateRequested ? .update : .quit)
         return .later
-    }
-
-    public func quit() {
-        guard !approved, pending == nil else { return }
-        begin(.quit)
     }
 
     private func begin(_ reason: Reason) {

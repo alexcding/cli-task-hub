@@ -17,7 +17,7 @@ import Observation
 }
 
 @MainActor @Observable public final class TrayViewModel {
-    enum Action: Equatable { case refresh, openReview(String), openTab(String), openWindow, quit }
+    enum Action: Equatable { case refresh, openReview(String), openTab(String), openWindow }
     let shell: ShellStore
     @ObservationIgnored var onAction: (Action) -> Void = { _ in }
     @ObservationIgnored private weak var service: (any TrayServing)?
@@ -45,7 +45,6 @@ import Observation
     func openReview(_ review: TrayPR) { request(.openReview(review.id)) }
     func openTab(_ tab: SavedTab) { request(.openTab(tab.id)) }
     func openWindow() { request(.openWindow) }
-    func quit() { request(.quit) }
     private func request(_ action: Action) { if available && active { onAction(action) } }
 
     func performRefresh() { if available { service?.refreshTray() } }

@@ -46,11 +46,9 @@ import Testing
 @MainActor @Test func updateRestartWaitsForDocumentsCoalescesRequestsAndAllowsCancelThenRetry() async throws {
     let fixture = TerminationFixture(), reason = AppTerminationCoordinator.Reason.update
     let coordinator = fixture.coordinator
-    #expect(coordinator.systemTermination(updateRequested: false) == .hide)
-    #expect(fixture.reasons.isEmpty)
     #expect(coordinator.systemTermination(updateRequested: true) == .later)
     #expect(coordinator.systemTermination(updateRequested: true) == .later)
-    coordinator.quit() // A concurrent tray action cannot start a second cleanup.
+    #expect(coordinator.systemTermination(updateRequested: false) == .later)
     try await awaitTermination { fixture.confirmation != nil }
     #expect(fixture.reasons == [reason] && fixture.replies.isEmpty && !coordinator.approved)
     fixture.resolve(CancellationError())
@@ -66,20 +64,33 @@ import Testing
     #expect(coordinator.systemTermination(updateRequested: false) == .now)
 }
 
-@MainActor @Test func explicitQuitFailureKeepsAppAliveAndDoesNotBecomeAnUpdateRestart() async throws {
+@MainActor @Test func quitFailureKeepsAppAliveAndDoesNotBecomeAnUpdateRestart() async throws {
     let fixture = TerminationFixture(), coordinator = fixture.coordinator
-    coordinator.quit(); coordinator.quit()
+    #expect(coordinator.systemTermination(updateRequested: false) == .later)
+    #expect(coordinator.systemTermination(updateRequested: false) == .later)
     try await awaitTermination { fixture.confirmation != nil }
-    #expect(coordinator.systemTermination(updateRequested: true) == .hide)
+    #expect(coordinator.systemTermination(updateRequested: true) == .later)
     #expect(fixture.reasons == [.quit])
     fixture.resolve(BackendError.operation("Daemon shutdown failed"))
     try await awaitTermination { fixture.replies.count == 1 }
     #expect(!fixture.replies[0].1 && !coordinator.approved)
     #expect(fixture.failures.first?.localizedDescription == "Daemon shutdown failed")
-    coordinator.quit()
+    #expect(coordinator.systemTermination(updateRequested: false) == .later)
     try await awaitTermination { fixture.confirmation != nil }
     fixture.resolve()
     try await awaitTermination { fixture.replies.count == 2 }
     #expect(fixture.reasons == [.quit, .quit] && fixture.replies[1].1)
+    #expect(coordinator.systemTermination(updateRequested: false) == .now)
+}
+
+@MainActor @Test func systemQuitUsesOneCleanupTransaction() async throws {
+    let fixture = TerminationFixture(), coordinator = fixture.coordinator
+    #expect(coordinator.systemTermination(updateRequested: false) == .later)
+    #expect(coordinator.systemTermination(updateRequested: false) == .later)
+    try await awaitTermination { fixture.confirmation != nil }
+    #expect(fixture.reasons == [.quit])
+    fixture.resolve()
+    try await awaitTermination { fixture.replies.count == 1 }
+    #expect(fixture.replies[0].0 == .quit && fixture.replies[0].1)
     #expect(coordinator.systemTermination(updateRequested: false) == .now)
 }

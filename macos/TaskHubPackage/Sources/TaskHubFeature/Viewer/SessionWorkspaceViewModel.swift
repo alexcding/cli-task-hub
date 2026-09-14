@@ -18,7 +18,9 @@ import Observation
     var openingExternal = false
     var canPresent = false
     var canCreateSession = false
+    var editorID: String?
     var editorLabel: String?
+    var gitClientID: String?
     var gitClientLabel: String?
     var launchError: String?
     var reviewBase: String?
@@ -26,7 +28,7 @@ import Observation
 
 enum WorkspaceOperation: Equatable {
     case reveal, openEditor, openGitClient, createSession, openFile, addPage
-    case changes, openTerminal, reconnectTerminal, reconnectBuild, hookSettings, prepareChanges
+    case changes, openTerminal, hookSettings, prepareChanges
 }
 
 @MainActor protocol WorkspaceServing: AnyObject {
@@ -75,8 +77,15 @@ enum WorkspaceOperation: Equatable {
     }
     var appearance: AppAppearance { state.appearance }
     var launchError: String? { state.launchError }
+    var editorID: String? { state.editorID }
     var editorLabel: String? { state.editorLabel }
+    var gitClientID: String? { state.gitClientID }
     var gitClientLabel: String? { state.gitClientLabel }
+    var runScheme: String {
+        if let scheme = state.build?.scheme, !scheme.isEmpty { return scheme }
+        if let scheme = state.project?.runScheme, !scheme.isEmpty { return scheme }
+        return "Scheme"
+    }
     var workspaceTitle: String {
         if context?.id == "scratch" { return "Terminal" }
         return context?.activeDocument?.title ?? context?.activePage?.title ?? "Workspace"
@@ -156,12 +165,14 @@ enum WorkspaceOperation: Equatable {
     func remove() { if canRemove { onAction(.remove) } }
     func restart() { if canRestart { onAction(.restart) } }
     func openTerminal() { if showsTerminal { perform(.openTerminal) } }
-    func reconnectTerminal() { perform(.reconnectTerminal) }
-    func reconnectBuild() { perform(.reconnectBuild) }
     func openHookSettings() { perform(.hookSettings) }
     func stopBuild() async { await build?.stop() }
     func toggleBuild() { if buildTerminal != nil { context?.setPane(showsBuild ? .term : .build) } }
     func toggleContext() { if canToggleContext { context?.setPane(context?.pane == .term ? .off : .term) } }
+    func setInspectorPresented(_ presented: Bool) {
+        guard canToggleContext else { return }
+        context?.setPane(presented ? .term : .off)
+    }
     func reopen(_ visit: WorkspaceVisit) {
         guard active, state.canPresent else { return }
         onAction(.reopen(visit.id))

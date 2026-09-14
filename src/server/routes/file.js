@@ -65,19 +65,24 @@ function xcodePick(dir, entries) {
 async function xcodeTarget(root) {
   let level = [root];
   for (let depth = 0; depth <= XCODE_MAX_DEPTH && level.length; depth++) {
-    const next = [];
+    const next = [], hits = [];
     for (const dir of level) {
       let entries;
       try { entries = await fsp.readdir(dir, { withFileTypes: true }); } catch { continue; }
       const hit = xcodePick(dir, entries);
-      if (hit) return hit;
+      if (hit) hits.push(hit);
       for (const e of entries) {
         if (!e.isDirectory() || e.name.startsWith('.') || XCODE_SKIP.has(e.name)) continue;
         if (e.name.endsWith('.xcodeproj') || e.name.endsWith('.xcworkspace')) continue; // bundles, not folders
         next.push(path.join(dir, e.name));
       }
     }
-    level = next;
+    // Priority applies across the entire depth, not per directory. Otherwise an
+    // alphabetically earlier sibling package can hide the app's Xcode project.
+    const preferred = ext => hits.filter(hit => hit.endsWith(ext)).sort()[0];
+    const hit = preferred('.xcworkspace') || preferred('.xcodeproj') || preferred('/Package.swift');
+    if (hit) return hit;
+    level = next.sort();
   }
   return '';
 }

@@ -23,7 +23,8 @@ extension AppViewModel: WorkspaceCoordinating {
             appearance: shell.appearance, documentFont: shell.font(.diff), terminalFont: shell.font(.term), connected: connection == "Connected",
             changingSession: session.map { changingSessions.contains($0.id) } ?? false,
             openingExternal: workspaceLaunch.opening.contains(context.id), canPresent: coordinator.canPresent,
-            canCreateSession: canPerform(.newSession), editorLabel: workspaceLaunch.editorLabel(project),
+            canCreateSession: canPerform(.newSession), editorID: project?.ide,
+            editorLabel: workspaceLaunch.editorLabel(project), gitClientID: shell.gitClient,
             gitClientLabel: workspaceLaunch.gitClientLabel(shell.gitClient), launchError: workspaceLaunch.errors[context.id],
             reviewBase: base)
     }
@@ -66,8 +67,6 @@ extension AppViewModel: WorkspaceCoordinating {
         case .addPage: addPage(in: context)
         case .changes: if let session = state.session { showChanges(for: session, context: context) }
         case .openTerminal: openTerminal()
-        case .reconnectTerminal: reattachTerminal(key: context.id)
-        case .reconnectBuild: reattachTerminal(key: "build:\(context.sourceURL)")
         case .hookSettings: openWorkflowHookSettings()
         case .prepareChanges: if let session = state.session { prepareChanges(for: session, context: context) }
         }

@@ -100,9 +100,6 @@ import Testing
     context.setPane(.term)
     _ = viewer.select(id: "task:prepared", url: "", title: "Prepared")
     #expect(model.active && service.actions.count == 3)
-    model.reconnectTerminal(); model.reconnectBuild()
-    #expect(service.actions.suffix(2) == [.operation(.reconnectTerminal), .operation(.reconnectBuild)])
-    #expect(service.contextIDs.suffix(2) == ["task:prepared", "task:prepared"])
 }
 
 @MainActor @Test func workspaceModelDoesNotRetainItsContextOrRuntime() {
@@ -112,7 +109,7 @@ import Testing
     #expect(model.workspaceTitle == "Terminal" && model.showsTerminal)
     context = nil; service = nil
     #expect(!model.showsTerminal && !model.canRestart)
-    model.openTerminal(); model.reconnectBuild(); model.setActive(true)
+    model.openTerminal(); model.setActive(true)
 }
 
 @MainActor @Test func workspaceOwnsTerminalPresentationAcrossSelectionReplacementAndFontChanges() throws {

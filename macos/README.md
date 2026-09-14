@@ -231,7 +231,8 @@ PRs refresh through snapshot APIs and SSE. Usage loads separately on opening or
 refreshing the panel, retaining previous data on error. Appearance (System/Light/Dark)
 and the selected usage agent persist to the existing backend settings database.
 The menu-bar icon is bronze for pending reviews, blue for open work, and neutral
-when idle. Escape or clicking outside closes the panel; Quit remains explicit.
+when idle. Escape or clicking outside closes the panel. Quit is owned by the app
+menu and Command-Q, not duplicated inside the tray panel.
 
 For sample PRs/usage, add `TASKHUB_TRAY_FIXTURE=1` to the isolated fixture command.
 This replaces usage reads with synthetic data; no credentials or usage CLIs are
@@ -243,7 +244,7 @@ five-hour session and seven-day weekly windows.
 Native File/Edit/View/Go/Window menus are owned by AppKit. Copy/paste/undo follow
 the focused responder. Command-1 opens Overview, Command-2 focuses the terminal,
 Control-Command-S focuses the sidebar, and Control-Command-T reveals/focuses the
-current terminal. Command-Q hides the window; only tray Quit tears down the app.
+current terminal. Closing the window, Command-Q, and Dock/app-menu Quit all tear down the app.
 Command-plus/minus/zero changes or resets the visible code/diff font, or the terminal
 font when no code document is visible, without recreating its emulator. In General
 settings these shortcuts change the code/diff size. Page zoom remains separate.
@@ -306,10 +307,10 @@ arguments or the launch command's `--launch-args` option:
   `TASKHUB_DATA_DIR` or `--data-dir`.
 
 A port conflict fails visibly; the app never kills by port or adopts a foreign process.
-Window close and Command-Q hide the window. The menu-bar Quit stops an owned backend
-and the native spike's PTYs/daemon, then exits. This also works after relaunch before
-opening a terminal pane. Quit waits for PTY teardown; a failure keeps the app open
-with an error so teardown can be retried.
+Window close, Command-Q, and Dock/app-menu Quit stop the owned backend and every
+session PTY, then exit. On launch, every saved session gets a new terminal and its saved
+Claude or Codex conversation is resumed. Quit waits for PTY teardown; a failure keeps
+the app open with an error so teardown can be retried.
 
 ## Focused working diff (M5, in progress)
 
@@ -351,9 +352,8 @@ Build the pinned runtimes using the commands above, then build the standalone
 helper with `cargo build --manifest-path crates/taskhub-ptyd/Cargo.toml --features terminal-snapshots`.
 For development, add `--ptyd-path /absolute/path/to/repo/crates/taskhub-ptyd/target/debug/taskhub-ptyd`
 to the app's launch arguments; a bundled app uses `Contents/Helpers/taskhub-ptyd`.
-Click **Open native terminal**. **Show terminal** hides drawing while retaining the
-emulator and shell. **Reattach** creates a fresh connection/emulator for the same
-spike shell, including after an app rebuild.
+Opening a saved session starts its native terminal automatically. The terminal surface
+has no diagnostic status bar; connection recovery remains internal.
 
 GhosttyTerminal uses the source-built local package generated from
 `Lakr233/libghostty-spm` **1.6.20260909**, revision
@@ -443,8 +443,8 @@ An established terminal automatically reconnects after a transient transport los
 when all input has been acknowledged. It replaces the native surface and restores
 the same terminal ID/PID from a fresh snapshot, using up to five attempts with
 backoff. Reconnect never launches a replacement daemon or shell. Pending or failed
-keyboard input, app-issued commands and interrupts require manual Reattach; bytes
-are never replayed. Removing the pane cancels recovery and rejects stale callbacks.
+keyboard input, app-issued commands and interrupts are never replayed. Removing the
+pane cancels recovery and rejects stale callbacks.
 
 ## Native editor documents (M5, in progress)
 
@@ -452,7 +452,7 @@ Choose **Open File** (Command-O) from a session/page context. File tabs share th
 native page strip and History; Monaco renders the editor, while Swift owns file I/O,
 revision conflicts, and document lifecycle through injected services and factories.
 Command-S saves, Command-F finds, and Command-W closes with Save/Discard/Cancel when
-needed. Session removal and tray Quit check unsaved documents before stopping shells.
+needed. Session removal and app termination check unsaved documents before stopping shells.
 Hidden clean editors unload; unsaved editors retain their buffer and undo history.
 Unsaved text is not persisted for crash recovery. Files must be UTF-8 text, at most
 5 MB; hard-linked/unwritable files are read-only. Failed saves preserve edits.
@@ -516,13 +516,10 @@ Sparkle retains its standard permission prompt and automatic-check preference.
 An update restart waits at AppKit's termination boundary for the existing
 Save/Discard/Cancel editor flow and outstanding workspace operations. Cancel
 keeps the app open and permits the installer to retry. On approval, TaskHub stops
-its workflow automation and owned Node backend, disconnects terminal surfaces,
-and leaves the detached PTY daemon and shells alive for reattachment. Explicit
-tray Quit still reaps those shells; Command-Q still hides the window. A daemon
-preserved across an upgrade keeps running its old executable until explicit Quit;
-future protocol changes must retain attachment compatibility or require a planned
-terminal shutdown. Real signed feed download/install/relaunch and upgrade/rollback
-acceptance remain release gates.
+its workflow automation, terminal sessions, PTY daemon, and owned Node backend.
+The relaunched app recreates saved sessions and resumes their CLI conversations.
+Real signed feed download/install/relaunch and upgrade/rollback acceptance remain
+release gates.
 
 ### Data recovery
 

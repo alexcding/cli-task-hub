@@ -43,6 +43,11 @@ import Observation
         resolutionGeneration = UUID(); resolving = false
     }
     func cancelReferenceLoading() { referenceTask = nil; generation = UUID(); loading = false }
+    func prepare() async {
+        await loadReferences()
+        guard active, !Task.isCancelled, SessionPage.parse(draft.url) != nil else { return }
+        _ = await resolvePage()
+    }
     func loadReferences() async {
         guard active, !Task.isCancelled else { return }
         let generation = UUID(); self.generation = generation

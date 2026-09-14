@@ -9,7 +9,7 @@ private final class BuildHTTPFixture: URLProtocol, @unchecked Sendable {
         let path = request.url!.path
         let body: String
         switch path {
-        case Routes.XCODE_SCHEMES: body = #"{"target":"/tmp/Fixture.xcodeproj","schemes":["Fixture"]}"#
+        case Routes.XCODE_SCHEMES: body = #"{"target":"/tmp/Fixture.xcodeproj","schemes":["Dependency","Fixture"]}"#
         case Routes.XCODE_SIMULATORS: body = #"[{"udid":"12345678-1234-1234-1234-123456789abc","name":"Fixture device","runtime":"iOS fixture"}]"#
         case Routes.XCODE_BUILD_SETTINGS:
             body = #"{"appPath":"/tmp/Fixture.app","bundleId":"fixture.app","target":"/tmp/Fixture.xcodeproj","configuration":"Debug"}"#
@@ -49,7 +49,7 @@ private final class BuildHTTPFixture: URLProtocol, @unchecked Sendable {
     let presentation = try #require(coordinator.sheet)
     guard case .build(let destination) = presentation.destination else { Issue.record("Wrong destination"); return }
     await destination.load()
-    #expect(destination.canRun)
+    #expect(destination.canRun && destination.scheme == "Fixture")
     async let first: Void = destination.run()
     async let second: Void = destination.run()
     for _ in 0..<100 {
