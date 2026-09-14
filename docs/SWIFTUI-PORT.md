@@ -2370,6 +2370,20 @@ does not).
   relaunch retention, terminal performance/fidelity and release acceptance remain
   part of the broader M1–M6 work.
 
+### M1 full-app baseline preparation — 2026-09-13
+
+- Added a pinned Tauri staging/bundling tool for the required full-app comparison.
+  It isolates the app identity, backend origin, remote capability and PTY paths,
+  disables production backend/update startup, and records exact source and binary
+  hashes. Terminal rendering and transport behavior remain unchanged.
+- Three isolation tests, a locked offline release build, signature verification
+  and a real app startup check passed. The fixture dashboard rendered at the
+  private backend origin, and the daemon connected through its private socket.
+  See [the preparation record](measurements/tauri-baseline-preparation-2026-09-13.md).
+- The matching ten-minute full-app workload, CPU/GPU/RSS comparison, actual
+  key-to-display latency and mitigation of regressions remain required. Build and
+  startup evidence do not close the terminal performance gate.
+
 ## Why now, and why native
 
 The Tauri shell works, but roughly half of `src-tauri/` exists to work around what a DOM
