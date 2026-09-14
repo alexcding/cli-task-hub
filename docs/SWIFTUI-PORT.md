@@ -90,7 +90,7 @@ M0 foundation is committed as `bf0c7a6`; the M1 terminal spike is committed as
 as `5cf368a`; native menus/notifications are committed as `9d34f2b`.
 Session workspace and terminal acceptance work continue in `macos/`
 (see `macos/README.md` for commands).
-The checked-in Xcode workspace uses a local Swift package, Swift 6, macOS 14 minimum,
+The checked-in Xcode project uses a local Swift package, Swift 6, macOS 14 minimum,
 and direct distribution without App Sandbox. The native bundle identifier is
 `com.alexcding.taskhub` (Alex Ding), per user direction. Overview now renders the native
 Dashboard; the remaining app pages and action parity are tracked under M4.
@@ -2496,7 +2496,7 @@ web views own only their document content.
 
 ```
 macos/
-  TaskHub.xcworkspace          (checked-in app project + local TaskHubPackage)
+  TaskHub.xcodeproj            (app project + local TaskHubPackage)
   TaskHub/
     App/          TaskHubApp.swift, AppDelegate (tray, quit-only, Dock), Sparkle
     Backend/      BackendProcess (spawn node sidecar, TCP wait), APIClient (URLSession over

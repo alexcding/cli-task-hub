@@ -3,7 +3,7 @@
 Native macOS client ready for manual review. macOS 14+, Xcode 16.3+ and Swift 6.1+;
 Apple silicon is the initial build target. Open `TaskHub.xcodeproj` in Xcode,
 select **TaskHub → My Mac**, and press **Run** (Command-R). The project directly
-references `TaskHubPackage`; the separate workspace is optional.
+references `TaskHubPackage`; no separate workspace is needed.
 
 The shared Run scheme starts the checkout's Node server through the app's existing
 backend owner, using the prepared Node runtime and Rust PTY helper. No separate
@@ -544,7 +544,7 @@ node --test --test-force-exit test/contracts.test.js test/swift-routes.test.js t
 xcodebuildmcp swift-package test --package-path macos/TaskHubPackage
 cargo test --offline --manifest-path crates/taskhub-ptyd/Cargo.toml --features terminal-snapshots
 cargo check --offline --manifest-path src-tauri/Cargo.toml
-xcodebuildmcp macos test --workspace-path macos/TaskHub.xcworkspace --scheme TaskHub --derived-data-path macos/.build/ui-tests --extra-args '-only-testing:TaskHubUITests'
+xcodebuildmcp macos test --project-path macos/TaskHub.xcodeproj --scheme TaskHub --derived-data-path macos/.build/ui-tests --extra-args '-only-testing:TaskHubUITests'
 ```
 
 Swift integration tests require Node, installed root dependencies, and the built

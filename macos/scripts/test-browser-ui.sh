@@ -51,6 +51,6 @@ if [[ -n "${TASKHUB_REAL_BUILD_SIMULATOR:-}" ]]; then
 fi
 QA_SOCKET="${TMPDIR:-/tmp/}taskhub-bui-$$.sock"
 ARGS="$(node -e 'const fs=require("fs"); const dir=process.argv[1]; console.log(JSON.stringify({testRunnerEnv:{TASKHUB_UI_BACKEND_URL:fs.readFileSync(dir+"/ready","utf8"),TASKHUB_UI_DATA_DIR:dir,TASKHUB_UI_PTY_SOCKET:process.argv[2],TASKHUB_UI_PTYD_PATH:process.argv[3],TASKHUB_UI_REAL_BUILD:process.env.TASKHUB_REAL_BUILD_SIMULATOR ? "1" : "0"}}))' "$QA_DIR" "$QA_SOCKET" "$QA_HELPER")"
-xcodebuildmcp macos test --workspace-path "$ROOT/macos/TaskHub.xcworkspace" --scheme TaskHub \
+xcodebuildmcp macos test --project-path "$ROOT/macos/TaskHub.xcodeproj" --scheme TaskHub \
   --configuration Debug --derived-data-path "$ROOT/macos/.build/ui-tests" --json "$ARGS" \
   --extra-args "-only-testing:$QA_TEST"
