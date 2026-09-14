@@ -46,6 +46,28 @@ with typed model callbacks and root/deep-link presentation reservations. Reopeni
 history also routes through the workspace coordinator. These implementation phases
 add no further UI or unit tests.
 
+TaskHub snapshot v2 now serializes glyph registrations, preserving FIFO order,
+metrics, width and rendering constraints through reattachment. Both runtimes apply
+the same maintained patch and negotiate `-taskhub-glyph-v2` before shell creation
+or attachment. Decoding validates registrations without replaying output into the
+live parser. Kitty image state and UI/config-dependent offline queries remain
+implementation work. No UI/unit validation accompanies this phase, per direction.
+
+The current implementation queue is:
+
+1. Preserve Kitty image payloads, placements, animation and in-progress image
+   transmission state in snapshots, with matching daemon/native resource policies.
+2. Complete ownership of UI/config-dependent terminal replies while detached,
+   without replaying clipboard or other host side effects on reattachment.
+3. Produce the self-contained native app for user review. Native dashboard and
+   Cocoa sidebar stay native; Sprint Board/diff/editor keep their focused web hosts.
+4. Finish direct-distribution configuration where credentials permit. Developer ID,
+   notarization credentials and the user's signed update feed require external
+   configuration; do not invent credentials or publish an unsigned update as signed.
+
+The coordinator/view-model/factory implementation pass is implemented. Historical
+acceptance checklists below do not add UI/unit testing back to this queue.
+
 M0 foundation is committed as `bf0c7a6`; the M1 terminal spike is committed as
 `c05a57a`; the M2 Cocoa sidebar is committed as `609d889` and native tray/appearance
 as `5cf368a`; native menus/notifications are committed as `9d34f2b`.

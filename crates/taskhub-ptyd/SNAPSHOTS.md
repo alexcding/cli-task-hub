@@ -9,9 +9,15 @@ cargo test --manifest-path crates/taskhub-ptyd/Cargo.toml --features terminal-sn
 
 The native app and its bundle script require this feature; Tauri keeps its
 existing feature-free helper protocol. Prepare both runtimes before building the
-native app as described in `macos/README.md`. Snapshot v1 omits Kitty images and
-glyph glossary registrations. UI/config-dependent offline queries remain open;
+native app as described in `macos/README.md`. TaskHub snapshot v2 preserves glyph
+glossary registrations. Kitty images and UI/config-dependent offline queries remain open;
 the state-only response contract below is implemented.
+
+Native and headless runtimes share `0007-glyph-snapshot.patch`. The handshake
+revision includes `-taskhub-glyph-v2`, distinguishing it from the original upstream
+format before any shell is created or attached. Registration data is restored
+through the glyph decoder directly; no old APC query or response is replayed into
+the live shell. Existing version-1 daemons are preserved rather than replaced.
 
 Each terminal owns a headless Ghostty parser from creation. Output enters that
 parser and the legacy ring under one lock. Kernel and parser resizing run on the

@@ -25,9 +25,14 @@ Ghostty's page-sized allocation granularity. Encoded snapshots are capped at 32 
 truncated, corrupted and trailing data is rejected. Diagnostic VT formatting is not
 used to restore state.
 
-Upstream snapshot version 1 is not a stable cross-version disk format. Encoder and
-decoder revisions must match. Kitty image payloads and glyph registrations are not
-included by upstream; this runtime alone does not establish full terminal fidelity.
+Snapshots are not a stable cross-version disk format. Encoder and decoder revisions
+must match. TaskHub's version 2 adds a checksummed glyph registration record,
+retaining registration order, metrics, width, alignment, padding and outline data.
+Decoding uses the same glyph validation and namespace rules as a live registration,
+without replaying terminal output or emitting responses. The negotiated revision is
+`82938b633ba646db38591d969c3c526332bd7e65-taskhub-glyph-v2`. Version 1 helpers are
+rejected before attachment and their shells remain running. Kitty image payloads
+and placements are still outside this extension.
 See the [pinned snapshot format source](https://github.com/ghostty-org/ghostty/blob/82938b633ba646db38591d969c3c526332bd7e65/src/terminal/snapshot/terminal.zig).
 
 The daemon now parses every output batch, serializes kernel/parser resizes on its
@@ -80,4 +85,8 @@ responses as requests and enables the existing ANSI DECRQM handler. The runtime
 builder applies/reverses that exact patch around a clean pinned source build and
 records the patch bytes beside the revision. The Rust build rejects a missing or
 mismatched marker, preventing accidental use of an older unpatched archive. These
-changes do not alter the binary snapshot layout or upstream revision.
+query changes do not alter the upstream revision. Both builds additionally apply
+`0007-glyph-snapshot.patch`, and the Rust build requires its exact marker. Glyph
+records allow up to 1,024 entries, cap each raw registration at the existing 1 MiB
+parser limit, and cap the record at 16 MiB within the complete snapshot's 32 MiB
+limit. Oversized captures fail explicitly instead of omitting glyphs.

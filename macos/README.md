@@ -366,8 +366,11 @@ bootstrap preserves user startup files and prompt hooks while publishing working
 directory and command boundaries, so a cd updates native file-link destinations.
 Non-Apple Bash uses Ghostty's ENV startup mechanism; Apple Bash and other unsupported
 shells retain normal startup behavior. These scripts are never written into user
-dotfiles. UI/config-dependent offline queries and snapshot-v1 image/glyph omissions
-still require work; see `crates/taskhub-ptyd/SNAPSHOTS.md`.
+dotfiles. TaskHub snapshot v2 retains glyph registrations using the same maintained
+patch in the daemon and renderer. The format is negotiated explicitly; older
+daemons remain running and are rejected rather than silently upgraded. Kitty image
+state and UI/config-dependent offline queries still require work; see
+`crates/taskhub-ptyd/SNAPSHOTS.md`.
 
 New app sessions also select `daemon-geometry-v1`. They wait for measured cell
 pixels before creation; kernel winsize, parser state, ordered resizes and snapshot
