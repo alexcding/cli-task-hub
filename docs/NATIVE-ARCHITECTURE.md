@@ -3,8 +3,14 @@
 The macOS port uses the separation requested from `elevate-ios`: a coordinator owns
 navigation and model lifetime, a ViewModel owns feature state and operations, and a
 view renders those models and forwards user or lifecycle events. The native
-Dashboard, Cocoa sidebar and native terminal remain; Sprint Board, diff and editor
-remain focused web surfaces.
+Dashboard, Cocoa sidebar, terminal, Sprint Board, diff and editor are native surfaces.
+
+As of 2026-09-14, all application Swift code belongs directly to
+`macos/TaskHub.xcodeproj`. The on-disk and Xcode groups follow `record-ios/Record`:
+`App`, `Scenes`, `Coordinators`, `Components`, `Container`, `Services`, `Theme`,
+`Utilities`, and `Resources`, with separate `Tests`, `UITests`, and `Tools` targets.
+The former `TaskHubPackage` wrapper is removed; only Ghostty and Sparkle remain
+package dependencies. See [the folder and target guide](../macos/README.md#xcode-organization).
 
 Application ViewModels and coordinators use Swift Observation (`@Observable`),
 with `@Bindable` where a rendering view needs bindings. Do not introduce

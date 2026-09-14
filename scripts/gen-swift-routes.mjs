@@ -3,7 +3,7 @@ import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const target = fileURLToPath(new URL('../macos/TaskHubPackage/Sources/TaskHubFeature/Backend/Routes.swift', import.meta.url));
+const target = fileURLToPath(new URL('../macos/Services/Backend/Routes.swift', import.meta.url));
 const quote = value => JSON.stringify(value);
 const entries = Object.entries(ROUTES).map(([key, value]) => {
   if (typeof value === 'string') return `    public static let ${key} = ${quote(value)}`;

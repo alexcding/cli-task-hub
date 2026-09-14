@@ -31,7 +31,7 @@ def mach_o(path):
 
 
 def sign_app(app, identity, local):
-    config = Path(__file__).resolve().parents[1] / "Config"
+    config = Path(__file__).resolve().parents[1] / "Resources" / "Configs"
     common = ["codesign", "--force", "--sign", identity]
     if not local:
         common += ["--options", "runtime", "--timestamp"]

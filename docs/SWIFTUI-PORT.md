@@ -2519,25 +2519,30 @@ web views own only their document content.
 
 ## Architecture of the native app
 
-```
+Current layout (2026-09-14), following `record-ios/Record` with direct Xcode
+source ownership:
+
+```text
 macos/
-  TaskHub.xcodeproj            (app project + local TaskHubPackage)
-  TaskHub/
-    App/          TaskHubApp.swift, AppDelegate (tray, quit-only, Dock), Sparkle
-    Backend/      BackendProcess (spawn node sidecar, TCP wait), APIClient (URLSession over
-                  generated Routes), SSEClient, Models (Codable mirrors of API JSON)
-    Store/        AppStore (@Observable) — the single state + pure lookups (prGroup, prByUrl…)
-    Terminal/     PtydClient (Unix socket, JSON), GhosttySurfaceView, TerminalPane,
-                  link/path detection, flow control
-    Viewer/       WebTab (WKWebView), ContentTabStrip (chipOrder), History, Find bar
-    Documents/    DiffWebView, EditorWebView, DocumentBridge, document state
-    Sidebar/      CocoaSidebar (NSOutlineView, project → session, Pinned mirrors, Tabs), native context menus
-    Pages/        Dashboard, Jira tickets, Logs, Settings, Project + focused WebBoard host
-    Layout/       SplitPane (paneView: off/term/diff/build) — the one place state → geometry
-  Shared/         Routes.swift (GENERATED from src/shared/routes.mjs), JiraKeys, JQL
-  WebAssets/      isolated board/diff/editor entry points + reused renderer assets and logic
-  scripts/        gen-routes.mjs, build-sidecar.sh (reuse), bench
+  TaskHub.xcodeproj       App, unit test, UI test and terminal diagnostic targets
+  App/                   AppKit entry point, lifecycle and root state
+  Scenes/                Native feature views and ViewModels
+  Coordinators/          Navigation and model lifetime by feature
+  Components/            Reusable native views and adapters
+  Container/             Injected feature/platform factories
+  Services/              Rust backend, API/SSE, PTY and domain services
+  Theme/                 Fonts and native appearance
+  Utilities/             Deep-link helpers
+  Resources/             Asset catalog and Configs
+  Tests/                 Unit/integration tests and shared test plan
+  UITests/               App interaction tests
+  Tools/TerminalStress/  Optional diagnostic executable
+  scripts/               Native dependency preparation and packaging
 ```
+
+The former TaskHub feature package is removed. GhosttyTerminal and Sparkle are
+direct package dependencies of the Xcode targets. See the
+[current target guide](../macos/README.md#xcode-organization).
 
 Transport remains **HTTP + SSE to the loopback backend**, default `127.0.0.1:3000`.
 Replace the broad `window.taskhub.*` bridge with in-process Swift calls and a small,

@@ -2,8 +2,8 @@
 
 Native macOS client ready for manual review. macOS 14+, Xcode 16.3+ and Swift 6.1+;
 Apple silicon is the initial build target. Open `TaskHub.xcodeproj` in Xcode,
-select **TaskHub → My Mac**, and press **Run** (Command-R). The project directly
-references `TaskHubPackage`; no separate workspace is needed.
+select **TaskHub → My Mac**, and press **Run** (Command-R). All app sources belong
+directly to the Xcode project; no separate workspace or feature package is needed.
 
 The shared Run scheme starts the checkout's Rust backend through the app's backend
 owner, alongside the Rust PTY helper. No separate server is needed. Normal Quit
@@ -17,12 +17,46 @@ The app includes its Rust backend and Rust PTY helper. It is ad-hoc signed for l
 review, not notarized for public distribution. Release compilation and packaging
 succeeded; no UI/unit tests or benchmarks were added or run in this closeout.
 
-The app target owns AppKit lifecycle and hosts SwiftUI. `TaskHubPackage` holds the
-API client, SSE parser/client, injected backend runtime, `@Observable` AppViewModel, and views. The current
+The app target owns AppKit lifecycle, SwiftUI views, the API client, SSE parser/client,
+injected backend runtime, and `@Observable` AppViewModel. The current
 screen has a Cocoa sidebar with project/session selection, Pinned mirrors, saved
 Tabs, native terminal panes, and a native SwiftUI Dashboard.
 See [the port plan](../docs/SWIFTUI-PORT.md). Distribution is a directly downloaded
 macOS app; there is no Apple App Store submission.
+
+## Xcode organization
+
+The folder layout follows `record-ios/Record`. Xcode uses synchronized folders, so
+files added on disk appear in the corresponding group and target automatically.
+
+```text
+macos/
+  TaskHub.xcodeproj
+  App/                   Entry point, AppDelegate, root view and app state
+  Scenes/                Dashboard, Projects, Jira, Activity, Settings, Workspace, Documents
+  Coordinators/          Navigation and model lifetime, grouped by feature
+  Components/            Reusable sidebar, terminal, tray and notification views
+  Container/             Injected feature and platform factories
+  Services/              Rust helper ownership, API/SSE, PTY and feature services
+  Theme/                 Fonts and native appearance
+  Utilities/             Shared deep-link helpers
+  Resources/             Assets.xcassets and Configs/*.xcconfig/plist/entitlements
+  Tests/                 TaskHubTests, helpers and the shared test plan
+  UITests/               TaskHubUITests
+  Tools/TerminalStress/  Optional TaskHubTerminalStress executable
+```
+
+`TaskHub`, `TaskHubTests`, `TaskHubUITests`, and `TaskHubTerminalStress` are Xcode
+targets. Unit tests compile the same synchronized application source folders, with
+the app entry point and delegate excluded; they have no application test host and
+do not launch the daily app. The terminal diagnostic target uses the same source
+membership and is built only through its separate scheme. Neither target copies
+application sources or depends on a TaskHub Swift package.
+
+GhosttyTerminal (the locally prepared GhosttyKit package) and Sparkle 2.9.6 remain
+direct Xcode package dependencies. `GhosttySnapshotTests` stays a separate package
+for validating the third-party terminal patches. Generated routes now live in
+`Services/Backend/Routes.swift`.
 
 The [coordinator and DI extraction](../docs/NATIVE-ARCHITECTURE.md) follows the
 `elevate-ios` responsibility split. Creation sheets now receive stable models from
@@ -408,22 +442,24 @@ socket to test the new helper without ending an existing shell. Broader
 lifecycle coverage, links, workflow hooks, IME/mouse/selection checks, and the
 ten-minute multi-session performance benchmark remain part of M1's acceptance gate.
 
-The standalone `TaskHubTerminalStress` Swift package executable exercises ten real
+The standalone `TaskHubTerminalStress` Xcode executable exercises ten real
 native sessions with a visible interactive terminal, one hidden flood and eight
 hidden tickers. It writes machine/build metadata, input-to-parsed-output latency,
 queue peaks and native process CPU/RSS. Run it with an already-prepared Ghostty
-package and helper (the arguments must be JSON strings):
+package and helper, only when explicitly running the benchmark:
 
 ```bash
 cargo build --manifest-path crates/taskhub-ptyd/Cargo.toml --release --features terminal-snapshots --locked
-xcodebuildmcp swift-package run --package-path macos/TaskHubPackage \
-  --executable-name TaskHubTerminalStress --configuration release --background \
-  --json '{"arguments":["--seconds","600","--root","/absolute/path/to/cli-task-hub-swiftui","--helper","/absolute/path/to/cli-task-hub-swiftui/crates/taskhub-ptyd/target/release/taskhub-ptyd","--report","/tmp/taskhub-terminal-stress.json"]}'
-xcodebuildmcp swift-package list
+xcodebuildmcp macos build --project-path macos/TaskHub.xcodeproj \
+  --scheme TaskHubTerminalStress --configuration Release --arch arm64 \
+  --derived-data-path macos/.build/terminal-stress
+macos/.build/terminal-stress/Build/Products/Release/TaskHubTerminalStress \
+  --seconds 600 --root /absolute/path/to/cli-task-hub-swiftui \
+  --helper /absolute/path/to/cli-task-hub-swiftui/crates/taskhub-ptyd/target/release/taskhub-ptyd \
+  --report /tmp/taskhub-terminal-stress.json
 ```
 
-Background launch reports a process ID, not a passed measurement. Check the final
-report and process completion. Do not overlap it with builds, other UI tests or
+Check the final report and process completion. Do not overlap it with builds, UI tests or
 another benchmark. [The first ten-minute result](../docs/measurements/native-terminal-stress-2026-09-12.md)
 records 20.51 ms input-to-parsed-output p95 and bounded queues. GPU/display latency,
 memory stabilization and an equivalent Tauri comparison remain open.
@@ -475,7 +511,7 @@ UserDefaults/WebKit identity is separate. The shared SQLite data directory remai
 
 ### Native updates
 
-Sparkle **2.9.6** is pinned in the Swift package and embedded by Xcode, including
+Sparkle **2.9.6** is pinned in the Xcode project and embedded by Xcode, including
 its installer and XPC services. The bundle script includes its upstream license
 at `Contents/Resources/Licenses/Sparkle-LICENSE`. The native application menu has
 **Check for Updates…**, enabled only after a packaged Release app successfully
@@ -483,7 +519,7 @@ starts its updater. Debug builds, unbundled builds, and builds without a valid
 HTTPS feed and 32-byte Ed25519 public key leave the updater inactive.
 
 Release configuration supplies `TASKHUB_UPDATE_FEED_URL` and
-`TASKHUB_UPDATE_PUBLIC_KEY`; `Config/App-Info.plist` maps these into `SUFeedURL` and
+`TASKHUB_UPDATE_PUBLIC_KEY`; `Resources/Configs/App-Info.plist` maps these into `SUFeedURL` and
 `SUPublicEDKey` alongside Xcode's generated app metadata. In an xcconfig, escape the URL's double slash with an empty build
 setting (`https:/$()/updates.example.org/appcast.xml`) to avoid a comment. Supply
 the real release endpoint and public key; keep private update keys out of the app
@@ -510,7 +546,7 @@ and verifies a pre-migration checkpoint before opening existing databases. See
 ```bash
 npm run check:swift-routes
 node --test --test-force-exit test/contracts.test.js test/swift-routes.test.js test/api.test.js
-xcodebuildmcp swift-package test --package-path macos/TaskHubPackage
+xcodebuildmcp macos test --project-path macos/TaskHub.xcodeproj --scheme TaskHub --derived-data-path macos/.build/unit-tests --extra-args '-only-testing:TaskHubTests'
 cargo test --manifest-path crates/taskhub-backend/Cargo.toml
 cargo test --offline --manifest-path crates/taskhub-ptyd/Cargo.toml --features terminal-snapshots
 cargo check --offline --manifest-path src-tauri/Cargo.toml
