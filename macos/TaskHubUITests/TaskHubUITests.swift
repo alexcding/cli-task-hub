@@ -214,6 +214,28 @@ final class TaskHubUITests: XCTestCase {
         XCTAssertEqual(editor.value as? String, "let saved = true")
         XCTAssertFalse(app.webViews.staticTexts["let saved = true // unsaved"].exists)
         app.typeKey("w", modifierFlags: .command)
+
+        app.typeKey("o", modifierFlags: .command)
+        XCTAssertTrue(app.sheets.buttons["Cancel"].waitForExistence(timeout: 5))
+        app.sheets.buttons["Cancel"].click()
+        XCTAssertFalse(editor.exists)
+        app.typeKey("o", modifierFlags: .command)
+        XCTAssertTrue(app.sheets.buttons["Open"].waitForExistence(timeout: 5))
+        app.typeKey("g", modifierFlags: [.command, .shift])
+        let filePath = app.textFields["PathTextField"]
+        XCTAssertTrue(filePath.waitForExistence(timeout: 5))
+        filePath.typeKey("a", modifierFlags: .command)
+        filePath.typeText(file.path)
+        XCTAssertEqual(filePath.value as? String, file.path, "Select only the isolated editor fixture")
+        filePath.typeKey(.return, modifierFlags: [])
+        let open = app.sheets.buttons["Open"]
+        XCTAssertTrue(open.waitForExistence(timeout: 5))
+        let ready = expectation(for: NSPredicate(format: "enabled == true"), evaluatedWith: open)
+        wait(for: [ready], timeout: 5)
+        open.click()
+        XCTAssertTrue(editor.waitForExistence(timeout: 10))
+        XCTAssertEqual(editor.value as? String, "let saved = true")
+        app.typeKey("w", modifierFlags: .command)
     }
 
     @MainActor

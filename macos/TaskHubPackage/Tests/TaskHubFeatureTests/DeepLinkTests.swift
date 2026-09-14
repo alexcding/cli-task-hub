@@ -1,4 +1,4 @@
-import Foundation
+import AppKit
 import Testing
 @testable import TaskHubFeature
 
@@ -99,6 +99,32 @@ func deepLinksWaitForActivityClearConfirmationToFinish(confirm: Bool) async thro
 @MainActor private final class DeepLinkProjectFactory: ProjectCoordinatorFactory {
     var creations = 0
     func project(model: ProjectPageViewModel) -> ProjectCoordinator { creations += 1; return ProjectCoordinator(model: model) }
+}
+
+@MainActor private final class DeepLinkFilePresenter: FileOpenPresenting {
+    var completion: ((URL?) -> Void)?
+    func present(in window: NSWindow?, completion: @escaping (URL?) -> Void) -> () -> Void {
+        self.completion = completion
+        return { completion(nil) }
+    }
+}
+
+@MainActor @Test(.timeLimit(.minutes(1)), arguments: [false, true])
+func deepLinksWaitForFilePickerAndResumeAfterSelectionOrCancel(select: Bool) async throws {
+    let presenter = DeepLinkFilePresenter(), picker = FileOpenCoordinator(presenter: presenter)
+    let model = FileOpenViewModel()
+    let context = WorkspaceContext(id: "picker", sourceURL: "", title: "Picker")
+    picker.bind(model, activeContext: { context }, window: { nil })
+    let coordinator = AppCoordinator(factory: NativeCreationFlowFactory(), fileOpenCoordinator: picker)
+    let runtime = DeepLinkRuntime(); runtime.coordinator = coordinator; coordinator.rootRuntime = runtime
+    coordinator.setRoutingReady(true)
+    model.begin(contextID: context.id)
+    coordinator.handle(url: URL(string: "taskhub://app/settings")!)
+    #expect(coordinator.selection == .overview && coordinator.pendingDeepLink != nil)
+    presenter.completion?(select ? URL(fileURLWithPath: "/tmp/deep-link-selected.swift") : nil)
+    while coordinator.pendingDeepLink != nil { await Task.yield() }
+    #expect(coordinator.selection == .settings && coordinator.canPresent)
+    #expect(context.documents.count == (select ? 1 : 0))
 }
 
 @MainActor @Test(.timeLimit(.minutes(1)), arguments: [false, true])

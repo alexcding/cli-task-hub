@@ -20,6 +20,24 @@ backend rewrite. Preserve AppKit sidebar and terminal ownership during the refac
 
 ## Implementation status
 
+### Current execution direction — 2026-09-13
+
+The user has stopped further validation work: no additional UI tests, unit tests,
+or benchmarking. Finish the remaining implementation and commit each phase; the
+user will review the app directly. Historical test results and pending acceptance
+notes below remain a record, not instructions to resume those checks. Unperformed
+acceptance must not be described as passed. Distribution remains direct download.
+
+The native Open File picker now uses an injected `@Observable` request model,
+typed coordinator actions and an AppKit presenter. Requests are cancelled when
+their context changes, is removed/promoted, documents close, or the app stops.
+Late and duplicate results cannot open documents in retired contexts. The picker
+shares presentation reservations with root sheets, browser dialogs, document close
+and deferred deep links. Before validation was stopped, 19 focused model tests and
+one native presenter test passed. The UI run stopped at an event-synthesis timeout
+while typing in the editor, before reaching Open File; it is not a picker acceptance
+result and will not be retried under the current direction.
+
 M0 foundation is committed as `bf0c7a6`; the M1 terminal spike is committed as
 `c05a57a`; the M2 Cocoa sidebar is committed as `609d889` and native tray/appearance
 as `5cf368a`; native menus/notifications are committed as `9d34f2b`.

@@ -91,12 +91,13 @@ public final class AppViewModel {
         self.projectFactory = projectFactory ?? NativeProjectFeatureFactory(creation: creationFactory, desktop: desktop, copy: copy)
         let documentCloser = EditorCloseCoordinator(factory: documentFactory, presenter: documentClosePresenter)
         let browserDialogs = BrowserDialogCoordinator(presenter: browserDialogPresenter)
+        viewer = platformFactory.viewer(desktop: desktop, dialogs: browserDialogs, documents: documentFactory, close: documentCloser)
         coordinator = AppCoordinator(factory: creationFactory, selectionStore: selectionStore, workspaceFactory: workspaceFactory, router: router,
             documentCloseCoordinator: documentCloser, browserDialogCoordinator: browserDialogs,
+            fileOpenCoordinator: viewer.fileOpenCoordinator,
             canOpenExternalRoute: {
                 NSApplication.shared.modalWindow == nil && !NSApplication.shared.windows.contains { $0.attachedSheet != nil }
             })
-        viewer = platformFactory.viewer(desktop: desktop, dialogs: browserDialogs, documents: documentFactory, close: documentCloser)
         viewer.setPageLimit(shell.remotePageLimit)
         shell.remotePageLimitChanged = { [weak viewer] in viewer?.setPageLimit($0) }
         coordinator.appearance = shell.appearance
@@ -215,7 +216,7 @@ public final class AppViewModel {
         case .newSession: connection == "Connected" && coordinator.canPresent && !projects.isEmpty && pageWorkflowRuns[viewer.activeContextID ?? ""]?.running != true
         case .back: coordinator.canPresent && viewer.active?.activePage?.controls.canGoBack == true
         case .forward: coordinator.canPresent && viewer.active?.activePage?.controls.canGoForward == true
-        case .openFile: viewer.active != nil && connection == "Connected"
+        case .openFile: viewer.active != nil && connection == "Connected" && coordinator.canPresent
         case .saveFile: viewer.active?.activeDocument?.loaded == true && viewer.active?.activeDocument?.readOnly == false
         case .findPage: activeHistory != nil || hasActivePage
         case .zoomIn, .zoomOut, .resetZoom: coordinator.canPresent && viewer.active?.activePage?.controls.active == true
@@ -236,7 +237,7 @@ public final class AppViewModel {
             guard canPerform(.newSession) else { return }
             coordinator.presentNewSession(request: sessionCreationRequest, operations: sessionOperations,
                                            didCreate: { [weak self] in self?.createdSession($0) })
-        case .openFile: if let context = viewer.active { viewer.openFile(in: context) }
+        case .openFile: if canPerform(.openFile), let context = viewer.active { viewer.openFile(in: context) }
         case .saveFile: if let document = viewer.active?.activeDocument { Task { await document.save() } }
         case .closePage: if let context = viewer.active, let id = context.activeID, let tab = context.tab(id) { context.close(tab) }
         case .findPage:
@@ -678,8 +679,11 @@ public final class AppViewModel {
     private func prepareToTerminate(stopShells: Bool) async throws {
         let browserDialogs = coordinator.browserDialogCoordinator
         let browserWasEnabled = browserDialogs.enabled
+        let picker = viewer.fileOpenCoordinator
+        let pickerWasEnabled = picker.enabled
+        picker.enabled = false
         browserDialogs.enabled = false
-        defer { if started { browserDialogs.enabled = browserWasEnabled } }
+        defer { if started { browserDialogs.enabled = browserWasEnabled; picker.enabled = pickerWasEnabled } }
         let actions = diffModels.values.compactMap(\.actions)
         for action in actions { await action.suspendAndWait() }
         defer { actions.forEach { $0.resume() } }
@@ -698,6 +702,7 @@ public final class AppViewModel {
         if let shutdownTask { await shutdownTask.value }
         guard !started else { return }
         coordinator.browserDialogCoordinator.enabled = true
+        viewer.fileOpenCoordinator.enabled = true
         coordinator.setRoutingReady(false)
         started = true
         let generation = UUID()
@@ -850,6 +855,7 @@ public final class AppViewModel {
     }
 
     public func stop() async {
+        viewer.fileOpenCoordinator.enabled = false
         if let shutdownTask { await shutdownTask.value; return }
         coordinator.browserDialogCoordinator.enabled = false
         started = false

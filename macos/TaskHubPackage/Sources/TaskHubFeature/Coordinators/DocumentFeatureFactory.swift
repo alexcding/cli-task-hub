@@ -1,6 +1,8 @@
 import Foundation
 
 @MainActor protocol DocumentFeatureFactory {
+    func fileOpen() -> FileOpenViewModel
+    func fileOpenCoordinator() -> FileOpenCoordinator
     func editorClose(documents: [EditorDocumentViewModel]) -> EditorCloseViewModel
     func editor(record: FileDocumentRecord) -> EditorDocumentViewModel
     func editorSurface(baseURL: URL) -> any EditorSurface
@@ -17,6 +19,8 @@ import Foundation
 // Shared assembly keeps nested creation on the injected factory as well: history
 // patches and git actions must not silently fall back to a new native factory.
 extension DocumentFeatureFactory {
+    func fileOpen() -> FileOpenViewModel { FileOpenViewModel() }
+    func fileOpenCoordinator() -> FileOpenCoordinator { FileOpenCoordinator() }
     func editorClose(documents: [EditorDocumentViewModel]) -> EditorCloseViewModel { EditorCloseViewModel(documents: documents) }
     func editor(record: FileDocumentRecord) -> EditorDocumentViewModel { EditorDocumentViewModel(record: record) }
     func editorSurface(baseURL: URL) -> any EditorSurface { WebEditorSurface(baseURL: baseURL) }

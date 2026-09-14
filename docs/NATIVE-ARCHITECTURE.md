@@ -857,6 +857,17 @@ ownership are tested independently of the real user daemon and preferences.
 
 ## Remaining extraction
 
+The viewer's Open File flow now uses `FileOpenViewModel`, `FileOpenCoordinator`
+and `NativeFileOpenPresenter`, supplied through `DocumentFeatureFactory`.
+The model owns the identified request; typed actions delegate presentation and
+navigation to the coordinator. The coordinator rechecks active context object
+identity on completion. Model-owned context changes cancel pending selection,
+and root presentation/deep-link routing shares its reservation. Shutdown disables
+the picker before awaiting cleanup; cancelled Quit restores availability.
+
+Per the user's current direction, continue implementation without further UI or
+unit tests. Historical acceptance gaps are not blockers to this implementation pass.
+
 The architecture extraction remains in progress:
 
 - Extend the typed action-callback pattern to the remaining feature/completion
@@ -868,8 +879,8 @@ The architecture extraction remains in progress:
 - `AppViewModel` still assembles concrete backend feature services and workflow
   models. Move that remaining assembly into injected factories; its native platform
   assembly is now separated above.
-- Complete remaining platform lifetime extraction, including the viewer-owned file
-  picker and document-service assembly. Backend process/event-stream ownership and
+- Complete remaining document-service assembly. Backend process/event-stream ownership,
+  file-picker lifetime and
   native root-platform assembly are separated above.
 - Audit every rendering view and web/AppKit adapter for remaining business rules.
   AppKit representable coordinators remain UI adapters; they are distinct from

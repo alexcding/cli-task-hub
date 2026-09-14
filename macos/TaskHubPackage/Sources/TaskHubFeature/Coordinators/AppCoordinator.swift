@@ -43,7 +43,7 @@ import Observation
     }
     private(set) var restartConfirmation: RestartConfirmation?
     var canPresent: Bool {
-        sheet == nil && restartConfirmation == nil && !browserDialogCoordinator.isPresenting && !documentCloseCoordinator.isPresenting && logsCoordinator?.isPresenting != true && !projectCoordinators.values.contains { $0.isPresenting }
+        sheet == nil && restartConfirmation == nil && !browserDialogCoordinator.isPresenting && !documentCloseCoordinator.isPresenting && !fileOpenCoordinator.isPresenting && logsCoordinator?.isPresenting != true && !projectCoordinators.values.contains { $0.isPresenting }
     }
     @ObservationIgnored private let factory: any CreationFlowFactory
     @ObservationIgnored private let workspaceFactory: any WorkspaceFeatureFactory
@@ -65,6 +65,7 @@ import Observation
     var notificationCoordinator: NotificationCoordinator?
     let browserDialogCoordinator: BrowserDialogCoordinator
     let documentCloseCoordinator: EditorCloseCoordinator
+    let fileOpenCoordinator: FileOpenCoordinator
     @ObservationIgnored var pendingDeepLink: DeepLink?
     @ObservationIgnored var routingReady = false
     var routingError: String?
@@ -75,6 +76,7 @@ import Observation
          projectCoordinatorFactory: any ProjectCoordinatorFactory = NativeProjectCoordinatorFactory(),
          documentCloseCoordinator: EditorCloseCoordinator = EditorCloseCoordinator(),
          browserDialogCoordinator: BrowserDialogCoordinator = BrowserDialogCoordinator(),
+         fileOpenCoordinator: FileOpenCoordinator = FileOpenCoordinator(),
          canOpenExternalRoute: @escaping () -> Bool = { true }) {
         self.factory = factory; self.selectionStore = selectionStore
         self.workspaceFactory = workspaceFactory
@@ -82,6 +84,7 @@ import Observation
         self.canOpenExternalRoute = canOpenExternalRoute
         self.documentCloseCoordinator = documentCloseCoordinator
         self.browserDialogCoordinator = browserDialogCoordinator
+        self.fileOpenCoordinator = fileOpenCoordinator
         selection = selectionStore.load() ?? .overview
         documentCloseCoordinator.presentationEnded = { [weak self] in self?.schedulePendingDeepLink() }
         browserDialogCoordinator.canPresent = { [weak self] in
@@ -89,6 +92,14 @@ import Observation
             return canPresent && canOpenExternalRoute()
         }
         browserDialogCoordinator.presentationEnded = { [weak self] in self?.schedulePendingDeepLink() }
+        fileOpenCoordinator.canPresent = { [weak self] in
+            guard let self else { return false }
+            return canPresent && canOpenExternalRoute()
+        }
+        fileOpenCoordinator.presentationEnded = { [weak self] in self?.schedulePendingDeepLink() }
+        // Removal sheets may legitimately ask to save documents. Only the file
+        // picker reservation blocks this nested document-close operation.
+        documentCloseCoordinator.canPresent = { [weak fileOpenCoordinator] in fileOpenCoordinator?.isPresenting == false }
     }
 
     func navigate(to destination: SidebarDestination) {

@@ -290,10 +290,13 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
 
 @MainActor @Observable final class ViewerStore {
     let closeCoordinator: EditorCloseCoordinator
+    let fileOpen: FileOpenViewModel
+    let fileOpenCoordinator: FileOpenCoordinator
     private(set) var contexts: [String: WorkspaceContext] = [:]
     private(set) var activeContextID: String? {
         didSet {
             guard oldValue != activeContextID else { return }
+            fileOpen.cancel()
             oldValue.flatMap { contexts[$0] }?.workspaceViewModel?.setActive(false)
             active?.workspaceViewModel?.setActive(true)
         }
@@ -305,7 +308,6 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
     @ObservationIgnored private var edited: Set<String> = []
     @ObservationIgnored private var writes: [String: Task<Void, Never>] = [:]
     @ObservationIgnored private var loading: Task<Void, Never>?
-    @ObservationIgnored private var openingFile = false
     @ObservationIgnored private var restoring = false
     @ObservationIgnored private var restoreGeneration = UUID()
     @ObservationIgnored private var lru: [String] = []
@@ -324,7 +326,10 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
         self.pageFactory = pageFactory
         self.documentFactory = documentFactory
         self.closeCoordinator = closeCoordinator ?? EditorCloseCoordinator(factory: documentFactory)
+        fileOpen = documentFactory.fileOpen()
+        fileOpenCoordinator = documentFactory.fileOpenCoordinator()
         self.memoryPressure = memoryPressure
+        fileOpenCoordinator.bind(fileOpen, activeContext: { [weak self] in self?.active })
         if let cacheURL, let data = try? Data(contentsOf: cacheURL), let cache = try? JSONDecoder().decode(Cache.self, from: data) {
             saved = cache.snapshots; dirty = cache.pending; edited = cache.pending
         }
@@ -336,17 +341,11 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
         document.connect(service: APIFileDocumentService(api: api), makeSurface: { [documentFactory] in documentFactory.editorSurface(baseURL: api.baseURL) })
     }
     func openFile(in context: WorkspaceContext) {
-        guard !openingFile, let window = NSApp.keyWindow else { return }
-        openingFile = true
-        Task { [weak context] in
-            defer { openingFile = false }
-            let panel = NSOpenPanel(); panel.canChooseDirectories = false; panel.allowsMultipleSelection = false
-            let response = await panel.beginSheetModal(for: window)
-            guard response == .OK, let url = panel.url else { return }
-            context?.openFile(url.path)
-        }
+        guard active === context, !closeCoordinator.isPresenting else { return }
+        fileOpen.begin(contextID: context.id)
     }
     func closeDocuments(contextIDs: Set<String>? = nil, worktrees: [String] = []) async -> Bool {
+        fileOpen.cancel()
         func affected(_ document: EditorDocumentViewModel, context: WorkspaceContext) -> Bool {
             if contextIDs == nil || contextIDs!.contains(context.id) { return true }
             let path = URL(fileURLWithPath: document.record.path).resolvingSymlinksInPath().path
@@ -367,8 +366,7 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
             }, commit: {
                 for (context, document) in targets { context.remove(document) }
             }) else { return false }
-            // A previously open file picker can complete while a close sheet awaits.
-            // Include any newly opened document before reporting that Quit is safe.
+            // Include documents opened by other routes while a save awaits.
         }
     }
     var livePageCount: Int { contexts.values.flatMap(\.pages).filter { $0.webView != nil }.count }
@@ -388,6 +386,7 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
     }
 
     func connect(_ api: APIClient) {
+        fileOpenCoordinator.enabled = true
         memoryPressure?.start { [weak self] in self?.handleMemoryPressure() }
         self.api = api
         loading?.cancel()
@@ -447,6 +446,7 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
         }
         // Move the actual objects, including dirty documents and live WebKit
         // pages. Recreating them from a snapshot would discard unsaved buffers.
+        fileOpen.cancel()
         contexts.removeValue(forKey: sourceID)
         let context: WorkspaceContext
         if let existing = contexts[destinationID] {
@@ -461,6 +461,7 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
         // Outstanding writes under its old key cannot overwrite this context.
     }
     func remove(id: String) async {
+        if fileOpen.request?.contextID == id { fileOpen.cancel() }
         let context = contexts.removeValue(forKey: id)
         context?.workspaceViewModel?.setActive(false)
         context?.changed = {}
@@ -517,6 +518,7 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
         } catch { active?.error = "Could not save page tabs locally: \(error.localizedDescription)" }
     }
     func stop() async {
+        fileOpenCoordinator.enabled = false
         memoryPressure?.stop()
         loading?.cancel(); await loading?.value; loading = nil
         for task in writes.values { await task.value }

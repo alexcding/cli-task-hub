@@ -39,6 +39,7 @@ enum WorkspaceVisit: Identifiable {
     private(set) var model: EditorCloseViewModel?
     var isPresenting: Bool { model != nil }
     @ObservationIgnored var presentationEnded: () -> Void = {}
+    @ObservationIgnored var canPresent: () -> Bool = { true }
     @ObservationIgnored private let factory: any DocumentFeatureFactory
     @ObservationIgnored private let presenter: any EditorClosePresenting
 
@@ -60,7 +61,7 @@ enum WorkspaceVisit: Identifiable {
     }
 
     private func begin(_ documents: [EditorDocumentViewModel], isOwned: () -> Bool) -> EditorCloseViewModel? {
-        guard !isPresenting, !Task.isCancelled, isOwned() else { return nil }
+        guard !isPresenting, canPresent(), !Task.isCancelled, isOwned() else { return nil }
         let model = factory.editorClose(documents: documents)
         self.model = model
         model.onAction = { [weak self, weak model] action in
