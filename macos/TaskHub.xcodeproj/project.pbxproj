@@ -185,6 +185,9 @@
 			);
 			mainGroup = 8BC265532DEDD3F400F279A4;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				A1E4B6172EEF000000000001 /* XCLocalSwiftPackageReference "TaskHubPackage" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 8BC2655D2DEDD3F400F279A4 /* Products */;
 			projectDirPath = "";
@@ -323,9 +326,17 @@
 		};
 /* End XCConfigurationList section */
 
+/* Begin XCLocalSwiftPackageReference section */
+		A1E4B6172EEF000000000001 /* XCLocalSwiftPackageReference "TaskHubPackage" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = TaskHubPackage;
+		};
+/* End XCLocalSwiftPackageReference section */
+
 /* Begin XCSwiftPackageProductDependency section */
 		8B90D1472DEDD44A00FBD189 /* TaskHubFeature */ = {
 			isa = XCSwiftPackageProductDependency;
+			package = A1E4B6172EEF000000000001 /* XCLocalSwiftPackageReference "TaskHubPackage" */;
 			productName = TaskHubFeature;
 		};
 /* End XCSwiftPackageProductDependency section */

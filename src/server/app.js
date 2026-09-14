@@ -148,6 +148,18 @@ function stop() {
 // Standalone (`node src/server/app.js`, dev:server) self-starts; when required in-process by
 // src/main/app/main.js it stays dormant until tray calls start() itself.
 if (require.main === module) {
+  // Native Xcode launches own this backend. Stop/crash must release its port
+  // even when the app cannot run graceful shutdown. Plain web dev has no owner.
+  const nativeParent = Number(process.env.TASKHUB_NATIVE_PARENT_PID);
+  if (Number.isSafeInteger(nativeParent) && nativeParent > 1) {
+    const checkParent = () => {
+      if (process.ppid === nativeParent) return;
+      stop();
+      process.exit(0);
+    };
+    checkParent();
+    setInterval(checkParent, 500).unref();
+  }
   start().catch((err) => {
     console.error(`[server] failed to start: ${err.message}`);
     process.exit(1);

@@ -1,7 +1,16 @@
 # TaskHub Native
 
 Native macOS client ready for manual review. macOS 14+, Xcode 16.3+ and Swift 6.1+;
-Apple silicon is the initial build target. Open `TaskHub.xcworkspace` in Xcode.
+Apple silicon is the initial build target. Open `TaskHub.xcodeproj` in Xcode,
+select **TaskHub → My Mac**, and press **Run** (Command-R). The project directly
+references `TaskHubPackage`; the separate workspace is optional.
+
+The shared Run scheme starts the checkout's Node server through the app's existing
+backend owner, using the prepared Node runtime and Rust PTY helper. No separate
+`npm run dev` is needed. Normal Quit stops the owned server; Xcode Stop/crash also
+causes that development server to exit. An unrelated server on the same port is
+never terminated. The existing runtime preparation below is still required for a
+fresh checkout; these runtimes are already prepared in this working copy.
 
 The current local Release package is `macos/.build/review-20260913-appearance/`
 (paths relative to the repository): `TaskHub.app`, ZIP, DMG and `release.json`.
@@ -275,18 +284,24 @@ npm ci --ignore-scripts
 npm run gen:swift-routes
 python3 macos/scripts/build-ghostty-vt.py
 python3 macos/scripts/build-ghostty-native.py
-xcodebuildmcp macos build --workspace-path macos/TaskHub.xcworkspace --scheme TaskHub --derived-data-path macos/.build/xcode --arch arm64
+python3 macos/scripts/node_runtime.py
+cargo build --manifest-path crates/taskhub-ptyd/Cargo.toml --release --features terminal-snapshots --locked
+xcodebuildmcp macos build --project-path macos/TaskHub.xcodeproj --scheme TaskHub --derived-data-path macos/.build/xcode --arch arm64
 ```
 
-Choose one backend mode through the Xcode scheme's launch arguments or the launch
-command's `--launch-args` option:
+Open `macos/TaskHub.xcodeproj` and Run **TaskHub**. The shared scheme already selects
+the development child using paths relative to the project. The app starts the
+server itself; do not start a second server for this Run configuration.
+
+To override that default, choose a backend mode through the Xcode scheme's launch
+arguments or the launch command's `--launch-args` option:
 
 - Existing server: `--backend-url http://127.0.0.1:3000`. The server must include the
   new `/api/backend/health` endpoint. The native app never stops an external server.
 - Development child: `--backend-root /absolute/path/to/repo --node-path /absolute/path/to/node`.
   Add `--backend-port 43187 --data-dir /absolute/path/to/isolated-data` to isolate it
   from your daily app. Node must be 22.12 or later.
-- Bundled child: no backend arguments. The app expects the bundle resources below.
+- Bundled child: disable the shared Run scheme's development arguments. The app expects the bundle resources below.
   It defaults to port 3000 and `~/Library/Application Support/TaskHub`, respecting
   `TASKHUB_DATA_DIR` or `--data-dir`.
 

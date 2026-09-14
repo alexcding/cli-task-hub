@@ -91,6 +91,10 @@ public actor BackendProcess {
         environment["TASKHUB_DATA_DIR"] = directory.path
         environment["TASKHUB_INSTANCE_ID"] = instanceID
         environment["TASKHUB_PACKAGED"] = configuration.packaged ? "1" : "0"
+        // Xcode Stop can kill the app without running its normal shutdown.
+        // The source backend then exits when macOS reparents it.
+        environment["TASKHUB_NATIVE_PARENT_PID"] = configuration.packaged ? nil
+            : String(ProcessInfo.processInfo.processIdentifier)
         // Finder launches have a small PATH; keep the user's entries and include
         // standard CLI installation locations for the existing Node repositories.
         environment["PATH"] = (environment["PATH"] ?? "/usr/bin:/bin") + ":/opt/homebrew/bin:/usr/local/bin"

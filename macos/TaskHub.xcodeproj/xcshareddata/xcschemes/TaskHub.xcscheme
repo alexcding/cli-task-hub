@@ -68,10 +68,18 @@
             ReferencedContainer = "container:TaskHub.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
+      <CommandLineArguments>
+         <CommandLineArgument argument = "--backend-root" isEnabled = "YES"/>
+         <CommandLineArgument argument = "&quot;$(PROJECT_DIR)/..&quot;" isEnabled = "YES"/>
+         <CommandLineArgument argument = "--node-path" isEnabled = "YES"/>
+         <CommandLineArgument argument = "&quot;$(PROJECT_DIR)/.build/node/runtime/taskhub-node&quot;" isEnabled = "YES"/>
+         <CommandLineArgument argument = "--ptyd-path" isEnabled = "YES"/>
+         <CommandLineArgument argument = "&quot;$(PROJECT_DIR)/../crates/taskhub-ptyd/target/release/taskhub-ptyd&quot;" isEnabled = "YES"/>
+      </CommandLineArguments>
    </LaunchAction>
    <ProfileAction
       buildConfiguration = "Release"
-      shouldUseLaunchSchemeArgsEnv = "YES"
+      shouldUseLaunchSchemeArgsEnv = "NO"
       savedToolIdentifier = ""
       useCustomWorkingDirectory = "NO"
       debugDocumentVersioning = "YES">
