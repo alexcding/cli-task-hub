@@ -338,7 +338,7 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
     var active: WorkspaceContext? { activeContextID.flatMap { contexts[$0] } }
     func configure(_ document: EditorDocumentViewModel) {
         guard let api else { return }
-        document.connect(service: APIFileDocumentService(api: api), makeSurface: { [documentFactory] in documentFactory.editorSurface(baseURL: api.baseURL) })
+        document.connect(service: documentFactory.editorService(api: api), makeSurface: { [documentFactory] in documentFactory.editorSurface(baseURL: api.baseURL) })
     }
     func openFile(in context: WorkspaceContext) {
         guard active === context, !closeCoordinator.isPresenting else { return }

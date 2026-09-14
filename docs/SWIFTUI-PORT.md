@@ -2693,9 +2693,11 @@ through the injected build-terminal factory, preserving the session shell and
 completing tray Quit/fixture cleanup:
 `test_macos_2026-09-14T01-30-53-663Z_pid38547_a64636f3.log`.
 
-Backend feature-service/workflow-model assembly and viewer file-picker/document
-service boundaries remain in the architecture pass, alongside the other open
-functional and release acceptance gates.
+Backend feature-service/workflow-model assembly now uses `BackendFeatureFactory`;
+the viewer's picker and file service use `DocumentFeatureFactory`. Session creation,
+agent identity persistence and nested workflow preparation use injected protocols.
+No additional UI or unit tests were added or run for this extraction, per the
+user's implementation-first direction.
 
 ## Product rules that must survive (from `CLAUDE.md`)
 

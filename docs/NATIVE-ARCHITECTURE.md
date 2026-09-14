@@ -857,6 +857,14 @@ ownership are tested independently of the real user daemon and preferences.
 
 ## Remaining extraction
 
+Backend feature construction now flows through the injected `BackendFeatureFactory`.
+This includes project/Jira/workflow/automation adapters, dashboard and settings
+services, history/diff/git actions, session operations, removal and workflow runners.
+Nested workflow page preparation uses the same injected session protocol, including
+agent identity persistence, rather than constructing its own concrete operations.
+`DocumentFeatureFactory` also supplies file read/write services for the viewer.
+The root model keeps orchestration and state; factories own concrete construction.
+
 The viewer's Open File flow now uses `FileOpenViewModel`, `FileOpenCoordinator`
 and `NativeFileOpenPresenter`, supplied through `DocumentFeatureFactory`.
 The model owns the identified request; typed actions delegate presentation and
@@ -876,12 +884,6 @@ The architecture extraction remains in progress:
   and emulator ownership; the measured appearance mount warning is resolved above.
 - Complete the remaining platform-action audit; shared shell appearance and data
   access now use the injected boundaries described above.
-- `AppViewModel` still assembles concrete backend feature services and workflow
-  models. Move that remaining assembly into injected factories; its native platform
-  assembly is now separated above.
-- Complete remaining document-service assembly. Backend process/event-stream ownership,
-  file-picker lifetime and
-  native root-platform assembly are separated above.
 - Audit every rendering view and web/AppKit adapter for remaining business rules.
   AppKit representable coordinators remain UI adapters; they are distinct from
   application navigation coordinators.

@@ -46,7 +46,12 @@ protocol SessionCreating: Sendable {
     func create(project: Project, draft: SessionDraft, requireExactBranch: Bool) async throws -> WorkspaceSession
 }
 
-struct SessionOperations: SessionCreating {
+protocol SessionServing: SessionCreating {
+    func saveAgentID(_ id: String, session: WorkspaceSession) async throws
+    func configureAgent(_ cli: WorkflowCLI, session: WorkspaceSession) async throws -> WorkspaceSession
+}
+
+struct SessionOperations: SessionServing {
     let api: APIClient
     func references(_ project: Project) async throws -> GitReferences {
         try await api.get(APIClient.query(Routes.GIT_REFS, ["path": project.workspace]))

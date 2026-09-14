@@ -34,7 +34,7 @@ protocol WorkflowPagePreparing: Sendable {
 }
 
 struct APIWorkflowPagePreparation: WorkflowPagePreparing {
-    let operations: SessionOperations
+    let operations: any SessionCreating
     func prepare(_ target: WorkflowPageTarget, project: Project) async throws -> WorkspaceSession {
         guard target.projectID == project.id, !project.workspace.isEmpty else {
             throw BackendError.operation("Choose a local workspace for this project before running a workflow.")

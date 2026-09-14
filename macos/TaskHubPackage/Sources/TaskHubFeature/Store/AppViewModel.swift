@@ -46,6 +46,7 @@ public final class AppViewModel {
     @ObservationIgnored private var pendingPins: Set<String> = []
     @ObservationIgnored private var removalLocks: [UUID: Set<String>] = [:]
     @ObservationIgnored private let backendRuntime: any BackendRuntimeServing
+    @ObservationIgnored private let backendFactory: any BackendFeatureFactory
     @ObservationIgnored private var api: APIClient?
     @ObservationIgnored private var shutdownTask: Task<Void, Never>?
     @ObservationIgnored private var startGeneration = UUID()
@@ -58,6 +59,7 @@ public final class AppViewModel {
 
     init(creationFactory: any CreationFlowFactory, desktop: any DesktopActions = NativeDesktopActions(),
          backendRuntime: any BackendRuntimeServing = BackendRuntime(),
+         backendFactory: any BackendFeatureFactory = NativeBackendFeatureFactory(),
          shellFactory: any ShellFeatureFactory = NativeShellFeatureFactory(),
          platformFactory: any AppPlatformFactory = NativeAppPlatformFactory(),
          workspaceFactory: any WorkspaceFeatureFactory = NativeWorkspaceFeatureFactory(),
@@ -76,6 +78,7 @@ public final class AppViewModel {
          copy: @escaping (String) -> Void = { NativeClipboard.copy($0) }) {
         self.creationFactory = creationFactory
         self.backendRuntime = backendRuntime
+        self.backendFactory = backendFactory
         self.platformFactory = platformFactory
         self.terminalControl = platformFactory.terminalControl()
         self.workspaceLaunch = platformFactory.workspaceLauncher()
@@ -144,7 +147,7 @@ public final class AppViewModel {
         guard let context = viewer.active, context.pane == .diff, context.reviewSection == .history else { return nil }
         return historyModels[context.id]
     }
-    var sessionOperations: SessionOperations? { api.map { SessionOperations(api: $0) } }
+    var sessionOperations: (any SessionServing)? { api.map { backendFactory.sessions(api: $0) } }
 
     func showChanges(for session: WorkspaceSession, context: WorkspaceContext) {
         if context.pane == .diff { context.setPane(.term); return }
@@ -159,13 +162,13 @@ public final class AppViewModel {
             if let history = historyModels[context.id] { if let base { history.updateBase(base) } }
             else {
                 historyModels[context.id] = documentFactory.history(worktree: session.worktree, baseURL: api.baseURL, base: base ?? "",
-                    service: APIGitHistoryService(api: api), copy: copy)
+                    service: backendFactory.history(api: api), copy: copy)
             }
         }
         if diffModels[context.id] == nil {
             guard let api else { context.error = "Connect to the backend to load changes."; return }
             diffModels[context.id] = documentFactory.diff(worktree: session.worktree, baseURL: api.baseURL,
-                                                   service: APIDiffService(api: api), actionsService: APIGitChangesService(api: api), openFile: { [weak context] location in
+                                                   service: backendFactory.diff(api: api), actionsService: backendFactory.changes(api: api), openFile: { [weak context] location in
                 context?.openFile(location.path, line: location.line, column: location.column)
             })
         }
@@ -232,7 +235,7 @@ public final class AppViewModel {
         switch command {
         case .newProject:
             guard canPerform(.newProject), let api else { return }
-            coordinator.presentNewProject(service: APIProjectService(api: api), didSave: { [weak self] in self?.savedProject($0) })
+            coordinator.presentNewProject(service: backendFactory.projects(api: api), didSave: { [weak self] in self?.savedProject($0) })
         case .newSession:
             guard canPerform(.newSession) else { return }
             coordinator.presentNewSession(request: sessionCreationRequest, operations: sessionOperations,
@@ -322,8 +325,7 @@ public final class AppViewModel {
         case .project(let id):
             viewer.deactivate()
             if let project = projects.first(where: { $0.id == id }), let api {
-                let services = ProjectFeatureServices(projects: APIProjectService(api: api), tickets: APIJiraService(api: api),
-                    workflows: APIWorkflowService(api: api), automation: APIAutomationService(api: api), baseURL: api.baseURL)
+                let services = backendFactory.projectServices(api: api)
                 coordinator.prepareProject(project, services: services, factory: projectFactory, runtime: self) { [weak self] request in
                     guard let self else { throw BackendError.operation("The workspace has closed.") }
                     try await self.openPage(request)
@@ -358,7 +360,7 @@ public final class AppViewModel {
     private func workflowRunModel(for record: WorkspaceSession) -> WorkflowRunViewModel? {
         guard let api, let project = projects.first(where: { $0.id == record.projectId }) else { return nil }
         if let existing = workflowRuns[record.id] { existing.update(project.workflows ?? []); return existing }
-        let model = WorkflowRunViewModel(recipes: project.workflows ?? [], service: APIWorkflowRunService(api: api), context: { [weak self] in
+        let model = backendFactory.workflowRun(api: api, recipes: project.workflows ?? [], context: { [weak self] in
             let latest = self?.sessions.first { $0.id == record.id } ?? record
             let project = self?.projects.first { $0.id == record.projectId } ?? project
             return WorkflowRunContext.values(project: project, session: latest)
@@ -389,8 +391,8 @@ public final class AppViewModel {
         }
         let sourceID = context.id
         var preparedSession: WorkspaceSession?
-        let service = APIWorkflowPagePreparation(operations: SessionOperations(api: api))
-        let model = WorkflowRunViewModel(recipes: project.workflows ?? [], service: APIWorkflowRunService(api: api), context: { [weak self] in
+        let service = backendFactory.workflowPreparation(api: api)
+        let model = backendFactory.workflowRun(api: api, recipes: project.workflows ?? [], context: { [weak self] in
             guard let preparedSession else { return [:] }
             let latest = self?.sessions.first { $0.id == preparedSession.id } ?? preparedSession
             let project = self?.projects.first { $0.id == target.projectID } ?? project
@@ -484,7 +486,7 @@ public final class AppViewModel {
     func removalModel(for record: WorkspaceSession) -> SessionRemovalViewModel? {
         guard let api else { return nil }
         let operationID = UUID()
-        let service = SessionRemovalService(api: api, stopTerminals: { [weak self] keys in
+        let service = backendFactory.removal(api: api, stopTerminals: { [weak self] keys in
             guard let self else { throw BackendError.operation("The workspace closed before removal.") }
             try await self.stopForRemoval(keys, operationID: operationID)
         })
@@ -717,22 +719,22 @@ public final class AppViewModel {
             let connectedAPI = try await backendRuntime.start()
             guard started, startGeneration == generation else { return }
             api = connectedAPI
-            if let api { shell.connect(shellFactory.data(api: api)); viewer.connect(api); dashboard?.connect(APIDashboardService(api: api)); shell.refreshUsage() }
+            if let api { shell.connect(shellFactory.data(api: api)); viewer.connect(api); dashboard?.connect(backendFactory.dashboard(api: api)); shell.refreshUsage() }
             if let api { for model in projectModels.values {
-                model.connect(APIProjectService(api: api)); model.board?.connect(baseURL: api.baseURL)
-                model.tickets?.connect(APIJiraService(api: api))
-                model.workflows?.connect(APIWorkflowService(api: api))
-                model.automation?.connect(APIAutomationService(api: api))
+                model.connect(backendFactory.projects(api: api)); model.board?.connect(baseURL: api.baseURL)
+                model.tickets?.connect(backendFactory.tickets(api: api))
+                model.workflows?.connect(backendFactory.workflows(api: api))
+                model.automation?.connect(backendFactory.automation(api: api))
             } }
-            if let api { logs?.connect(APILogService(api: api)) }
-            if let api { for model in historyModels.values { model.connect(baseURL: api.baseURL, service: APIGitHistoryService(api: api)) } }
-            if let api { for model in diffModels.values { model.connect(baseURL: api.baseURL, service: APIDiffService(api: api)); model.actions?.connect(APIGitChangesService(api: api)) } }
+            if let api { logs?.connect(backendFactory.logs(api: api)) }
+            if let api { for model in historyModels.values { model.connect(baseURL: api.baseURL, service: backendFactory.history(api: api)) } }
+            if let api { for model in diffModels.values { model.connect(baseURL: api.baseURL, service: backendFactory.diff(api: api)); model.actions?.connect(backendFactory.changes(api: api)) } }
             if let api {
-                settings?.connect(APISettingsService(api: api))
-                settings?.clis.connect(APICLISettingsService(api: api))
-                settings?.diagnostics.connect(APIDiagnosticsService(api: api))
+                settings?.connect(backendFactory.settings(api: api))
+                settings?.clis.connect(backendFactory.cliSettings(api: api))
+                settings?.diagnostics.connect(backendFactory.diagnostics(api: api))
                 settings?.resources.connect(platformFactory.resources(api: api))
-                workspaceLaunch.connect(APIWorkspaceTargetService(api: api))
+                workspaceLaunch.connect(backendFactory.workspaceTargets(api: api))
                 if selection == .settings { settings?.refresh() }
                 settings?.refreshCurrentSection()
             }
