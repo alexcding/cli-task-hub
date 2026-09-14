@@ -1,6 +1,6 @@
 import Foundation
 
-extension AppStore: RootCoordinating, ProjectCoordinating {
+extension AppViewModel: RootCoordinating, ProjectCoordinating {
     func rootState() -> RootState {
         RootState(selection: selection, entries: sidebarEntries, projects: projects, sessions: sessions, tabs: tabs,
                   projectModels: projectModels, dashboard: dashboard, logs: logs, settings: settings, error: coordinator.routingError ?? error,

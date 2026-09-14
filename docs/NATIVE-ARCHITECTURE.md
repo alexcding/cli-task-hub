@@ -79,7 +79,7 @@ operation dialogs and terminal identity. Implementation details follow below.
 `AppCoordinator` owns one identified sheet destination containing its ViewModel.
 `CreationFlowFactory` supplies project editors, new-session models and Add Page models. The live
 `NativeCreationFlowFactory` receives its folder-picker dependency; tests inject a
-recording factory and fixture services. `AppStore` supplies the current backend,
+recording factory and fixture services. `AppViewModel` supplies the current backend,
 project/session context and successful-operation callbacks.
 
 Toolbar and menu commands enter the same coordinator. Repeated commands cannot
@@ -169,7 +169,7 @@ and the packaging correction are recorded in `SWIFTUI-PORT.md`.
 
 `SessionWorkspaceViewModel` computes pane visibility, toolbar availability,
 workspace titles, review refresh inputs and history reopening. It receives a
-`WorkspaceServing` dependency; the live `AppStore` adapter supplies current session,
+`WorkspaceServing` dependency; the live `AppViewModel` adapter supplies current session,
 project and feature models. The model emits typed actions through `onAction`.
 `AppCoordinator` handles build/removal/restart presentations and delegates operations
 to the runtime service. Retained actions are checked against the viewer's current
@@ -189,7 +189,7 @@ Build terminal factories may throw, so a runtime disappearing during preparation
 produces an error rather than an unowned-reference crash.
 
 `SessionWorkspaceView`, `BuildDestinationView` and `SessionRemovalView` render models
-and forward actions/lifecycle events. The workspace view no longer reads `AppStore`,
+and forward actions/lifecycle events. The workspace view no longer reads `AppViewModel`,
 constructs feature models, decides which project/session an action uses or owns
 operation dialogs. Terminal surfaces remain in the same retained split hierarchy.
 
@@ -325,7 +325,7 @@ warning was later resolved below; the WebKit QoS warning remains open.
 
 `NativeProjectFeatureFactory` assembles project, editor, web board, tickets,
 workflow and automation models from a protocol-based service bundle and injected
-creation, desktop and clipboard dependencies. `AppStore` supplies live services
+creation, desktop and clipboard dependencies. `AppViewModel` supplies live services
 and runtime operations; it no longer assembles project feature models.
 
 `AppCoordinator` owns the project-coordinator inventory. A project is constructed
@@ -358,7 +358,7 @@ The broader terminal and release gates remain open.
 ## Implemented: build and removal presentation lifetimes
 
 `WorkspaceFeatureFactory` supplies a fresh `BuildDestinationViewModel` for every
-build sheet, while `AppStore` retains the existing `BuildWorkspaceViewModel` and
+build sheet, while `AppViewModel` retains the existing `BuildWorkspaceViewModel` and
 terminal. The destination forwards rendering state and guarded commands through
 an identified presentation. Cancelled or completed destinations cannot load, run,
 change selection or complete a replacement sheet. Retiring a destination leaves
@@ -379,7 +379,7 @@ and an operation that already started retains runtime cleanup and lock release
 even if its presentation is retired. Retirement is not a rollback mechanism.
 
 Both destinations emit typed `onAction` completions handled by the coordinator.
-Removal cleanup no longer navigates from `AppStore`; the coordinator returns to
+Removal cleanup no longer navigates from `AppViewModel`; the coordinator returns to
 Overview only if the selected session was removed. An unrelated selection is
 preserved. Views render these models without adding state-driven view observers.
 
@@ -434,7 +434,7 @@ Concurrent opens of one row coalesce; a newer row supersedes the earlier request
 Changing section/state, leaving the project, opening a dialog, disconnecting or
 retiring cancels pending PR navigation. Late failures cannot replace a newer
 action's error. Retired project models cannot reconnect or resume operations.
-`AppStore.openPage` checks cancellation before selecting an existing session and
+`AppViewModel.openPage` checks cancellation before selecting an existing session and
 after an awaited tab save. A cancelled save may have persisted its tab; it cannot
 subsequently navigate or overwrite the current inventory with that response.
 
@@ -478,7 +478,7 @@ separate from complete open snapshots and merge automation.
 
 `DashboardFeatureFactory` assembles the observable model with its injected page
 action service. `AppCoordinator` installs and owns its child coordinator, and
-`AppStore` reads the current model through that coordinator. Replacing the child
+`AppViewModel` reads the current model through that coordinator. Replacing the child
 retires the old model and clears its callbacks and pending operations.
 
 Dashboard open/browser/copy callbacks resolve current visible rows after ownership,
@@ -548,7 +548,7 @@ Focused model tests and native acceptance evidence are recorded in
 ## Implemented: Settings factory and save-completion coordinator
 
 `NativeSettingsFeatureFactory` assembles Settings and its child models with injected
-desktop, clipboard, login-item and font-catalog dependencies. `AppStore` reads the
+desktop, clipboard, login-item and font-catalog dependencies. `AppViewModel` reads the
 Settings model through the root-owned `SettingsCoordinator`. Successful saves emit
 typed callbacks; the coordinator serializes completion delivery to the application
 runtime. Leaving Settings preserves an accepted save and its configuration effects.
@@ -568,7 +568,7 @@ and platform action ownership remain part of the remaining extraction below.
 ## Implemented: document feature factory
 
 The injected `DocumentFeatureFactory` assembles editors, editor surfaces, working
-diffs, git actions, history models and immutable patches. `AppStore`, `ViewerStore`
+diffs, git actions, history models and immutable patches. `AppViewModel`, `ViewerStore`
 and `WorkspaceContext` use the same factory. Snapshot replacement and legacy file
 imports retain it; opening an existing standardized file path reuses its model.
 Promotion moves the existing context/documents without invoking the factory again.
@@ -791,6 +791,27 @@ key-to-display latency or a full-app/Tauri performance comparison. See
 [the ten-minute measurement](measurements/native-terminal-render-stress-2026-09-13.md)
 for results and remaining acceptance limits.
 
+## Implemented: application model and backend runtime
+
+The shared `@Observable` root model is named `AppViewModel` (formerly `AppStore`).
+It holds app state and supplies feature context to coordinators. The old name was
+an internal state-container name, unrelated to Apple’s App Store. Distribution is
+by a directly downloaded macOS app; App Store submission is outside scope.
+
+An injected `BackendRuntimeServing` dependency owns backend startup, readiness,
+event-stream lifetime and reconnect backoff. Its factory supplies configuration,
+process ownership, stream transport and retry suspension. Typed runtime events
+update the application model; rendering views do not manage network connections.
+Startup and stream identities reject retired results and callbacks. A failed old
+startup terminates only its captured process; process cleanup also captures its
+own log handle before suspension, so it cannot close a replacement process’s log.
+
+The application model coalesces shutdown, invalidates its event handler immediately,
+and waits for feature operations before stopping the backend. A new start waits
+for that cleanup. Detached terminal ownership and explicit Quit/update behavior
+continue through their existing coordinators. This extraction leaves feature
+service assembly and other platform dependencies as separate remaining work.
+
 ## Remaining extraction
 
 The architecture extraction remains in progress:
@@ -801,11 +822,11 @@ The architecture extraction remains in progress:
   and emulator ownership; the measured appearance mount warning is resolved above.
 - Move remaining shared shell appearance and platform actions behind injected
   dependencies.
-- `AppStore` still constructs several concrete backend/platform services. Complete
+- `AppViewModel` still constructs several concrete backend/platform services. Complete
   child presentation ownership/model retirement as the remaining shared action
   services are extracted.
-- Separate application runtime/backend lifecycle from feature navigation without
-  changing ownership, cancellation, detached-shell retention or update shutdown.
+- Complete remaining platform lifetime extraction; backend process and event-stream
+  ownership now live in the injected runtime described above.
 - Audit every rendering view and web/AppKit adapter for remaining business rules.
   AppKit representable coordinators remain UI adapters; they are distinct from
   application navigation coordinators.

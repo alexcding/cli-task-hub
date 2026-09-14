@@ -2552,6 +2552,34 @@ package revision, Mac model, macOS version, workloads, and results with the mile
 The terminal implementation remains unverified until these checks run. Any dependency
 change or protocol change re-runs the affected checks.
 
+### Application ViewModel and backend runtime — 2026-09-13
+
+The internal `AppStore` is renamed `AppViewModel`, retaining `@Observable` and
+existing coordinator/factory boundaries. This name has no connection to Apple’s
+App Store. The user confirmed direct macOS distribution; App Store submission is
+outside scope.
+
+Backend startup and SSE reconnect ownership now live in an injected
+`BackendRuntime`. Generation checks suppress retired startup results and stream
+callbacks. Cleanup captures the original process and log handle before awaiting,
+so an old failure cannot stop a replacement backend. App shutdown coalesces,
+disables callbacks immediately, drains feature work before stopping the backend,
+and holds subsequent startup until cleanup completes.
+
+Validation:
+
+- Seven Swift tests pass: retired startup success/failure, stale stream callbacks,
+  duplicate start, capped backoff, cancellation/retry, cancellation during reconnect
+  pause, real backend snapshot/stream ownership, and packaged startup checkpoint/
+  cancellation (some tests cover multiple cases).
+  Log: `swift_package_test_2026-09-14T00-52-53-489Z_pid24389_f953efec.log`.
+- Native Debug app and UI targets build. The isolated terminal lifecycle UI test
+  passes: shell PID retention across navigation and hide/show, restored keyboard
+  focus, cancelled/confirmed restart, and explicit tray Quit.
+  Log: `test_macos_2026-09-14T00-53-18-263Z_pid25240_7791b001.log`.
+- No benchmarking was run. Shared feature-service/platform extraction and remaining
+  functional/release gates remain open.
+
 ## Product rules that must survive (from `CLAUDE.md`)
 
 - Sidebar = project → **session**; sessions are the only rows; task-less tabs live in one
@@ -2571,7 +2599,7 @@ change or protocol change re-runs the affected checks.
 | # | Goal | Exit criterion |
 |---|------|----------------|
 | M0 | Foundation: choose minimum macOS version, project tooling, and distribution model; `BackendProcess`, generated routes, `APIClient`, `SSEClient`; extract daemon crate; minimal native window and tray; bundle smoke test | App loads projects and receives sync; route builders/encoding and representative JSON contracts tested; SSE reconnect refreshes snapshots; correct data directory and explicit backend ownership; bundled helpers launch outside the development tree |
-| M1 | **Terminal correctness spike:** pinned Ghostty package, `PtydClient`, native surface, input, flow control, attach/restoration, parsed row access, lifecycle | The terminal acceptance gate above passes, with automated tests and recorded interactive/performance evidence. Resolve snapshot and byte-transport requirements here |
+| M1 | **Terminal correctness spike:** pinned Ghostty package, `PtydClient`, native surface, input, flow control, attach/restoration, parsed row access, lifecycle | The terminal acceptance gate above passes, with automated tests and recorded interactive correctness evidence. Resolve snapshot and byte-transport requirements here |
 | M2 | Native shell: AppKit `NSOutlineView` project/session sidebar, Tabs/Pinned groups, tray PR rows + usage view, theme, notifications, native menus and focus routing | Session selection uses stable PTY identities; changing views preserves terminal state; close/quit behavior matches the lifecycle contract |
 | M3 | Complete session workflow: new/restart/remove/pin, worktree + task creation, `build:` PTY and Run destinations; context webview, content-tab strip, History, find bar, page-only/session toolbar | One complete session works end to end with terminal and context page; links route correctly; GitHub/Jira login survives relaunch; build and agent terminals remain isolated |
 | M4 | Native SwiftUI app pages and actions: Dashboard (cards, grouping, CI status, filters, and actions), Jira tickets, Logs, Settings, Project; focused web sprint board; project/settings edits, Jira actions, agent hooks, workflows, git history/commit/push/discard | Dashboard renders natively and updates through snapshot API + SSE; embedded board preserves its existing interactions; each existing workflow has an explicit parity check; failures remain recoverable and destructive actions retain confirmation |

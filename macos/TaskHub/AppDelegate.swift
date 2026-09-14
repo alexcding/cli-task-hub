@@ -5,7 +5,7 @@ import Observation
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverDelegate {
-    private let store = AppStore()
+    private let model = AppViewModel()
     private var window: NSWindow?
     private var statusItem: NSStatusItem?
     private let popover = NSPopover()
@@ -14,8 +14,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPo
     private lazy var termination = AppTerminationCoordinator(prepare: { [weak self] reason in
         guard let self else { throw CancellationError() }
         switch reason {
-        case .quit: try await self.store.quit()
-        case .update: try await self.store.prepareForUpdate()
+        case .quit: try await self.model.quit()
+        case .update: try await self.model.prepareForUpdate()
         }
     }, finished: { reason, approved in
         if reason == .update { NSApp.reply(toApplicationShouldTerminate: approved) }
@@ -28,12 +28,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPo
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let quiet = AppLaunchContext.startsQuietly
-        store.shell.applyAppearance()
+        model.shell.applyAppearance()
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1000, height: 680),
                               styleMask: [.titled, .closable, .miniaturizable, .resizable],
                               backing: .buffered, defer: false)
         window.title = "TaskHub Native"
-        let content = NSHostingView(rootView: ContentView(store: store, showTray: { [weak self] in self?.toggleTray() }))
+        let content = NSHostingView(rootView: ContentView(model: model, showTray: { [weak self] in self?.toggleTray() }))
         // The window owns its size. Deriving constraints from nested browser and
         // split-view ideal sizes can feed changes back into the same layout pass.
         content.sizingOptions = []
@@ -46,7 +46,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPo
         self.window = window
         NotificationCenter.default.addObserver(self, selector: #selector(sheetDidEnd),
             name: NSWindow.didEndSheetNotification, object: nil)
-        store.configureNativeNotifications(isMainWindowFocused: { [weak self] in self?.window?.isKeyWindow == true },
+        model.configureNativeNotifications(isMainWindowFocused: { [weak self] in self?.window?.isKeyWindow == true },
             showWindow: { [weak self] in self?.showWindow() })
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         item.button?.image = NSImage(systemSymbolName: "square.stack.3d.up", accessibilityDescription: "TaskHub Native")
@@ -58,7 +58,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPo
         popover.behavior = .transient
         popover.delegate = self
         popover.contentSize = NSSize(width: 380, height: 580)
-        let tray = store.makeTray(openWindow: { [weak self] in self?.showWindow() },
+        let tray = model.makeTray(openWindow: { [weak self] in self?.showWindow() },
             dismiss: { [weak self] in self?.popover.performClose(nil) },
             quit: { [weak self] in self?.quitFromTray() })
         self.tray = tray
@@ -69,30 +69,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPo
                             enabled: { [weak self] command in
             guard let self else { return false }
             if command == .checkForUpdates { return self.termination.pending == nil && self.updater?.canCheckForUpdates == true }
-            return self.store.canPerform(command)
+            return self.model.canPerform(command)
         })
         menus?.install()
-        Task { await store.start() }
+        Task { await model.start() }
         if !quiet || receivedLaunchURL { showWindow() }
     }
 
     func application(_ application: NSApplication, open urls: [URL]) {
         var handled = false
-        for url in urls { if store.handleOpenURL(url) { handled = true } }
+        for url in urls { if model.handleOpenURL(url) { handled = true } }
         guard handled else { return }
         receivedLaunchURL = true
         if window != nil { showWindow() }
     }
 
-    @objc private func sheetDidEnd(_ notification: Notification) { store.resumePendingDeepLink() }
+    @objc private func sheetDidEnd(_ notification: Notification) { model.resumePendingDeepLink() }
 
     private func perform(_ command: ShellCommand) {
         switch command {
         case .checkForUpdates: updater?.checkForUpdates()
         case .closePage:
-            if store.hasActivePage { store.perform(command) } else { window?.orderOut(nil) }
+            if model.hasActivePage { model.perform(command) } else { window?.orderOut(nil) }
         case .hide:
-            store.cancelBrowserPresentation()
+            model.cancelBrowserPresentation()
             window?.orderOut(nil)
         case .tray: toggleTray()
         case .sidebar:
@@ -104,7 +104,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPo
             if let root = window?.contentView, let outline = findOutline(root) { window?.makeFirstResponder(outline) }
         default:
             showWindow()
-            store.perform(command)
+            model.perform(command)
         }
     }
 
@@ -120,10 +120,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPo
 
     private func observeStatus() {
         withObservationTracking {
-            let reviews = store.shell.pendingReviewCount
+            let reviews = model.shell.pendingReviewCount
             statusItem?.button?.contentTintColor = reviews > 0
                 ? NSColor(srgbRed: 0.596, green: 0.443, blue: 0.173, alpha: 1)
-                : (store.hasOpenWork ? .systemBlue : .labelColor)
+                : (model.hasOpenWork ? .systemBlue : .labelColor)
             statusItem?.button?.toolTip = reviews > 0 ? "TaskHub: \(reviews) pending reviews" : "TaskHub Native"
         } onChange: { [weak self] in
             Task { @MainActor in self?.observeStatus() }
@@ -138,13 +138,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPo
     }
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {
-        store.cancelBrowserPresentation()
+        model.cancelBrowserPresentation()
         sender.orderOut(nil)
         return false
     }
 
-    func windowDidMiniaturize(_ notification: Notification) { store.cancelBrowserPresentation() }
-    func applicationDidHide(_ notification: Notification) { store.cancelBrowserPresentation() }
+    func windowDidMiniaturize(_ notification: Notification) { model.cancelBrowserPresentation() }
+    func applicationDidHide(_ notification: Notification) { model.cancelBrowserPresentation() }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         showWindow()
@@ -156,7 +156,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPo
         case .now: return .terminateNow
         case .later: return .terminateLater
         case .hide:
-            store.cancelBrowserPresentation()
+            model.cancelBrowserPresentation()
             window?.orderOut(nil)
             return .terminateCancel
         }

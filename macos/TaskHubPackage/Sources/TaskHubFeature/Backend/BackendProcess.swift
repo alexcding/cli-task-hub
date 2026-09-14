@@ -117,7 +117,8 @@ public actor BackendProcess {
             }
             throw BackendError.startup("Backend did not become ready. The port may be occupied. See \(logURL.path).")
         } catch {
-            await stop()
+            if process === child { process = nil; logHandle = nil }
+            await terminate(child, log: log)
             throw error
         }
     }
@@ -125,6 +126,12 @@ public actor BackendProcess {
     public func stop() async {
         guard let child = process else { return }
         process = nil
+        let log = logHandle
+        logHandle = nil
+        await terminate(child, log: log)
+    }
+
+    private func terminate(_ child: Process, log: FileHandle?) async {
         if child.isRunning {
             child.terminate()
             for _ in 0..<30 {
@@ -134,7 +141,6 @@ public actor BackendProcess {
             }
             if child.isRunning { kill(child.processIdentifier, SIGKILL) }
         }
-        try? logHandle?.close()
-        logHandle = nil
+        try? log?.close()
     }
 }

@@ -1,6 +1,6 @@
 import Foundation
 
-extension AppStore: TrayCoordinating {
+extension AppViewModel: TrayCoordinating {
     func trayState() -> TrayState {
         .init(connection: connection, tabs: tabs, sessions: sessions, reviews: shell.prs,
               acknowledging: shell.acknowledging, canNavigate: coordinator.canPresent && coordinator.canOpenExternalRoute())

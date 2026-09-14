@@ -4,10 +4,11 @@ Native macOS client under implementation. macOS 14+, Xcode 16.3+ and Swift 6.1+;
 Apple silicon is the initial build target. Open `TaskHub.xcworkspace` in Xcode.
 
 The app target owns AppKit lifecycle and hosts SwiftUI. `TaskHubPackage` holds the
-API client, SSE parser/client, backend owner, observable store, and views. The current
+API client, SSE parser/client, injected backend runtime, `@Observable` AppViewModel, and views. The current
 screen has a Cocoa sidebar with project/session selection, Pinned mirrors, saved
 Tabs, native terminal panes, and a native SwiftUI Dashboard.
-See [the port plan](../docs/SWIFTUI-PORT.md).
+See [the port plan](../docs/SWIFTUI-PORT.md). Distribution is a directly downloaded
+macOS app; there is no Apple App Store submission.
 
 The [coordinator and DI extraction](../docs/NATIVE-ARCHITECTURE.md) follows the
 `elevate-ios` responsibility split. Creation sheets now receive stable models from

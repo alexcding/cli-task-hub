@@ -65,8 +65,8 @@ public actor SSEClient {
     // cancellation ends the underlying URLSession operation with the caller's task.
     public func consume(
         from baseURL: URL,
-        onConnect: @Sendable () async -> Void,
-        onEvent: @Sendable (ServerEvent) async -> Void
+        onConnect: @escaping @Sendable () async -> Void,
+        onEvent: @escaping @Sendable (ServerEvent) async -> Void
     ) async throws {
         let api = try APIClient(baseURL: baseURL)
         var request = URLRequest(url: try await api.url(Routes.STREAM))

@@ -1,6 +1,6 @@
 import Foundation
 
-extension AppStore: NotificationCoordinating {
+extension AppViewModel: NotificationCoordinating {
     func acknowledgeNotificationReview(repo: String, number: Int) {
         shell.acknowledgeReview(repo: repo, number: number)
     }

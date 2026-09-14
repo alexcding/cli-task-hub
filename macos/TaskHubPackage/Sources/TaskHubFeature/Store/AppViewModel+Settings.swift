@@ -1,7 +1,7 @@
 import AppKit
 import Foundation
 
-extension AppStore: SettingsCoordinating {
+extension AppViewModel: SettingsCoordinating {
     func activateSettings() {
         settings?.applicationActiveChanged(NSApp.isActive)
         shell.loadSettings(); shell.notifications.refreshAuthorization()

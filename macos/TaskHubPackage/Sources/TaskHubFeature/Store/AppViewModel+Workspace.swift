@@ -1,6 +1,6 @@
 import Foundation
 
-extension AppStore: WorkspaceCoordinating {
+extension AppViewModel: WorkspaceCoordinating {
     func updateWorkspaceReviewState() {
         for context in viewer.contexts.values { context.workspaceViewModel?.reviewStateChanged() }
     }

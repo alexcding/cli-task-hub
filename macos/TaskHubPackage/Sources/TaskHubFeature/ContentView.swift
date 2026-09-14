@@ -2,15 +2,15 @@ import SwiftUI
 
 /// Public scene entry; runtime and feature models are assembled before rendering.
 public struct ContentView: View {
-    @State private var store: AppStore
+    @State private var model: AppViewModel
     private let showTray: () -> Void
 
     public var body: some View {
-        AppCoordinatorView(coordinator: store.coordinator, model: store.root, showTray: showTray)
+        AppCoordinatorView(coordinator: model.coordinator, model: model.root, showTray: showTray)
     }
 
-    public init(store: AppStore, showTray: @escaping () -> Void = {}) {
-        _store = State(initialValue: store)
+    public init(model: AppViewModel, showTray: @escaping () -> Void = {}) {
+        _model = State(initialValue: model)
         self.showTray = showTray
     }
 }

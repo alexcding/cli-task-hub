@@ -3,7 +3,7 @@ import Foundation
 import Observation
 
 @MainActor @Observable
-public final class AppStore {
+public final class AppViewModel {
     public let shell: ShellStore
     let viewer: ViewerStore
     let coordinator: AppCoordinator
@@ -41,9 +41,10 @@ public final class AppStore {
     @ObservationIgnored private var preparingWorkflowPages: Set<String> = []
     @ObservationIgnored private var pendingPins: Set<String> = []
     @ObservationIgnored private var removalLocks: [UUID: Set<String>] = [:]
-    @ObservationIgnored private var owner: BackendProcess?
+    @ObservationIgnored private let backendRuntime: any BackendRuntimeServing
     @ObservationIgnored private var api: APIClient?
-    @ObservationIgnored private var streamTask: Task<Void, Never>?
+    @ObservationIgnored private var shutdownTask: Task<Void, Never>?
+    @ObservationIgnored private var startGeneration = UUID()
     @ObservationIgnored private var refreshTask: Task<Void, Never>?
     @ObservationIgnored private var refreshPending = false
     @ObservationIgnored private var refreshRequestID = UUID()
@@ -52,6 +53,7 @@ public final class AppStore {
     public convenience init() { self.init(creationFactory: NativeCreationFlowFactory()) }
 
     init(creationFactory: any CreationFlowFactory, desktop: any DesktopActions = NativeDesktopActions(),
+         backendRuntime: any BackendRuntimeServing = BackendRuntime(),
          workspaceFactory: any WorkspaceFeatureFactory = NativeWorkspaceFeatureFactory(),
          rootFactory: any RootFeatureFactory = NativeRootFeatureFactory(),
          dashboardFactory: any DashboardFeatureFactory = NativeDashboardFeatureFactory(),
@@ -67,6 +69,7 @@ public final class AppStore {
          projectFactory: (any ProjectFeatureFactory)? = nil,
          copy: @escaping (String) -> Void = { NativeClipboard.copy($0) }) {
         self.creationFactory = creationFactory
+        self.backendRuntime = backendRuntime
         self.shell = ShellStore(notifications: notificationFactory.notifications())
         self.desktop = desktop
         self.workspaceFactory = workspaceFactory
@@ -683,19 +686,23 @@ public final class AppStore {
     }
 
     public func start() async {
+        if let shutdownTask { await shutdownTask.value }
         guard !started else { return }
         coordinator.browserDialogCoordinator.enabled = true
         coordinator.setRoutingReady(false)
         started = true
+        let generation = UUID()
+        startGeneration = generation
+        backendRuntime.onEvent = { [weak self] event in
+            guard let self, self.started, self.startGeneration == generation else { return }
+            self.handleBackendEvent(event)
+        }
         settings?.resources.connect(NativeResourceUsageService(api: nil, pty: try? PtydConfiguration.current()))
         coordinator.settingsCoordinator?.setActive(selection == .settings)
         do {
-            let config = try BackendConfiguration.current()
-            backendAddress = config.baseURL.absoluteString
-            let process = BackendProcess(configuration: config)
-            owner = process
-            api = try await process.start()
-            guard started else { await process.stop(); return }
+            let connectedAPI = try await backendRuntime.start()
+            guard started, startGeneration == generation else { return }
+            api = connectedAPI
             if let api { shell.connect(api); viewer.connect(api); dashboard?.connect(APIDashboardService(api: api)); shell.refreshUsage() }
             if let api { for model in projectModels.values {
                 model.connect(APIProjectService(api: api)); model.board?.connect(baseURL: api.baseURL)
@@ -715,8 +722,9 @@ public final class AppStore {
                 if selection == .settings { settings?.refresh() }
                 settings?.refreshCurrentSection()
             }
-            startStream(baseURL: config.baseURL)
+            backendRuntime.startEvents()
         } catch {
+            guard started, startGeneration == generation else { return }
             connection = "Disconnected"
             self.error = error.localizedDescription
             started = false
@@ -783,28 +791,18 @@ public final class AppStore {
         await start()
     }
 
-    private func startStream(baseURL: URL) {
-        streamTask = Task { [weak self] in
-            let stream = SSEClient()
-            var delay = 1
-            while !Task.isCancelled {
-                do {
-                    try await stream.consume(from: baseURL, onConnect: { [weak self] in
-                        await self?.connected()
-                    }, onEvent: { [weak self] event in
-                        await self?.received(event)
-                    })
-                    delay = 1
-                } catch {
-                    if Task.isCancelled { break }
-                    self?.error = error.localizedDescription
-                }
-                self?.terminals.values.forEach { $0.agentTurns.setStreamAvailable(false) }
-                self?.connection = "Reconnecting"
-                self?.coordinator.setRoutingReady(false)
-                do { try await Task.sleep(for: .seconds(delay)) } catch { break }
-                delay = min(delay * 2, 15)
-            }
+    private func handleBackendEvent(_ event: BackendRuntimeEvent) {
+        switch event {
+        case .starting(let url):
+            backendAddress = url.absoluteString
+            connection = "Connecting"
+        case .connected: connected()
+        case .message(let event): received(event)
+        case .reconnecting(let message):
+            if let message { error = message }
+            terminals.values.forEach { $0.agentTurns.setStreamAvailable(false) }
+            connection = "Reconnecting"
+            coordinator.setRoutingReady(false)
         }
     }
 
@@ -843,9 +841,20 @@ public final class AppStore {
     }
 
     public func stop() async {
+        if let shutdownTask { await shutdownTask.value; return }
         coordinator.browserDialogCoordinator.enabled = false
         started = false
+        startGeneration = UUID()
+        backendRuntime.onEvent = { _ in }
         coordinator.setRoutingReady(false)
+        let task = Task { await finishStop() }
+        shutdownTask = task
+        await task.value
+        shutdownTask = nil
+    }
+
+    private func finishStop() async {
+        await backendRuntime.stopEvents()
         for model in pageWorkflowRuns.values { await model.stop() }
         pageWorkflowRuns.removeAll()
         pageWorkflowTargets.removeAll()
@@ -854,11 +863,8 @@ public final class AppStore {
         terminals.values.forEach { $0.agentTurns.setStreamAvailable(false) }
         workspaceLaunch.stop()
         for model in diffModels.values { await model.actions?.suspendAndWait() }
-        streamTask?.cancel()
         refreshTask?.cancel()
-        await streamTask?.value
         await refreshTask?.value
-        streamTask = nil
         refreshTask = nil
         await shell.stop()
         await dashboard?.stop()
@@ -876,7 +882,7 @@ public final class AppStore {
         diffModels.removeAll()
         for model in historyModels.values { model.hide() }
         historyModels.removeAll()
-        await owner?.stop()
+        await backendRuntime.stop()
         api = nil
     }
 }
