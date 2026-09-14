@@ -3,7 +3,7 @@
 //! Snapshot v3 retains glyph registrations, Kitty images, placements and transfers.
 use std::{ffi::c_void, fmt, ptr::NonNull};
 
-pub const GHOSTTY_REVISION: &str = "82938b633ba646db38591d969c3c526332bd7e65-taskhub-graphics-v3";
+pub const GHOSTTY_REVISION: &str = "82938b633ba646db38591d969c3c526332bd7e65-taskhub-appearance-v3";
 pub const SNAPSHOT_LIMIT: usize = 192 * 1024 * 1024;
 pub const RESPONSE_LIMIT: usize = 256 * 1024;
 /// Fixed ownership contract; extending this set requires a new version.
@@ -12,6 +12,20 @@ pub const IDENTITY_RESPONSE_OWNER: &str = "daemon-identity-v1";
 /// Identity/state replies, pixel geometry, Kitty graphics and glyph replies.
 /// The daemon/native handshake must opt into this separately before using it.
 pub const GEOMETRY_RESPONSE_OWNER: &str = "daemon-geometry-graphics-v2";
+/// Configured native defaults and color-scheme responses, ordered with PTY output.
+pub const APPEARANCE_RESPONSE_OWNER: &str = "daemon-appearance-v1";
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Appearance([u32; 260]);
+impl Appearance {
+    pub fn from_values(values: &[u32]) -> Result<Self, Error> {
+        let values: [u32; 260] = values.try_into().map_err(|_| Error("Invalid terminal appearance length"))?;
+        if values[..258].iter().any(|v| *v > 0xFFFFFF)
+            || (values[258] > 0xFFFFFF && values[258] != u32::MAX) || values[259] > 1 {
+            return Err(Error("Invalid terminal appearance colors"));
+        }
+        Ok(Self(values))
+    }
+}
 type Writer = unsafe extern "C" fn(*mut c_void, *const u8, usize) -> bool;
 
 extern "C" {
@@ -27,7 +41,9 @@ extern "C" {
         version: *const u8,
         version_len: usize,
         geometry: bool,
+        color_scheme: i32,
     ) -> i32;
+    fn taskhub_vt_set_appearance(terminal: *mut c_void, values: *const u32, notify: bool, write: Writer, userdata: *mut c_void) -> i32;
     fn taskhub_vt_resize(terminal: *mut c_void, cols: u16, rows: u16) -> i32;
     fn taskhub_vt_resize_geometry(
         terminal: *mut c_void,
@@ -105,14 +121,14 @@ impl Terminal {
     /// This does not write to a PTY or grant access to host clipboard/UI effects.
     /// An error can occur after input was consumed; retrying it is not safe.
     pub fn feed_with_responses(&mut self, bytes: &[u8]) -> Result<Vec<u8>, Error> {
-        self.collect_responses(bytes, write_response, None, false)
+        self.collect_responses(bytes, write_response, None, false, None)
     }
     /// Collect only daemon-state-v1 replies: DSR status/cursor, DECRQM,
     /// DECRQSS, and Kitty keyboard flags. UI/config-dependent replies remain
     /// renderer-owned. Filtering complete runtime effect packets avoids a
     /// second VT request parser and preserves split-sequence handling.
     pub fn feed_state_responses(&mut self, bytes: &[u8]) -> Result<Vec<u8>, Error> {
-        self.collect_responses(bytes, write_state_response, None, false)
+        self.collect_responses(bytes, write_state_response, None, false, None)
     }
     /// State replies plus native DA1/DA2, XTVERSION and XTGETTCAP. The profile
     /// must match the shell's TERM/terminfo and default native clipboard policy.
@@ -123,7 +139,7 @@ impl Terminal {
         version: &str,
     ) -> Result<Vec<u8>, Error> {
         validate_version(version)?;
-        self.collect_responses(bytes, write_identity_response, Some(version), false)
+        self.collect_responses(bytes, write_identity_response, Some(version), false, None)
     }
     /// Identity/state replies plus sizes from the parser's current geometry.
     /// Requires complete cell pixels, set before output is parsed. Title and
@@ -136,7 +152,18 @@ impl Terminal {
     ) -> Result<Vec<u8>, Error> {
         validate_version(version)?;
         self.geometry()?;
-        self.collect_responses(bytes, write_geometry_response, Some(version), true)
+        self.collect_responses(bytes, write_geometry_response, Some(version), true, None)
+    }
+    pub fn feed_appearance_responses(&mut self, bytes: &[u8], version: &str, appearance: &Appearance) -> Result<Vec<u8>, Error> {
+        validate_version(version)?;
+        self.geometry()?;
+        self.collect_responses(bytes, write_appearance_response, Some(version), true, Some(appearance.0[259]))
+    }
+    pub fn set_appearance(&mut self, appearance: &Appearance, notify: bool) -> Result<Vec<u8>, Error> {
+        let mut responses = Vec::new();
+        check(unsafe { taskhub_vt_set_appearance(self.0.as_ptr(), appearance.0.as_ptr(), notify,
+            write_appearance_response, (&mut responses as *mut Vec<u8>).cast()) }, "Could not apply terminal appearance")?;
+        Ok(responses)
     }
     fn collect_responses(
         &mut self,
@@ -144,6 +171,7 @@ impl Terminal {
         writer: Writer,
         version: Option<&str>,
         geometry: bool,
+        color_scheme: Option<u32>,
     ) -> Result<Vec<u8>, Error> {
         let mut responses = Vec::new();
         check(
@@ -157,6 +185,7 @@ impl Terminal {
                     version.map_or(std::ptr::null(), str::as_ptr),
                     version.map_or(0, str::len),
                     geometry,
+                    color_scheme.map_or(-1, |value| value as i32),
                 )
             },
             "Could not collect complete terminal protocol responses",
@@ -389,6 +418,27 @@ unsafe extern "C" fn write_geometry_response(
     if !is_state_response(bytes) && !is_identity_response(bytes) && !is_geometry_response(bytes) && !is_graphics_response(bytes) {
         return true;
     }
+    append_bounded(userdata, data, len, RESPONSE_LIMIT)
+}
+fn is_color_response(mut bytes: &[u8]) -> bool {
+    if bytes == b"\x1b[?997;1n" || bytes == b"\x1b[?997;2n" { return true; }
+    if bytes.is_empty() { return false; }
+    // Ghostty batches several OSC color queries in one effect. Consume complete
+    // OSC packets, never forward title or clipboard packets through this owner.
+    while !bytes.is_empty() {
+        let Some(body) = bytes.strip_prefix(b"\x1b]") else { return false; };
+        if ![b"4;".as_slice(), b"10;", b"11;", b"12;", b"21;"].iter().any(|p| body.starts_with(p)) { return false; }
+        let Some(end) = body.iter().position(|v| *v == 7 || *v == 27) else { return false; };
+        let terminator = if body[end] == 7 { 1 } else if body.get(end + 1) == Some(&b'\\') { 2 } else { return false; };
+        bytes = &body[end + terminator..];
+    }
+    true
+}
+unsafe extern "C" fn write_appearance_response(userdata: *mut c_void, data: *const u8, len: usize) -> bool {
+    if len == 0 { return true; }
+    let bytes = std::slice::from_raw_parts(data, len);
+    if !is_state_response(bytes) && !is_identity_response(bytes) && !is_geometry_response(bytes)
+        && !is_graphics_response(bytes) && !is_color_response(bytes) { return true; }
     append_bounded(userdata, data, len, RESPONSE_LIMIT)
 }
 unsafe fn append_bounded(userdata: *mut c_void, data: *const u8, len: usize, limit: usize) -> bool {

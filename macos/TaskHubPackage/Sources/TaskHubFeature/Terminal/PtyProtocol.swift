@@ -33,8 +33,12 @@ struct PtyInfo: Codable, Sendable, Identifiable {
     var stateResponseOwner: String? = nil
     var terminalProfile: PtyTerminalProfile? = nil
     var geometryResponseOwner: String? = nil
+    var appearanceResponseOwner: String? = nil
 
     func validateStateResponseOwner() throws {
+        if let appearanceResponseOwner, appearanceResponseOwner != PtyHello.appearanceResponseOwnerVersion || geometryResponseOwner == nil {
+            throw PtyError.connection("This shell has an incompatible appearance owner. The existing shell has been preserved.")
+        }
         if let geometryResponseOwner {
             guard geometryResponseOwner == PtyHello.geometryResponseOwnerVersion,
                   stateResponseOwner == PtyHello.identityResponseOwnerVersion else {
@@ -52,6 +56,7 @@ struct PtyInfo: Codable, Sendable, Identifiable {
 struct PtyHello: Decodable, Sendable {
     static let stateResponseOwnerVersion = "daemon-state-v1"
     static let identityResponseOwnerVersion = "daemon-identity-v1"
+    static let appearanceResponseOwnerVersion = "daemon-appearance-v1"
     static let geometryResponseOwnerVersion = "daemon-geometry-graphics-v2"
     let `protocol`: UInt32
     let pid: Int32
@@ -62,6 +67,13 @@ struct PtyHello: Decodable, Sendable {
     var identityResponseOwner: String? = nil
     var shellIntegration: Bool? = nil
     var geometryResponseOwner: String? = nil
+
+    var appearanceResponseOwner: String? = nil
+    func validateAppearanceResponseOwner() throws {
+        guard appearanceResponseOwner == Self.appearanceResponseOwnerVersion else {
+            throw PtyError.connection("This PTY helper cannot preserve configured terminal colors. Existing shells have been preserved; rebuild the helper after saving your work and quitting explicitly.")
+        }
+    }
 
     func validateGeometryResponseOwner() throws {
         guard geometryResponseOwner == Self.geometryResponseOwnerVersion else {
@@ -135,6 +147,7 @@ struct PtyEvent: Decodable, Sendable {
     var cols: UInt16? = nil
     var rows: UInt16? = nil
     var geometry: PtyGeometry? = nil
+    var appearance: PtyAppearance? = nil
 }
 
 struct PtyRequest: Encodable, Sendable {
@@ -147,6 +160,8 @@ struct PtyRequest: Encodable, Sendable {
         var terminalProfile: PtyTerminalProfile? = nil
         var geometryResponseOwner: String? = nil
         var geometry: PtyGeometry? = nil
+        var appearanceResponseOwner: String? = nil
+        var appearance: PtyAppearance? = nil
     }
     var id: UInt64?
     var op: String
@@ -162,6 +177,7 @@ struct PtyRequest: Encodable, Sendable {
     var token: UInt64?
     var offset: Int?
     var geometry: PtyGeometry?
+    var appearance: PtyAppearance?
 }
 
 // Stream framing is independent of socket reads. Decode only complete UTF-8 JSON

@@ -52,9 +52,11 @@ def main():
     glyph_patch = patches / "0007-glyph-snapshot.patch"
     graphics_patch = patches / "0008-graphics-snapshot.patch"
     graphics_replies_patch = patches / "0009-native-graphics-replies.patch"
+    appearance_native_patch = patches / "0010-native-appearance.patch"
+    appearance_swift_patch = patches / "0011-swift-appearance.patch"
     fingerprint = hashlib.sha256(lock_bytes + native_patch.read_bytes() + swift_patch.read_bytes() + query_patch.read_bytes()
                                  + appearance_patch.read_bytes() + render_patch.read_bytes()
-                                 + swift_render_patch.read_bytes() + glyph_patch.read_bytes() + graphics_patch.read_bytes() + graphics_replies_patch.read_bytes()).hexdigest()
+                                 + swift_render_patch.read_bytes() + glyph_patch.read_bytes() + graphics_patch.read_bytes() + graphics_replies_patch.read_bytes() + appearance_native_patch.read_bytes() + appearance_swift_patch.read_bytes()).hexdigest()
     root = (args.build_root or macos / ".build" / "ghostty-native").resolve()
     root.mkdir(parents=True, exist_ok=True)
     zig = (args.zig or macos / ".build" / "ghostty-vt" / "tools" /
@@ -92,7 +94,7 @@ def main():
         run("git", "diff", "--exit-code", "HEAD", "--", cwd=package)
         run("zsh", package / "Script" / "apply-patches.sh", source, cwd=package, env=env)
         for directory, patch in [(source, native_patch), (source, query_patch), (package, swift_patch), (package, appearance_patch),
-                                 (source, render_patch), (package, swift_render_patch), (source, glyph_patch), (source, graphics_patch), (source, graphics_replies_patch)]:
+                                 (source, render_patch), (package, swift_render_patch), (source, glyph_patch), (source, graphics_patch), (source, graphics_replies_patch), (source, appearance_native_patch), (package, appearance_swift_patch)]:
             run("git", "apply", "--check", patch, cwd=directory)
             run("git", "apply", patch, cwd=directory)
         shutil.copy2(package / "Package.local.swift", package / "Package.swift")

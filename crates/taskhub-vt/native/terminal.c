@@ -25,8 +25,16 @@ typedef struct {
     void *userdata;
     bool failed;
     GhosttyString version;
+    int color_scheme;
 } TaskHubResponseSink;
 
+static bool taskhub_color_scheme(GhosttyTerminal terminal, void *userdata, GhosttyColorScheme *out) {
+    (void)terminal;
+    int value = ((TaskHubResponseSink *)userdata)->color_scheme;
+    if (value < 0 || value > 1) return false;
+    *out = (GhosttyColorScheme)value;
+    return true;
+}
 static GhosttyString taskhub_version(GhosttyTerminal terminal, void *userdata) {
     (void)terminal;
     return ((TaskHubResponseSink *)userdata)->version;
@@ -83,9 +91,9 @@ static bool taskhub_size(GhosttyTerminal terminal, void *userdata,
 // not retry these bytes, since doing so would apply terminal state twice.
 int taskhub_vt_feed_with_responses(void *terminal, const uint8_t *bytes, size_t len,
                                  GhosttyWriterFn write, void *userdata,
-                                 const uint8_t *version, size_t version_len, bool geometry) {
+                                 const uint8_t *version, size_t version_len, bool geometry, int color_scheme) {
     TaskHubResponseSink sink = { .write = write, .userdata = userdata, .failed = false,
-                                .version = { .ptr = version, .len = version_len } };
+                                .version = { .ptr = version, .len = version_len }, .color_scheme = color_scheme };
     int result = ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_USERDATA, &sink);
     if (result == GHOSTTY_SUCCESS) {
         result = ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_WRITE_PTY,
@@ -101,6 +109,8 @@ int taskhub_vt_feed_with_responses(void *terminal, const uint8_t *bytes, size_t 
             result = ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_XTVERSION,
                                           (const void *)taskhub_version);
     }
+    if (result == GHOSTTY_SUCCESS && color_scheme >= 0)
+        result = ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_COLOR_SCHEME, (const void *)taskhub_color_scheme);
     if (result == GHOSTTY_SUCCESS && geometry)
         result = ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_SIZE,
                                      (const void *)taskhub_size);
@@ -109,6 +119,7 @@ int taskhub_vt_feed_with_responses(void *terminal, const uint8_t *bytes, size_t 
         if (sink.failed) result = GHOSTTY_OUT_OF_SPACE;
     }
     ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_WRITE_PTY, NULL);
+    ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_COLOR_SCHEME, NULL);
     ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_DEVICE_ATTRIBUTES, NULL);
     ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_XTVERSION, NULL);
     ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_TERMINFO_NAME, NULL);
@@ -186,5 +197,31 @@ int taskhub_vt_mode(void *terminal, uint16_t number, bool ansi, bool *value) {
     GhosttyTerminalModeConfig mode = { .mode = ghostty_mode_new(number, ansi) };
     int result = ghostty_terminal_get(terminal, GHOSTTY_TERMINAL_DATA_MODE, &mode);
     if (result == GHOSTTY_SUCCESS) *value = mode.value;
+    return result;
+}
+
+// The wire array is 256 palette RGB values, foreground/background/cursor, scheme.
+// Defaults change without overwriting explicit OSC color overrides.
+int taskhub_vt_set_appearance(void *terminal, const uint32_t *values, bool notify,
+                               GhosttyWriterFn write, void *userdata) {
+    GhosttyColorRgb palette[256];
+    for (size_t i = 0; i < 256; ++i)
+        palette[i] = (GhosttyColorRgb){ .r = values[i] >> 16, .g = values[i] >> 8, .b = values[i] };
+    int result = ghostty_terminal_set(terminal, GHOSTTY_TERMINAL_OPT_COLOR_PALETTE, palette);
+    const GhosttyTerminalOption options[] = { GHOSTTY_TERMINAL_OPT_COLOR_FOREGROUND,
+        GHOSTTY_TERMINAL_OPT_COLOR_BACKGROUND, GHOSTTY_TERMINAL_OPT_COLOR_CURSOR };
+    for (size_t i = 0; i < 3 && result == GHOSTTY_SUCCESS; ++i) {
+        uint32_t value = values[256 + i];
+        GhosttyColorRgb rgb = { .r = value >> 16, .g = value >> 8, .b = value };
+        result = ghostty_terminal_set(terminal, options[i], value == UINT32_MAX ? NULL : &rgb);
+    }
+    if (result != GHOSTTY_SUCCESS || !notify) return result;
+    GhosttyTerminalModeConfig mode = { .mode = ghostty_mode_new(2031, false) };
+    result = ghostty_terminal_get(terminal, GHOSTTY_TERMINAL_DATA_MODE, &mode);
+    if (result != GHOSTTY_SUCCESS || !mode.value) return result;
+    char bytes[16];
+    size_t count = 0;
+    result = ghostty_color_scheme_report_encode((GhosttyColorScheme)values[259], bytes, sizeof(bytes), &count);
+    if (result == GHOSTTY_SUCCESS && !write(userdata, (const uint8_t *)bytes, count)) result = GHOSTTY_OUT_OF_SPACE;
     return result;
 }

@@ -54,8 +54,12 @@ without replaying image commands or host effects. Headless and native libraries
 compile; no UI/unit tests were added or run. Graphics and glyph replies now come from the daemon under the negotiated
 `daemon-geometry-graphics-v2` owner, including without a native viewer; views apply
 state while suppressing duplicate replies. Font/theme reloads retain the daemon's
-image policy. UI/config-dependent offline reply ownership remains implementation
-work.
+image policy. Appearance now has its own negotiated daemon owner: ordered native
+palette/default updates, detached color queries and color-scheme notifications.
+Clipboard and presentation requests keep the native live policy: no headless
+clipboard access or replay of completed UI requests after reconnect. Detached
+UI-dependent queries remain unanswered, allowing the caller's timeout/fallback.
+See `crates/taskhub-ptyd/SNAPSHOTS.md` for the supported boundary.
 
 A self-contained arm64 Release review package has been produced at
 `macos/.build/review-20260913-v3/`: app, ZIP, DMG and checksum manifest. It includes
@@ -64,12 +68,11 @@ runtime licenses. This is a local ad-hoc package; no Apple submission or update
 feed publication occurred. The app has not been launched or UI-tested in this
 phase. The Release build succeeded with the terminal graphics policy fix.
 
-The current implementation queue is:
+Implementation closeout:
 
-1. Complete ownership of UI/config-dependent terminal replies while detached,
-   without replaying clipboard or other host side effects on reattachment.
-2. Refresh the self-contained review package after the remaining terminal work.
-   Native dashboard/Cocoa sidebar and focused Sprint Board/diff/editor hosts are implemented.
+1. Terminal appearance ownership and the native live UI policy are implemented.
+2. Native dashboard/Cocoa sidebar and focused Sprint Board/diff/editor hosts are implemented.
+   The updated self-contained review package is recorded below when packaging completes.
 3. Direct-distribution packaging is implemented in `package-direct.py`: staged app,
    ZIP/DMG, nested signing, Node JIT entitlements and notarization/stapling. Actual
    Developer ID/notarization and the user's signed update feed require external

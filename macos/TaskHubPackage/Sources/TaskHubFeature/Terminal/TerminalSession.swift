@@ -165,17 +165,23 @@ final class TerminalSession: Identifiable {
             try negotiated.validateIdentityResponseOwner()
             try negotiated.validateShellIntegration()
             try negotiated.validateGeometryResponseOwner()
+            try negotiated.validateAppearanceResponseOwner()
             let profile = try PtyTerminalProfile.current()
             let geometry = try await pipe.measuredGeometry()
+            let appearance = try pipe.prepareAppearance()
             try Task.checkCancellation()
             info = try await client.request(.init(op: "create", opts: .init(
                 cwd: cwd, shell: shellPath, paired: paired, pairKey: pairKey,
                 stateResponseOwner: PtyHello.identityResponseOwnerVersion, terminalProfile: profile,
-                geometryResponseOwner: PtyHello.geometryResponseOwnerVersion, geometry: geometry)))
+                geometryResponseOwner: PtyHello.geometryResponseOwnerVersion, geometry: geometry,
+                appearanceResponseOwner: PtyHello.appearanceResponseOwnerVersion, appearance: appearance)))
             created = true
         }
         guard !created || info.geometryResponseOwner == PtyHello.geometryResponseOwnerVersion else {
             throw PtyError.connection("The PTY helper did not preserve the requested terminal geometry owner. The created shell has been preserved.")
+        }
+        guard !created || info.appearanceResponseOwner == PtyHello.appearanceResponseOwnerVersion else {
+            throw PtyError.connection("The PTY helper did not preserve native color ownership. The created shell has been preserved.")
         }
         try info.validateStateResponseOwner()
         if info.stateResponseOwner == PtyHello.identityResponseOwnerVersion {
@@ -185,13 +191,20 @@ final class TerminalSession: Identifiable {
         shellPID = info.pid
         termID = info.id
         agentTurns.bind(terminalID: info.id)
-        pipe.bind(client: client, id: info.id, geometryOwned: info.geometryResponseOwner != nil)
+        if info.appearanceResponseOwner != nil {
+            try negotiated.validateAppearanceResponseOwner()
+            _ = try pipe.prepareAppearance()
+        }
+        pipe.bind(client: client, id: info.id, geometryOwned: info.geometryResponseOwner != nil,
+                  appearanceOwned: info.appearanceResponseOwner != nil)
+        if info.appearanceResponseOwner != nil { try await pipe.synchronizeAppearance() }
         try await pipe.synchronizeGrid()
         status = "Restoring terminal"
         let snapshot = try await PtySnapshotDownloader(client: client).fetch(term: info.id)
         try await pipe.attach(snapshot, daemonOwnsStateResponses: true,
                               daemonOwnsIdentityResponses: info.stateResponseOwner == PtyHello.identityResponseOwnerVersion,
-                              daemonOwnsGeometryResponses: info.geometryResponseOwner != nil) { [weak self] in
+                              daemonOwnsGeometryResponses: info.geometryResponseOwner != nil,
+                              daemonOwnsAppearanceResponses: info.appearanceResponseOwner != nil) { [weak self] in
             Task { @MainActor in
                 guard let self, self.started, self.surfaceGeneration == generation, self.error == nil else { return }
                 self.status = "Connected"

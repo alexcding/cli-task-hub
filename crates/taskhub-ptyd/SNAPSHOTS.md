@@ -9,9 +9,11 @@ cargo test --manifest-path crates/taskhub-ptyd/Cargo.toml --features terminal-sn
 
 The native app and its bundle script require this feature; Tauri keeps its
 existing feature-free helper protocol. Prepare both runtimes before building the
-native app as described in `macos/README.md`. TaskHub snapshot v2 preserves glyph
-glossary registrations. Kitty images and UI/config-dependent offline queries remain open;
-the state-only response contract below is implemented.
+native app as described in `macos/README.md`. TaskHub snapshot v3 preserves glyph
+registrations and Kitty images. The current handshake revision ends in
+`-taskhub-appearance-v3`; the sections below describe each response contract.
+Historical validation notes are records only: further UI/unit tests and benchmarks
+are suspended at the user's request.
 
 Native and headless runtimes share `0007-glyph-snapshot.patch`. The handshake
 revision includes `-taskhub-glyph-v2`, distinguishing it from the original upstream
@@ -79,9 +81,9 @@ snapshot continuations use the single authoritative parser. A shared maintained
 parser patch enables ANSI DECRQM and rejects nonzero/multiple DA request parameters,
 preventing echoed DA2 replies from triggering a feedback loop. Device attributes
 and version/terminfo stay native for these older shells; new shells can use the
-identity contract below. Clipboard (including mode 5522), colors, title,
-visibility/focus and graphics still need an explicit offline policy and
-configuration mediation. Geometry has its own optional contract below.
+identity contract below. Geometry, graphics and appearance have the additional
+contracts below. Clipboard and presentation effects retain the native live policy
+described at the end of this document.
 
 Replies are generated before snapshot capture can observe the advanced state and
 queued by the same PTY I/O worker. They share the bounded input queue and preserve
@@ -214,7 +216,8 @@ still needs acceptance on a machine with that shell installed.
 
 ## Graphics snapshot v3
 
-The negotiated revision now ends in `-taskhub-graphics-v3`. It retains v2 glyph
+The graphics format introduced `-taskhub-graphics-v3` (superseded by the current
+appearance handshake revision). It retains v2 glyph
 registrations and adds one CRC-framed graphics record per screen after history.
 The native client completes the entire import before delivering post-cut output;
 v3 is not an interleaved live-history import format.
@@ -255,3 +258,42 @@ The headless library still produces the complete synchronous response; the Rust
 collector accepts only the added complete APC response packets within its existing
 256 KiB batch limit. Fragmented commands use the same parser and snapshot continuation
 as all other output. This phase adds no UI or unit tests.
+
+## Appearance ownership
+
+New sessions also negotiate `appearanceResponseOwner:"daemon-appearance-v1"`.
+This requires geometry/identity ownership and a native appearance at creation.
+The `appearance.values` array contains 256 palette RGB values, foreground,
+background, cursor (or UInt32.max for the foreground fallback), and a light/dark
+scheme value (0/1). RGB values are bounded to 24 bits. The native bridge uses the
+product's 16-bit OSC color-report format.
+
+An `appearance` request updates defaults through the same ordered PTY worker as
+resize. Changed defaults advance `stateSeq` and publish an `appearance` event;
+unchanged defaults do neither. Snapshot headers retain those defaults. Native
+surfaces apply the captured defaults before newer events, preserving explicit OSC
+overrides. Config callbacks copy and enqueue values without re-entering Ghostty.
+
+The daemon answers OSC palette/dynamic-color and Kitty color queries, color-scheme
+queries, and mode 2031 notifications. It retains the last native configuration
+while detached. Native handlers still apply color mutations but suppress the owned
+replies. The revised handshake prevents older renderers from ignoring this owner.
+
+## Native live UI policy
+
+Clipboard reads/writes (OSC 52 and Kitty clipboard, including mode 5522), title
+reports, visibility/focus and other presentation effects remain native operations.
+They use the attached surface's actual state and existing Ghostty permission policy.
+The headless daemon does not access the macOS clipboard, synthesize consent,
+pretend that a window is visible, or queue UI requests for later execution. With no
+native surface, these UI-dependent queries have no reply; applications must use
+their normal unsupported-terminal timeout/fallback. Clipboard access while detached
+is deliberately unsupported.
+
+Completed historical effects are not replayed at attachment: snapshots restore
+state directly, and only output after the capture boundary reaches the native live
+handler. Titles and working directories are restored as metadata. Incomplete escape
+sequences retain parser continuation and may finish in future live output. Hiding a
+pane retains its native emulator, so hiding and detaching have different lifecycles.
+This policy does not claim daemon ownership or multi-view deduplication of native
+UI effects; the app retains one emulator per terminal session.

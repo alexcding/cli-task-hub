@@ -1,7 +1,7 @@
 import Foundation
 
 struct PtySnapshot: Sendable {
-    static let revision = "82938b633ba646db38591d969c3c526332bd7e65-taskhub-graphics-v3"
+    static let revision = "82938b633ba646db38591d969c3c526332bd7e65-taskhub-appearance-v3"
     static let limit = 192 * 1024 * 1024
     static let chunkBytes = 128 * 1024
 
@@ -15,8 +15,11 @@ struct PtySnapshot: Sendable {
         let rows: UInt16
         let revision: String
         var geometry: PtyGeometry? = nil
+        var appearance: PtyAppearance? = nil
 
         func validate() throws {
+            try appearance?.validate()
+            if appearance != nil, geometry == nil { throw PtyError.connection("Snapshot appearance requires native geometry ownership.") }
             if let geometry {
                 try geometry.validate()
                 guard geometry.cols == cols, geometry.rows == rows else {

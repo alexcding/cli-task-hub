@@ -38,6 +38,8 @@ final class TerminalPipe: @unchecked Sendable {
     private var inputEnqueues = 0
     private var latestViewport: InMemoryTerminalViewport?
     private var ownsGeometryResponses = false
+    private var ownsAppearanceResponses = false
+    private var latestAppearance: PtyAppearance?
     private let error: @Sendable (String) -> Void
     private let exited: @Sendable (Int) -> Void
     private(set) var memory: InMemoryTerminalSession!
@@ -53,13 +55,14 @@ final class TerminalPipe: @unchecked Sendable {
         exited = onExit
         memory = InMemoryTerminalSession(write: { [weak self] in self?.write($0) }, resize: { [weak self] in
             self?.resize($0)
-        }, suppressesPixelOnlyResizes: false)
+        }, appearance: { [weak self] in self?.appearanceChanged($0) }, suppressesPixelOnlyResizes: false)
     }
 
-    func bind(client: PtydClient, id: String, geometryOwned: Bool = false) {
+    func bind(client: PtydClient, id: String, geometryOwned: Bool = false, appearanceOwned: Bool = false) {
         lock.lock()
         self.client = client; termID = id
         ownsGeometryResponses = geometryOwned
+        ownsAppearanceResponses = appearanceOwned
         input?.close()
         input = TerminalInputQueue(send: { data in
             let _: Bool? = try await client.request(.init(op: "write", term: id, bytes: data))
@@ -68,6 +71,41 @@ final class TerminalPipe: @unchecked Sendable {
             self.lock.lock(); self.failLocked(message); self.lock.unlock()
         })
         lock.unlock()
+    }
+
+    @MainActor
+    func prepareAppearance() throws -> PtyAppearance {
+        guard memory.enableAppearanceCallbacks(), let appearance = lock.withLock({ latestAppearance }) else {
+            throw PtyError.connection("The native terminal could not provide its configured colors.")
+        }
+        try appearance.validate()
+        return appearance
+    }
+
+    private func appearanceChanged(_ values: [UInt32]) {
+        let appearance = PtyAppearance(values: values)
+        lock.lock(); defer { lock.unlock() }
+        guard !failed, latestAppearance != appearance else { return }
+        do { try appearance.validate() }
+        catch { failLocked(error.localizedDescription); return }
+        latestAppearance = appearance
+        guard ownsAppearanceResponses, let client, let termID else { return }
+        client.sendAcknowledged(.init(op: "appearance", term: termID, appearance: appearance)) { [weak self] result in
+            guard case .failure(let error) = result, let self else { return }
+            self.lock.lock(); self.failLocked(error.localizedDescription); self.lock.unlock()
+        }
+    }
+
+    func synchronizeAppearance() async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            lock.lock(); defer { lock.unlock() }
+            guard !failed, ownsAppearanceResponses, let client, let termID, let latestAppearance else {
+                continuation.resume(throwing: PtyError.closed); return
+            }
+            client.sendAcknowledged(.init(op: "appearance", term: termID, appearance: latestAppearance)) { result in
+                continuation.resume(with: result.map { _ in () })
+            }
+        }
     }
 
     func measuredGeometry() async throws -> PtyGeometry {
@@ -132,11 +170,14 @@ final class TerminalPipe: @unchecked Sendable {
     }
 
     @MainActor
-    func attach(_ snapshot: PtySnapshot, daemonOwnsStateResponses: Bool = false, daemonOwnsIdentityResponses: Bool = false, daemonOwnsGeometryResponses: Bool = false, onReady: @escaping @Sendable () -> Void) async throws {
+    func attach(_ snapshot: PtySnapshot, daemonOwnsStateResponses: Bool = false, daemonOwnsIdentityResponses: Bool = false, daemonOwnsGeometryResponses: Bool = false, daemonOwnsAppearanceResponses: Bool = false, onReady: @escaping @Sendable () -> Void) async throws {
         try snapshot.header.validate()
         guard daemonOwnsGeometryResponses == (snapshot.header.geometry != nil),
               !daemonOwnsGeometryResponses || daemonOwnsIdentityResponses else {
             throw PtyError.connection("The terminal snapshot geometry does not match its response owner.")
+        }
+        guard daemonOwnsAppearanceResponses == (snapshot.header.appearance != nil) else {
+            throw PtyError.connection("The terminal snapshot appearance does not match its response owner.")
         }
         guard snapshot.bytes.count == snapshot.header.size else {
             throw PtyError.connection("The terminal snapshot is incomplete.")
@@ -154,6 +195,11 @@ final class TerminalPipe: @unchecked Sendable {
             }
         } else if daemonOwnsStateResponses, !memory.enableHostStateResponses() {
             throw PtyError.connection("Terminal state response ownership could not be configured.")
+        }
+        if let appearance = snapshot.header.appearance {
+            guard memory.applyHostAppearance(appearance.values), memory.enableHostAppearanceResponses() else {
+                throw PtyError.connection("Terminal color response ownership could not be configured.")
+            }
         }
         let memory = memory!
         // Metadata uses Ghostty's bounded app mailbox. Keep draining it while
@@ -185,7 +231,7 @@ final class TerminalPipe: @unchecked Sendable {
         // must be delivered while the UI still gates user interaction.
         replaying = false
         for event in buffered {
-            if (event.ev == "data" || event.ev == "resize"), let state = event.stateSeq, state <= header.stateSeq {
+            if (event.ev == "data" || event.ev == "resize" || event.ev == "appearance"), let state = event.stateSeq, state <= header.stateSeq {
                 consumedLocked(event.bytes?.count ?? 0)
             } else { scheduleLocked(event) }
             if failed { break }
@@ -233,13 +279,29 @@ final class TerminalPipe: @unchecked Sendable {
 
     private func scheduleLocked(_ event: PtyEvent) {
         guard !failed else { return }
-        if let state = lastStateSequence, event.ev == "data" || event.ev == "resize" {
+        if let state = lastStateSequence, event.ev == "data" || event.ev == "resize" || event.ev == "appearance" {
             guard let next = event.stateSeq, let sequence = event.seq else {
                 failLocked("The terminal daemon omitted ordered state metadata."); return
             }
             guard next > state else { consumedLocked(event.bytes?.count ?? 0); return }
             guard state < UInt64.max, next == state + 1 else {
                 failLocked("Terminal state sequence gap; reattachment required."); return
+            }
+            if event.ev == "appearance" {
+                guard ownsAppearanceResponses, sequence == lastSequence, let appearance = event.appearance else {
+                    failLocked("The terminal returned an invalid ordered appearance change."); return
+                }
+                do { try appearance.validate() } catch { failLocked(error.localizedDescription); return }
+                lastStateSequence = next
+                outputQueue.async { [self] in
+                    lock.lock(); let active = !failed; lock.unlock()
+                    guard active else { return }
+                    let applied = memory.applyHostAppearance(appearance.values)
+                    lock.lock(); defer { lock.unlock() }
+                    if !applied { failLocked("The terminal could not apply its ordered color change.") }
+                    consumedLocked(0)
+                }
+                return
             }
             if event.ev == "resize" {
                 guard sequence == lastSequence, let cols = event.cols, let rows = event.rows,

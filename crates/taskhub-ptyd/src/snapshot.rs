@@ -14,6 +14,7 @@ pub struct Capture {
     pub cols: u16,
     pub rows: u16,
     pub geometry: Option<crate::TerminalGeometry>,
+    pub appearance: Option<crate::TerminalAppearance>,
 }
 
 struct Transfer {
@@ -51,6 +52,7 @@ impl Transfers {
         if let Some(geometry) = capture.geometry {
             header["geometry"] = json!(geometry);
         }
+        if let Some(appearance) = &capture.appearance { header["appearance"] = json!(appearance); }
         self.current = Some(Transfer {
             token: self.generation,
             capture,
@@ -104,6 +106,7 @@ mod tests {
             cols: 90,
             rows: 30,
             geometry: None,
+            appearance: None,
         }
     }
 

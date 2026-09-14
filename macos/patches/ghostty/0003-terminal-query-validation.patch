@@ -21,3 +21,13 @@
                          const ansi_mode = ansi: {
                              switch (input.intermediates.len) {
                                  1 => if (input.intermediates[0] == '$') break :ansi true,
+--- a/src/terminal/stream_terminal.zig
++++ b/src/terminal/stream_terminal.zig
+@@ -1604,6 +1604,7 @@
+             // the dimensions they need for their first image frame.
+             .in_band_size_reports => if (enabled) self.reportMode2048(),
+ 
++            .report_color_scheme => if (enabled) self.deviceStatus(.color_scheme),
+             .report_visibility => if (enabled) self.sendVisibilityReport(),
+ 
+             .mouse_event_x10 => {

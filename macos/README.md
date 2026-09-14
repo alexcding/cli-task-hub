@@ -315,7 +315,16 @@ beside the destination before rename, preserving macOS file metadata and symlink
 Hard-linked files are read-only. The existing web editor now retains edits made while
 a save is in flight; this contract will also back the native document lifecycle.
 
-## Native terminal spike (M1, in progress)
+## Native terminal
+
+Current implementation: native Ghostty rendering backed by detached PTY sessions,
+snapshot v3 (text/history, parser continuation, glyphs and Kitty graphics), and
+daemon-owned state, identity, geometry, graphics and appearance replies. The
+appearance handshake revision is `-taskhub-appearance-v3`. Clipboard and other UI
+effects remain native and live; detached UI requests are not queued or replayed.
+See [the protocol policy](../crates/taskhub-ptyd/SNAPSHOTS.md#native-live-ui-policy).
+The user's manual app review is pending. Historical acceptance and benchmark notes
+below are retained for reference; no more UI/unit tests or benchmarks are scheduled.
 
 Build the pinned runtimes using the commands above, then build the standalone
 helper with `cargo build --manifest-path crates/taskhub-ptyd/Cargo.toml --features terminal-snapshots`.
@@ -344,7 +353,7 @@ It does not attach to daily Tauri sessions. `--pty-socket` or `TASKHUB_PTYD_SOCK
 override this; use a separate test socket because explicit Quit tears down the
 connected daemon's sessions.
 
-This is not yet a production terminal. Attachment negotiates the exact snapshot
+Attachment negotiates the exact snapshot
 revision, downloads a bounded binary capture, imports it into a fresh native
 surface, and drains newer output/resize events in daemon order before enabling
 input. History beyond the old 256 KiB tail is retained. Incompatible helpers are
@@ -366,10 +375,10 @@ bootstrap preserves user startup files and prompt hooks while publishing working
 directory and command boundaries, so a cd updates native file-link destinations.
 Non-Apple Bash uses Ghostty's ENV startup mechanism; Apple Bash and other unsupported
 shells retain normal startup behavior. These scripts are never written into user
-dotfiles. TaskHub snapshot v2 retains glyph registrations using the same maintained
+dotfiles. TaskHub snapshot v3 retains glyph registrations using the same maintained
 patch in the daemon and renderer. The format is negotiated explicitly; older
 daemons remain running and are rejected rather than silently upgraded. Kitty image
-state and UI/config-dependent offline queries still require work; see
+state and daemon appearance replies are implemented; see
 `crates/taskhub-ptyd/SNAPSHOTS.md`.
 
 New app sessions also select `daemon-geometry-v1`. They wait for measured cell
