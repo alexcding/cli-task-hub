@@ -1001,7 +1001,7 @@ final class TaskHubUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["--backend-url", base, "--data-dir", path, "--pty-socket", socket]
         app.launch()
-        XCTAssertTrue(app.textFields["dashboard-search"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.scrollViews["native-dashboard"].waitForExistence(timeout: 10))
         let review = app.buttons["dashboard-pr-2"]
         XCTAssertTrue(review.waitForExistence(timeout: 10))
         try await post("/fixture/arm-project-open")
@@ -1020,7 +1020,7 @@ final class TaskHubUITests: XCTestCase {
         try await post("/fixture/release-project-open")
         XCTAssertEqual(draft.value as? String, "Keep dashboard draft")
         app.sheets.buttons["Cancel"].click()
-        XCTAssertTrue(app.textFields["dashboard-search"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.scrollViews["native-dashboard"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.webViews.staticTexts["Native browser fixture"].exists)
         XCTAssertTrue(review.isEnabled); review.click()
         XCTAssertTrue(app.webViews.staticTexts["Native browser fixture"].waitForExistence(timeout: 10))
@@ -1029,7 +1029,7 @@ final class TaskHubUITests: XCTestCase {
     }
 
     @MainActor
-    func testNativeDashboardFiltersAndOpensContextPage() throws {
+    func testNativeDashboardOpensContextPage() throws {
         let environment = ProcessInfo.processInfo.environment
         guard let base = environment["TASKHUB_UI_BACKEND_URL"],
               let path = environment["TASKHUB_UI_DATA_DIR"], let socket = environment["TASKHUB_UI_PTY_SOCKET"] else {
@@ -1040,19 +1040,15 @@ final class TaskHubUITests: XCTestCase {
         app.launch()
         XCTAssertTrue(app.outlines["workspace-sidebar"].waitForExistence(timeout: 10))
         app.outlines["workspace-sidebar"].staticTexts["Overview"].click()
-        let search = app.textFields["dashboard-search"]
-        XCTAssertTrue(search.waitForExistence(timeout: 10))
-        search.click()
-        app.typeText("Previously reviewed")
+        XCTAssertTrue(app.scrollViews["native-dashboard"].waitForExistence(timeout: 10))
         let reviewed = app.buttons["dashboard-pr-2"]
         XCTAssertTrue(reviewed.waitForExistence(timeout: 10), app.debugDescription)
-        XCTAssertFalse(app.buttons["dashboard-pr-1"].exists)
-        XCTAssertFalse(app.buttons["dashboard-pr-3"].exists)
+        XCTAssertTrue(app.buttons["dashboard-pr-1"].exists)
+        XCTAssertTrue(app.buttons["dashboard-pr-3"].exists)
         reviewed.click()
         XCTAssertTrue(app.webViews.staticTexts["Native browser fixture"].waitForExistence(timeout: 10))
         app.typeKey("1", modifierFlags: .command)
-        XCTAssertTrue(search.waitForExistence(timeout: 5))
-        XCTAssertEqual(search.value as? String, "Previously reviewed")
+        XCTAssertTrue(app.scrollViews["native-dashboard"].waitForExistence(timeout: 5))
     }
 
     @MainActor

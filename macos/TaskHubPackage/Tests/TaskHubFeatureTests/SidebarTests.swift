@@ -15,7 +15,7 @@ private func workspaceSession(_ id: String, created: String?, pinned: Bool = fal
     let tabs = [SavedTab(kind: "web", title: "Task context", url: "https://example.com/task"),
                 SavedTab(kind: "web", title: "Docs", url: "https://example.com/docs")]
     let entries = SidebarEntry.make(projects: [sidebarProject], sessions: sessions, tabs: tabs)
-    let project = entries.first { $0.id == "project:p1" }
+    let project = entries.first { $0.id == "projects" }?.children.first { $0.id == "project:p1" }
     #expect(project?.children.map(\.id) == ["session:old", "session:new"])
     #expect(entries.first { $0.id == "pinned" }?.children.map(\.id) == ["pin:new"])
     #expect(entries.flatMap(\.descendants).filter { $0.destination == .session("new") }.count == 2)

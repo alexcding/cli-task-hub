@@ -7,13 +7,38 @@ struct AppCoordinatorView: View {
 
     var body: some View {
         NavigationSplitView {
-            CocoaSidebar(entries: model.entries, selection: model.selection,
-                         pinnedIDs: model.pinnedIDs,
-                         onSelect: model.select, onTogglePin: model.togglePin)
-                .navigationSplitViewColumnWidth(min: 200, ideal: 260, max: 420)
+            VStack(spacing: 0) {
+                HStack(spacing: 12) {
+                    Text("TaskHub").font(.system(size: 22, weight: .bold))
+                    Spacer()
+                    Button("New Project", systemImage: "plus") { model.newProject() }
+                        .labelStyle(.iconOnly).buttonStyle(.plain).font(.system(size: 18))
+                        .disabled(!model.canCreateProject).help("New Project")
+                    Button("Activity", systemImage: "bell") { showTray() }
+                        .labelStyle(.iconOnly).buttonStyle(.plain).font(.system(size: 17))
+                        .accessibilityLabel("Reviews & Usage").help("Activity")
+                }
+                .padding(.horizontal, 18).padding(.top, 14).padding(.bottom, 18)
+
+                CocoaSidebar(entries: model.entries, selection: model.selection,
+                             pinnedIDs: model.pinnedIDs,
+                             onSelect: model.select, onTogglePin: model.togglePin)
+
+                Divider()
+                Button { model.select(.settings) } label: {
+                    Label("Settings", systemImage: "gearshape")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 14).frame(height: 38)
+                        .foregroundStyle(.primary)
+                        .background(model.selection == .settings ? Color.primary.opacity(0.08) : .clear,
+                                    in: RoundedRectangle(cornerRadius: 7))
+                }
+                .buttonStyle(.plain).padding(8)
+            }
+            .navigationSplitViewColumnWidth(min: 200, ideal: 250, max: 420)
         } detail: {
             VStack(alignment: .leading, spacing: 18) {
-                if !model.hasWorkspace { Text(model.title).font(.largeTitle.weight(.semibold)) }
+                if !model.hasWorkspace && !model.showsDashboard { Text(model.title).font(.largeTitle.weight(.semibold)) }
                 if let error = model.error {
                     Label(error, systemImage: "exclamationmark.triangle")
                         .foregroundStyle(.orange).textSelection(.enabled)
@@ -32,15 +57,24 @@ struct AppCoordinatorView: View {
             }
             .padding(model.hasWorkspace ? 0 : 28)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .navigationTitle("TaskHub")
+            .navigationTitle("")
             .toolbar {
-                Button("New Project", systemImage: "folder.badge.plus") { model.newProject() }
-                    .disabled(!model.canCreateProject)
-                Button("New Session", systemImage: "plus") { model.newSession() }
-                    .disabled(!model.canCreateSession)
-                Button("Reviews & Usage", systemImage: "menubar.rectangle", action: showTray)
-                Button("Refresh", systemImage: "arrow.clockwise") { model.refresh() }
-                    .disabled(!model.canRefresh)
+                if #available(macOS 26.0, *) { ToolbarSpacer(.flexible) }
+                if model.showsDashboard {
+                    ToolbarItem(placement: .primaryAction) {
+                        Picker("Usage agent", selection: Binding(
+                            get: { model.shell.usageAgent },
+                            set: model.shell.setUsageAgent
+                        )) {
+                            Text("Claude").tag("claude")
+                            Text("Codex").tag("codex")
+                        }
+                        .labelsHidden()
+                        .pickerStyle(.segmented)
+                        .fixedSize()
+                        .accessibilityIdentifier("dashboard-agent")
+                    }
+                }
             }
         }
         .frame(minWidth: 760, minHeight: 480)

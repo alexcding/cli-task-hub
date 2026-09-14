@@ -31,11 +31,6 @@ struct DashboardProject: Decodable, Equatable, Identifiable, Sendable {
     let syncError: String?
 }
 
-enum DashboardFilter: String, CaseIterable, Identifiable {
-    case all = "All", mine = "Mine", review = "Review", failing = "Failing CI", drafts = "Drafts"
-    var id: String { rawValue }
-}
-
 struct DashboardRow: Identifiable, Equatable {
     let projectID: String
     let projectName: String

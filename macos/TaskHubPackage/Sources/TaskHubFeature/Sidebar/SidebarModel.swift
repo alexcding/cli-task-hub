@@ -83,18 +83,17 @@ struct SidebarEntry: Equatable {
                  destination: .session(session.id))
         }
         var result: [Self] = [
-            .init(id: "overview", title: "Overview", symbol: "square.grid.2x2", destination: .overview),
-            .init(id: "terminal", title: "Terminal", symbol: "terminal", destination: .terminal),
-            .init(id: "activity", title: "Activity", symbol: "clock", destination: .activity),
-            .init(id: "settings", title: "Settings", symbol: "gearshape", destination: .settings)
+            .init(id: "overview", title: "Dashboard", symbol: "custom:dashboard", destination: .overview)
         ]
+        if !projects.isEmpty {
+            result.append(.init(id: "projects", title: "Projects", symbol: "folder", children: projects.map { project in
+                .init(id: "project:\(project.id)", title: project.name, symbol: "folder", detail: project.workspace,
+                      destination: .project(project.id), children: ordered.filter { $0.projectId == project.id }.map { row($0) })
+            }))
+        }
         let pinned = ordered.filter(\.pinned)
         if !pinned.isEmpty {
             result.append(.init(id: "pinned", title: "Pinned", symbol: "pin", children: pinned.map { row($0, pinned: true) }))
-        }
-        result += projects.map { project in
-            .init(id: "project:\(project.id)", title: project.name, symbol: "folder", detail: project.workspace,
-                  destination: .project(project.id), children: ordered.filter { $0.projectId == project.id }.map { row($0) })
         }
         let projectIDs = Set(projects.map(\.id))
         let orphans = ordered.filter { !projectIDs.contains($0.projectId) }

@@ -18,9 +18,6 @@ import Observation
     private(set) var loading = false
     private(set) var updated: Date?
     private(set) var error: String?
-    var search = "" { didSet { if oldValue != search { cancelActions() } } }
-    var projectID = "" { didSet { if oldValue != projectID { cancelActions() } } }
-    var filter = DashboardFilter.all { didSet { if oldValue != filter { cancelActions() } } }
     @ObservationIgnored private var service: (any DashboardService)?
     @ObservationIgnored private var refreshTask: Task<Void, Never>?
     @ObservationIgnored private var refreshPending = false
@@ -46,21 +43,7 @@ import Observation
             }
         }
     }
-    var visibleRows: [DashboardRow] {
-        let query = search.trimmingCharacters(in: .whitespacesAndNewlines)
-        return rows.filter { row in
-            guard row.isMine || row.inReviewGroup,
-                  projectID.isEmpty || row.projectID == projectID,
-                  query.isEmpty || row.searchText.localizedStandardContains(query) else { return false }
-            switch filter {
-            case .all: return true
-            case .mine: return row.isMine
-            case .review: return row.inReviewGroup
-            case .failing: return !row.ciRunning && row.pr.ci?.conclusion == "failure"
-            case .drafts: return row.pr.isDraft == true
-            }
-        }
-    }
+    var visibleRows: [DashboardRow] { rows.filter { $0.isMine || $0.inReviewGroup } }
     var mine: [DashboardRow] { visibleRows.filter(\.isMine) }
     var reviews: [DashboardRow] { visibleRows.filter { !$0.isMine && $0.inReviewGroup } }
     var warnings: [String] {
@@ -87,7 +70,6 @@ import Observation
                     try Task.checkCancellation()
                     guard connectionGeneration == generation else { return }
                     if projects != snapshot { projects = snapshot }
-                    if !projectID.isEmpty && !projects.contains(where: { $0.id == projectID }) { projectID = "" }
                     updated = Date(); error = nil
                 } catch { if !Task.isCancelled && connectionGeneration == generation { self.error = error.localizedDescription } }
             }

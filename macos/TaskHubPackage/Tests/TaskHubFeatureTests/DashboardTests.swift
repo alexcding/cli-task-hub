@@ -37,12 +37,7 @@ private actor DashboardFixture: DashboardService {
     #expect(model.mine[0].ciLabel == "CI running")
     #expect(model.reviews[0].reviewLabel == "Approved")
     #expect(model.warnings == ["Native: Sync unavailable"])
-    model.filter = .failing
-    #expect(model.visibleRows.map(\.pr.number) == [2])
-    model.filter = .drafts
-    #expect(model.visibleRows.map(\.pr.number) == [1])
-    model.filter = .all; model.search = "reviewed"
-    let row = try #require(model.visibleRows.first)
+    let row = try #require(model.reviews.first { $0.pr.number == 2 })
     model.open(row); await model.navigation.waitForOpen()
     let opened = actions.opened.last
     #expect(opened?.category == "review" && opened?.url == row.url.absoluteString)
@@ -53,7 +48,7 @@ private actor DashboardFixture: DashboardService {
     await service.setFailure()
     model.refresh()
     while model.loading { try await Task.sleep(for: .milliseconds(10)) }
-    #expect(model.visibleRows == [row])
+    #expect(model.visibleRows.contains(row))
     #expect(model.updated != nil && model.error == "Fixture offline")
     await model.stop()
     coordinator.retire()
@@ -95,9 +90,6 @@ private actor DashboardFixture: DashboardService {
     #expect(model.navigation.error == error && model.error == nil)
     actions.failOpen = false; model.open(row); await model.navigation.waitForOpen()
     #expect(actions.opened.last?.category == "review" && model.navigation.error == nil)
-    model.filter = .mine; model.copyLink(row); model.open(row)
-    #expect(actions.copied.isEmpty && actions.opened.count == 2)
-    model.filter = .all
     let hidden = try #require(model.rows.first { $0.pr.number == 3 })
     model.copyLink(hidden); model.openExternally(hidden)
     #expect(actions.copied.isEmpty && actions.browsers.isEmpty)
@@ -106,7 +98,7 @@ private actor DashboardFixture: DashboardService {
     #expect(model.retired && !model.loading && actions.opened.count == 2)
 }
 
-@MainActor @Test(.timeLimit(.minutes(1)), arguments: ["leave", "dialog", "restart", "filter", "project", "search", "disconnect", "retire", "replace"])
+@MainActor @Test(.timeLimit(.minutes(1)), arguments: ["leave", "dialog", "restart", "disconnect", "retire", "replace"])
 func dashboardPendingOpenCancelsWhenItsOwnerOrSelectionChanges(change: String) async throws {
     let root = AppCoordinator(factory: NativeCreationFlowFactory(chooseFolder: { nil })), actions = ProjectPageActions()
     let model = await connectedDashboard(root, actions: actions), row = try #require(model.mine.first)
@@ -114,15 +106,11 @@ func dashboardPendingOpenCancelsWhenItsOwnerOrSelectionChanges(change: String) a
     model.open(row); model.open(row); await gate.waitForStart()
     #expect(actions.opened.count == 1)
     root.presentRemoval { nil }; root.presentBuild { nil }
-    model.filter = .all; model.projectID = ""; model.search = ""
     #expect(model.navigation.opening != nil) // Rejected presentations are not new navigation intents.
     switch change {
     case "leave": root.navigate(to: .activity)
     case "dialog": root.presentNewProject(service: ProjectPageService(), didSave: { _ in })
     case "restart": root.presentRestart(perform: {})
-    case "filter": model.filter = .review
-    case "project": model.projectID = "other"
-    case "search": model.search = "another"
     case "disconnect": await model.stop()
     case "replace": _ = root.makeDashboard(factory: NativeDashboardFeatureFactory(), pageActions: actions)
     default: root.dashboardCoordinator?.retire()

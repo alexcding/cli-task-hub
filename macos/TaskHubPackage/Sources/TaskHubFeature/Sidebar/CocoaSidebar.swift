@@ -24,6 +24,7 @@ struct CocoaSidebar: NSViewRepresentable {
         outline.headerView = nil
         outline.style = .sourceList
         outline.rowSizeStyle = .medium
+        outline.selectionHighlightStyle = .none
         outline.indentationPerLevel = 14
         outline.allowsEmptySelection = true
         outline.allowsMultipleSelection = false
@@ -111,6 +112,14 @@ struct CocoaSidebar: NSViewRepresentable {
                 outline.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
                 if changedSelection { outline.scrollRowToVisible(row) }
             } else { outline.deselectAll(nil) }
+            updateVisibleForegrounds(in: outline)
+        }
+
+        private func updateVisibleForegrounds(in outline: NSOutlineView) {
+            for row in 0..<outline.numberOfRows {
+                guard let cell = outline.view(atColumn: 0, row: row, makeIfNecessary: false) as? SidebarCellView else { continue }
+                cell.selectedStyle = outline.selectedRowIndexes.contains(row)
+            }
         }
 
         private func flatten(_ node: Node) -> [Node] { [node] + node.children.flatMap(flatten) }
@@ -121,14 +130,20 @@ struct CocoaSidebar: NSViewRepresentable {
         func outlineView(_ outlineView: NSOutlineView, isGroupItem item: Any) -> Bool { (item as? Node)?.entry.isGroup ?? false }
         func outlineView(_ outlineView: NSOutlineView, shouldSelectItem item: Any) -> Bool { (item as? Node)?.entry.destination != nil }
         func outlineView(_ outlineView: NSOutlineView, heightOfRowByItem item: Any) -> CGFloat { (item as? Node)?.entry.isGroup == true ? 26 : 32 }
+        func outlineView(_ outlineView: NSOutlineView, rowViewForItem item: Any) -> NSTableRowView? {
+            let identifier = NSUserInterfaceItemIdentifier("sidebar-row")
+            if let row = outlineView.makeView(withIdentifier: identifier, owner: self) as? SidebarRowView { return row }
+            let row = SidebarRowView(); row.identifier = identifier
+            return row
+        }
 
         func outlineView(_ outlineView: NSOutlineView, viewFor tableColumn: NSTableColumn?, item: Any) -> NSView? {
             guard let node = item as? Node else { return nil }
             let identifier = NSUserInterfaceItemIdentifier("sidebar-cell")
-            let cell: NSTableCellView
-            if let reused = outlineView.makeView(withIdentifier: identifier, owner: self) as? NSTableCellView { cell = reused }
+            let cell: SidebarCellView
+            if let reused = outlineView.makeView(withIdentifier: identifier, owner: self) as? SidebarCellView { cell = reused }
             else {
-                cell = NSTableCellView()
+                cell = SidebarCellView()
                 cell.identifier = identifier
                 let icon = NSImageView()
                 let label = NSTextField(labelWithString: "")
@@ -146,11 +161,19 @@ struct CocoaSidebar: NSViewRepresentable {
                     label.centerYAnchor.constraint(equalTo: cell.centerYAnchor)
                 ])
             }
+            cell.groupStyle = node.entry.isGroup
+            let itemRow = outlineView.row(forItem: node)
+            cell.selectedStyle = itemRow >= 0 && outlineView.selectedRowIndexes.contains(itemRow)
             cell.textField?.stringValue = node.entry.title
             cell.textField?.font = .systemFont(ofSize: node.entry.isGroup ? 11 : 13, weight: node.entry.isGroup ? .semibold : .regular)
             cell.textField?.textColor = node.entry.isGroup ? .secondaryLabelColor : .labelColor
-            cell.imageView?.image = NSImage(systemSymbolName: node.entry.symbol, accessibilityDescription: nil)
-            cell.imageView?.contentTintColor = node.entry.isGroup ? .secondaryLabelColor : .controlAccentColor
+            cell.imageView?.isHidden = node.entry.isGroup
+            cell.imageView?.constraints.first { $0.firstAttribute == .width }?.constant = node.entry.isGroup ? 0 : 17
+            let symbol = node.entry.id.hasPrefix("project:") && !node.children.isEmpty
+                ? (outlineView.isItemExpanded(node) ? "folder.fill" : "folder") : node.entry.symbol
+            cell.imageView?.image = node.entry.isGroup ? nil : SidebarIcons.image(named: symbol)
+            cell.imageView?.contentTintColor = node.entry.isGroup ? .secondaryLabelColor : .labelColor
+            cell.applyForeground()
             cell.toolTip = node.entry.detail.isEmpty ? node.entry.title : node.entry.detail
             cell.setAccessibilityIdentifier(node.entry.id)
             return cell
@@ -160,11 +183,22 @@ struct CocoaSidebar: NSViewRepresentable {
             guard !updating, let outline, let node = outline.item(atRow: outline.selectedRow) as? Node,
                   let destination = node.entry.destination else { return }
             selectedPlacement = node.entry.id
+            updateVisibleForegrounds(in: outline)
             parent.onSelect(destination)
         }
 
+        func outlineViewItemWillCollapse(_ notification: Notification) { updateProjectIcon(notification, expanded: false) }
+        func outlineViewItemWillExpand(_ notification: Notification) { updateProjectIcon(notification, expanded: true) }
         func outlineViewItemDidCollapse(_ notification: Notification) { saveExpansion(notification, collapsed: true) }
         func outlineViewItemDidExpand(_ notification: Notification) { saveExpansion(notification, collapsed: false) }
+        private func updateProjectIcon(_ notification: Notification, expanded: Bool) {
+            guard let outline, let node = notification.userInfo?["NSObject"] as? Node,
+                  node.entry.id.hasPrefix("project:") else { return }
+            let row = outline.row(forItem: node)
+            guard row >= 0, let cell = outline.view(atColumn: 0, row: row, makeIfNecessary: false) as? SidebarCellView else { return }
+            cell.imageView?.image = SidebarIcons.image(named: expanded ? "folder.fill" : "folder")
+            cell.applyForeground()
+        }
         private func saveExpansion(_ notification: Notification, collapsed isCollapsed: Bool) {
             guard !updating, let node = notification.userInfo?["NSObject"] as? Node else { return }
             if isCollapsed { collapsed.insert(node.entry.id) } else { collapsed.remove(node.entry.id) }
@@ -209,6 +243,90 @@ struct CocoaSidebar: NSViewRepresentable {
             guard let node = sender.representedObject as? Node, let url = URL(string: node.entry.detail),
                   ["http", "https"].contains(url.scheme?.lowercased() ?? "") else { return }
             NSWorkspace.shared.open(url)
+        }
+    }
+}
+
+@MainActor private enum SidebarIcons {
+    static func image(named name: String) -> NSImage? {
+        guard name.hasPrefix("custom:") else {
+            return NSImage(systemSymbolName: name, accessibilityDescription: nil)?
+                .withSymbolConfiguration(.init(pointSize: 14, weight: .regular))
+        }
+        switch String(name.dropFirst("custom:".count)) {
+        case "dashboard": return dashboard
+        default: return nil
+        }
+    }
+
+    private static var dashboard: NSImage {
+        let image = NSImage(size: NSSize(width: 17, height: 17), flipped: true) { _ in
+            NSColor.black.setStroke()
+            let outline = NSBezierPath(roundedRect: NSRect(x: 1, y: 2, width: 15, height: 13), xRadius: 2, yRadius: 2)
+            outline.lineWidth = 1.4
+            outline.stroke()
+
+            let divisions = NSBezierPath()
+            divisions.move(to: NSPoint(x: 1, y: 6.3))
+            divisions.line(to: NSPoint(x: 16, y: 6.3))
+            divisions.move(to: NSPoint(x: 6.7, y: 6.3))
+            divisions.line(to: NSPoint(x: 6.7, y: 15))
+            divisions.lineWidth = 1.4
+            divisions.stroke()
+            return true
+        }
+        image.isTemplate = true
+        image.accessibilityDescription = "Dashboard"
+        return image
+    }
+}
+
+@MainActor final class SidebarCellView: NSTableCellView {
+    var groupStyle = false { didSet { applyForeground() } }
+    var selectedStyle = false { didSet { applyForeground() } }
+
+    override var backgroundStyle: NSView.BackgroundStyle {
+        didSet { applyForeground() }
+    }
+
+    func applyForeground() {
+        let color: NSColor = groupStyle ? .secondaryLabelColor
+            : selectedStyle ? .controlAccentColor : .labelColor
+        textField?.textColor = color
+        imageView?.contentTintColor = color
+    }
+}
+
+@MainActor final class SidebarRowView: NSTableRowView {
+    override var isSelected: Bool { didSet { updateSelection() } }
+    override var isEmphasized: Bool { didSet { updateSelection() } }
+
+    override func didAddSubview(_ subview: NSView) {
+        super.didAddSubview(subview)
+        syncCellForeground()
+    }
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        layer?.cornerRadius = 7
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        updateSelection()
+    }
+
+    private func updateSelection() {
+        layer?.backgroundColor = isSelected ? NSColor.labelColor.withAlphaComponent(0.08).cgColor : NSColor.clear.cgColor
+        syncCellForeground()
+    }
+
+    private func syncCellForeground() {
+        for case let cell as SidebarCellView in subviews {
+            cell.selectedStyle = isSelected
         }
     }
 }

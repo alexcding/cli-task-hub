@@ -54,6 +54,10 @@ import Observation
     var canRefresh: Bool { state.canRefresh }
     var hasWorkspace: Bool { viewer.active != nil }
     var showsDestination: Bool { !state.hasTerminal && !hasWorkspace }
+    var showsDashboard: Bool {
+        if case .overview = state.selection { return true }
+        return false
+    }
     var workspaces: [Workspace] {
         viewer.contexts.keys.sorted().compactMap { id in
             guard let context = viewer.contexts[id], let model = context.workspaceViewModel else { return nil }
