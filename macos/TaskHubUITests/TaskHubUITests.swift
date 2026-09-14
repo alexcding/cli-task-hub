@@ -1198,6 +1198,70 @@ final class TaskHubUITests: XCTestCase {
     }
 
     @MainActor
+    func testNativeRealBuildLaunchStopPreservesSessionTerminal() async throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard environment["TASKHUB_UI_REAL_BUILD"] == "1",
+              let base = environment["TASKHUB_UI_BACKEND_URL"], let path = environment["TASKHUB_UI_DATA_DIR"],
+              let socket = environment["TASKHUB_UI_PTY_SOCKET"], let helper = environment["TASKHUB_UI_PTYD_PATH"] else {
+            throw XCTSkip("Run the explicit real build acceptance fixture with a simulator and probe template.")
+        }
+        func state() async throws -> [String: Any] {
+            let (data, response) = try await URLSession.shared.data(from: URL(string: base + "/fixture/real-build-state")!)
+            XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
+            return try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        }
+        let app = XCUIApplication()
+        app.launchArguments = ["--backend-url", base, "--data-dir", path, "--pty-socket", socket, "--ptyd-path", helper]
+        app.launch()
+        let session = app.outlines["workspace-sidebar"].staticTexts["sidebar-2"].firstMatch
+        XCTAssertTrue(session.waitForExistence(timeout: 10)); session.click()
+        XCTAssertTrue(app.buttons["Open Terminal"].waitForExistence(timeout: 5)); app.buttons["Open Terminal"].click()
+        let originalPID = app.staticTexts["terminal-shell-pid"].firstMatch
+        XCTAssertTrue(originalPID.waitForExistence(timeout: 10))
+        let before = try await state()
+        let original = try XCTUnwrap((before["terms"] as? [[String: Any]])?.first { $0["pairKey"] as? String == "sidebar-2" })
+        let shellPID = try XCTUnwrap(original["pid"] as? Int)
+        var previousAppPID: Int?
+        for attempt in 0..<2 {
+            app.activate()
+            XCTAssertTrue(app.buttons["Run…"].waitForExistence(timeout: 10)); app.buttons["Run…"].click()
+            let run = app.sheets.buttons["Run"]
+            let ready = expectation(for: NSPredicate(format: "exists == true AND enabled == true"), evaluatedWith: run)
+            await fulfillment(of: [ready], timeout: 100)
+            XCTAssertEqual(app.sheets.popUpButtons["build-scheme"].value as? String, "TaskHubBuildProbe")
+            run.click()
+            let deadline = ContinuousClock.now + .seconds(240)
+            var launched: [String: Any] = [:]
+            while ContinuousClock.now < deadline {
+                launched = try await state()
+                if let pid = launched["pid"] as? Int, pid != previousAppPID, launched["alive"] as? Bool == true { break }
+                try await Task.sleep(for: .milliseconds(500))
+            }
+            let appPID = try XCTUnwrap(launched["pid"] as? Int, "Real build/install/launch did not report readiness")
+            XCTAssertNotEqual(appPID, previousAppPID)
+            XCTAssertEqual(launched["alive"] as? Bool, true)
+            XCTAssertEqual((launched["launches"] as? [Int])?.count, attempt + 1)
+            let terms = try XCTUnwrap(launched["terms"] as? [[String: Any]])
+            XCTAssertTrue(terms.contains { $0["pairKey"] as? String == "sidebar-2" && $0["pid"] as? Int == shellPID && $0["alive"] as? Bool == true })
+            XCTAssertTrue(terms.contains { ($0["pairKey"] as? String)?.hasPrefix("build:") == true && $0["pid"] as? Int != shellPID })
+            app.activate() // Simulator opening must not prevent Stop in TaskHub.
+            XCTAssertTrue(app.buttons["Stop Build"].waitForExistence(timeout: 10)); app.buttons["Stop Build"].click()
+            let stopped = ContinuousClock.now + .seconds(15)
+            var after = try await state()
+            while after["alive"] as? Bool == true && ContinuousClock.now < stopped {
+                try await Task.sleep(for: .milliseconds(200)); after = try await state()
+            }
+            XCTAssertEqual(after["alive"] as? Bool, false, "Stop must terminate the launched simulator app, not only its console client")
+            XCTAssertTrue((after["terms"] as? [[String: Any]])?.contains { $0["pairKey"] as? String == "sidebar-2" && $0["pid"] as? Int == shellPID && $0["alive"] as? Bool == true } == true)
+            previousAppPID = appPID
+        }
+        app.buttons["Reviews & Usage"].click()
+        XCTAssertTrue(app.buttons["Quit TaskHub"].waitForExistence(timeout: 5)); app.buttons["Quit TaskHub"].click()
+        let exited = expectation(for: NSPredicate(format: "state == %d", XCUIApplication.State.notRunning.rawValue), evaluatedWith: app)
+        await fulfillment(of: [exited], timeout: 15)
+    }
+
+    @MainActor
     func testNativeBuildDestinationRetainsSelectionAndKeepsFailureForRetry() async throws {
         let environment = ProcessInfo.processInfo.environment
         guard let base = environment["TASKHUB_UI_BACKEND_URL"],

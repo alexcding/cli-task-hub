@@ -63,6 +63,23 @@ shared website storage; unsent forms and in-page navigation state may be lost.
 Editors, terminals and the Sprint board are outside this eviction policy.
 
 Run `bash macos/scripts/test-browser-ui.sh` for the isolated browser UI regression.
+
+For real build/install/launch/Stop acceptance, first scaffold an isolated sample and
+choose an available simulator from XcodeBuildMCP:
+
+```bash
+xcodebuildmcp project-scaffolding scaffold-ios --project-name TaskHubBuildProbe --output-path /private/tmp/taskhub-real-build-probe --bundle-identifier com.alexcding.taskhub.acceptance.buildprobe --deployment-target 18.0
+xcodebuildmcp simulator list --enabled
+TASKHUB_BUILD_PROBE_TEMPLATE=/private/tmp/taskhub-real-build-probe TASKHUB_REAL_BUILD_SIMULATOR=YOUR_SIMULATOR_UDID bash macos/scripts/test-browser-ui.sh TaskHubUITests/TaskHubUITests/testNativeRealBuildLaunchStopPreservesSessionTerminal
+```
+
+The opt-in test copies the sample into its private workspace, assigns a unique
+personal probe bundle ID, and uses real Xcode routes and the native Run/Stop UI.
+It verifies two launch/Stop cycles and retention of the ordinary session shell.
+Cleanup stops only its probe app and verified fixture PTYs; diagnostics remain in
+the printed fixture directory. The simulator and installed sample are retained.
+See [the recorded acceptance](../docs/acceptance/native-real-build-2026-09-13.md).
+
 Remove Session previews affected sessions and asks separately before discarding
 uncommitted/untracked work. Orphan folders are retained. Xcode-configured projects
 offer Run Destination and a separate Build pane; Stop interrupts its build PTY.

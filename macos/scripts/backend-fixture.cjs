@@ -286,6 +286,7 @@ if (process.env.TASKHUB_TRAY_FIXTURE === '1') {
       codexLimits: { session: window(8), weekly: window(18) }, asOf: new Date().toISOString() };
   };
 }
+if (process.env.TASKHUB_REAL_BUILD_SIMULATOR) require('./real-build-fixture.cjs')(app, db);
 const server = app.listen(Number(process.env.PORT || 0), '127.0.0.1', error => {
   if (error) { console.error(error.message); process.exit(1); }
   const baseURL = `http://127.0.0.1:${server.address().port}`;

@@ -2632,6 +2632,23 @@ development bundle’s UserDefaults/WebKit identity remains separate; no product
 data was moved. Historical Tauri/Electron identities and measurements describe the
 older shells and do not define the native distribution identity.
 
+### M3 real simulator Run/Stop acceptance — 2026-09-13
+
+The native app now has recorded acceptance for real Xcode scheme/destination/settings
+reads, build, simulator install, console-attached launch and Stop through its build
+PTY. An isolated sample app completes two Run/Stop cycles on iPhone 16 Pro / iOS 18.6.
+Both simulator processes exit after Stop, while the ordinary session shell retains
+its PID; explicit tray Quit completes fixture teardown. The new test is opt-in and
+keeps ordinary browser tests independent of Xcode builds and simulator availability.
+
+The native Debug app/UI targets build and the real-workflow UI test passes with no
+failures or skips in `test_macos_2026-09-14T01-16-56-731Z_pid33290_d142b6b9.log`.
+[Detailed evidence and reproduction](acceptance/native-real-build-2026-09-13.md)
+record the fixture, simulator, process identities and cleanup checks. No mocked
+Xcode responses or substituted build commands were used. The existing XCTest QoS
+warning remains. This closes the previously unverified real simulator Run/Stop
+path; browser login retention and other remaining M1–M6 gates stay open.
+
 ## Product rules that must survive (from `CLAUDE.md`)
 
 - Sidebar = project → **session**; sessions are the only rows; task-less tabs live in one
