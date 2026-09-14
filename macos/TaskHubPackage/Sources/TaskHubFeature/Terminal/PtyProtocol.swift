@@ -52,7 +52,7 @@ struct PtyInfo: Codable, Sendable, Identifiable {
 struct PtyHello: Decodable, Sendable {
     static let stateResponseOwnerVersion = "daemon-state-v1"
     static let identityResponseOwnerVersion = "daemon-identity-v1"
-    static let geometryResponseOwnerVersion = "daemon-geometry-v1"
+    static let geometryResponseOwnerVersion = "daemon-geometry-graphics-v2"
     let `protocol`: UInt32
     let pid: Int32
     let dataEncoding: String?

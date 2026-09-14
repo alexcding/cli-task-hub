@@ -239,3 +239,19 @@ maintained graphics patch. Existing incompatible helpers/shells remain preserved
 
 This implementation was compiled for the headless runtime, native renderer and
 helper. No new UI or unit tests were added or run, per the user's direction.
+
+## Detached graphics replies
+
+New native sessions negotiate `daemon-geometry-graphics-v2` through the existing
+geometry ownership field. This includes the v1 pixel/state/identity replies plus
+Kitty graphics and glyph-protocol acknowledgements and queries. Replies come from
+the daemon's authoritative parser, including when no client is connected. Native
+surfaces still apply image and glyph changes but suppress these acknowledgements,
+so attaching more than one surface cannot double them. Clipboard and UI effects
+remain outside this response set. Old owners are rejected before new shell creation;
+existing incompatible shells are preserved rather than restarted automatically.
+
+The headless library still produces the complete synchronous response; the Rust
+collector accepts only the added complete APC response packets within its existing
+256 KiB batch limit. Fragmented commands use the same parser and snapshot continuation
+as all other output. This phase adds no UI or unit tests.

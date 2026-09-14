@@ -61,7 +61,7 @@
 +        } ?? false
 +    }
 +
-+    /// Enable daemon-geometry-v1 (identity/state plus pixel size reports).
++    /// Enable daemon-geometry-graphics-v2 (identity/state plus pixel size reports).
 +    /// Requires complete imported pixel metrics and the native clipboard policy.
 +    @MainActor
 +    public func enableHostGeometryResponses() -> Bool {

@@ -119,3 +119,10 @@ parses Unicode/alternate-screen output and handles native keyboard, paste and li
 all ten initial counters and includes them in every resource sample. Any hidden
 counter advancing fails the workload; the visible counter must advance, hidden
 output must progress, and existing PID/surface identity checks remain in force.
+
+## Graphics response ownership
+
+`0009-native-graphics-replies.patch` suppresses Kitty graphics and glyph replies
+only for surfaces paired with `daemon-geometry-graphics-v2`. Native state mutation
+and rendering stay active. The new ownership string is required at creation and
+attachment; older state/identity-only sessions keep their prior response path.

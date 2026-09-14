@@ -9,9 +9,9 @@ pub const RESPONSE_LIMIT: usize = 256 * 1024;
 /// Fixed ownership contract; extending this set requires a new version.
 pub const STATE_RESPONSE_OWNER: &str = "daemon-state-v1";
 pub const IDENTITY_RESPONSE_OWNER: &str = "daemon-identity-v1";
-/// Identity/state replies plus XTWINOPS size queries and mode 2048 reports.
+/// Identity/state replies, pixel geometry, Kitty graphics and glyph replies.
 /// The daemon/native handshake must opt into this separately before using it.
-pub const GEOMETRY_RESPONSE_OWNER: &str = "daemon-geometry-v1";
+pub const GEOMETRY_RESPONSE_OWNER: &str = "daemon-geometry-graphics-v2";
 type Writer = unsafe extern "C" fn(*mut c_void, *const u8, usize) -> bool;
 
 extern "C" {
@@ -358,6 +358,10 @@ fn is_identity_response(bytes: &[u8]) -> bool {
         || ((bytes.starts_with(b"\x1bP>|") || bytes.starts_with(b"\x1bP1+r"))
             && bytes.ends_with(b"\x1b\\"))
 }
+fn is_graphics_response(bytes: &[u8]) -> bool {
+    (bytes.starts_with(b"\x1b_G") || bytes.starts_with(b"\x1b_25a1;"))
+        && bytes.ends_with(b"\x1b\\")
+}
 fn is_geometry_response(bytes: &[u8]) -> bool {
     let Some(body) = bytes
         .strip_prefix(b"\x1b[")
@@ -382,7 +386,7 @@ unsafe extern "C" fn write_geometry_response(
         return true;
     }
     let bytes = std::slice::from_raw_parts(data, len);
-    if !is_state_response(bytes) && !is_identity_response(bytes) && !is_geometry_response(bytes) {
+    if !is_state_response(bytes) && !is_identity_response(bytes) && !is_geometry_response(bytes) && !is_graphics_response(bytes) {
         return true;
     }
     append_bounded(userdata, data, len, RESPONSE_LIMIT)
