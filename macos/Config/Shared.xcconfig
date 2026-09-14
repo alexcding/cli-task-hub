@@ -8,7 +8,7 @@
 // ==========================================
 PRODUCT_NAME = TaskHub
 PRODUCT_DISPLAY_NAME = TaskHub Native
-PRODUCT_BUNDLE_IDENTIFIER = tv.accedo.taskhub.native
+PRODUCT_BUNDLE_IDENTIFIER = com.alexcding.taskhub
 MARKETING_VERSION = 1.0
 CURRENT_PROJECT_VERSION = 1
 

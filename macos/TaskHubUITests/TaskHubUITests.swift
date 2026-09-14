@@ -16,7 +16,7 @@ final class TaskHubUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Show Changes"].waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertTrue(app.buttons["Open Terminal"].exists)
         let running = try XCTUnwrap(NSWorkspace.shared.frontmostApplication)
-        XCTAssertEqual(running.bundleIdentifier, "tv.accedo.taskhub.native")
+        XCTAssertEqual(running.bundleIdentifier, "com.alexcding.taskhub")
         let applicationURL = try XCTUnwrap(running.bundleURL)
         guard applicationURL.path.contains(".xctestproducts/") || applicationURL.path.contains("/.build/ui-tests/") else {
             XCTFail("URL delivery target is outside the test products: \(applicationURL.path)"); return

@@ -439,8 +439,11 @@ root to check all packaged board/diff/editor assets using the bundled Node helpe
 
 Distribution is a direct Mac app without App Sandbox: TaskHub orchestrates local CLIs,
 worktrees, and detached PTYs. Developer ID signing, hardened-runtime entitlements,
-notarization, and signed update installation acceptance remain M6 work. The separate development bundle identifier
-is `tv.accedo.taskhub.native`.
+notarization, and signed update installation acceptance remain M6 work. The native
+bundle identifier is `com.alexcding.taskhub`, owned by Alex Ding. UI tests use
+`com.alexcding.taskhub.uitests`. The earlier development identifier is retired; its
+UserDefaults/WebKit identity is separate. The shared SQLite data directory remains
+`~/Library/Application Support/TaskHub`.
 
 ### Native updates
 

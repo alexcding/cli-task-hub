@@ -26,7 +26,8 @@ as `5cf368a`; native menus/notifications are committed as `9d34f2b`.
 Session workspace and terminal acceptance work continue in `macos/`
 (see `macos/README.md` for commands).
 The checked-in Xcode workspace uses a local Swift package, Swift 6, macOS 14 minimum,
-and direct distribution without App Sandbox. Overview now renders the native
+and direct distribution without App Sandbox. The native bundle identifier is
+`com.alexcding.taskhub` (Alex Ding), per user direction. Overview now renders the native
 Dashboard; the remaining app pages and action parity are tracked under M4.
 
 - Implemented: generated Swift routes with drift check, typed project API, backend
@@ -2611,6 +2612,25 @@ Validation:
 This completes the shared shell appearance/data boundary; other runtime/platform
 extraction and functional/release acceptance remain open. Benchmarking remains
 excluded by user direction.
+
+### Personal bundle identity — 2026-09-13
+
+Per user direction, the native app identifier is `com.alexcding.taskhub`, its UI-test
+identifier is `com.alexcding.taskhub.uitests`, and URL registration uses
+`com.alexcding.taskhub.navigation`. The `taskhub:` scheme is preserved. The
+standalone sample prepared for real build-workflow acceptance uses
+`com.alexcding.taskhub.acceptance.buildprobe`.
+
+The native app and UI targets build under the new identity. The cold/warm deeplink
+UI regression passes, explicitly asserting the running app’s new bundle ID and
+verifying deferred startup routing, open-draft preservation, project/ticket/activity
+navigation and invalid-route recovery. Log:
+`test_macos_2026-09-14T01-11-32-536Z_pid31597_8b83f77a.log`.
+
+The SQLite directory remains `~/Library/Application Support/TaskHub`. The prior
+development bundle’s UserDefaults/WebKit identity remains separate; no production
+data was moved. Historical Tauri/Electron identities and measurements describe the
+older shells and do not define the native distribution identity.
 
 ## Product rules that must survive (from `CLAUDE.md`)
 

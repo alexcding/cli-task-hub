@@ -105,7 +105,7 @@ unpackaged development launches do not run this checkpoint gate.
 | Older durable filename | If `taskhub.db` is absent, `config.db` is captured/restored under its original name. Backup does not trigger the application's legacy rename or destructive schema changes. |
 | GitHub/Jira snapshots | `data.db`; regenerable, omitted. The normal poller repopulates the restored installation. |
 | Terminal screen state and live process metadata | Daemon memory and PTY manifests; omitted. Restoring files cannot restore OS processes. Sparkle restart preserves the existing daemon separately; explicit tray Quit terminates it. |
-| Native sidebar selection/collapse, window geometry | AppKit/UserDefaults in `tv.accedo.taskhub.native`; left in place during same-bundle upgrades. Not part of this data-directory snapshot. |
+| Native sidebar selection/collapse, window geometry | AppKit/UserDefaults in `com.alexcding.taskhub`; left in place during same-bundle upgrades. Not part of this data-directory snapshot. |
 | Native cached settings and pending preference writes | UserDefaults `native.*`; not copied by this tool. Synced values are in SQLite. Reconnect and let pending writes finish before taking an offline checkpoint. |
 | Tauri localStorage appearance | Theme is mirrored to SQLite; the database remains authoritative. |
 | Tauri localStorage layout | `taskhub.prRatio`, `taskhub.projCollapsed`, `taskhub.sidebarWidth`, `taskhub.histSplit` are web layout preferences. Native layouts use their own defaults; the web values are left untouched for rollback. |
