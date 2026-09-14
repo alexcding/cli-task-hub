@@ -38,6 +38,14 @@ one native presenter test passed. The UI run stopped at an event-synthesis timeo
 while typing in the editor, before reaching Open File; it is not a picker acceptance
 result and will not be retried under the current direction.
 
+Backend adapters and workflow runners now come from `BackendFeatureFactory`, with
+session creation/agent persistence behind `SessionServing`; nested workflow page
+preparation uses that same injection. File services come from
+`DocumentFeatureFactory`. Diff commit/discard sheets now belong to `DiffCoordinator`,
+with typed model callbacks and root/deep-link presentation reservations. Reopening
+history also routes through the workspace coordinator. These implementation phases
+add no further UI or unit tests.
+
 M0 foundation is committed as `bf0c7a6`; the M1 terminal spike is committed as
 `c05a57a`; the M2 Cocoa sidebar is committed as `609d889` and native tray/appearance
 as `5cf368a`; native menus/notifications are committed as `9d34f2b`.

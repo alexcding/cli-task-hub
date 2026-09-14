@@ -36,6 +36,9 @@ struct APIDiffService: DiffService {
 }
 
 @MainActor @Observable final class DiffViewModel: NSObject, WKNavigationDelegate {
+    enum Action { case showActions, openFile(DocumentLocation), hide }
+    let coordinator: DiffCoordinator
+    @ObservationIgnored var onAction: (Action) -> Void = { _ in }
     var presentation = DocumentPresentation() {
         didSet {
             guard oldValue != presentation else { return }
@@ -52,7 +55,11 @@ struct APIDiffService: DiffService {
     private var loadError: String?
     private var documentError: String?
     var error: String? { documentError ?? loadError ?? actions?.error }
-    var showsActions = false
+    var showsActions: Bool {
+        get { coordinator.showsActions }
+        set { if newValue { requestActions() } else { coordinator.dismissActions() } }
+    }
+    var isActive: Bool { active }
     private(set) var actions: GitChangesActions?
     private(set) var webView: WKWebView?
     private var baseURL: URL
@@ -66,14 +73,14 @@ struct APIDiffService: DiffService {
     @ObservationIgnored private var font = CodeFont(size: 12)
 
     @ObservationIgnored private let allowsFileOpening: Bool
-    @ObservationIgnored private let openFile: (DocumentLocation) -> Void
 
     init(worktree: String, baseURL: URL, service: (any DiffService)? = nil,
          actionsService: (any GitChangesService)? = nil,
          allowsFileOpening: Bool = true,
          factory: any DocumentFeatureFactory = NativeDocumentFeatureFactory(),
          openFile: @escaping (DocumentLocation) -> Void = { _ in }) {
-        self.openFile = openFile; self.allowsFileOpening = allowsFileOpening
+        self.allowsFileOpening = allowsFileOpening
+        coordinator = factory.diffCoordinator()
         self.worktree = worktree; self.baseURL = baseURL; self.service = service
         super.init()
         if let actionsService {
@@ -82,7 +89,9 @@ struct APIDiffService: DiffService {
                 task?.cancel(); task = nil; generation = UUID(); refresh()
             })
         }
+        coordinator.bind(self, openFile: openFile)
     }
+    func requestActions() { onAction(.showActions) }
     var pageURL: URL { baseURL.appendingPathComponent("native/diff.html") }
     func connect(baseURL: URL, service: any DiffService) {
         task?.cancel(); task = nil; generation = UUID(); loading = false
@@ -157,6 +166,7 @@ struct APIDiffService: DiffService {
     }
     func hide() {
         active = false; loaded = false
+        onAction(.hide)
         actions?.cancelDiscard()
         task?.cancel(); task = nil; generation = UUID(); loading = false
         webView?.stopLoading(); webView?.navigationDelegate = nil
@@ -196,7 +206,7 @@ struct APIDiffService: DiffService {
                         try WorkingFileLocation.resolve(path, line: line, root: root)
                     }.value
                     guard self.generation == generation, active else { return }
-                    openFile(location)
+                    onAction(.openFile(location))
                 } catch { if self.generation == generation { loadError = error.localizedDescription } }
             }
         }

@@ -3,6 +3,7 @@ import Foundation
 @MainActor protocol DocumentFeatureFactory {
     func fileOpen() -> FileOpenViewModel
     func fileOpenCoordinator() -> FileOpenCoordinator
+    func diffCoordinator() -> DiffCoordinator
     func editorClose(documents: [EditorDocumentViewModel]) -> EditorCloseViewModel
     func editor(record: FileDocumentRecord) -> EditorDocumentViewModel
     func editorService(api: APIClient) -> any FileDocumentService
@@ -22,6 +23,7 @@ import Foundation
 extension DocumentFeatureFactory {
     func fileOpen() -> FileOpenViewModel { FileOpenViewModel() }
     func fileOpenCoordinator() -> FileOpenCoordinator { FileOpenCoordinator() }
+    func diffCoordinator() -> DiffCoordinator { DiffCoordinator() }
     func editorClose(documents: [EditorDocumentViewModel]) -> EditorCloseViewModel { EditorCloseViewModel(documents: documents) }
     func editor(record: FileDocumentRecord) -> EditorDocumentViewModel { EditorDocumentViewModel(record: record) }
     func editorService(api: APIClient) -> any FileDocumentService { APIFileDocumentService(api: api) }
@@ -40,6 +42,6 @@ extension DocumentFeatureFactory {
     }
     func patch(worktree: String, baseURL: URL, diff: String) -> DiffViewModel {
         DiffViewModel(worktree: worktree, baseURL: baseURL,
-                      service: HistoricalPatchService(diff: diff), allowsFileOpening: false)
+                      service: HistoricalPatchService(diff: diff), allowsFileOpening: false, factory: self)
     }
 }

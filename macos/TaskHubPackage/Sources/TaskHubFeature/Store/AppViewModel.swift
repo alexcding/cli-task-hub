@@ -102,6 +102,9 @@ public final class AppViewModel {
                 NSApplication.shared.modalWindow == nil && !NSApplication.shared.windows.contains { $0.attachedSheet != nil }
             })
         viewer.setPageLimit(shell.remotePageLimit)
+        coordinator.hasDocumentPresentation = { [weak self] in
+            self?.diffModels.values.contains { $0.coordinator.isPresenting } == true
+        }
         shell.remotePageLimitChanged = { [weak viewer] in viewer?.setPageLimit($0) }
         coordinator.appearance = shell.appearance
         shell.documentStyleChanged = { [weak self] in
@@ -171,6 +174,11 @@ public final class AppViewModel {
                                                    service: backendFactory.diff(api: api), actionsService: backendFactory.changes(api: api), openFile: { [weak context] location in
                 context?.openFile(location.path, line: location.line, column: location.column)
             })
+            diffModels[context.id]?.coordinator.canPresent = { [weak self, weak context] in
+                guard let self, let context else { return false }
+                return viewer.active === context && coordinator.canPresent
+            }
+            diffModels[context.id]?.coordinator.presentationEnded = { [weak coordinator] in coordinator?.schedulePendingDeepLink() }
         }
     }
 

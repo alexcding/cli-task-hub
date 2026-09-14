@@ -876,18 +876,22 @@ the picker before awaiting cleanup; cancelled Quit restores availability.
 Per the user's current direction, continue implementation without further UI or
 unit tests. Historical acceptance gaps are not blockers to this implementation pass.
 
-The architecture extraction remains in progress:
+Diff navigation now uses an injected `DiffCoordinator`: the model emits typed
+commit-sheet, file-opening and hide actions, and git actions emit discard proposal
+presentation/completion events. The coordinator owns sheet state, rejects requests
+from inactive models, and participates in root presentation/deep-link reservations.
+Preview and mutation logic remain in the git actions model. Hiding a diff ends its
+presentation without cancelling an in-flight disk mutation. History reopening also
+emits a typed workspace action and resolves the current visit in `AppCoordinator`.
 
-- Extend the typed action-callback pattern to the remaining feature/completion
-  flows and child coordinators as their runtime dependencies are extracted.
-- Complete the remaining terminal/UI-adapter audit while retaining native input
-  and emulator ownership; the measured appearance mount warning is resolved above.
-- Complete the remaining platform-action audit; shared shell appearance and data
-  access now use the injected boundaries described above.
-- Audit every rendering view and web/AppKit adapter for remaining business rules.
-  AppKit representable coordinators remain UI adapters; they are distinct from
-  application navigation coordinators.
+Rendering views bind observable state and forward actions. The remaining three
+view `.onChange` handlers bridge native address/find focus only. Terminal input,
+mouse hit testing, delegate forwarding and AppKit geometry stay in rendering
+adapters; application navigation and feature work stay in coordinators/models.
+No `ObservableObject`, `StateObject` or `ObservedObject` adoption is introduced.
 
 The migration's outstanding release, hardware and interactive terminal acceptance
-gates remain tracked in `SWIFTUI-PORT.md`. Starting this extraction does not mark
-those gates passed or change the web Sprint Board decision.
+notes remain tracked in `SWIFTUI-PORT.md`. The user's decision to skip further
+validation does not turn unperformed checks into passed results or change the web
+Sprint Board decision. Terminal snapshot fidelity and offline query implementation
+remain separate from this architecture work.

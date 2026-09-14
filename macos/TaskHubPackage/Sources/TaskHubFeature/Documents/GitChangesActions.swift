@@ -71,6 +71,8 @@ extension APIGitChangesService {
 
 @MainActor @Observable final class GitChangesActions {
     enum Action { case commit, commitAndPush, push }
+    enum PresentationAction { case discard(DiscardProposal), discardEnded }
+    @ObservationIgnored var onPresentation: (PresentationAction) -> Void = { _ in }
     let worktree: String
     var message = ""
     var includeUntracked = true
@@ -105,7 +107,7 @@ extension APIGitChangesService {
     }
     func connect(_ service: any GitChangesService) {
         self.service = service; generation = UUID(); loading = false; fresh = false
-        discardGeneration = UUID(); if !busy { discardProposal = nil }
+        discardGeneration = UUID(); if !busy { discardProposal = nil; onPresentation(.discardEnded) }
     }
     func load() async {
         guard !busy else { return }
@@ -157,7 +159,10 @@ extension APIGitChangesService {
               selection.allSatisfy({ (0...1_000_000).contains($0) }) else { return }
         busy = true; error = nil
         let request = UUID(); discardGeneration = request
-        defer { finishOperation() }
+        defer {
+            finishOperation()
+            if let discardProposal { onPresentation(.discard(discardProposal)) }
+        }
         do {
             let proposal = try await service.previewDiscard(worktree: worktree, revision: revision, selection: selection)
             guard discardGeneration == request else { return }
@@ -166,7 +171,7 @@ extension APIGitChangesService {
     }
     func cancelDiscard() {
         discardGeneration = UUID()
-        if !busy { discardProposal = nil }
+        if !busy { discardProposal = nil; onPresentation(.discardEnded) }
     }
     func confirmDiscard() async {
         guard !busy, !suspended, let proposal = discardProposal else { return }
@@ -175,6 +180,7 @@ extension APIGitChangesService {
         do {
             try await service.discard(worktree: worktree, proposal: proposal)
             discardProposal = nil; status = "Discarded changes in \(proposal.path)."
+            onPresentation(.discardEnded)
         } catch { self.error = error.localizedDescription }
     }
     private func finishOperation() {

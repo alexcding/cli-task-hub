@@ -24,6 +24,12 @@ extension AppCoordinator {
         case .closeTab(let id):
             guard canPresent, let tab = context.tab(id) else { return }
             context.close(tab)
+        case .reopen(let id):
+            guard canPresent, let visit = context.visits.first(where: { $0.id == id }) else { return }
+            switch visit {
+            case .page(let page): context.open(page.url, title: page.title)
+            case .file(let file): context.openFile(file.path)
+            }
         case .operation(let operation): runtime.performWorkspaceOperation(operation, in: context)
         case .run: presentBuild { runtime.makeWorkspaceBuild(in: context) }
         case .remove: presentRemoval { runtime.makeWorkspaceRemoval(in: context) }

@@ -43,8 +43,9 @@ import Observation
     }
     private(set) var restartConfirmation: RestartConfirmation?
     var canPresent: Bool {
-        sheet == nil && restartConfirmation == nil && !browserDialogCoordinator.isPresenting && !documentCloseCoordinator.isPresenting && !fileOpenCoordinator.isPresenting && logsCoordinator?.isPresenting != true && !projectCoordinators.values.contains { $0.isPresenting }
+        sheet == nil && restartConfirmation == nil && !browserDialogCoordinator.isPresenting && !documentCloseCoordinator.isPresenting && !fileOpenCoordinator.isPresenting && !hasDocumentPresentation() && logsCoordinator?.isPresenting != true && !projectCoordinators.values.contains { $0.isPresenting }
     }
+    @ObservationIgnored var hasDocumentPresentation: () -> Bool = { false }
     @ObservationIgnored private let factory: any CreationFlowFactory
     @ObservationIgnored private let workspaceFactory: any WorkspaceFeatureFactory
     private(set) var selection: SidebarDestination
