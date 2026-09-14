@@ -20,7 +20,9 @@ public final class AppViewModel {
     var dashboard: DashboardViewModel? { coordinator.dashboardCoordinator?.model }
     var logs: LogsViewModel? { coordinator.logsCoordinator?.model }
     var settings: SettingsViewModel? { coordinator.settingsCoordinator?.model }
-    let workspaceLaunch = WorkspaceLaunchViewModel(launcher: NativeWorkspaceCommandLauncher())
+    let workspaceLaunch: WorkspaceLaunchViewModel
+    @ObservationIgnored private let platformFactory: any AppPlatformFactory
+    @ObservationIgnored private let terminalControl: any TerminalRuntimeControlling
     public private(set) var projects: [Project] = []
     public private(set) var connection = "Connecting" { didSet { if oldValue != connection { updateWorkspaceReviewState() } } }
     public private(set) var error: String?
@@ -57,6 +59,7 @@ public final class AppViewModel {
     init(creationFactory: any CreationFlowFactory, desktop: any DesktopActions = NativeDesktopActions(),
          backendRuntime: any BackendRuntimeServing = BackendRuntime(),
          shellFactory: any ShellFeatureFactory = NativeShellFeatureFactory(),
+         platformFactory: any AppPlatformFactory = NativeAppPlatformFactory(),
          workspaceFactory: any WorkspaceFeatureFactory = NativeWorkspaceFeatureFactory(),
          rootFactory: any RootFeatureFactory = NativeRootFeatureFactory(),
          dashboardFactory: any DashboardFeatureFactory = NativeDashboardFeatureFactory(),
@@ -73,6 +76,9 @@ public final class AppViewModel {
          copy: @escaping (String) -> Void = { NativeClipboard.copy($0) }) {
         self.creationFactory = creationFactory
         self.backendRuntime = backendRuntime
+        self.platformFactory = platformFactory
+        self.terminalControl = platformFactory.terminalControl()
+        self.workspaceLaunch = platformFactory.workspaceLauncher()
         self.shellFactory = shellFactory
         let shell = shellFactory.shell(notifications: notificationFactory.notifications())
         self.shell = shell
@@ -90,8 +96,7 @@ public final class AppViewModel {
             canOpenExternalRoute: {
                 NSApplication.shared.modalWindow == nil && !NSApplication.shared.windows.contains { $0.attachedSheet != nil }
             })
-        viewer = ViewerStore(cacheURL: try? PtydConfiguration.current().directory.appendingPathComponent("page-tabs.json"),
-                             memoryPressure: NativeMemoryPressureMonitor(), pageFactory: BrowserPageFactory(desktop: desktop, dialogs: browserDialogs), documentFactory: documentFactory, closeCoordinator: documentCloser)
+        viewer = platformFactory.viewer(desktop: desktop, dialogs: browserDialogs, documents: documentFactory, close: documentCloser)
         viewer.setPageLimit(shell.remotePageLimit)
         shell.remotePageLimitChanged = { [weak viewer] in viewer?.setPageLimit($0) }
         coordinator.appearance = shell.appearance
@@ -101,11 +106,11 @@ public final class AppViewModel {
             updateWorkspaceDocumentState()
         }
         shell.terminalStyleChanged = { [weak self] in self?.updateWorkspaceTerminalState() }
-        _ = coordinator.makeDashboard(factory: dashboardFactory, pageActions: NativePageActionService(open: { [weak self] request in
+        _ = coordinator.makeDashboard(factory: dashboardFactory, pageActions: platformFactory.pageActions(open: { [weak self] request in
             guard let self else { throw BackendError.operation("The workspace has closed.") }
             try await self.openPage(request)
         }, desktop: desktop, copy: copy))
-        _ = coordinator.makeLogs(factory: logsFactory, pageActions: NativePageActionService(open: { [weak self] request in
+        _ = coordinator.makeLogs(factory: logsFactory, pageActions: platformFactory.pageActions(open: { [weak self] request in
             guard let self else { throw BackendError.operation("The workspace has closed.") }
             try await self.openPage(request)
         }, desktop: desktop, copy: copy), copy: copy)
@@ -343,7 +348,7 @@ public final class AppViewModel {
             guard !changingSessions.contains(id) else { return }
             terminals[key] = makeTerminal(record)
         } else if selection == .terminal {
-            let terminal = TerminalSession()
+            let terminal = platformFactory.terminal(.init(key: "native-terminal-spike", directory: platformFactory.homeDirectory, paired: false))
             wireLinks(terminal, contextID: "scratch")
             terminals[key] = terminal
         }
@@ -472,7 +477,7 @@ public final class AppViewModel {
         try await Task.sleep(for: .seconds(2))
         try Task.checkCancellation()
         let latest = sessions.first { $0.id == sessionID } ?? record
-        return try await NativeWorkflowTerminal(terminal: terminal, cli: cli, sessionID: latest.sessionId)
+        return try await platformFactory.workflowTerminal(terminal, cli: cli, sessionID: latest.sessionId)
     }
 
     func removalModel(for record: WorkspaceSession) -> SessionRemovalViewModel? {
@@ -509,7 +514,7 @@ public final class AppViewModel {
             guard let self else { throw BackendError.operation("The workspace closed before the build could start.") }
             let key = "build:\(record.url)"
             if let terminal = terminals[key] { return terminal }
-            let terminal = TerminalSession(pairKey: key, cwd: record.worktree, paired: true)
+            let terminal = platformFactory.terminal(.init(key: key, directory: record.worktree, paired: true))
             wireLinks(terminal, contextID: context.id)
             terminals[key] = terminal
             return terminal
@@ -543,11 +548,11 @@ public final class AppViewModel {
             await terminal.stopConnecting()
             if terminals[key] === terminal { terminals.removeValue(forKey: key) }
         }
-        try await PtydHost(configuration: PtydConfiguration.current()).stopPaired(keys: keys)
+        try await terminalControl.stopPaired(keys: keys)
     }
 
     private func makeTerminal(_ record: WorkspaceSession, fresh: Bool = false) -> TerminalSession {
-        let terminal = TerminalSession(pairKey: record.id, cwd: record.worktree, paired: true)
+        let terminal = platformFactory.terminal(.init(key: record.id, directory: record.worktree, paired: true))
         terminal.agentTurns.setStreamAvailable(connection == "Connected")
         wireLinks(terminal, contextID: "task:\(record.id)")
         terminal.onCreated = { [weak self] terminal in
@@ -586,7 +591,7 @@ public final class AppViewModel {
     private func wireLinks(_ terminal: TerminalSession, contextID: String) {
         terminal.openLink = { [weak self] raw, directory, external in
             guard let self, let context = viewer.contexts[contextID] else { return }
-            guard let link = WorkspaceLink.parse(raw, directory: directory, home: NSHomeDirectory()) else {
+            guard let link = WorkspaceLink.parse(raw, directory: directory, home: platformFactory.homeDirectory) else {
                 context.error = "This terminal link is not a supported web or local file address."
                 return
             }
@@ -619,8 +624,7 @@ public final class AppViewModel {
                 let key = "task:\(record.id)"
                 await workflowRuns.removeValue(forKey: record.id)?.stop()
                 await terminals[key]?.stopConnecting()
-                let host = PtydHost(configuration: try PtydConfiguration.current())
-                try await host.stopPaired(keys: [record.id])
+                try await terminalControl.stopPaired(keys: [record.id])
                 terminals[key] = makeTerminal(sessions.first { $0.id == record.id } ?? record)
             } catch { self.error = "Could not restart session: \(error.localizedDescription)" }
         }
@@ -639,7 +643,7 @@ public final class AppViewModel {
             if terminals[key] === previous {
                 if let record = sessions.first(where: { $0.id == previous.pairKey }) { terminals[key] = makeTerminal(record) }
                 else {
-                    let replacement = TerminalSession(pairKey: previous.pairKey, cwd: previous.cwd, paired: previous.paired)
+                    let replacement = platformFactory.terminal(.init(key: previous.pairKey, directory: previous.cwd, paired: previous.paired))
                     replacement.openLink = previous.openLink
                     terminals[key] = replacement
                 }
@@ -684,8 +688,7 @@ public final class AppViewModel {
         for model in pageWorkflowRuns.values { await model.stop() }
         for terminal in terminals.values { await terminal.stopConnecting() }
         if stopShells {
-            let host = PtydHost(configuration: try PtydConfiguration.current())
-            try await host.stopExisting()
+            try await terminalControl.stopExisting()
         }
         for terminal in terminals.values { terminal.disconnect() }
         await stop()
@@ -703,7 +706,7 @@ public final class AppViewModel {
             guard let self, self.started, self.startGeneration == generation else { return }
             self.handleBackendEvent(event)
         }
-        settings?.resources.connect(NativeResourceUsageService(api: nil, pty: try? PtydConfiguration.current()))
+        settings?.resources.connect(platformFactory.resources(api: nil))
         coordinator.settingsCoordinator?.setActive(selection == .settings)
         do {
             let connectedAPI = try await backendRuntime.start()
@@ -723,7 +726,7 @@ public final class AppViewModel {
                 settings?.connect(APISettingsService(api: api))
                 settings?.clis.connect(APICLISettingsService(api: api))
                 settings?.diagnostics.connect(APIDiagnosticsService(api: api))
-                settings?.resources.connect(NativeResourceUsageService(api: api, pty: try? PtydConfiguration.current()))
+                settings?.resources.connect(platformFactory.resources(api: api))
                 workspaceLaunch.connect(APIWorkspaceTargetService(api: api))
                 if selection == .settings { settings?.refresh() }
                 settings?.refreshCurrentSection()

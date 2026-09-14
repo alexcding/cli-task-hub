@@ -2649,6 +2649,36 @@ Xcode responses or substituted build commands were used. The existing XCTest QoS
 warning remains. This closes the previously unverified real simulator Run/Stop
 path; browser login retention and other remaining M1–M6 gates stay open.
 
+### Native platform factory and terminal control — 2026-09-13
+
+`AppPlatformFactory` now assembles the viewer cache, memory-pressure monitor,
+workspace launcher, page-action adapters, resource service, native terminals and
+workflow terminal adapters. `AppViewModel` retains their models and feature logic
+but no longer constructs PTY hosts, terminal sessions or these native platform
+services directly. Scratch, session, build and replacement terminals all follow
+the same injected factory. Terminal links use its injected home directory.
+
+A separate `TerminalRuntimeControlling` dependency implements paired stop and
+stop-existing through the same configuration provider used by terminal creation.
+Configuration failure is surfaced without falling back to the daily daemon.
+Existing ownership semantics remain: backend stop leaves detached shells alone,
+update preparation preserves them, and explicit Quit stops existing shells.
+
+Seven focused tests pass, including root factory use, retained scratch identity,
+paired restart, Quit/update behavior, injected configuration failure on a real
+Ghostty surface, memory-pressure lifetime and terminal presentation. Log:
+`swift_package_test_2026-09-14T01-28-42-192Z_pid37566_7fa41df7.log`.
+The native terminal lifecycle UI regression passes under `com.alexcding.taskhub`:
+`test_macos_2026-09-14T01-29-28-925Z_pid37946_534434e4.log`.
+The real simulator build/install/launch/Stop regression also passes both cycles
+through the injected build-terminal factory, preserving the session shell and
+completing tray Quit/fixture cleanup:
+`test_macos_2026-09-14T01-30-53-663Z_pid38547_a64636f3.log`.
+
+Backend feature-service/workflow-model assembly and viewer file-picker/document
+service boundaries remain in the architecture pass, alongside the other open
+functional and release acceptance gates.
+
 ## Product rules that must survive (from `CLAUDE.md`)
 
 - Sidebar = project → **session**; sessions are the only rows; task-less tabs live in one

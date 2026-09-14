@@ -32,6 +32,7 @@ final class TerminalSession: Identifiable {
     @ObservationIgnored private var reconnectTask: Task<Void, Never>?
     @ObservationIgnored private var commandWrites = 0
     @ObservationIgnored private let configuration: PtydConfiguration?
+    @ObservationIgnored private let configurationProvider: @Sendable () throws -> PtydConfiguration
     @ObservationIgnored private let shellPath: String?
     var outputDiagnostics: TerminalPipe.Diagnostics { pipe.diagnostics }
     @ObservationIgnored var openLink: (String, String, Bool) -> Void = { _, _, _ in }
@@ -40,11 +41,13 @@ final class TerminalSession: Identifiable {
     @ObservationIgnored var launchedAgentForeground: WorkflowForeground?
 
     init(pairKey: String = "native-terminal-spike", cwd: String = FileManager.default.homeDirectoryForCurrentUser.path, paired: Bool = false,
-         configuration: PtydConfiguration? = nil, shellPath: String? = nil) {
+         configuration: PtydConfiguration? = nil, shellPath: String? = nil,
+         configurationProvider: @escaping @Sendable () throws -> PtydConfiguration = { try .current() }) {
         self.pairKey = pairKey
         self.cwd = cwd
         self.paired = paired
         self.configuration = configuration
+        self.configurationProvider = configurationProvider
         self.shellPath = shellPath
         makeSurface()
         presentation = TerminalPaneViewModel(session: self)
@@ -121,7 +124,7 @@ final class TerminalSession: Identifiable {
         guard pipe.memory.enableGeometryCallbacks() else {
             throw PtyError.connection("Ghostty could not report complete terminal geometry.")
         }
-        let config = try configuration ?? PtydConfiguration.current()
+        let config = try configuration ?? configurationProvider()
         let host = PtydHost(configuration: config)
         self.host = host
         let pipe = self.pipe!

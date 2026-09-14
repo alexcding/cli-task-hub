@@ -834,6 +834,27 @@ local edits and backend snapshots. Duplicate values do not repeat platform or
 retention updates. Views render bindings and forward user input; this extraction
 adds no view `.onChange` or `.task(id:)` behavior.
 
+## Implemented: native platform assembly and terminal control
+
+`AppPlatformFactory` supplies viewer/cache/memory-pressure assembly, workspace
+launchers, page-action adapters, resource readers, terminal sessions and workflow
+terminal adapters. Scratch, session, build and reattached/restarted terminals all
+use this factory. The root still decides feature behavior and retains the resulting
+models; constructing a platform dependency no longer chooses navigation or starts
+a shell.
+
+The injected home directory is also used for scratch sessions and terminal-link
+expansion. One configuration provider feeds native terminal construction and
+`TerminalRuntimeControlling`. A provider failure reaches terminal error state and
+cannot silently fall back to the daily daemon. Restart/removal controls keep their
+explicit paired-key scope. Explicit Quit calls stop-existing; update preparation
+and backend-only stop preserve detached shells.
+
+The viewer retains the shared browser-dialog and document-close coordinators passed
+by the root. Its memory-pressure source is supplied by the platform factory and
+stopped through existing viewer shutdown. Platform construction and terminal
+ownership are tested independently of the real user daemon and preferences.
+
 ## Remaining extraction
 
 The architecture extraction remains in progress:
@@ -844,11 +865,12 @@ The architecture extraction remains in progress:
   and emulator ownership; the measured appearance mount warning is resolved above.
 - Complete the remaining platform-action audit; shared shell appearance and data
   access now use the injected boundaries described above.
-- `AppViewModel` still constructs several concrete backend/platform services. Complete
-  child presentation ownership/model retirement as the remaining shared action
-  services are extracted.
-- Complete remaining platform lifetime extraction; backend process and event-stream
-  ownership now live in the injected runtime described above.
+- `AppViewModel` still assembles concrete backend feature services and workflow
+  models. Move that remaining assembly into injected factories; its native platform
+  assembly is now separated above.
+- Complete remaining platform lifetime extraction, including the viewer-owned file
+  picker and document-service assembly. Backend process/event-stream ownership and
+  native root-platform assembly are separated above.
 - Audit every rendering view and web/AppKit adapter for remaining business rules.
   AppKit representable coordinators remain UI adapters; they are distinct from
   application navigation coordinators.
