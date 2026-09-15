@@ -133,8 +133,32 @@ public final class AppViewModel {
     }
 
     var sidebarEntries: [SidebarEntry] {
-        SidebarEntry.make(projects: projects, sessions: sessions, tabs: tabs,
-            workflowProgress: workflowRuns.filter { $0.value.running }.mapValues { "\($0.step)/\($0.total)" })
+        // Per-session agent state for the row glyph (sidebar.js taskSessions + refreshTermBusy):
+        // live while its terminal is attached, busy between the CLI's turn hooks or while a
+        // workflow runs on it.
+        var status: [String: SidebarSessionStatus] = [:]
+        for session in sessions {
+            let terminal = terminals["task:\(session.id)"]
+            let live = terminal.map { !$0.status.hasPrefix("Exited") && $0.status != "Disconnected" } ?? false
+            let busy = terminal?.agentBusy == true || workflowRuns[session.id]?.running == true
+            status[session.id] = SidebarSessionStatus(live: live, busy: busy, cli: terminal?.agentTurns.cli?.rawValue ?? session.cli)
+        }
+        let prs = Dictionary((dashboard?.projects ?? []).flatMap(\.prs).compactMap { pr in pr.url.map { ($0, pr) } },
+                             uniquingKeysWith: { first, _ in first })
+        var tabIcons: [String: SidebarTabIcon] = [:]
+        for tab in tabs where tab.kind == "github" {
+            let pr = prs[tab.url]
+            let ci: SidebarTabIcon.CI = switch (pr?.ci?.status, pr?.ci?.conclusion) {
+            case ("in_progress", _), ("queued", _): .running
+            case (_, "success"): .success
+            case (_, "failure"): .failure
+            default: .none
+            }
+            tabIcons[tab.url] = SidebarTabIcon(kind: tab.kind, login: pr?.author?.login ?? tab.login, avatar: tab.avatar, ci: ci)
+        }
+        return SidebarEntry.make(projects: projects, sessions: sessions, tabs: tabs, status: status,
+            workflowProgress: workflowRuns.filter { $0.value.running }.mapValues { "\($0.step)/\($0.total)" },
+            tabIcons: tabIcons)
     }
     var activeTerminalKey: String? {
         switch selection {

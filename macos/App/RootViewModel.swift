@@ -111,6 +111,12 @@ import Observation
     func reconnect() { onAction(.reconnect) }
     func newProject() { if canCreateProject { onAction(.command(.newProject)) } }
     func newSession() { if canCreateSession { onAction(.command(.newSession)) } }
+    /// A project folder's hover "+": the New Session sheet preselects the project in view.
+    func newSession(in projectID: String) {
+        guard canCreateSession else { return }
+        onAction(.select(.project(projectID)))
+        onAction(.command(.newSession))
+    }
     func refresh() { if canRefresh { onAction(.command(.refresh)) } }
     func openTerminal() { onAction(.openTerminal) }
     func openBrowser(_ url: URL) { onAction(.openBrowser(url)) }

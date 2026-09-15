@@ -14,12 +14,13 @@ private func workspaceSession(_ id: String, created: String?, pinned: Bool = fal
     let tabs = [SavedTab(kind: "web", title: "Task context", url: "https://example.com/task"),
                 SavedTab(kind: "web", title: "Docs", url: "https://example.com/docs")]
     let entries = SidebarEntry.make(projects: [sidebarProject], sessions: sessions, tabs: tabs)
-    let project = entries.first { $0.id == "projects" }?.children.first { $0.id == "project:p1" }
+    // Web sidebar order: Dashboard, Pinned, Projects (sessions nested), orphans, Tabs.
+    #expect(entries.map(\.id) == ["overview", "label:pinned", "pin:new", "label:projects", "project:p1",
+                                   "session:orphan", "label:tabs", "tab:https://example.com/docs"])
+    let project = entries.first { $0.id == "project:p1" }
     #expect(project?.children.map(\.id) == ["session:old", "session:new"])
-    #expect(entries.first { $0.id == "pinned" }?.children.map(\.id) == ["pin:new"])
     #expect(entries.flatMap(\.descendants).filter { $0.destination == .session("new") }.count == 2)
-    #expect(entries.first { $0.id == "orphans" }?.children.map(\.id) == ["session:orphan"])
-    #expect(entries.first { $0.id == "tabs" }?.children.map(\.destination) == [.tab("https://example.com/docs")])
+    #expect(entries.filter { $0.role == .label }.allSatisfy { $0.destination == nil && $0.children.isEmpty })
     #expect(Set(entries.flatMap(\.descendants).map(\.id)).count == entries.flatMap(\.descendants).count)
 }
 
@@ -58,4 +59,17 @@ private func workspaceSession(_ id: String, created: String?, pinned: Bool = fal
     coordinator.update(sidebar([pinned], selection: .project("p1")))
     #expect(!outline.isItemExpanded(project))
     #expect(preferences.stringArray(forKey: "sidebar.collapsed")?.contains("project:p1") == true)
+}
+
+@Test func sidebarSessionRowsCarryAgentStatusAndTabIcons() {
+    let sessions = [workspaceSession("busy", created: "2026-01"), workspaceSession("stopped", created: "2026-02")]
+    let tabs = [SavedTab(kind: "github", title: "PR", url: "https://github.com/o/r/pull/1", login: "octocat")]
+    let entries = SidebarEntry.make(projects: [sidebarProject], sessions: sessions, tabs: tabs,
+                                    status: ["busy": .init(live: true, busy: true, cli: "claude")])
+    let rows = entries.flatMap(\.descendants)
+    #expect(rows.first { $0.id == "session:busy" }?.role == .session(.init(live: true, busy: true, cli: "claude"), pinned: false))
+    #expect(rows.first { $0.id == "session:stopped" }?.role == .session(.init(), pinned: false))
+    #expect(rows.first { $0.id == "session:stopped" }?.tooltip?.contains("Stopped") == true)
+    #expect(rows.first { $0.id == "tab:https://github.com/o/r/pull/1" }?.role == .tab(.init(kind: "github", login: "octocat")))
+    #expect(rows.first { $0.id == "project:p1" }?.role == .project(canCreateSession: true))
 }
