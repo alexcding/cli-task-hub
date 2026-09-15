@@ -7,6 +7,11 @@ import Foundation
     func togglePin(_ id: String)
     func openTerminal()
     func openRootBrowser(_ url: URL)
+    func newSession(in projectID: String)
+}
+
+extension RootCoordinating {
+    func newSession(in projectID: String) {}
 }
 
 extension AppCoordinator {
@@ -28,6 +33,7 @@ extension AppCoordinator {
         case .select(let destination): discardQueuedDeepLink(); navigate(to: destination)
         case .command(let command): rootRuntime?.performRootCommand(command)
         case .togglePin(let id): rootRuntime?.togglePin(id)
+        case .newSession(let projectID): rootRuntime?.newSession(in: projectID)
         case .reconnect: Task { [weak rootRuntime] in await rootRuntime?.reconnect() }
         case .openTerminal: rootRuntime?.openTerminal()
         case .openBrowser(let url): rootRuntime?.openRootBrowser(url)

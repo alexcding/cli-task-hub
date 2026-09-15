@@ -8,6 +8,7 @@ extension AppViewModel: RootCoordinating, ProjectCoordinating {
                   canCreateSession: canPerform(.newSession), canRefresh: canPerform(.refresh))
     }
     func performRootCommand(_ command: ShellCommand) { perform(command) }
+    func newSession(in projectID: String) { presentNewSession(in: projectID, pageURL: nil) }
 
     /// The AppKit delegate forwards delivery here; parsing and navigation stay in the coordinator.
     @discardableResult public func handleOpenURL(_ url: URL) -> Bool { coordinator.handle(url: url) }

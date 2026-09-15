@@ -234,21 +234,60 @@ public final class AppViewModel {
         refresh()
     }
 
-    private var sessionCreationRequest: SessionCreationRequest {
-        let selected: String
-        switch selection {
-        case .project(let id): selected = id
-        case .session(let id): selected = sessions.first { $0.id == id }?.projectId ?? ""
-        default: selected = projects.count == 1 ? projects[0].id : ""
+    /// The project a new session is created under, from where it was asked for — the sheet never
+    /// offers another. A PR page belongs to the project of its repository, a ticket to the project
+    /// on its Jira key; failing that, the only project there is.
+    func sessionProject(for destination: SidebarDestination) -> Project? {
+        let local = projects.filter { !$0.workspace.isEmpty }
+        switch destination {
+        // A destination that names its project gets that project or none — never a stand-in.
+        case .project(let id): return local.first { $0.id == id }
+        case .session(let id):
+            guard let session = sessions.first(where: { $0.id == id }) else { return nil }
+            return local.first { $0.id == session.projectId }
+        case .tab(let url) where SessionPage.parse(url) != nil: return pageProject(url, in: local)
+        default: return local.count == 1 ? local[0] : nil
         }
-        let pageURL: String? = if case .tab(let url) = selection { url } else { nil }
-        return SessionCreationRequest(projects: projects, selectedProject: selected, agent: shell.defaultAgent, pageURL: pageURL)
+    }
+
+    private func pageProject(_ url: String, in local: [Project]) -> Project? {
+        guard let page = SessionPage.parse(url) else { return nil }
+        if page.kind == "github" {
+            let path = URL(string: page.url)?.path.split(separator: "/").prefix(2).joined(separator: "/").lowercased()
+            return local.first { !$0.repo.isEmpty && $0.repo.lowercased() == path }
+        }
+        let prefix = page.key.split(separator: "-").first.map(String.init) ?? ""
+        return local.first { project in
+            (project.jiraProjectKey ?? "").split(separator: ",").contains { $0.trimmingCharacters(in: .whitespaces).uppercased() == prefix }
+        }
+    }
+
+    /// The projects a page's Create Session can pick from: the page's own project when it has one,
+    /// else every local project (the page CTA then asks which, like the web toolbar's menu).
+    func sessionProjectChoices(for destination: SidebarDestination) -> [Project] {
+        guard canStartSession else { return [] }
+        if let project = sessionProject(for: destination) { return [project] }
+        // A pull request belongs to its repository's project; with none configured there is
+        // nothing to pick. A ticket or plain page can be started under any local project.
+        if case .tab(let url) = destination, SessionPage.parse(url)?.kind == "github" { return [] }
+        return projects.filter { !$0.workspace.isEmpty }
+    }
+
+    private var canStartSession: Bool {
+        connection == "Connected" && coordinator.canPresent && pageWorkflowRuns[viewer.activeContextID ?? ""]?.running != true
+    }
+
+    /// Present New Session for `project`. `pageURL` is the page it was asked from, if any.
+    func presentNewSession(in projectID: String, pageURL: String?) {
+        guard canStartSession, let project = projects.first(where: { $0.id == projectID && !$0.workspace.isEmpty }) else { return }
+        coordinator.presentNewSession(request: .init(project: project, agent: shell.defaultAgent, pageURL: pageURL),
+                                      operations: sessionOperations, didCreate: { [weak self] in self?.createdSession($0) })
     }
 
     public func canPerform(_ command: ShellCommand) -> Bool {
         switch command {
         case .newProject: connection == "Connected" && coordinator.canPresent
-        case .newSession: connection == "Connected" && coordinator.canPresent && !projects.isEmpty && pageWorkflowRuns[viewer.activeContextID ?? ""]?.running != true
+        case .newSession: canStartSession && sessionProject(for: selection) != nil
         case .back: coordinator.canPresent && viewer.active?.activePage?.controls.canGoBack == true
         case .forward: coordinator.canPresent && viewer.active?.activePage?.controls.canGoForward == true
         case .openFile: viewer.active != nil && connection == "Connected" && coordinator.canPresent
@@ -269,9 +308,9 @@ public final class AppViewModel {
             guard canPerform(.newProject), let api else { return }
             coordinator.presentNewProject(service: backendFactory.projects(api: api), didSave: { [weak self] in self?.savedProject($0) })
         case .newSession:
-            guard canPerform(.newSession) else { return }
-            coordinator.presentNewSession(request: sessionCreationRequest, operations: sessionOperations,
-                                           didCreate: { [weak self] in self?.createdSession($0) })
+            guard canPerform(.newSession), let project = sessionProject(for: selection) else { return }
+            let pageURL: String? = if case .tab(let url) = selection { url } else { nil }
+            presentNewSession(in: project.id, pageURL: pageURL)
         case .openFile: if canPerform(.openFile), let context = viewer.active { viewer.openFile(in: context) }
         case .saveFile: if let document = viewer.active?.activeDocument { Task { await document.save() } }
         case .closePage: if let context = viewer.active, let id = context.activeID, let tab = context.tab(id) { context.close(tab) }

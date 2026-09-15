@@ -222,19 +222,19 @@ private actor CreationProjectService: ProjectService {
     let factory = RecordingCreationFactory(), coordinator = AppCoordinator(factory: factory)
     let project = CreationProjectService.project
     let url = "https://github.com/fixture/repo/pull/42"
-    let request = SessionCreationRequest(projects: [project], selectedProject: project.id, agent: .codex, pageURL: url)
+    let request = SessionCreationRequest(project: project, agent: .codex, pageURL: url)
     var created = 0
     let open = { coordinator.presentNewSession(request: request, operations: nil, didCreate: { _ in created += 1 }) }
     open()
     let first = try #require(coordinator.sheet)
     guard case .newSession(let model) = first.destination else { Issue.record("Wrong destination"); return }
-    #expect(model.projectID == project.id && model.draft.agent == .codex)
-    #expect(model.draft.branch == url && model.draft.url == url)
-    model.draft.title = "Draft title"
+    #expect(model.project.id == project.id && model.draft.agent == .codex)
+    #expect(model.input == url)
+    model.pullRequestBranch = "Draft branch"
     coordinator.presentNewProject(service: CreationProjectService(), didSave: { _ in })
     open()
     #expect(factory.projectCompletions.isEmpty && factory.sessionCompletions.count == 1)
-    #expect(coordinator.sheet?.id == first.id && model.draft.title == "Draft title")
+    #expect(coordinator.sheet?.id == first.id && model.pullRequestBranch == "Draft branch")
     coordinator.dismissSheet(id: first.id)
     open()
     let second = try #require(coordinator.sheet)

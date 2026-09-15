@@ -138,3 +138,14 @@ private actor ProjectFixture: ProjectService {
     let body = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(draft)) as? [String: Any])
     #expect(body["runScheme"] == nil && body["workflows"] == nil && body["forwardWebhooks"] == nil)
 }
+
+@MainActor @Test func newProjectChooseDetectsTheRepositoryAndCancelledPickKeepsTheDraft() async {
+    let picked = ProjectEditorViewModel(project: nil, service: ProjectFixture(), chooseFolder: { "/tmp/picked" })
+    await picked.chooseWorkspace()
+    #expect(picked.draft.workspace == "/tmp/picked" && picked.draft.repo == "detected/repo" && !picked.busy)
+
+    let cancelled = ProjectEditorViewModel(project: nil, service: ProjectFixture(), chooseFolder: { nil })
+    cancelled.draft.workspace = "/tmp/typed"
+    await cancelled.chooseWorkspace()
+    #expect(cancelled.draft.workspace == "/tmp/typed" && cancelled.draft.repo.isEmpty)
+}

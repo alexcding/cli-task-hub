@@ -81,7 +81,9 @@ struct BrowserPane: View {
     @Bindable var model: BrowserControlsViewModel
     let showsCreateSession: Bool
     let canCreateSession: Bool
+    var sessionProjects: [Project] = []
     let createSession: () -> Void
+    var createSessionIn: (String) -> Void = { _ in }
     @FocusState private var editingAddress: Bool
     @FocusState private var finding: Bool
 
@@ -97,8 +99,18 @@ struct BrowserPane: View {
                     .disabled(!model.canOpenExternally)
                 if showsCreateSession {
                     Divider().frame(height: 18)
-                    Button("Create Session", systemImage: "terminal", action: createSession)
-                        .disabled(!canCreateSession)
+                    if !canCreateSession && !sessionProjects.isEmpty {
+                        // A page that names no project: pick which one, like the web toolbar.
+                        Menu("Create Session", systemImage: "terminal") {
+                            ForEach(sessionProjects) { project in
+                                Button(project.name) { createSessionIn(project.id) }
+                            }
+                        }
+                        .menuIndicator(.hidden).fixedSize()
+                    } else {
+                        Button("Create Session", systemImage: "terminal", action: createSession)
+                            .disabled(!canCreateSession)
+                    }
                 }
             }.labelStyle(.iconOnly).padding(8)
             if context.findVisible {
@@ -250,7 +262,8 @@ private struct SessionWorkspaceContextContent: View {
         } else if let page = context.activePage {
             BrowserPane(page: page, context: context, model: page.controls,
                         showsCreateSession: !model.showsTerminal, canCreateSession: model.canCreateSession,
-                        createSession: model.createSession).id(page.id)
+                        sessionProjects: model.sessionProjects,
+                        createSession: model.createSession, createSessionIn: model.createSession(in:)).id(page.id)
         } else {
             ContentUnavailableView("No open pages", systemImage: "globe", description: Text("Add a page or reopen one from History."))
         }

@@ -22,7 +22,7 @@ import Observation
 
 @MainActor @Observable final class RootViewModel {
     enum Action: Equatable {
-        case select(SidebarDestination), command(ShellCommand), togglePin(String)
+        case select(SidebarDestination), command(ShellCommand), togglePin(String), newSession(projectID: String)
         case reconnect, openTerminal, openBrowser(URL)
     }
     enum Destination {
@@ -111,12 +111,8 @@ import Observation
     func reconnect() { onAction(.reconnect) }
     func newProject() { if canCreateProject { onAction(.command(.newProject)) } }
     func newSession() { if canCreateSession { onAction(.command(.newSession)) } }
-    /// A project folder's hover "+": the New Session sheet preselects the project in view.
-    func newSession(in projectID: String) {
-        guard canCreateSession else { return }
-        onAction(.select(.project(projectID)))
-        onAction(.command(.newSession))
-    }
+    /// A project folder's hover "+": New Session on that project, wherever the window is.
+    func newSession(in projectID: String) { onAction(.newSession(projectID: projectID)) }
     func refresh() { if canRefresh { onAction(.command(.refresh)) } }
     func openTerminal() { onAction(.openTerminal) }
     func openBrowser(_ url: URL) { onAction(.openBrowser(url)) }

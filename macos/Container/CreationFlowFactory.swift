@@ -1,8 +1,8 @@
 import Foundation
 
+/// A new session always belongs to `project`, decided by where it was asked for.
 struct SessionCreationRequest {
-    let projects: [Project]
-    let selectedProject: String
+    let project: Project
     let agent: SessionAgent
     let pageURL: String?
 }
@@ -27,13 +27,9 @@ struct SessionCreationRequest {
     }
 
     func newSession(request: SessionCreationRequest, operations: (any SessionCreating)?) -> NewSessionViewModel {
-        let model = NewSessionViewModel(projects: request.projects, selectedProject: request.selectedProject,
-                                        operations: operations)
+        let model = NewSessionViewModel(project: request.project, contextURL: request.pageURL, operations: operations)
         model.draft.agent = request.agent
-        if let url = request.pageURL {
-            model.draft.url = url
-            if SessionPage.parse(url) != nil { model.draft.branch = url }
-        }
+        if let url = request.pageURL, SessionPage.parse(url) != nil { model.input = url }
         return model
     }
 }

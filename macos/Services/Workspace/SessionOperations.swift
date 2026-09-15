@@ -20,10 +20,18 @@ enum SessionAgent: String, CaseIterable, Identifiable, Sendable {
     static func quote(_ value: String) -> String { "'" + value.replacingOccurrences(of: "'", with: "'\"'\"'") + "'" }
 }
 
+/// A pull request whose head branch nothing could tell us — the only resolution failure the
+/// New Session sheet answers by asking for the branch. Every other failure is a real error.
+struct PullRequestBranchUnknown: LocalizedError, Sendable {
+    var errorDescription: String? { "Could not look up this pull request’s branch." }
+}
+
 struct GitReferences: Decodable, Sendable {
     struct Branch: Decodable, Sendable { let name: String }
+    struct Worktree: Decodable, Sendable { let branch: String? }
     let branches: [Branch]
     let defaultBranch: String
+    var worktrees: [Worktree]? = nil
 }
 
 struct SessionDraft: Equatable, Sendable {
@@ -107,8 +115,11 @@ struct SessionOperations: SessionServing {
         result.reuseWorktree = nil
         if page.kind == "github" {
             struct PR: Decodable, Sendable { let repo: String; let title: String; let headRefName: String }
-            let pr: PR? = try await api.get(APIClient.query(Routes.PR_LOOKUP, ["url": page.url]), timeout: 30)
-            guard let pr, !pr.headRefName.isEmpty else { throw BackendError.operation("Could not resolve this pull request. Enter its branch and keep the URL in Page URL.") }
+            let pr: PR?
+            do { pr = try await api.get(APIClient.query(Routes.PR_LOOKUP, ["url": page.url]), timeout: 30) }
+            catch is CancellationError { throw CancellationError() }
+            catch { throw PullRequestBranchUnknown() }
+            guard let pr, !pr.headRefName.isEmpty else { throw PullRequestBranchUnknown() }
             guard project.repo.isEmpty || project.repo.lowercased() == pr.repo.lowercased() else {
                 throw BackendError.operation("This pull request belongs to \(pr.repo). Choose its project before creating the session.")
             }

@@ -23,7 +23,8 @@ extension AppViewModel: WorkspaceCoordinating {
             appearance: shell.appearance, documentFont: shell.font(.diff), terminalFont: shell.font(.term), connected: connection == "Connected",
             changingSession: session.map { changingSessions.contains($0.id) } ?? false,
             openingExternal: workspaceLaunch.opening.contains(context.id), canPresent: coordinator.canPresent,
-            canCreateSession: canPerform(.newSession), editorID: project?.ide,
+            canCreateSession: canPerform(.newSession),
+            sessionProjects: session == nil ? sessionProjectChoices(for: selection) : [], editorID: project?.ide,
             editorLabel: workspaceLaunch.editorLabel(project), gitClientID: shell.gitClient,
             gitClientLabel: workspaceLaunch.gitClientLabel(shell.gitClient), launchError: workspaceLaunch.errors[context.id],
             reviewBase: base)
@@ -63,6 +64,9 @@ extension AppViewModel: WorkspaceCoordinating {
                 Task { await workspaceLaunch.openGitClient(session: session, id: shell.gitClient, custom: shell.gitClientCommand) }
             }
         case .createSession: perform(.newSession)
+        case .createSessionIn(let projectID):
+            let pageURL: String? = if case .tab(let url) = selection { url } else { context.activePage?.url }
+            presentNewSession(in: projectID, pageURL: pageURL)
         case .openFile: viewer.openFile(in: context)
         case .addPage: addPage(in: context)
         case .changes: if let session = state.session { showChanges(for: session, context: context) }

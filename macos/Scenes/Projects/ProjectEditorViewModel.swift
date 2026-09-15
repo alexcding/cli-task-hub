@@ -72,6 +72,14 @@ import Observation
             draft.workspace = path; saved = false
         }
     }
+    /// The New Project sheet's Choose…: pick the checkout, then read its GitHub repo from the git
+    /// origin (the web modal's chooseModalWorkspace) — the repo is derived, never typed there.
+    func chooseWorkspace() async {
+        let before = draft.workspace
+        await pickFolder()
+        guard draft.workspace != before else { return }
+        await detectRepository()
+    }
     func detectRepository() async {
         guard active, !Task.isCancelled, !busy && !draft.workspace.isEmpty, let service else { return }
         let generation = generation, workspace = draft.workspace

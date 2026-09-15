@@ -44,42 +44,43 @@ private final class SessionHTTPFixture: URLProtocol, @unchecked Sendable {
     let project = Project(id: "fixture", name: "Fixture", repo: "fixture/repo", color: nil, workspace: "/tmp/fixture")
     let operations = SessionOperations(api: api)
     var created: WorkspaceSession?
-    let model = NewSessionViewModel(projects: [project], selectedProject: project.id, operations: operations)
+    let model = NewSessionViewModel(project: project, operations: operations)
     model.onAction = { if case .created(let session) = $0 { created = session } }
     await model.loadReferences()
-    #expect(model.draft.branch == "worktree1" && model.draft.base == "main")
+    #expect(model.title == "New session on Fixture")
+    #expect(model.placeholder == "worktree1" && model.draft.base == "main" && model.input.isEmpty)
     model.draft.agent = .shell
-    model.editBranch("https://github.com/fixture/repo/pull/42")
+    model.input = "https://github.com/fixture/repo/pull/42"
     await model.create()
     #expect(model.completed)
     #expect(created?.branch == "feature/native" && created?.kind == "github")
-    #expect(created?.url == "https://github.com/fixture/repo/pull/42")
+    #expect(created?.url == "https://github.com/fixture/repo/pull/42" && created?.projectId == project.id)
     let jira = try await operations.resolvePage("https://jira.test/browse/RECORD-12", project: project, draft: SessionDraft())
     #expect(jira.branch == "RECORD-12-existing" && jira.reuseWorktree == "/tmp/existing" && !jira.createBranch)
     #expect(jira.jiraKey == "RECORD-12" && jira.title == "RECORD-12 Native sidebar")
 }
 
-@MainActor @Test(.timeLimit(.minutes(1))) func sessionProjectChangesLoadReferencesWithoutViewObservers() async throws {
+@MainActor @Test(.timeLimit(.minutes(1))) func sessionFieldReadsBranchOrAddressAndValidatesBranchNames() async throws {
     let configuration = URLSessionConfiguration.ephemeral
     configuration.protocolClasses = [SessionHTTPFixture.self]
     let api = try APIClient(baseURL: URL(string: "http://127.0.0.1:12345")!, session: URLSession(configuration: configuration))
     let project = Project(id: "fixture", name: "Fixture", repo: "fixture/repo", color: nil, workspace: "/tmp/fixture")
-    let model = NewSessionViewModel(projects: [project], selectedProject: "", operations: SessionOperations(api: api))
-    model.draft.branch = "Keep my branch"
-    model.draft.base = "old-base"; model.draft.reuseWorktree = "/tmp/old-worktree"
-    model.projectID = project.id
-    #expect(model.loading && model.draft.base.isEmpty && model.draft.reuseWorktree == nil)
-    while model.loading { try await Task.sleep(for: .milliseconds(5)) }
-    #expect(model.branches == ["main"] && model.draft.base == "main" && model.draft.branch == "Keep my branch")
-    model.draft.base = "chosen-base"
-    model.projectID = project.id // Reassigning the same selection must not reset its draft.
-    await Task.yield()
-    #expect(model.draft.base == "chosen-base" && !model.loading)
-    model.projectID = "missing"
-    model.projectID = project.id
-    model.cancelReferenceLoading()
-    await Task.yield()
-    #expect(!model.loading && model.branches.isEmpty && model.draft.base.isEmpty)
+    let model = NewSessionViewModel(project: project, operations: SessionOperations(api: api))
+    await model.loadReferences()
+    #expect(model.fieldHint.text == NewSessionViewModel.hint && !model.fieldHint.isError)
+    model.input = "https://example.com/not-a-page"
+    #expect(model.fieldHint.isError && !model.canCreate)
+    model.input = "https://jira.test/browse/RECORD-12"
+    #expect(await model.resolve())
+    #expect(model.fieldHint.text == "Opens RECORD-12 Native sidebar — branch RECORD-12-existing")
+    #expect(model.worktreeHint == "Runs in existing on RECORD-12-existing")
+    model.input = "bad..name"
+    #expect(model.resolved == nil && model.worktreeHint == nil)
+    await model.create()
+    #expect(model.fieldHint.isError && !model.completed)
+    #expect(NewSessionViewModel.branchNameError("feature/ok-1") == nil)
+    #expect(NewSessionViewModel.branchNameError("feature/.hidden") != nil)
+    #expect(NewSessionViewModel.branchNameError("has space") != nil)
 }
 
 @Test func agentCommandsResumeExactIDsAndQuoteShellMetacharacters() {
@@ -133,4 +134,73 @@ private final class SessionHTTPFixture: URLProtocol, @unchecked Sendable {
     #expect(viewer.contexts["task:prepared"] == nil && viewer.active === other)
     #expect(other.documents.first === otherDocument && other.documents.last === document)
     #expect(other.activeDocument === document && context.documents.isEmpty)
+}
+
+private actor ScriptedSessionService: SessionCreating {
+    var resolutionError: (any Error)?
+    var referencesFail = false
+    var resolutions = 0, creations = 0
+    init(resolutionError: (any Error)? = nil, referencesFail: Bool = false) {
+        self.resolutionError = resolutionError; self.referencesFail = referencesFail
+    }
+    func references(_ project: Project) throws -> GitReferences {
+        if referencesFail { throw BackendError.operation("Could not read refs") }
+        return GitReferences(branches: [.init(name: "main")], defaultBranch: "main")
+    }
+    func resolvePage(_ raw: String, project: Project, draft: SessionDraft, workflow: Bool) throws -> SessionDraft {
+        resolutions += 1
+        if let resolutionError { throw resolutionError }
+        return draft
+    }
+    func create(project: Project, draft: SessionDraft, requireExactBranch: Bool) -> WorkspaceSession {
+        creations += 1
+        return WorkspaceSession(id: "created", projectId: project.id, workspace: project.workspace, worktree: "/tmp/w",
+                                title: draft.title, branch: draft.branch, url: draft.url, createdAt: nil, pinned: false)
+    }
+}
+
+private let scriptedProject = Project(id: "fixture", name: "Fixture", repo: "fixture/repo", color: nil, workspace: "/tmp/fixture")
+
+@MainActor @Test(.timeLimit(.minutes(1))) func sessionCreateRetriesAFailedTicketLookupAndKeepsItsError() async {
+    let service = ScriptedSessionService(resolutionError: BackendError.operation("Worktree lookup failed"))
+    let model = NewSessionViewModel(project: scriptedProject, operations: service)
+    model.input = "https://jira.test/browse/RECORD-12"
+    #expect(await model.resolve() == false)
+    #expect(model.error == "Worktree lookup failed" && model.canCreate && !model.showsPullRequestBranch)
+    await model.create()
+    await model.create()
+    #expect(model.error == "Worktree lookup failed" && !model.completed)
+    #expect(await service.resolutions == 3) // each Create looks the page up again
+    #expect(await service.creations == 0)
+}
+
+@MainActor @Test(.timeLimit(.minutes(1))) func sessionAsksForThePullRequestBranchOnlyWhenTheBranchIsUnknown() async {
+    let mismatch = ScriptedSessionService(resolutionError: BackendError.operation("This pull request belongs to other/repo."))
+    let wrongProject = NewSessionViewModel(project: scriptedProject, operations: mismatch)
+    wrongProject.input = "https://github.com/other/repo/pull/7"
+    _ = await wrongProject.resolve()
+    #expect(!wrongProject.showsPullRequestBranch && wrongProject.error == "This pull request belongs to other/repo.")
+    await wrongProject.create()
+    #expect(await mismatch.creations == 0)
+
+    let unknown = ScriptedSessionService(resolutionError: PullRequestBranchUnknown())
+    let model = NewSessionViewModel(project: scriptedProject, operations: unknown)
+    var created: WorkspaceSession?
+    model.onAction = { if case .created(let session) = $0 { created = session } }
+    model.input = "https://github.com/fixture/repo/pull/42"
+    _ = await model.resolve()
+    #expect(model.showsPullRequestBranch && model.error == nil)
+    await model.create()
+    #expect(model.fieldHint.isError && created == nil)
+    model.pullRequestBranch = "feature/known"
+    await model.create()
+    #expect(created?.branch == "feature/known" && created?.url == "https://github.com/fixture/repo/pull/42")
+}
+
+@MainActor @Test(.timeLimit(.minutes(1))) func sessionBranchListErrorSurvivesEditingTheField() async {
+    let model = NewSessionViewModel(project: scriptedProject, operations: ScriptedSessionService(referencesFail: true))
+    await model.loadReferences()
+    #expect(model.referenceError == "Could not read refs" && model.error == nil)
+    model.input = "feature/x"
+    #expect(model.referenceError == "Could not read refs")
 }

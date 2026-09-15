@@ -118,8 +118,7 @@ private actor LifetimeSessionService: SessionCreating {
 func creationLifetimeDismissedSessionIgnoresPendingResolution(failing: Bool) async throws {
     let gate = CreationGate<SessionDraft>(), service = LifetimeSessionService(resolution: gate)
     let coordinator = AppCoordinator(factory: NativeCreationFlowFactory(chooseFolder: { nil }))
-    let request = SessionCreationRequest(projects: [lifetimeProject], selectedProject: lifetimeProject.id,
-        agent: .shell, pageURL: "https://github.com/fixture/repo/pull/42")
+    let request = SessionCreationRequest(project: lifetimeProject, agent: .shell, pageURL: "https://github.com/fixture/repo/pull/42")
     var created = 0
     coordinator.presentNewSession(request: request, operations: service, didCreate: { _ in created += 1 })
     let sheet = try #require(coordinator.sheet)
@@ -131,10 +130,9 @@ func creationLifetimeDismissedSessionIgnoresPendingResolution(failing: Bool) asy
     var resolved = original; resolved.branch = "obsolete-branch"
     await gate.finish(failing ? .failure(BackendError.operation("Obsolete lookup failed")) : .success(resolved))
     #expect(await resolving.value == false)
-    model.projectID = ""; model.projectID = lifetimeProject.id
     await model.loadReferences(); await model.create(); await model.resolve()
     await Task.yield()
-    #expect(model.retired && !model.canCreate && !model.canResolve && !model.loading && !model.resolving)
+    #expect(model.retired && !model.canCreate && !model.loading && !model.resolving)
     #expect(model.draft == original && model.error == nil && created == 0 && coordinator.sheet == nil)
     #expect(await service.references == 0)
     #expect(await service.resolutions == 1)
@@ -142,18 +140,17 @@ func creationLifetimeDismissedSessionIgnoresPendingResolution(failing: Bool) asy
 }
 
 @MainActor @Test(.timeLimit(.minutes(1)), arguments: [false, true])
-func creationLifetimeProjectChangeDuringResolutionCannotCreateWorktree(failing: Bool) async {
+func creationLifetimeInputChangeDuringResolutionCannotCreateWorktree(failing: Bool) async {
     let gate = CreationGate<SessionDraft>(), service = LifetimeSessionService(resolution: gate)
-    let model = NewSessionViewModel(projects: [lifetimeProject], selectedProject: lifetimeProject.id, operations: service)
-    model.draft.branch = "https://github.com/fixture/repo/pull/42"
-    let creating = Task { await model.create() }
+    let model = NewSessionViewModel(project: lifetimeProject, operations: service)
+    model.input = "https://github.com/fixture/repo/pull/42"
+    let resolving = Task { await model.resolve() }
     await gate.waitForStart()
-    model.projectID = ""; model.projectID = lifetimeProject.id // Returning to the same ID is still a new request.
+    model.input = "https://github.com/fixture/repo/pull/43" // A new address is a new request.
     var resolved = model.draft; resolved.branch = "obsolete-branch"
     await gate.finish(failing ? .failure(BackendError.operation("Obsolete lookup failed")) : .success(resolved))
-    await creating.value
-    while model.loading { await Task.yield() }
-    #expect(!model.creating && !model.resolving && model.error == nil && model.draft.branch != resolved.branch)
+    #expect(await resolving.value == false)
+    #expect(model.resolved == nil && model.error == nil && model.unresolvedPullRequest == nil)
     #expect(await service.creations == 0)
     model.retire()
 }
@@ -162,17 +159,17 @@ func creationLifetimeProjectChangeDuringResolutionCannotCreateWorktree(failing: 
     let gate = CreationGate<WorkspaceSession>(), service = LifetimeSessionService(creation: gate)
     let coordinator = AppCoordinator(factory: NativeCreationFlowFactory(chooseFolder: { nil }))
     var created = 0
-    coordinator.presentNewSession(request: .init(projects: [lifetimeProject], selectedProject: lifetimeProject.id, agent: .shell, pageURL: nil),
+    coordinator.presentNewSession(request: .init(project: lifetimeProject, agent: .shell, pageURL: nil),
         operations: service, didCreate: { _ in created += 1 })
     let sheet = try #require(coordinator.sheet)
     guard case .newSession(let model) = sheet.destination else { Issue.record("Wrong destination"); return }
-    model.draft.branch = "keep-draft"
+    model.input = "keep-draft"
     let creating = Task { await model.create() }
     await gate.waitForStart()
     coordinator.dismissSheet(id: sheet.id)
     #expect(coordinator.sheet?.id == sheet.id && !sheet.canDismiss)
     await gate.finish(.failure(BackendError.operation("Fixture create failed"))); await creating.value
-    #expect(model.canCreate && !model.retired && model.error == "Fixture create failed" && model.draft.branch == "keep-draft")
+    #expect(model.canCreate && !model.retired && model.error == "Fixture create failed" && model.input == "keep-draft")
     await model.create(); await model.create(); await model.loadReferences()
     #expect(created == 1 && model.completed && model.retired && !model.canCreate && coordinator.sheet == nil)
     #expect(await service.creations == 2)

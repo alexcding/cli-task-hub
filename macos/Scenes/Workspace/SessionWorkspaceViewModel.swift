@@ -18,6 +18,7 @@ import Observation
     var openingExternal = false
     var canPresent = false
     var canCreateSession = false
+    var sessionProjects: [Project] = []
     var editorID: String?
     var editorLabel: String?
     var gitClientID: String?
@@ -27,7 +28,7 @@ import Observation
 }
 
 enum WorkspaceOperation: Equatable {
-    case reveal, openEditor, openGitClient, createSession, openFile, addPage
+    case reveal, openEditor, openGitClient, createSession, createSessionIn(String), openFile, addPage
     case changes, openTerminal, hookSettings, prepareChanges
 }
 
@@ -101,6 +102,8 @@ enum WorkspaceOperation: Equatable {
     }
     var showsBuildActions: Bool { session != nil && state.project?.ide == "xcode" }
     var canCreateSession: Bool { state.canCreateSession }
+    /// Shown as a menu on the page's Create Session when the page belongs to no single project.
+    var sessionProjects: [Project] { canCreateSession ? [] : state.sessionProjects }
     var canOpenExternal: Bool { session != nil && !state.openingExternal && !state.changingSession }
     var canShowChanges: Bool { session != nil && state.connected }
     var canRun: Bool { showsBuildActions && state.connected && state.canPresent && !state.changingSession }
@@ -158,6 +161,9 @@ enum WorkspaceOperation: Equatable {
     func openEditor() { if canOpenExternal && editorLabel != nil { perform(.openEditor) } }
     func openGitClient() { if canOpenExternal && gitClientLabel != nil { perform(.openGitClient) } }
     func createSession() { if canCreateSession { perform(.createSession) } }
+    func createSession(in projectID: String) {
+        if sessionProjects.contains(where: { $0.id == projectID }) { perform(.createSessionIn(projectID)) }
+    }
     func openFile() { perform(.openFile) }
     func addPage() { if state.canPresent { perform(.addPage) } }
     func toggleChanges() { if canShowChanges { perform(.changes) } }

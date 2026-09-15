@@ -50,18 +50,61 @@ struct ProjectEditorView: View {
     }
 }
 
+/// The web New Project modal (index.html #modal + components/modal.js): a name, the local
+/// checkout with its detected GitHub repo as a hint, and the Jira key. Everything else is set
+/// later in the project's own Settings tab.
 struct NewProjectSheet: View {
     @Bindable var model: ProjectEditorViewModel
     let cancel: () -> Void
+    @FocusState private var nameFocused: Bool
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack {
-                Text("New Project").font(.title2.bold())
-                Spacer()
-                Button("Cancel", action: cancel).disabled(model.busy).keyboardShortcut(.cancelAction)
+        VStack(alignment: .leading, spacing: 0) {
+            SheetTitle("New Project")
+            SheetField("Project Name") {
+                TextField("e.g. Record iOS", text: $model.draft.name)
+                    .textFieldStyle(.roundedBorder).focused($nameFocused)
+                    .accessibilityIdentifier("project-name")
             }
-            ProjectEditorView(model: model)
-        }.padding(24).frame(width: 600, height: 560).interactiveDismissDisabled(model.busy)
+            SheetField("Local Git Repo", last: true) {
+                HStack(spacing: 8) {
+                    TextField("/path/to/local/checkout", text: $model.draft.workspace)
+                        .textFieldStyle(.roundedBorder)
+                        .accessibilityIdentifier("project-workspace")
+                        .onSubmit { Task { await model.detectRepository() } }
+                    Button("Choose…") { Task { await model.chooseWorkspace() } }
+                        .controlSize(.small)
+                }
+                SheetHint(model.draft.repo.isEmpty
+                    ? Text("Sets the terminal's working directory; the GitHub repo is auto-detected from its \(sheetCode("git")) origin.")
+                    : Text("GitHub repo: \(sheetCode(model.draft.repo))"))
+            }
+            SheetSection("Jira") {
+                SheetField("Project Key", last: true) {
+                    TextField("e.g. RECORD", text: Binding(get: { model.draft.jiraProjectKey },
+                                                           set: { model.draft.jiraProjectKey = $0.uppercased() }))
+                        .textFieldStyle(.roundedBorder)
+                    SheetHint(Text("Drives this project's **Jira** tab (Board, Tickets). Narrow both with the tab's filter clause (e.g. \(sheetCode("component = iOS")))."))
+                }
+            }
+            .padding(.top, 14)
+            if let error = model.error {
+                SheetHint(error, isError: true).padding(.top, 12)
+            }
+            HStack(spacing: 8) {
+                if model.busy { ProgressView().controlSize(.small) }
+                Spacer()
+                Button("Cancel", role: .cancel, action: cancel).keyboardShortcut(.cancelAction).disabled(model.busy)
+                Button("Save") { Task { await model.save() } }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(!model.canSave)
+            }
+            .controlSize(.large)
+            .padding(.top, 20)
+        }
+        .padding(24).frame(width: 440)
+        .interactiveDismissDisabled(model.busy)
+        .onAppear { nameFocused = true }
     }
 }
 
