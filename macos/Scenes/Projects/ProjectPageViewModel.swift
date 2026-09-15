@@ -64,6 +64,15 @@ import Observation
         self.project = project; self.service = service; self.editor = editor; self.board = board; self.tickets = tickets
         self.workflows = workflows; self.automation = automation
         self.pageActions = pageActions
+        section = Self.resolve(section, for: project)
+    }
+    /// Sections the picker offers for this project (`ProjectSection.available`).
+    var availableSections: [ProjectSection] { ProjectSection.available(for: project) }
+    /// A section the project cannot show falls back to its first available one, so
+    /// neither a deep link nor an edit in Settings can leave a hidden tab selected.
+    private static func resolve(_ section: ProjectSection, for project: Project) -> ProjectSection {
+        let available = ProjectSection.available(for: project)
+        return available.contains(section) ? section : (available.first ?? .settings)
     }
     func connect(_ service: (any ProjectService)?) {
         guard !retired else { return }
@@ -80,7 +89,7 @@ import Observation
     func selectSection(_ section: ProjectSection) { onAction(.selectSection(section)) }
     func setSection(_ section: ProjectSection) {
         guard !retired else { return }
-        self.section = section
+        self.section = Self.resolve(section, for: project)
     }
     private func updateBoardPresentation() {
         guard !retired else { return }
@@ -158,6 +167,7 @@ import Observation
         }
         self.project = project; editor.update(project); tickets?.update(project)
         workflows?.update(project); automation?.update(project)
+        section = Self.resolve(section, for: project)
         if state == "open", let snapshot { prs = snapshot; loadedState = "open" }
     }
     func refresh(force: Bool = false) async {

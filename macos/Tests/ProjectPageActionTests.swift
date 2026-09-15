@@ -50,7 +50,7 @@ struct ProjectPageService: ProjectService {
 }
 
 @MainActor private func actionProject(_ actions: any PageActionServing) throws -> ProjectPageViewModel {
-    let project = Project(id: "actions", name: "Actions", repo: "fixture/repo", color: nil, workspace: "/tmp/fixture")
+    let project = Project(id: "actions", name: "Actions", repo: "fixture/repo", color: nil, workspace: "/tmp/fixture", jiraProjectKey: "APP")
     let service = ProjectPageService()
     let model = ProjectPageViewModel(project: project, service: service,
         editor: ProjectEditorViewModel(project: project, service: service, chooseFolder: { nil }), pageActions: actions)

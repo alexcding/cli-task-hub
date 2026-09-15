@@ -16,7 +16,7 @@ struct AutomationView: View {
                         Button("Refresh Status") { Task { await model.refreshStatus() } }
                     }
                 }
-                Section("On GitHub PR merge") {
+                if model.project.hasJira { Section("On GitHub PR merge") {
                     Text("Apply these optional actions in order to each linked Jira ticket.")
                         .font(.callout).foregroundStyle(.secondary)
                     Toggle("1. Set Fix Version", isOn: $model.draft.fixVersionEnabled)
@@ -47,7 +47,7 @@ struct AutomationView: View {
                     TextField("2. Transition ticket to", text: $model.draft.mergeTransition).accessibilityIdentifier("automation-transition")
                     Text("Leave blank to skip the transition. The status must be allowed by the ticket’s workflow.")
                         .font(.caption).foregroundStyle(.secondary)
-                }
+                } }
             }.formStyle(.grouped).accessibilityIdentifier("automation-form").disabled(model.busy)
             if model.changedElsewhere { Text("Automation changed elsewhere. Revert to load it, or save to replace it with your draft.").foregroundStyle(.orange) }
             if let error = model.error { Text(error).foregroundStyle(.orange).textSelection(.enabled) }

@@ -70,7 +70,7 @@ struct ProjectPageView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Picker("Project section", selection: Binding(get: { model.section }, set: model.selectSection)) {
-                ForEach(ProjectSection.allCases) { Text($0.rawValue).tag($0) }
+                ForEach(model.availableSections) { Text($0.rawValue).tag($0) }
             }.pickerStyle(.segmented).labelsHidden()
             switch model.section {
             case .tickets:

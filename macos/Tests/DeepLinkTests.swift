@@ -156,7 +156,8 @@ func deepLinksWaitForDocumentCloseAndResumeAfterSaveOrCancel(save: Bool) async t
     let runtime = DeepLinkRuntime(); runtime.coordinator = coordinator; coordinator.rootRuntime = runtime
     #expect(coordinator.handle(url: URL(string: "taskhub://app/projects/p/board")!))
     #expect(runtime.selections.isEmpty && coordinator.pendingDeepLink != nil)
-    let project = Project(id: "p", name: "Fixture", repo: "", color: nil, workspace: "/tmp")
+    // Jira sections only exist for a project with Jira configured.
+    let project = Project(id: "p", name: "Fixture", repo: "", color: nil, workspace: "/tmp", jiraProjectKey: "APP")
     let service = DeepLinkProjectService()
     let editor = ProjectEditorViewModel(project: project, service: service, chooseFolder: { nil })
     let model = ProjectPageViewModel(project: project, service: service, editor: editor)

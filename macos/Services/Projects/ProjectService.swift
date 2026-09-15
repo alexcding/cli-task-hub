@@ -75,6 +75,25 @@ struct APIProjectService: ProjectService {
 enum ProjectSection: String, CaseIterable, Identifiable {
     case prs = "Pull Requests", tickets = "Tickets", board = "Sprint Board", workflows = "Workflows", automation = "Automation", settings = "Settings"
     var id: String { rawValue }
+
+    /// The sections a project can show. Pull Requests and Automation (webhook
+    /// forwarding) need GitHub, Tickets and Sprint Board need Jira. Workflows and
+    /// Settings always apply. Automation's Jira merge actions hide on their own.
+    static func available(for project: Project) -> [ProjectSection] {
+        allCases.filter { section in
+            switch section {
+            case .prs, .automation: project.hasGitHub
+            case .tickets, .board: project.hasJira
+            case .workflows, .settings: true
+            }
+        }
+    }
+}
+
+extension Project {
+    var hasGitHub: Bool { !repo.isEmpty }
+    /// A Jira project key or a saved JQL query.
+    var hasJira: Bool { !(jiraProjectKey ?? "").isEmpty || !(jql ?? "").isEmpty }
 }
 
 struct IDEChoice: Identifiable {
