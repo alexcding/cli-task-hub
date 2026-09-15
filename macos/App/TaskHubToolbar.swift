@@ -18,20 +18,23 @@ struct TaskHubToolbar: ToolbarContent {
             }
         } else if model.showsDashboard {
             if #available(macOS 26.0, *) { ToolbarSpacer(.flexible) }
-            ToolbarItem(placement: .primaryAction) {
-                Picker("Usage agent", selection: Binding(
-                    get: { model.shell.usageAgent },
-                    set: model.shell.setUsageAgent
-                )) {
-                    Text("Claude").tag("claude")
-                    Text("Codex").tag("codex")
-                }
-                .labelsHidden()
-                .pickerStyle(.segmented)
-                .controlSize(.small)
-                .fixedSize()
-                .accessibilityIdentifier("dashboard-agent")
-            }
+            ToolbarItem(placement: .primaryAction) { usageAgentPicker }
         }
+    }
+
+    /// Dashboard's usage agent: a plain native segmented control.
+    private var usageAgentPicker: some View {
+        Picker("Usage agent", selection: Binding(
+            get: { model.shell.usageAgent },
+            set: model.shell.setUsageAgent
+        )) {
+            Text("Claude").tag("claude")
+            Text("Codex").tag("codex")
+        }
+        .labelsHidden()
+        .pickerStyle(.segmented)
+        .fixedSize()
+        .help("Usage agent")
+        .accessibilityIdentifier("dashboard-agent")
     }
 }
