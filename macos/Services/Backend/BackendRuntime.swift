@@ -3,6 +3,11 @@ import Foundation
 protocol BackendProcessServing: Sendable {
     func start() async throws -> APIClient
     func stop() async
+    /// An owner that delivers events itself (the embedded backend); nil means SSE.
+    func eventStream() -> (any BackendEventStreaming)?
+}
+extension BackendProcessServing {
+    func eventStream() -> (any BackendEventStreaming)? { nil }
 }
 extension BackendProcess: BackendProcessServing {}
 
@@ -21,7 +26,12 @@ extension SSEClient: BackendEventStreaming {}
 
 struct NativeBackendRuntimeFactory: BackendRuntimeFactory {
     func configuration() throws -> BackendConfiguration { try .current() }
-    func process(configuration: BackendConfiguration) -> any BackendProcessServing { BackendProcess(configuration: configuration) }
+    func process(configuration: BackendConfiguration) -> any BackendProcessServing {
+        if case .embedded(let dataDirectory) = configuration.mode {
+            return EmbeddedBackend(dataDirectory: dataDirectory, packaged: configuration.packaged)
+        }
+        return BackendProcess(configuration: configuration)
+    }
     func stream() -> any BackendEventStreaming { SSEClient() }
     func pause(seconds: Int) async throws { try await Task.sleep(for: .seconds(seconds)) }
 }
@@ -67,7 +77,8 @@ enum BackendRuntimeEvent: Equatable {
             let api = try await process.start()
             try Task.checkCancellation()
             guard generation == request else { throw CancellationError() }
-            baseURL = configuration.baseURL
+            // The embedded backend's loopback port is only known after start.
+            baseURL = api.baseURL
             return api
         } catch {
             if generation == request { owner = nil; baseURL = nil }
@@ -81,7 +92,7 @@ enum BackendRuntimeEvent: Equatable {
         guard owner != nil, let baseURL, streamTask == nil else { return }
         let request = UUID(), generation = generation, factory = factory
         streamID = request
-        let stream = factory.stream()
+        let stream = owner?.eventStream() ?? factory.stream()
         streamTask = Task { [weak self] in
             var delay = 1
             while !Task.isCancelled {

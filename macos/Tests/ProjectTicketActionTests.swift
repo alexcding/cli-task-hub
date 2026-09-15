@@ -7,7 +7,7 @@ import Testing
     let base = URL(string: "http://127.0.0.1:1")!, api = try APIClient(baseURL: base)
     let factory = NativeProjectFeatureFactory(creation: NativeCreationFlowFactory(chooseFolder: { nil }), desktop: actions, copy: actions.copyLink)
     let model = factory.project(project, services: .init(projects: ProjectPageService(), tickets: service,
-        workflows: APIWorkflowService(api: api), automation: APIAutomationService(api: api), baseURL: base), openPage: actions.openPage)
+        workflows: APIWorkflowService(api: api), automation: APIAutomationService(api: api), api: api, baseURL: base), openPage: actions.openPage)
     let tickets = try #require(model.tickets)
     tickets.refresh()
     while tickets.baseURL == nil || tickets.loading { await Task.yield() }
@@ -114,7 +114,7 @@ func projectTicketNavigationCancelsWithoutClearingDrafts(change: String) async t
     #expect(actions.opened.last?.title == link.title && actions.navigated == [link.url])
     board.pause(); board.request(link)
     #expect(actions.opened.count == 2)
-    child.retire(); board.connect(baseURL: URL(string: "http://127.0.0.1:2")!); board.show(appearance: .system); board.request(link)
+    child.retire(); board.connect(api: try APIClient(baseURL: URL(string: "http://127.0.0.1:2")!)); board.show(appearance: .system); board.request(link)
     #expect(board.retired && !board.active && actions.opened.count == 2)
     await model.tickets?.stop()
 }

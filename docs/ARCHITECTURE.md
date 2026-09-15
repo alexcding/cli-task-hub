@@ -3,9 +3,13 @@
 ## Current native runtime
 
 `macos` owns the SwiftUI/AppKit application, with Ghostty terminals and WebKit for
-remote pages. `crates/taskhub-backend` is the separate Rust API process:
+remote pages. `crates/taskhub-backend` is the Rust API: the native app links it as
+a static library and calls its router in-process through `ffi.rs`, while `main.rs`
+runs the same router as a standalone server for the web client and CLI tooling:
 
-- `main.rs`, `lib.rs`: ownership, startup checkpoint, localhost HTTP and SSE.
+- `main.rs`, `lib.rs`, `ffi.rs`: ownership, startup checkpoint, localhost HTTP and
+  SSE, and the C ABI the app embeds (in-process dispatch, event subscriptions, an
+  ephemeral loopback port for webhooks and hooks).
 - `db.rs`, `schema_*.sql`: durable config, regenerable snapshots, rolling logs.
 - `poller.rs`, `github.rs`: coalesced sync, snapshot invalidation, PR lifecycle.
 - `jira.rs`: shared merge actions, Fix Version REST writes, board configuration.

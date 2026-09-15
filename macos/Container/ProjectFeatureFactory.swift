@@ -7,6 +7,7 @@ struct ProjectFeatureServices {
     let tickets: any JiraService
     let workflows: any WorkflowService
     let automation: any AutomationService
+    let api: APIClient
     let baseURL: URL
 }
 
@@ -24,7 +25,7 @@ struct ProjectFeatureServices {
                  openPage: @escaping (OpenPageRequest) async throws -> Void) -> ProjectPageViewModel {
         let editor = creation.projectEditor(project: project, service: services.projects)
         let pageActions = NativePageActionService(open: openPage, desktop: desktop, copy: copy)
-        let board = WebBoardViewModel(projectID: project.id, baseURL: services.baseURL, pageActions: pageActions)
+        let board = WebBoardViewModel(projectID: project.id, api: services.api, pageActions: pageActions)
         let tickets = JiraTicketsViewModel(project: project, service: services.tickets, pageActions: pageActions)
         let workflows = WorkflowEditorViewModel(project: project, service: services.workflows)
         let automation = AutomationViewModel(project: project, service: services.automation)

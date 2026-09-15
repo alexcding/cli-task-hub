@@ -86,9 +86,8 @@ struct APIBoardService: BoardService {
     @ObservationIgnored private var generation = UUID()
     @ObservationIgnored private var preferencesLoaded = false
 
-    init(projectID: String, baseURL: URL, pageActions: any PageActionServing) {
+    init(projectID: String, api: APIClient, pageActions: any PageActionServing) {
         self.projectID = projectID
-        let api = try! APIClient(baseURL: baseURL)
         service = APIBoardService(api: api)
         navigation = PageActionViewModel(service: pageActions)
     }
@@ -123,8 +122,8 @@ struct APIBoardService: BoardService {
         return people.map { ($0.key, $0.value) }.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
     }
 
-    func connect(baseURL: URL) {
-        guard !retired, let api = try? APIClient(baseURL: baseURL) else { return }
+    func connect(api: APIClient) {
+        guard !retired else { return }
         generation = UUID(); task?.cancel(); task = nil; service = APIBoardService(api: api)
         preferencesLoaded = false
         if active { refresh() }

@@ -89,8 +89,6 @@
       <CommandLineArguments>
          <CommandLineArgument argument = "--backend-root" isEnabled = "YES"/>
          <CommandLineArgument argument = "&quot;$(PROJECT_DIR)/..&quot;" isEnabled = "YES"/>
-         <CommandLineArgument argument = "--backend-path" isEnabled = "YES"/>
-         <CommandLineArgument argument = "&quot;$(PROJECT_DIR)/../crates/taskhub-backend/target/debug/taskhub-backend&quot;" isEnabled = "YES"/>
          <CommandLineArgument argument = "--ptyd-path" isEnabled = "YES"/>
          <CommandLineArgument argument = "&quot;$(PROJECT_DIR)/../crates/taskhub-ptyd/target/release/taskhub-ptyd&quot;" isEnabled = "YES"/>
       </CommandLineArguments>

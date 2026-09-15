@@ -39,7 +39,11 @@ import Foundation
 
 @Test func configurationResolvesRustDevelopmentRuntime() throws {
     let development = try BackendConfiguration.current(arguments: ["TaskHub", "--backend-root", "/tmp/repo"], environment: [:])
-    guard case .owned(let executable, _) = development.mode else { Issue.record("Expected owned mode"); return }
+    guard case .embedded = development.mode else { Issue.record("Expected the embedded backend for a checkout run"); return }
+    #expect(!development.packaged)
+    let child = try BackendConfiguration.current(arguments: ["TaskHub", "--backend-root", "/tmp/repo", "--backend-path", "/tmp/repo/crates/taskhub-backend/target/debug/taskhub-backend", "--backend-port", "4000"], environment: [:])
+    guard case .owned(let executable, _) = child.mode else { Issue.record("Expected owned mode"); return }
+    #expect(child.baseURL.port == 4000)
     #expect(executable.path == "/tmp/repo/crates/taskhub-backend/target/debug/taskhub-backend")
     #expect(throws: BackendError.self) {
         try BackendConfiguration.current(arguments: ["TaskHub", "--backend-url"], environment: [:])

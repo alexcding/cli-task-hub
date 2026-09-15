@@ -492,10 +492,19 @@
 					"@executable_path",
 					"@loader_path/Frameworks",
 				);
+				LIBRARY_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/../crates/taskhub-backend/target/release",
+				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-ltaskhub_backend",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.alexcding.taskhub.terminalstress;
 				PRODUCT_NAME = TaskHubTerminalStress;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) DEBUG";
+				SWIFT_INCLUDE_PATHS = "$(inherited) $(PROJECT_DIR)/Vendor/TaskHubBackend";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 6.0;
 			};
@@ -515,9 +524,18 @@
 					"@executable_path",
 					"@loader_path/Frameworks",
 				);
+				LIBRARY_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/../crates/taskhub-backend/target/release",
+				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-ltaskhub_backend",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.alexcding.taskhub.tests;
 				PRODUCT_NAME = TaskHubTests;
+				SWIFT_INCLUDE_PATHS = "$(inherited) $(PROJECT_DIR)/Vendor/TaskHubBackend";
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
 				SWIFT_VERSION = 6.0;
 				TEST_HOST = "";
@@ -536,9 +554,18 @@
 					"@executable_path",
 					"@loader_path/Frameworks",
 				);
+				LIBRARY_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/../crates/taskhub-backend/target/release",
+				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-ltaskhub_backend",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.alexcding.taskhub.terminalstress;
 				PRODUCT_NAME = TaskHubTerminalStress;
+				SWIFT_INCLUDE_PATHS = "$(inherited) $(PROJECT_DIR)/Vendor/TaskHubBackend";
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
 				SWIFT_VERSION = 6.0;
 			};
@@ -566,6 +593,14 @@
 			baseConfigurationReferenceRelativePath = Configs/Debug.xcconfig;
 			buildSettings = {
 				INFOPLIST_KEY_CFBundleDisplayName = "$(PRODUCT_DISPLAY_NAME)";
+				LIBRARY_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/../crates/taskhub-backend/target/release",
+				);
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-ltaskhub_backend",
+				);
 				SWIFT_VERSION = 6.0;
 			};
 			name = Debug;
@@ -576,6 +611,14 @@
 			baseConfigurationReferenceRelativePath = Configs/Release.xcconfig;
 			buildSettings = {
 				INFOPLIST_KEY_CFBundleDisplayName = "$(PRODUCT_DISPLAY_NAME)";
+				LIBRARY_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/../crates/taskhub-backend/target/release",
+				);
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-ltaskhub_backend",
+				);
 				SWIFT_VERSION = 6.0;
 			};
 			name = Release;
@@ -614,10 +657,19 @@
 					"@executable_path",
 					"@loader_path/Frameworks",
 				);
+				LIBRARY_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/../crates/taskhub-backend/target/release",
+				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-ltaskhub_backend",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.alexcding.taskhub.tests;
 				PRODUCT_NAME = TaskHubTests;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) DEBUG";
+				SWIFT_INCLUDE_PATHS = "$(inherited) $(PROJECT_DIR)/Vendor/TaskHubBackend";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 6.0;
 				TEST_HOST = "";

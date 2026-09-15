@@ -17,7 +17,7 @@ use chrono::{Datelike, Utc};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use tokio::{
-    process::{Child, Command},
+    process::Child,
     sync::Mutex,
 };
 use uuid::Uuid;
@@ -82,7 +82,7 @@ impl ForwarderManager {
             if children.contains_key(&repo) {
                 continue;
             }
-            let child = Command::new("gh")
+            let child = crate::cli::command("gh")
                 .args([
                     "webhook",
                     "forward",

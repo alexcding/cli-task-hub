@@ -10,9 +10,9 @@ cargo build --locked --release --manifest-path "$ROOT/crates/taskhub-backend/Car
 cargo build --locked --release --manifest-path "$ROOT/crates/taskhub-ptyd/Cargo.toml" --features terminal-snapshots
 
 mkdir -p "$APP/Contents/Helpers" "$APP/Contents/Resources/Licenses"
-cp "$ROOT/crates/taskhub-backend/target/release/taskhub-backend" "$APP/Contents/Helpers/taskhub-backend"
 cp "$ROOT/crates/taskhub-ptyd/target/release/taskhub-ptyd" "$APP/Contents/Helpers/taskhub-ptyd"
-rm -f "$APP/Contents/Helpers/taskhub-node" "$APP/Contents/Resources/Licenses/Node-LICENSE"
+# The backend is linked into the app binary now; drop a helper left by an older bundle.
+rm -f "$APP/Contents/Helpers/taskhub-backend" "$APP/Contents/Helpers/taskhub-node" "$APP/Contents/Resources/Licenses/Node-LICENSE"
 
 # The native toolbar still uses committed provider artwork. No renderer code
 # or JavaScript runtime is shipped with the application.
@@ -29,7 +29,6 @@ cp "$GHOSTTY_PKG/LICENSE-ghostty" "$APP/Contents/Resources/Licenses/Ghostty-LICE
 cp "$GHOSTTY_PKG/LICENSE" "$APP/Contents/Resources/Licenses/GhosttyTerminal-LICENSE"
 cp "$GHOSTTY_PKG/Sources/GhosttyTheme/LICENSE" "$APP/Contents/Resources/Licenses/GhosttyTheme-LICENSE"
 
-codesign --force --sign - "$APP/Contents/Helpers/taskhub-backend"
 codesign --force --sign - "$APP/Contents/Helpers/taskhub-ptyd"
 codesign --force --sign - "$APP"
 codesign --verify --deep --strict "$APP"

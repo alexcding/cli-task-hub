@@ -36,3 +36,8 @@ SWIFT_VERSION = 6.0
 ALWAYS_SEARCH_USER_PATHS = NO
 // Embedded dynamic frameworks (Sparkle) must resolve in standalone app launches.
 LD_RUNPATH_SEARCH_PATHS = $(inherited) @loader_path/../Frameworks
+
+// The Rust backend's C ABI (Vendor/TaskHubBackend, from crates/taskhub-backend/src/ffi.rs).
+// The targets that compile the app sources (app, unit tests, terminal stress) link
+// libtaskhub_backend.a through their own settings in the project.
+SWIFT_INCLUDE_PATHS = $(inherited) $(PROJECT_DIR)/Vendor/TaskHubBackend

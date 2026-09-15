@@ -1,6 +1,7 @@
 mod cli;
 mod db;
 mod error;
+pub mod ffi;
 mod github;
 mod http_client;
 mod integrations;

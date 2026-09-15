@@ -67,9 +67,10 @@ if [[ ! -f "$RUNTIME/lib/libghostty-vt.a" || "$(cat "$STAMP" 2>/dev/null || true
   echo "$GHOSTTY_RELEASE" > "$STAMP"
 fi
 
-# 3. The binaries the shared scheme's launch arguments point at.
-log "Building the Rust backend (debug) and PTY helper (release)"
-cargo build --manifest-path "$ROOT/crates/taskhub-backend/Cargo.toml" || fail "taskhub-backend build failed"
+# 3. The backend static library the app links (crates/taskhub-backend/src/ffi.rs) and
+#    the PTY helper the shared scheme's launch arguments point at.
+log "Building the Rust backend library and PTY helper (release)"
+cargo build --manifest-path "$ROOT/crates/taskhub-backend/Cargo.toml" --release || fail "taskhub-backend build failed"
 cargo build --manifest-path "$ROOT/crates/taskhub-ptyd/Cargo.toml" --release --features terminal-snapshots --locked \
   || fail "taskhub-ptyd build failed"
 

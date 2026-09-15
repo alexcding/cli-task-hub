@@ -711,7 +711,7 @@ public final class AppViewModel {
             api = connectedAPI
             if let api { shell.connect(shellFactory.data(api: api)); viewer.connect(api); dashboard?.connect(backendFactory.dashboard(api: api)); shell.refreshUsage() }
             if let api { for model in projectModels.values {
-                model.connect(backendFactory.projects(api: api)); model.board?.connect(baseURL: api.baseURL)
+                model.connect(backendFactory.projects(api: api)); model.board?.connect(api: api)
                 model.tickets?.connect(backendFactory.tickets(api: api))
                 model.workflows?.connect(backendFactory.workflows(api: api))
                 model.automation?.connect(backendFactory.automation(api: api))

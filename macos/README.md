@@ -5,11 +5,17 @@ Apple silicon is the initial build target. Open `TaskHub.xcodeproj` in Xcode,
 select **TaskHub → My Mac**, and press **Run** (Command-R). All app sources belong
 directly to the Xcode project; no separate workspace or feature package is needed.
 
-The shared Run scheme starts the checkout's Rust backend through the app's backend
-owner, alongside the Rust PTY helper. No separate server is needed. Normal Quit
-stops the owned server; Xcode Stop/crash also
-causes that development server to exit. An unrelated server on the same port is
-never terminated.
+The Rust backend runs inside the app process: `crates/taskhub-backend` is linked as
+a static library and the app dispatches its API calls straight into the backend's
+router through the C ABI in `crates/taskhub-backend/src/ffi.rs` (Swift side:
+`Services/Backend/EmbeddedBackend.swift`, header in `Vendor/TaskHubBackend`). No
+child process, port or health handshake is involved, and every route, model and
+contract stays the one the web client uses. The embedded backend still serves an
+ephemeral loopback port, published in the data directory's `.server-port`, for
+webhook forwarders, agent hooks and the web renderer. Only the Rust PTY helper
+remains a separate process, so terminals survive an app restart. `--backend-path`
+(with `--backend-port`) still runs a separate backend process, which the
+integration tests use, and `--backend-url` attaches to an existing server.
 
 Run is the only step. The scheme's Build pre-action runs `scripts/bootstrap.sh`,
 which installs a Rust toolchain via rustup into `~/.cargo` if there is none,

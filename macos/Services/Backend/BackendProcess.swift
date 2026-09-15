@@ -4,6 +4,8 @@ public struct BackendConfiguration: Sendable {
     public enum Mode: Sendable {
         case external
         case owned(executable: URL, dataDirectory: URL)
+        /// The backend linked into this process (`EmbeddedBackend`); the default.
+        case embedded(dataDirectory: URL)
     }
     public let baseURL: URL
     public let mode: Mode
@@ -29,19 +31,24 @@ public struct BackendConfiguration: Sendable {
             _ = try APIClient(baseURL: url)
             return Self(baseURL: url, mode: .external)
         }
-        let portString = try argument("--backend-port") ?? "3000"
-        guard let port = Int(portString), (1...65535).contains(port) else {
-            throw BackendError.configuration("Backend port must be between 1 and 65535.")
-        }
         let dataPath = try argument("--data-dir") ?? environment["TASKHUB_DATA_DIR"]
         let dataDirectory = dataPath.map { URL(fileURLWithPath: $0, isDirectory: true) }
             ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/TaskHub")
+        // A checkout run (--backend-root) is development; a bare launch is the packaged app.
         let root = try argument("--backend-root")
-        let executable = try argument("--backend-path").map { URL(fileURLWithPath: $0) }
-            ?? root.map { URL(fileURLWithPath: $0).appendingPathComponent("crates/taskhub-backend/target/debug/taskhub-backend") }
-            ?? Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/taskhub-backend")
-        return Self(baseURL: URL(string: "http://127.0.0.1:\(port)")!,
-                    mode: .owned(executable: executable, dataDirectory: dataDirectory), packaged: root == nil)
+        if let path = try argument("--backend-path") {
+            // A separate backend process: development against another build, and the
+            // integration tests. Its port must be known in advance.
+            let portString = try argument("--backend-port") ?? "3000"
+            guard let port = Int(portString), (1...65535).contains(port) else {
+                throw BackendError.configuration("Backend port must be between 1 and 65535.")
+            }
+            return Self(baseURL: URL(string: "http://127.0.0.1:\(port)")!,
+                        mode: .owned(executable: URL(fileURLWithPath: path), dataDirectory: dataDirectory), packaged: root == nil)
+        }
+        // The default: the Rust backend runs inside this process. Its loopback port is
+        // ephemeral, so the base URL is only known once it has started.
+        return Self(baseURL: URL(string: "http://127.0.0.1:0")!, mode: .embedded(dataDirectory: dataDirectory), packaged: root == nil)
     }
 }
 

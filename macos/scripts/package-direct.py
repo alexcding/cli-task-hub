@@ -101,9 +101,13 @@ def main():
         parser.error("Unexpected application bundle identity")
     if not args.local and info.get("TaskHubBuildConfiguration") != "Release":
         parser.error("Build the Release configuration before preparing a distribution")
-    for relative in ["Contents/Helpers/taskhub-backend", "Contents/Helpers/taskhub-ptyd"]:
+    # The backend is linked into the app binary (crates/taskhub-backend/src/ffi.rs);
+    # only the PTY helper ships as a separate executable.
+    for relative in ["Contents/Helpers/taskhub-ptyd"]:
         if not (app / relative).is_file():
             parser.error("Run bundle-backend.sh before packaging: missing " + relative)
+    if (app / "Contents/Helpers/taskhub-backend").exists():
+        parser.error("Stale backend helper remains; rerun bundle-backend.sh: Contents/Helpers/taskhub-backend")
     for relative in ["Contents/Helpers/taskhub-node", "Contents/Resources/backend"]:
         if (app / relative).exists():
             parser.error("Legacy Node bundle remains; rerun bundle-backend.sh: " + relative)
@@ -139,8 +143,8 @@ def main():
             run("xcrun", "stapler", "staple", dmg)
             run("xcrun", "stapler", "validate", dmg)
         manifest = {"bundleID": info["CFBundleIdentifier"],
-                    "backendRuntime": "rust",
-                    "backendSHA256": digest(staged_app / "Contents/Helpers/taskhub-backend"),
+                    "backendRuntime": "rust-embedded",
+                    "backendSHA256": digest(staged_app / "Contents/MacOS/TaskHub"),
                     "version": info["CFBundleShortVersionString"], "build": info["CFBundleVersion"],
                     "distribution": "local-ad-hoc" if args.local else "developer-id-notarized",
                     "artifacts": {p.name: {"bytes": p.stat().st_size,

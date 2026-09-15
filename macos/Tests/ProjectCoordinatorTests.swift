@@ -34,7 +34,7 @@ import Testing
     let baseURL = URL(string: "http://127.0.0.1:12345")!
     let api = try APIClient(baseURL: baseURL)
     return ProjectFeatureServices(projects: APIProjectService(api: api), tickets: APIJiraService(api: api),
-        workflows: APIWorkflowService(api: api), automation: APIAutomationService(api: api), baseURL: baseURL)
+        workflows: APIWorkflowService(api: api), automation: APIAutomationService(api: api), api: api, baseURL: baseURL)
 }
 
 @MainActor @Test func projectCoordinatorFactoryRetainsDraftsAndSharesSectionRoutes() async throws {

@@ -18,6 +18,16 @@ public enum BackendError: LocalizedError, Sendable {
     }
 }
 
+/// How `APIClient` reaches the backend: `URLSession` over loopback HTTP, or the
+/// embedded backend's in-process dispatch (`EmbeddedTransport`). Both answer with
+/// an `HTTPURLResponse`, so status and JSON handling are identical either way.
+public protocol BackendTransport: Sendable {
+    func perform(_ request: URLRequest) async throws -> (Data, URLResponse)
+}
+extension URLSession: BackendTransport {
+    public func perform(_ request: URLRequest) async throws -> (Data, URLResponse) { try await data(for: request) }
+}
+
 public struct BackendHealth: Decodable, Sendable {
     public let service: String
     public let `protocol`: Int
@@ -62,9 +72,13 @@ public struct Project: Decodable, Identifiable, Equatable, Sendable {
 public actor APIClient {
     private struct Failure: Decodable { let error: String? }
     public let baseURL: URL
-    private let session: URLSession
+    private let transport: any BackendTransport
 
     public init(baseURL: URL, session: URLSession = .shared) throws {
+        try self.init(baseURL: baseURL, transport: session)
+    }
+
+    public init(baseURL: URL, transport: any BackendTransport) throws {
         guard let parts = URLComponents(url: baseURL, resolvingAgainstBaseURL: false),
               parts.scheme == "http", ["127.0.0.1", "localhost", "[::1]"].contains(parts.host ?? ""),
               parts.user == nil, parts.password == nil, parts.query == nil, parts.fragment == nil,
@@ -72,14 +86,14 @@ public actor APIClient {
             throw BackendError.configuration("The backend address must be a loopback HTTP origin.")
         }
         self.baseURL = baseURL
-        self.session = session
+        self.transport = transport
     }
 
     public func get<T: Decodable & Sendable>(_ path: String, as type: T.Type = T.self, timeout: TimeInterval = 10) async throws -> T {
         var request = URLRequest(url: try url(path))
         request.timeoutInterval = timeout
         request.cachePolicy = .reloadIgnoringLocalCacheData
-        let (data, response) = try await session.data(for: request)
+        let (data, response) = try await transport.perform(request)
         if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode),
            let failure = try? JSONDecoder().decode(Failure.self, from: data), let error = failure.error {
             throw BackendError.operation(error)
@@ -101,7 +115,7 @@ public actor APIClient {
         request.timeoutInterval = 10
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONEncoder().encode(Payload(pinned: pinned))
-        let (_, response) = try await session.data(for: request)
+        let (_, response) = try await transport.perform(request)
         try Self.validate(response)
     }
 
@@ -121,7 +135,7 @@ public actor APIClient {
         request.timeoutInterval = 10
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONEncoder().encode(body)
-        let (_, response) = try await session.data(for: request)
+        let (_, response) = try await transport.perform(request)
         try Self.validate(response)
     }
 
@@ -132,7 +146,7 @@ public actor APIClient {
         request.httpMethod = method; request.timeoutInterval = timeout
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONEncoder().encode(body)
-        let (data, response) = try await session.data(for: request)
+        let (data, response) = try await transport.perform(request)
         if let failure = try? JSONDecoder().decode(Failure.self, from: data), let message = failure.error {
             throw BackendError.operation(message)
         }

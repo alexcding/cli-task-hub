@@ -93,11 +93,10 @@ import Testing
 }
 #endif
 
-@Test func packagedConfigurationUsesRustHelpersOnly() throws {
+@Test func packagedConfigurationEmbedsTheRustBackend() throws {
     let configuration = try BackendConfiguration.current(arguments: ["TaskHub"], environment: [:])
-    guard case .owned(let executable, _) = configuration.mode else { Issue.record("Expected owned mode"); return }
+    guard case .embedded(let directory) = configuration.mode else { Issue.record("Expected the embedded backend"); return }
     #expect(configuration.packaged)
-    #expect(executable.lastPathComponent == "taskhub-backend")
-    #expect(!executable.path.contains("node"))
-    #expect(!executable.pathExtension.lowercased().contains("js"))
+    #expect(directory.path.hasSuffix("Library/Application Support/TaskHub"))
+    #expect(configuration.baseURL.host == "127.0.0.1")
 }
