@@ -1,114 +1,71 @@
 // !$*UTF8*$!
 {
 	archiveVersion = 1;
-	classes = {};
+	classes = {
+	};
 	objectVersion = 77;
 	objects = {
 
 /* Begin PBXBuildFile section */
-		4415510CF7AF502B0F5DD509 /* PBXBuildFile */ = {
-			isa = PBXBuildFile;
-			productRef = 8C68B63441EC81D6CFAE1507;
-		};
-		4E7DF3CF4810B4EC38A55D12 /* PBXBuildFile */ = {
-			isa = PBXBuildFile;
-			productRef = C55F686B0B0D671AF14E3A3D;
-		};
-		62D68FC07EABB6B4C6958926 /* PBXBuildFile */ = {
-			isa = PBXBuildFile;
-			productRef = 3847F04EE724731C9EFB5B91;
-		};
-		728A6AA42A2A9D55ABD412B4 /* PBXBuildFile */ = {
-			isa = PBXBuildFile;
-			productRef = 0A01EF5361B23C1FC613C721;
-		};
-		7AAB4F2B3EBA9D918EF3C7D0 /* PBXBuildFile */ = {
-			isa = PBXBuildFile;
-			productRef = 904836571D4D28F3C2E7EB04;
-		};
-		7F05583EB11B7BDAB70F064F /* PBXBuildFile */ = {
-			isa = PBXBuildFile;
-			productRef = 1A5E96BC02299C04C288CFCB;
-		};
+		4415510CF7AF502B0F5DD509 /* GhosttyTerminal in Frameworks */ = {isa = PBXBuildFile; productRef = 8C68B63441EC81D6CFAE1507 /* GhosttyTerminal */; };
+		4E7DF3CF4810B4EC38A55D12 /* GhosttyTerminal in Frameworks */ = {isa = PBXBuildFile; productRef = C55F686B0B0D671AF14E3A3D /* GhosttyTerminal */; };
+		62D68FC07EABB6B4C6958926 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 3847F04EE724731C9EFB5B91 /* Sparkle */; };
+		728A6AA42A2A9D55ABD412B4 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 0A01EF5361B23C1FC613C721 /* Sparkle */; };
+		7AAB4F2B3EBA9D918EF3C7D0 /* GhosttyTerminal in Frameworks */ = {isa = PBXBuildFile; productRef = 904836571D4D28F3C2E7EB04 /* GhosttyTerminal */; };
+		7F05583EB11B7BDAB70F064F /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 1A5E96BC02299C04C288CFCB /* Sparkle */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
 		8BC265752DEDD3F500F279A4 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
-			containerPortal = 8BC265542DEDD3F400F279A4;
+			containerPortal = 8BC265542DEDD3F400F279A4 /* Project object */;
+			proxyType = 1;
 			remoteGlobalIDString = 8BC2655B2DEDD3F400F279A4;
 			remoteInfo = TaskHub;
-			proxyType = 1;
 		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		5A200C8AEBCE06F85302EE31 /* TaskHubTerminalStress */ = {
-			isa = PBXFileReference;
-			explicitFileType = "compiled.mach-o.executable";
-			includeInIndex = 0;
-			path = TaskHubTerminalStress;
-			sourceTree = BUILT_PRODUCTS_DIR;
-		};
-		8BC2655C2DEDD3F400F279A4 /* TaskHub.app */ = {
-			path = TaskHub.app;
-			isa = PBXFileReference;
-			includeInIndex = 0;
-			explicitFileType = wrapper.application;
-			sourceTree = BUILT_PRODUCTS_DIR;
-		};
-		8BC265742DEDD3F500F279A4 /* TaskHubUITests.xctest */ = {
-			path = TaskHubUITests.xctest;
-			isa = PBXFileReference;
-			includeInIndex = 0;
-			explicitFileType = wrapper.cfbundle;
-			sourceTree = BUILT_PRODUCTS_DIR;
-		};
-		FB9BE2BCFF7EB69F13DEF145 /* TaskHubTests.xctest */ = {
-			isa = PBXFileReference;
-			explicitFileType = wrapper.cfbundle;
-			includeInIndex = 0;
-			path = TaskHubTests.xctest;
-			sourceTree = BUILT_PRODUCTS_DIR;
-		};
+		5A200C8AEBCE06F85302EE31 /* TaskHubTerminalStress */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = TaskHubTerminalStress; sourceTree = BUILT_PRODUCTS_DIR; };
+		8BC2655C2DEDD3F400F279A4 /* TaskHub.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = TaskHub.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		8BC265742DEDD3F500F279A4 /* TaskHubUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TaskHubUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		FB9BE2BCFF7EB69F13DEF145 /* TaskHubTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TaskHubTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		68FFD18885C9187FE175C988 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+		68FFD18885C9187FE175C988 /* Exceptions for "Resources" folder in "TaskHub" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
-				Configs/App-Info.plist,
+				"Configs/App-Info.plist",
 				Configs/Debug.xcconfig,
-				Configs/Node.entitlements,
 				Configs/Release.xcconfig,
 				Configs/Shared.xcconfig,
-				Configs/TaskHub.entitlements,
 				Configs/Tests.xcconfig,
 			);
-			target = 8BC2655B2DEDD3F400F279A4;
+			target = 8BC2655B2DEDD3F400F279A4 /* TaskHub */;
 		};
-		81BC54CC21B36CE29521406E /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+		81BC54CC21B36CE29521406E /* Exceptions for "App" folder in "TaskHubTerminalStress" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
-				TaskHubApp.swift,
 				AppDelegate.swift,
+				TaskHubApp.swift,
 			);
-			target = 3CC1E0BAAD4175D7C15C173D;
+			target = 3CC1E0BAAD4175D7C15C173D /* TaskHubTerminalStress */;
 		};
-		E99123A3C53A3B5DE0AC00D5 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+		E99123A3C53A3B5DE0AC00D5 /* Exceptions for "Tests" folder in "TaskHubTests" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				TaskHub.xctestplan,
 			);
-			target = F7381EC033A0950860B176B2;
+			target = F7381EC033A0950860B176B2 /* TaskHubTests */;
 		};
-		F5393EF0687FD362436C8BA7 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+		F5393EF0687FD362436C8BA7 /* Exceptions for "App" folder in "TaskHubTests" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
-				TaskHubApp.swift,
 				AppDelegate.swift,
+				TaskHubApp.swift,
 			);
-			target = F7381EC033A0950860B176B2;
+			target = F7381EC033A0950860B176B2 /* TaskHubTests */;
 		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
@@ -120,11 +77,11 @@
 		};
 		2FDDEC91A901B778B4B9F76A /* Tests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				E99123A3C53A3B5DE0AC00D5 /* Exceptions for "Tests" folder in "TaskHubTests" target */,
+			);
 			path = Tests;
 			sourceTree = "<group>";
-			exceptions = (
-				E99123A3C53A3B5DE0AC00D5,
-			);
 		};
 		3967AE8821F31EF10D65A2C6 /* UITests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
@@ -158,20 +115,20 @@
 		};
 		B7C4DEC1AB14B75741E687F3 /* App */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				F5393EF0687FD362436C8BA7 /* Exceptions for "App" folder in "TaskHubTests" target */,
+				81BC54CC21B36CE29521406E /* Exceptions for "App" folder in "TaskHubTerminalStress" target */,
+			);
 			path = App;
 			sourceTree = "<group>";
-			exceptions = (
-				F5393EF0687FD362436C8BA7,
-				81BC54CC21B36CE29521406E,
-			);
 		};
 		C1E2D27BDC02FCA7A98D8C49 /* Resources */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				68FFD18885C9187FE175C988 /* Exceptions for "Resources" folder in "TaskHub" target */,
+			);
 			path = Resources;
 			sourceTree = "<group>";
-			exceptions = (
-				68FFD18885C9187FE175C988,
-			);
 		};
 		EB6EACE8F0E1830593E26D8B /* Scenes */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
@@ -186,37 +143,37 @@
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
-		24E62AD82EFC3DE733459B62 /* PBXFrameworksBuildPhase */ = {
+		24E62AD82EFC3DE733459B62 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				7AAB4F2B3EBA9D918EF3C7D0,
-				7F05583EB11B7BDAB70F064F,
+				7AAB4F2B3EBA9D918EF3C7D0 /* GhosttyTerminal in Frameworks */,
+				7F05583EB11B7BDAB70F064F /* Sparkle in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		8BC265592DEDD3F400F279A4 /* PBXFrameworksBuildPhase */ = {
+		8BC265592DEDD3F400F279A4 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				4415510CF7AF502B0F5DD509,
-				728A6AA42A2A9D55ABD412B4,
+				4415510CF7AF502B0F5DD509 /* GhosttyTerminal in Frameworks */,
+				728A6AA42A2A9D55ABD412B4 /* Sparkle in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		8BC265712DEDD3F500F279A4 /* PBXFrameworksBuildPhase */ = {
+		8BC265712DEDD3F500F279A4 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		8E47683524FB5106B066EF08 /* PBXFrameworksBuildPhase */ = {
+		8E47683524FB5106B066EF08 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				4E7DF3CF4810B4EC38A55D12,
-				62D68FC07EABB6B4C6958926,
+				4E7DF3CF4810B4EC38A55D12 /* GhosttyTerminal in Frameworks */,
+				62D68FC07EABB6B4C6958926 /* Sparkle in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -225,40 +182,40 @@
 /* Begin PBXGroup section */
 		8B90D1462DEDD44A00FBD189 /* Frameworks */ = {
 			isa = PBXGroup;
-			name = Frameworks;
 			children = (
 			);
+			name = Frameworks;
 			sourceTree = "<group>";
 		};
-		8BC265532DEDD3F400F279A4 /* PBXGroup */ = {
+		8BC265532DEDD3F400F279A4 = {
 			isa = PBXGroup;
-			sourceTree = "<group>";
 			children = (
-				B7C4DEC1AB14B75741E687F3,
-				EB6EACE8F0E1830593E26D8B,
-				0402D689C52ABEA7C2FFFCF3,
-				401276856BE81AD67D6572CC,
-				43258EF5A8DF2C859423F691,
-				EEA485BC4DC98C183DAC9E64,
-				7E44CFF338EC3AC8A9909D21,
-				6D04B25C2C483E7442DB515F,
-				C1E2D27BDC02FCA7A98D8C49,
-				2FDDEC91A901B778B4B9F76A,
-				3967AE8821F31EF10D65A2C6,
-				B78F3A185686E4383D9987CF,
-				8B90D1462DEDD44A00FBD189,
-				8BC2655D2DEDD3F400F279A4,
+				B7C4DEC1AB14B75741E687F3 /* App */,
+				EB6EACE8F0E1830593E26D8B /* Scenes */,
+				0402D689C52ABEA7C2FFFCF3 /* Coordinators */,
+				401276856BE81AD67D6572CC /* Components */,
+				43258EF5A8DF2C859423F691 /* Container */,
+				EEA485BC4DC98C183DAC9E64 /* Services */,
+				7E44CFF338EC3AC8A9909D21 /* Theme */,
+				6D04B25C2C483E7442DB515F /* Utilities */,
+				C1E2D27BDC02FCA7A98D8C49 /* Resources */,
+				2FDDEC91A901B778B4B9F76A /* Tests */,
+				3967AE8821F31EF10D65A2C6 /* UITests */,
+				B78F3A185686E4383D9987CF /* Tools */,
+				8B90D1462DEDD44A00FBD189 /* Frameworks */,
+				8BC2655D2DEDD3F400F279A4 /* Products */,
 			);
+			sourceTree = "<group>";
 		};
 		8BC2655D2DEDD3F400F279A4 /* Products */ = {
 			isa = PBXGroup;
-			name = Products;
 			children = (
-				8BC2655C2DEDD3F400F279A4,
-				8BC265742DEDD3F500F279A4,
-				FB9BE2BCFF7EB69F13DEF145,
-				5A200C8AEBCE06F85302EE31,
+				8BC2655C2DEDD3F400F279A4 /* TaskHub.app */,
+				8BC265742DEDD3F500F279A4 /* TaskHubUITests.xctest */,
+				FB9BE2BCFF7EB69F13DEF145 /* TaskHubTests.xctest */,
+				5A200C8AEBCE06F85302EE31 /* TaskHubTerminalStress */,
 			);
+			name = Products;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -266,192 +223,193 @@
 /* Begin PBXNativeTarget section */
 		3CC1E0BAAD4175D7C15C173D /* TaskHubTerminalStress */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 65159389CCD8EC893A2C2336;
+			buildConfigurationList = 65159389CCD8EC893A2C2336 /* Build configuration list for PBXNativeTarget "TaskHubTerminalStress" */;
 			buildPhases = (
-				31676919C4918B62519A3373,
-				8E47683524FB5106B066EF08,
-				AD37BBB4A7E1B762F747318E,
+				31676919C4918B62519A3373 /* Sources */,
+				8E47683524FB5106B066EF08 /* Frameworks */,
+				AD37BBB4A7E1B762F747318E /* Resources */,
 			);
 			buildRules = (
 			);
 			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
-				B7C4DEC1AB14B75741E687F3,
-				EB6EACE8F0E1830593E26D8B,
-				0402D689C52ABEA7C2FFFCF3,
-				401276856BE81AD67D6572CC,
-				43258EF5A8DF2C859423F691,
-				EEA485BC4DC98C183DAC9E64,
-				7E44CFF338EC3AC8A9909D21,
-				6D04B25C2C483E7442DB515F,
-				B78F3A185686E4383D9987CF,
+				0402D689C52ABEA7C2FFFCF3 /* Coordinators */,
+				401276856BE81AD67D6572CC /* Components */,
+				43258EF5A8DF2C859423F691 /* Container */,
+				6D04B25C2C483E7442DB515F /* Utilities */,
+				7E44CFF338EC3AC8A9909D21 /* Theme */,
+				B78F3A185686E4383D9987CF /* Tools */,
+				B7C4DEC1AB14B75741E687F3 /* App */,
+				EB6EACE8F0E1830593E26D8B /* Scenes */,
+				EEA485BC4DC98C183DAC9E64 /* Services */,
 			);
 			name = TaskHubTerminalStress;
 			packageProductDependencies = (
-				C55F686B0B0D671AF14E3A3D,
-				3847F04EE724731C9EFB5B91,
+				C55F686B0B0D671AF14E3A3D /* GhosttyTerminal */,
+				3847F04EE724731C9EFB5B91 /* Sparkle */,
 			);
 			productName = TaskHubTerminalStress;
-			productReference = 5A200C8AEBCE06F85302EE31;
+			productReference = 5A200C8AEBCE06F85302EE31 /* TaskHubTerminalStress */;
 			productType = "com.apple.product-type.tool";
 		};
 		8BC2655B2DEDD3F400F279A4 /* TaskHub */ = {
-			dependencies = (
-			);
-			buildConfigurationList = 8BC2657E2DEDD3F500F279A4;
-			productReference = 8BC2655C2DEDD3F400F279A4;
-			productType = "com.apple.product-type.application";
-			packageProductDependencies = (
-				8C68B63441EC81D6CFAE1507,
-				0A01EF5361B23C1FC613C721,
-			);
-			productName = TaskHub;
 			isa = PBXNativeTarget;
-			fileSystemSynchronizedGroups = (
-				B7C4DEC1AB14B75741E687F3,
-				EB6EACE8F0E1830593E26D8B,
-				0402D689C52ABEA7C2FFFCF3,
-				401276856BE81AD67D6572CC,
-				43258EF5A8DF2C859423F691,
-				EEA485BC4DC98C183DAC9E64,
-				7E44CFF338EC3AC8A9909D21,
-				6D04B25C2C483E7442DB515F,
-				C1E2D27BDC02FCA7A98D8C49,
-			);
+			buildConfigurationList = 8BC2657E2DEDD3F500F279A4 /* Build configuration list for PBXNativeTarget "TaskHub" */;
 			buildPhases = (
-				8BC265582DEDD3F400F279A4,
-				8BC265592DEDD3F400F279A4,
-				8BC2655A2DEDD3F400F279A4,
+				F36EA6D42DFE4794AB254F48 /* Bootstrap */,
+				8BC265582DEDD3F400F279A4 /* Sources */,
+				8BC265592DEDD3F400F279A4 /* Frameworks */,
+				8BC2655A2DEDD3F400F279A4 /* Resources */,
 			);
-			name = TaskHub;
 			buildRules = (
 			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				0402D689C52ABEA7C2FFFCF3 /* Coordinators */,
+				401276856BE81AD67D6572CC /* Components */,
+				43258EF5A8DF2C859423F691 /* Container */,
+				6D04B25C2C483E7442DB515F /* Utilities */,
+				7E44CFF338EC3AC8A9909D21 /* Theme */,
+				B7C4DEC1AB14B75741E687F3 /* App */,
+				C1E2D27BDC02FCA7A98D8C49 /* Resources */,
+				EB6EACE8F0E1830593E26D8B /* Scenes */,
+				EEA485BC4DC98C183DAC9E64 /* Services */,
+			);
+			name = TaskHub;
+			packageProductDependencies = (
+				8C68B63441EC81D6CFAE1507 /* GhosttyTerminal */,
+				0A01EF5361B23C1FC613C721 /* Sparkle */,
+			);
+			productName = TaskHub;
+			productReference = 8BC2655C2DEDD3F400F279A4 /* TaskHub.app */;
+			productType = "com.apple.product-type.application";
 		};
 		8BC265732DEDD3F500F279A4 /* TaskHubUITests */ = {
-			dependencies = (
-				8BC265762DEDD3F500F279A4,
+			isa = PBXNativeTarget;
+			buildConfigurationList = 8BC265842DEDD3F500F279A4 /* Build configuration list for PBXNativeTarget "TaskHubUITests" */;
+			buildPhases = (
+				8BC265702DEDD3F500F279A4 /* Sources */,
+				8BC265712DEDD3F500F279A4 /* Frameworks */,
+				8BC265722DEDD3F500F279A4 /* Resources */,
 			);
-			buildConfigurationList = 8BC265842DEDD3F500F279A4;
-			productReference = 8BC265742DEDD3F500F279A4;
-			productType = "com.apple.product-type.bundle.ui-testing";
+			buildRules = (
+			);
+			dependencies = (
+				8BC265762DEDD3F500F279A4 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				3967AE8821F31EF10D65A2C6 /* UITests */,
+			);
+			name = TaskHubUITests;
 			packageProductDependencies = (
 			);
 			productName = TaskHubUITests;
-			isa = PBXNativeTarget;
-			fileSystemSynchronizedGroups = (
-				3967AE8821F31EF10D65A2C6,
-			);
-			buildPhases = (
-				8BC265702DEDD3F500F279A4,
-				8BC265712DEDD3F500F279A4,
-				8BC265722DEDD3F500F279A4,
-			);
-			name = TaskHubUITests;
-			buildRules = (
-			);
+			productReference = 8BC265742DEDD3F500F279A4 /* TaskHubUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
 		};
 		F7381EC033A0950860B176B2 /* TaskHubTests */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 720B97BDA40345316CC49B24;
+			buildConfigurationList = 720B97BDA40345316CC49B24 /* Build configuration list for PBXNativeTarget "TaskHubTests" */;
 			buildPhases = (
-				5EE2C5ACAC4B8227990AE08A,
-				24E62AD82EFC3DE733459B62,
-				D543CE10FAC68652519483D4,
+				5EE2C5ACAC4B8227990AE08A /* Sources */,
+				24E62AD82EFC3DE733459B62 /* Frameworks */,
+				D543CE10FAC68652519483D4 /* Resources */,
 			);
 			buildRules = (
 			);
 			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
-				B7C4DEC1AB14B75741E687F3,
-				EB6EACE8F0E1830593E26D8B,
-				0402D689C52ABEA7C2FFFCF3,
-				401276856BE81AD67D6572CC,
-				43258EF5A8DF2C859423F691,
-				EEA485BC4DC98C183DAC9E64,
-				7E44CFF338EC3AC8A9909D21,
-				6D04B25C2C483E7442DB515F,
-				2FDDEC91A901B778B4B9F76A,
+				0402D689C52ABEA7C2FFFCF3 /* Coordinators */,
+				2FDDEC91A901B778B4B9F76A /* Tests */,
+				401276856BE81AD67D6572CC /* Components */,
+				43258EF5A8DF2C859423F691 /* Container */,
+				6D04B25C2C483E7442DB515F /* Utilities */,
+				7E44CFF338EC3AC8A9909D21 /* Theme */,
+				B7C4DEC1AB14B75741E687F3 /* App */,
+				EB6EACE8F0E1830593E26D8B /* Scenes */,
+				EEA485BC4DC98C183DAC9E64 /* Services */,
 			);
 			name = TaskHubTests;
 			packageProductDependencies = (
-				904836571D4D28F3C2E7EB04,
-				1A5E96BC02299C04C288CFCB,
+				904836571D4D28F3C2E7EB04 /* GhosttyTerminal */,
+				1A5E96BC02299C04C288CFCB /* Sparkle */,
 			);
 			productName = TaskHubTests;
-			productReference = FB9BE2BCFF7EB69F13DEF145;
+			productReference = FB9BE2BCFF7EB69F13DEF145 /* TaskHubTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
-		8BC265542DEDD3F400F279A4 /* PBXProject */ = {
-			buildConfigurationList = 8BC265572DEDD3F400F279A4;
-			packageReferences = (
-				0C764A1CC6D6A03E30F22A99,
-				EE43D3F9D8985BBC71A54EEC,
-			);
-			targets = (
-				8BC2655B2DEDD3F400F279A4,
-				8BC265732DEDD3F500F279A4,
-				F7381EC033A0950860B176B2,
-				3CC1E0BAAD4175D7C15C173D,
-			);
-			minimizedProjectReferenceProxies = 1;
+		8BC265542DEDD3F400F279A4 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1630;
+				LastUpgradeCheck = 1630;
+				ORGANIZATIONNAME = "$(ORGANIZATION_NAME)";
+				TargetAttributes = {
+					8BC2655B2DEDD3F400F279A4 = {
+						CreatedOnToolsVersion = 16.3;
+					};
+					8BC265732DEDD3F500F279A4 = {
+						CreatedOnToolsVersion = 16.3;
+						TestTargetID = 8BC2655B2DEDD3F400F279A4;
+					};
+				};
+			};
+			buildConfigurationList = 8BC265572DEDD3F400F279A4 /* Build configuration list for PBXProject "TaskHub" */;
 			developmentRegion = en;
+			hasScannedForEncodings = 0;
 			knownRegions = (
 				en,
 				Base,
 			);
-			isa = PBXProject;
-			productRefGroup = 8BC2655D2DEDD3F400F279A4;
-			projectDirPath = "";
-			attributes = {
-				LastSwiftUpdateCheck = 1630;
-				BuildIndependentTargetsInParallel = 1;
-				LastUpgradeCheck = 1630;
-				ORGANIZATIONNAME = "$(ORGANIZATION_NAME)";
-				TargetAttributes = {
-					8BC265732DEDD3F500F279A4 = {
-						TestTargetID = 8BC2655B2DEDD3F400F279A4;
-						CreatedOnToolsVersion = 16.3;
-					};
-					8BC2655B2DEDD3F400F279A4 = {
-						CreatedOnToolsVersion = 16.3;
-					};
-				};
-			};
-			hasScannedForEncodings = 0;
 			mainGroup = 8BC265532DEDD3F400F279A4;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				0C764A1CC6D6A03E30F22A99 /* XCRemoteSwiftPackageReference "ghostty-terminal-spm" */,
+				EE43D3F9D8985BBC71A54EEC /* XCRemoteSwiftPackageReference "Sparkle" */,
+			);
 			preferredProjectObjectVersion = 77;
+			productRefGroup = 8BC2655D2DEDD3F400F279A4 /* Products */;
+			projectDirPath = "";
 			projectRoot = "";
+			targets = (
+				8BC2655B2DEDD3F400F279A4 /* TaskHub */,
+				8BC265732DEDD3F500F279A4 /* TaskHubUITests */,
+				F7381EC033A0950860B176B2 /* TaskHubTests */,
+				3CC1E0BAAD4175D7C15C173D /* TaskHubTerminalStress */,
+			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
-		8BC2655A2DEDD3F400F279A4 /* PBXResourcesBuildPhase */ = {
+		8BC2655A2DEDD3F400F279A4 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		8BC265722DEDD3F500F279A4 /* PBXResourcesBuildPhase */ = {
+		8BC265722DEDD3F500F279A4 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		AD37BBB4A7E1B762F747318E /* PBXResourcesBuildPhase */ = {
+		AD37BBB4A7E1B762F747318E /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		D543CE10FAC68652519483D4 /* PBXResourcesBuildPhase */ = {
+		D543CE10FAC68652519483D4 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -460,29 +418,51 @@
 		};
 /* End PBXResourcesBuildPhase section */
 
+/* Begin PBXShellScriptBuildPhase section */
+		F36EA6D42DFE4794AB254F48 /* Bootstrap */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = Bootstrap;
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/bash;
+			shellScript = "\"$PROJECT_DIR/scripts/bootstrap.sh\"\n";
+		};
+/* End PBXShellScriptBuildPhase section */
+
 /* Begin PBXSourcesBuildPhase section */
-		31676919C4918B62519A3373 /* PBXSourcesBuildPhase */ = {
+		31676919C4918B62519A3373 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		5EE2C5ACAC4B8227990AE08A /* PBXSourcesBuildPhase */ = {
+		5EE2C5ACAC4B8227990AE08A /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		8BC265582DEDD3F400F279A4 /* PBXSourcesBuildPhase */ = {
+		8BC265582DEDD3F400F279A4 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		8BC265702DEDD3F500F279A4 /* PBXSourcesBuildPhase */ = {
+		8BC265702DEDD3F500F279A4 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -494,8 +474,8 @@
 /* Begin PBXTargetDependency section */
 		8BC265762DEDD3F500F279A4 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = 8BC2655B2DEDD3F400F279A4;
-			targetProxy = 8BC265752DEDD3F500F279A4;
+			target = 8BC2655B2DEDD3F400F279A4 /* TaskHub */;
+			targetProxy = 8BC265752DEDD3F500F279A4 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -504,20 +484,20 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
-				PRODUCT_NAME = TaskHubTerminalStress;
-				PRODUCT_BUNDLE_IDENTIFIER = com.alexcding.taskhub.terminalstress;
-				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				SWIFT_VERSION = 6.0;
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Manual;
-				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@loader_path/../Frameworks",
 					"@executable_path",
 					"@loader_path/Frameworks",
 				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.alexcding.taskhub.terminalstress;
+				PRODUCT_NAME = TaskHubTerminalStress;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) DEBUG";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 6.0;
 			};
 			name = Debug;
 		};
@@ -525,22 +505,22 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
-				PRODUCT_NAME = TaskHubTests;
-				PRODUCT_BUNDLE_IDENTIFIER = com.alexcding.taskhub.tests;
-				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				SWIFT_VERSION = 6.0;
+				BUNDLE_LOADER = "";
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Manual;
-				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				GENERATE_INFOPLIST_FILE = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@loader_path/../Frameworks",
 					"@executable_path",
 					"@loader_path/Frameworks",
 				);
-				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.alexcding.taskhub.tests;
+				PRODUCT_NAME = TaskHubTests;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 6.0;
 				TEST_HOST = "";
-				BUNDLE_LOADER = "";
 			};
 			name = Release;
 		};
@@ -548,19 +528,19 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
-				PRODUCT_NAME = TaskHubTerminalStress;
-				PRODUCT_BUNDLE_IDENTIFIER = com.alexcding.taskhub.terminalstress;
-				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				SWIFT_VERSION = 6.0;
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Manual;
-				SWIFT_OPTIMIZATION_LEVEL = "-O";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@loader_path/../Frameworks",
 					"@executable_path",
 					"@loader_path/Frameworks",
 				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.alexcding.taskhub.terminalstress;
+				PRODUCT_NAME = TaskHubTerminalStress;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 6.0;
 			};
 			name = Release;
 		};
@@ -582,127 +562,128 @@
 		};
 		8BC2657F2DEDD3F500F279A4 /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReferenceAnchor = C1E2D27BDC02FCA7A98D8C49 /* Resources */;
+			baseConfigurationReferenceRelativePath = Configs/Debug.xcconfig;
 			buildSettings = {
 				INFOPLIST_KEY_CFBundleDisplayName = "$(PRODUCT_DISPLAY_NAME)";
 				SWIFT_VERSION = 6.0;
 			};
-			baseConfigurationReferenceRelativePath = Configs/Debug.xcconfig;
 			name = Debug;
-			baseConfigurationReferenceAnchor = C1E2D27BDC02FCA7A98D8C49;
 		};
 		8BC265802DEDD3F500F279A4 /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReferenceAnchor = C1E2D27BDC02FCA7A98D8C49 /* Resources */;
+			baseConfigurationReferenceRelativePath = Configs/Release.xcconfig;
 			buildSettings = {
 				INFOPLIST_KEY_CFBundleDisplayName = "$(PRODUCT_DISPLAY_NAME)";
 				SWIFT_VERSION = 6.0;
 			};
-			baseConfigurationReferenceRelativePath = Configs/Release.xcconfig;
 			name = Release;
-			baseConfigurationReferenceAnchor = C1E2D27BDC02FCA7A98D8C49;
 		};
 		8BC265852DEDD3F500F279A4 /* Debug */ = {
 			isa = XCBuildConfiguration;
-			buildSettings = {
-				SWIFT_VERSION = 6.0;
-				PRODUCT_NAME = TaskHubUITests;
-			};
+			baseConfigurationReferenceAnchor = C1E2D27BDC02FCA7A98D8C49 /* Resources */;
 			baseConfigurationReferenceRelativePath = Configs/Tests.xcconfig;
+			buildSettings = {
+				PRODUCT_NAME = TaskHubUITests;
+				SWIFT_VERSION = 6.0;
+			};
 			name = Debug;
-			baseConfigurationReferenceAnchor = C1E2D27BDC02FCA7A98D8C49;
 		};
 		8BC265862DEDD3F500F279A4 /* Release */ = {
 			isa = XCBuildConfiguration;
-			buildSettings = {
-				SWIFT_VERSION = 6.0;
-				PRODUCT_NAME = TaskHubUITests;
-			};
+			baseConfigurationReferenceAnchor = C1E2D27BDC02FCA7A98D8C49 /* Resources */;
 			baseConfigurationReferenceRelativePath = Configs/Tests.xcconfig;
+			buildSettings = {
+				PRODUCT_NAME = TaskHubUITests;
+				SWIFT_VERSION = 6.0;
+			};
 			name = Release;
-			baseConfigurationReferenceAnchor = C1E2D27BDC02FCA7A98D8C49;
 		};
 		D5DE68908E76B45C516C3D39 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
-				PRODUCT_NAME = TaskHubTests;
-				PRODUCT_BUNDLE_IDENTIFIER = com.alexcding.taskhub.tests;
-				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				SWIFT_VERSION = 6.0;
+				BUNDLE_LOADER = "";
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Manual;
-				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				GENERATE_INFOPLIST_FILE = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@loader_path/../Frameworks",
 					"@executable_path",
 					"@loader_path/Frameworks",
 				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.alexcding.taskhub.tests;
+				PRODUCT_NAME = TaskHubTests;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) DEBUG";
-				GENERATE_INFOPLIST_FILE = YES;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 6.0;
 				TEST_HOST = "";
-				BUNDLE_LOADER = "";
 			};
 			name = Debug;
 		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		65159389CCD8EC893A2C2336 /* XCConfigurationList */ = {
+		65159389CCD8EC893A2C2336 /* Build configuration list for PBXNativeTarget "TaskHubTerminalStress" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				1960B0485607257F95F7E267,
-				4F4ED917D9B55D8AA8C3F1B2,
+				1960B0485607257F95F7E267 /* Debug */,
+				4F4ED917D9B55D8AA8C3F1B2 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		720B97BDA40345316CC49B24 /* XCConfigurationList */ = {
+		720B97BDA40345316CC49B24 /* Build configuration list for PBXNativeTarget "TaskHubTests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				D5DE68908E76B45C516C3D39,
-				199F657ABAB96381DB1ABF86,
+				D5DE68908E76B45C516C3D39 /* Debug */,
+				199F657ABAB96381DB1ABF86 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		8BC265572DEDD3F400F279A4 /* XCConfigurationList */ = {
+		8BC265572DEDD3F400F279A4 /* Build configuration list for PBXProject "TaskHub" */ = {
 			isa = XCConfigurationList;
+			buildConfigurations = (
+				8BC2657C2DEDD3F500F279A4 /* Debug */,
+				8BC2657D2DEDD3F500F279A4 /* Release */,
+			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
-			buildConfigurations = (
-				8BC2657C2DEDD3F500F279A4,
-				8BC2657D2DEDD3F500F279A4,
-			);
 		};
-		8BC2657E2DEDD3F500F279A4 /* XCConfigurationList */ = {
+		8BC2657E2DEDD3F500F279A4 /* Build configuration list for PBXNativeTarget "TaskHub" */ = {
 			isa = XCConfigurationList;
+			buildConfigurations = (
+				8BC2657F2DEDD3F500F279A4 /* Debug */,
+				8BC265802DEDD3F500F279A4 /* Release */,
+			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
-			buildConfigurations = (
-				8BC2657F2DEDD3F500F279A4,
-				8BC265802DEDD3F500F279A4,
-			);
 		};
-		8BC265842DEDD3F500F279A4 /* XCConfigurationList */ = {
+		8BC265842DEDD3F500F279A4 /* Build configuration list for PBXNativeTarget "TaskHubUITests" */ = {
 			isa = XCConfigurationList;
+			buildConfigurations = (
+				8BC265852DEDD3F500F279A4 /* Debug */,
+				8BC265862DEDD3F500F279A4 /* Release */,
+			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
-			buildConfigurations = (
-				8BC265852DEDD3F500F279A4,
-				8BC265862DEDD3F500F279A4,
-			);
 		};
 /* End XCConfigurationList section */
 
-/* Begin XCLocalSwiftPackageReference section */
-		0C764A1CC6D6A03E30F22A99 /* XCLocalSwiftPackageReference */ = {
-			isa = XCLocalSwiftPackageReference;
-			relativePath = ".build/ghostty-native/package";
-		};
-/* End XCLocalSwiftPackageReference section */
-
 /* Begin XCRemoteSwiftPackageReference section */
-		EE43D3F9D8985BBC71A54EEC /* XCRemoteSwiftPackageReference */ = {
+		0C764A1CC6D6A03E30F22A99 /* XCRemoteSwiftPackageReference "ghostty-terminal-spm" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/alexcding/ghostty-terminal-spm";
+			requirement = {
+				kind = exactVersion;
+				version = "1.6.20260909-taskhub.1";
+			};
+		};
+		EE43D3F9D8985BBC71A54EEC /* XCRemoteSwiftPackageReference "Sparkle" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/sparkle-project/Sparkle";
 			requirement = {
@@ -715,32 +696,32 @@
 /* Begin XCSwiftPackageProductDependency section */
 		0A01EF5361B23C1FC613C721 /* Sparkle */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = EE43D3F9D8985BBC71A54EEC;
+			package = EE43D3F9D8985BBC71A54EEC /* XCRemoteSwiftPackageReference "Sparkle" */;
 			productName = Sparkle;
 		};
 		1A5E96BC02299C04C288CFCB /* Sparkle */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = EE43D3F9D8985BBC71A54EEC;
+			package = EE43D3F9D8985BBC71A54EEC /* XCRemoteSwiftPackageReference "Sparkle" */;
 			productName = Sparkle;
 		};
 		3847F04EE724731C9EFB5B91 /* Sparkle */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = EE43D3F9D8985BBC71A54EEC;
+			package = EE43D3F9D8985BBC71A54EEC /* XCRemoteSwiftPackageReference "Sparkle" */;
 			productName = Sparkle;
 		};
 		8C68B63441EC81D6CFAE1507 /* GhosttyTerminal */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 0C764A1CC6D6A03E30F22A99;
+			package = 0C764A1CC6D6A03E30F22A99 /* XCRemoteSwiftPackageReference "ghostty-terminal-spm" */;
 			productName = GhosttyTerminal;
 		};
 		904836571D4D28F3C2E7EB04 /* GhosttyTerminal */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 0C764A1CC6D6A03E30F22A99;
+			package = 0C764A1CC6D6A03E30F22A99 /* XCRemoteSwiftPackageReference "ghostty-terminal-spm" */;
 			productName = GhosttyTerminal;
 		};
 		C55F686B0B0D671AF14E3A3D /* GhosttyTerminal */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 0C764A1CC6D6A03E30F22A99;
+			package = 0C764A1CC6D6A03E30F22A99 /* XCRemoteSwiftPackageReference "ghostty-terminal-spm" */;
 			productName = GhosttyTerminal;
 		};
 /* End XCSwiftPackageProductDependency section */

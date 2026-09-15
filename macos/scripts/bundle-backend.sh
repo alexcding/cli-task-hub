@@ -21,9 +21,13 @@ mkdir -p "$APP/Contents/Resources/TaskHubImages"
 cp -R "$ROOT/src/renderer/img/." "$APP/Contents/Resources/TaskHubImages/"
 
 cp "$ROOT/macos/licenses/Sparkle-LICENSE" "$APP/Contents/Resources/Licenses/Sparkle-LICENSE"
-cp "$ROOT/macos/.build/ghostty-native/source/LICENSE" "$APP/Contents/Resources/Licenses/Ghostty-LICENSE"
-cp "$ROOT/macos/.build/ghostty-native/package/LICENSE" "$APP/Contents/Resources/Licenses/GhosttyTerminal-LICENSE"
-cp "$ROOT/macos/.build/ghostty-native/package/Sources/GhosttyTheme/LICENSE" "$APP/Contents/Resources/Licenses/GhosttyTheme-LICENSE"
+# The GhosttyTerminal package checkout SwiftPM made for the Xcode build (the
+# derived-data path the README's release build uses), unless one is given.
+GHOSTTY_PKG="${TASKHUB_GHOSTTY_PACKAGE:-$ROOT/macos/.build/xcode/SourcePackages/checkouts/ghostty-terminal-spm}"
+test -f "$GHOSTTY_PKG/LICENSE-ghostty" || { echo "GhosttyTerminal checkout not found at $GHOSTTY_PKG; set TASKHUB_GHOSTTY_PACKAGE" >&2; exit 1; }
+cp "$GHOSTTY_PKG/LICENSE-ghostty" "$APP/Contents/Resources/Licenses/Ghostty-LICENSE"
+cp "$GHOSTTY_PKG/LICENSE" "$APP/Contents/Resources/Licenses/GhosttyTerminal-LICENSE"
+cp "$GHOSTTY_PKG/Sources/GhosttyTheme/LICENSE" "$APP/Contents/Resources/Licenses/GhosttyTheme-LICENSE"
 
 codesign --force --sign - "$APP/Contents/Helpers/taskhub-backend"
 codesign --force --sign - "$APP/Contents/Helpers/taskhub-ptyd"

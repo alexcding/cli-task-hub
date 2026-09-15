@@ -9,7 +9,12 @@ The shared Run scheme starts the checkout's Rust backend through the app's backe
 owner, alongside the Rust PTY helper. No separate server is needed. Normal Quit
 stops the owned server; Xcode Stop/crash also
 causes that development server to exit. An unrelated server on the same port is
-never terminated. Build both Rust crates once before the first Xcode run.
+never terminated.
+
+Run is the only step. The scheme's Build pre-action runs `scripts/bootstrap.sh`,
+which installs a Rust toolchain via rustup into `~/.cargo` if there is none,
+downloads the prebuilt Ghostty VT runtime, builds the two Rust crates, and is a fast
+no-op afterwards. Its log is `.build/bootstrap.log`.
 
 The current local Release package is `macos/.build/review-20260913-appearance/`
 (paths relative to the repository): `TaskHub.app`, ZIP, DMG and `release.json`.
@@ -62,7 +67,9 @@ its other behavior, keeping the window alive while quit awaits document decision
 `ContentView` lays out the sidebar, inspector and toolbar; `AppCoordinatorView`
 renders destinations, retained workspaces and coordinator-owned presentations.
 
-GhosttyTerminal (the locally prepared GhosttyKit package) and Sparkle 2.9.6 remain
+GhosttyTerminal (github.com/alexcding/ghostty-terminal-spm, TaskHub's fork of
+libghostty-spm with the wrapper patches committed and a prebuilt XCFramework as its
+binary target, pinned by exact tag) and Sparkle 2.9.6 remain
 direct Xcode package dependencies. `GhosttySnapshotTests` stays a separate package
 for validating the third-party terminal patches. Generated routes now live in
 `Services/Backend/Routes.swift`.
@@ -320,15 +327,13 @@ fixture data directory. The fixture consumes that file and emits synthetic event
 
 ## Build and run
 
-From the repository root:
+From the repository root, `macos/scripts/bootstrap.sh` does everything the scheme
+needs (the Xcode scheme runs it itself); the individual steps it performs are:
 
 ```bash
 npm ci --ignore-scripts
-npm run gen:swift-routes
-python3 macos/scripts/build-ghostty-vt.py
-python3 macos/scripts/build-ghostty-native.py
-cargo build --manifest-path crates/taskhub-backend/Cargo.toml
-cargo build --manifest-path crates/taskhub-ptyd/Cargo.toml --release --features terminal-snapshots --locked
+npm run gen:swift-routes            # or check:swift-routes; the output is committed
+macos/scripts/bootstrap.sh          # rustup if needed, prebuilt Ghostty VT runtime, both crates
 xcodebuildmcp macos build --project-path macos/TaskHub.xcodeproj --scheme TaskHub --derived-data-path macos/.build/xcode --arch arm64
 ```
 

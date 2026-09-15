@@ -1,6 +1,15 @@
 {
-  "originHash" : "67889974d5dea4cfe10e3b75b3c81a1fa654fc75e0b08456dd5c6c5baf8e15ee",
+  "originHash" : "3a2d88ccee5e55cf22b91387cee08ac857e1e6e168f8425d44e2d58f1dc13cef",
   "pins" : [
+    {
+      "identity" : "ghostty-terminal-spm",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/alexcding/ghostty-terminal-spm",
+      "state" : {
+        "revision" : "e8f6c85f1576d63d464ba7849867aab4eed89876",
+        "version" : "1.6.20260909-taskhub.1"
+      }
+    },
     {
       "identity" : "msdisplaylink",
       "kind" : "remoteSourceControl",

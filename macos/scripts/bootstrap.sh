@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+# Prepares everything the TaskHub Xcode scheme needs, so Run in Xcode is the only
+# step: a Rust toolchain, the prebuilt Ghostty VT runtime, and the Rust backend +
+# PTY helper the scheme launches. Idempotent: re-running after a successful
+# bootstrap only performs a fast cargo no-op build.
+#
+# Xcode runs this twice per build. The scheme's Build pre-action does the
+# first-time work, and a Run Script phase re-runs it so any failure lands in the
+# build log with the real error.
+#
+# The GhosttyTerminal Swift package itself needs nothing here: the project pulls
+# github.com/alexcding/ghostty-terminal-spm, whose binary target is a prebuilt
+# XCFramework attached to its release. The same release carries the headless VT
+# runtime (libghostty-vt) that crates/taskhub-vt links; it is downloaded below.
+# build-ghostty-vt.py / build-ghostty-native.py remain the from-source path for
+# working on the Ghostty patches.
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+MACOS="$ROOT/macos"
+BUILD="$MACOS/.build"
+LOG="$BUILD/bootstrap.log"
+mkdir -p "$BUILD"
+
+# Must match the ghostty-terminal-spm tag the Xcode project pins.
+GHOSTTY_RELEASE="1.6.20260909-taskhub.1"
+VT_RUNTIME_URL="https://github.com/alexcding/ghostty-terminal-spm/releases/download/$GHOSTTY_RELEASE/ghostty-vt-runtime.zip"
+
+# Xcode pre-actions run with a bare environment; tools may live in the usual places.
+export PATH="$HOME/.cargo/bin:$HOME/.bun/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
+
+# Two runs per build append here; start over once it passes 1 MB.
+[[ -f "$LOG" && $(stat -f %z "$LOG") -gt 1048576 ]] && : > "$LOG"
+
+log() { printf '[bootstrap] %s\n' "$*"; }
+fail() { log "ERROR: $*"; log "Full log: $LOG"; exit 1; }
+
+# Everything below also goes to the log so the pre-action (whose output Xcode
+# hides) leaves a trail the build phase can point at.
+exec > >(tee -a "$LOG") 2>&1
+log "=== $(date '+%F %T') ==="
+
+# 1. Rust (the backend and PTY helper are Rust crates; the scheme launches their binaries).
+if ! command -v cargo >/dev/null 2>&1; then
+  log "Rust toolchain missing; installing rustup into ~/.cargo (no shell profile changes)"
+  curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --no-modify-path --profile minimal \
+    || fail "rustup install failed. Install Rust from https://rustup.rs and rerun"
+  hash -r
+  command -v cargo >/dev/null 2>&1 || fail "cargo not found after installing rustup"
+fi
+
+# 2. The prebuilt Ghostty VT runtime for the pinned release. A from-source build
+#    (build-ghostty-vt.py) lands in the same place; delete the .release stamp's
+#    directory or rerun that script to switch between the two.
+RUNTIME="$BUILD/ghostty-vt/runtime"
+STAMP="$BUILD/ghostty-vt/runtime.release"
+if [[ ! -f "$RUNTIME/lib/libghostty-vt.a" || "$(cat "$STAMP" 2>/dev/null || true)" != "$GHOSTTY_RELEASE" ]]; then
+  log "Downloading the Ghostty VT runtime $GHOSTTY_RELEASE"
+  mkdir -p "$BUILD/ghostty-vt"
+  ZIP="$BUILD/ghostty-vt/runtime.zip"
+  curl -fsSL "$VT_RUNTIME_URL" -o "$ZIP" || fail "download failed: $VT_RUNTIME_URL"
+  rm -rf "$RUNTIME" "$BUILD/ghostty-vt/runtime.tmp"
+  mkdir -p "$BUILD/ghostty-vt/runtime.tmp"
+  ditto -x -k "$ZIP" "$BUILD/ghostty-vt/runtime.tmp" || fail "could not unpack $ZIP"
+  mv "$BUILD/ghostty-vt/runtime.tmp/runtime" "$RUNTIME" && rm -rf "$BUILD/ghostty-vt/runtime.tmp" "$ZIP"
+  [[ -f "$RUNTIME/lib/libghostty-vt.a" ]] || fail "the runtime archive had no lib/libghostty-vt.a"
+  echo "$GHOSTTY_RELEASE" > "$STAMP"
+fi
+
+# 3. The binaries the shared scheme's launch arguments point at.
+log "Building the Rust backend (debug) and PTY helper (release)"
+cargo build --manifest-path "$ROOT/crates/taskhub-backend/Cargo.toml" || fail "taskhub-backend build failed"
+cargo build --manifest-path "$ROOT/crates/taskhub-ptyd/Cargo.toml" --release --features terminal-snapshots --locked \
+  || fail "taskhub-ptyd build failed"
+
+log "ready"
