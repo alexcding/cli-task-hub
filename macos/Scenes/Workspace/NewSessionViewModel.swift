@@ -8,7 +8,6 @@ import Observation
 @MainActor @Observable final class NewSessionViewModel {
     enum Action { case created(WorkspaceSession) }
     static let hint = "Also names the worktree folder — or paste a GitHub PR / Jira URL to start on that page."
-    static let preferredBase = "develop"
 
     @ObservationIgnored var onAction: (Action) -> Void = { _ in }
     let project: Project
@@ -111,7 +110,7 @@ import Observation
             try Task.checkCancellation()
             guard active, self.generation == generation else { return }
             var names = refs.branches.map(\.name)
-            let base = names.contains(Self.preferredBase) ? Self.preferredBase : (refs.defaultBranch.isEmpty ? names.first ?? Self.preferredBase : refs.defaultBranch)
+            let base = refs.sessionBase
             if !names.contains(base) { names.insert(base, at: 0) }
             branches = names
             if draft.base.isEmpty || !names.contains(draft.base) { draft.base = base }
@@ -178,7 +177,7 @@ import Observation
         } else {
             let branch = (typed.isEmpty ? placeholder : typed).replacingOccurrences(of: "\\s+", with: "-", options: .regularExpression)
             if let problem = Self.branchNameError(branch) { inputError = problem; return }
-            creation.branch = branch; creation.createBranch = true; creation.url = contextURL ?? ""
+            creation.branch = branch; creation.createBranch = !branches.contains(branch); creation.url = contextURL ?? ""
         }
         guard active, !Task.isCancelled, inputGeneration == generation else { return }
         do {

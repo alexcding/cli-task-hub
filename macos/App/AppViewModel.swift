@@ -36,6 +36,8 @@ public final class AppViewModel {
     }
     var projectModels: [String: ProjectPageViewModel] { coordinator.projectModels }
     private(set) var changingSessions: Set<String> = []
+    /// PR / ticket pages whose session is being created right now (their Create Session is busy).
+    private(set) var startingPages: Set<String> = []
     private(set) var buildModels: [String: BuildWorkspaceViewModel] = [:]
     private(set) var historyModels: [String: GitHistoryViewModel] = [:]
     private(set) var diffModels: [String: DiffViewModel] = [:]
@@ -275,6 +277,30 @@ public final class AppViewModel {
 
     private var canStartSession: Bool {
         connection == "Connected" && coordinator.canPresent && pageWorkflowRuns[viewer.activeContextID ?? ""]?.running != true
+            && !(selection.tabURL.map(startingPages.contains) ?? false)
+    }
+
+    /// New Session from where it was asked. A PR or ticket page already decides its branch, so its
+    /// session is created at once (viewer.js newSession); anything else opens the sheet.
+    func startSession(in projectID: String, pageURL: String?) {
+        guard let pageURL, SessionPage.parse(pageURL) != nil else { presentNewSession(in: projectID, pageURL: pageURL); return }
+        guard canStartSession, let operations = sessionOperations,
+              let project = projects.first(where: { $0.id == projectID && !$0.workspace.isEmpty }),
+              startingPages.insert(pageURL).inserted else { return }
+        let context = viewer.active
+        context?.error = nil
+        let agent = shell.defaultAgent
+        Task {
+            let outcome = await PageSessionStart.run(url: pageURL, project: project, agent: agent, operations: operations)
+            // Release the page BEFORE acting: the sheet fallback checks canStartSession, which is
+            // false while this page is still marked as starting.
+            startingPages.remove(pageURL)
+            switch outcome {
+            case .created(let session): createdSession(session)
+            case .needsBranch: presentNewSession(in: projectID, pageURL: pageURL)
+            case .failed(let message): context?.error = message
+            }
+        }
     }
 
     /// Present New Session for `project`. `pageURL` is the page it was asked from, if any.
@@ -310,7 +336,7 @@ public final class AppViewModel {
         case .newSession:
             guard canPerform(.newSession), let project = sessionProject(for: selection) else { return }
             let pageURL: String? = if case .tab(let url) = selection { url } else { nil }
-            presentNewSession(in: project.id, pageURL: pageURL)
+            startSession(in: project.id, pageURL: pageURL)
         case .openFile: if canPerform(.openFile), let context = viewer.active { viewer.openFile(in: context) }
         case .saveFile: if let document = viewer.active?.activeDocument { Task { await document.save() } }
         case .closePage: if let context = viewer.active, let id = context.activeID, let tab = context.tab(id) { context.close(tab) }

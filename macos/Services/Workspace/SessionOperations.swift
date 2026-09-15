@@ -32,6 +32,13 @@ struct GitReferences: Decodable, Sendable {
     let branches: [Branch]
     let defaultBranch: String
     var worktrees: [Worktree]? = nil
+
+    /// The base a new session's branch forks from: `develop` when the repo has it, else its default.
+    var sessionBase: String {
+        let names = branches.map(\.name)
+        if names.contains("develop") { return "develop" }
+        return defaultBranch.isEmpty ? names.first ?? "develop" : defaultBranch
+    }
 }
 
 struct SessionDraft: Equatable, Sendable {
@@ -52,6 +59,30 @@ protocol SessionCreating: Sendable {
     func references(_ project: Project) async throws -> GitReferences
     func resolvePage(_ raw: String, project: Project, draft: SessionDraft, workflow: Bool) async throws -> SessionDraft
     func create(project: Project, draft: SessionDraft, requireExactBranch: Bool) async throws -> WorkspaceSession
+}
+
+/// A session started straight from a PR or ticket page (viewer.js newSession): the page decides
+/// the branch, an existing checkout is reused, and a new branch forks from the session base.
+enum PageSessionStart {
+    enum Outcome: Sendable {
+        case created(WorkspaceSession)
+        /// The PR's head branch couldn't be looked up — the New Session sheet asks for it.
+        case needsBranch
+        case failed(String)
+    }
+
+    static func run(url: String, project: Project, agent: SessionAgent, operations: any SessionCreating) async -> Outcome {
+        do {
+            var draft = SessionDraft(); draft.agent = agent
+            draft = try await operations.resolvePage(url, project: project, draft: draft, workflow: false)
+            if draft.createBranch && draft.reuseWorktree == nil { draft.base = try await operations.references(project).sessionBase }
+            return .created(try await operations.create(project: project, draft: draft, requireExactBranch: false))
+        } catch is PullRequestBranchUnknown {
+            return .needsBranch
+        } catch {
+            return .failed("Could not start session: \(error.localizedDescription)")
+        }
+    }
 }
 
 protocol SessionServing: SessionCreating {
@@ -77,12 +108,19 @@ struct SessionOperations: SessionServing {
         if let reused = draft.reuseWorktree {
             let found: ResolvedWorktree = try await api.get(APIClient.query(Routes.WORKTREE,
                 ["path": project.workspace, "branch": branch, "strict": "1"]))
-            guard found.matched, SessionRemovalPlan.path(found.path) == SessionRemovalPlan.path(reused) else {
+            guard found.matched, found.isWorktree, SessionRemovalPlan.path(found.path) == SessionRemovalPlan.path(reused) else {
                 throw BackendError.operation("The existing worktree changed. Resolve the page again before creating the session.")
             }
             worktree = .init(path: found.path)
         } else {
-            worktree = try await api.request(Routes.WORKTREE, method: "POST", body:
+            // A branch that already has a checkout here is reused — the session is new, the worktree
+            // isn't. The main checkout can't be: git refuses a second checkout of its branch.
+            let existing: ResolvedWorktree = try await api.get(APIClient.query(Routes.WORKTREE,
+                ["path": project.workspace, "branch": branch, "strict": "1"]))
+            if existing.matched && !existing.isWorktree {
+                throw BackendError.operation("\(branch) is checked out in the main repo — switch it away there first.")
+            }
+            worktree = existing.matched ? .init(path: existing.path) : try await api.request(Routes.WORKTREE, method: "POST", body:
                 WorktreeRequest(path: project.workspace, branch: branch, create: draft.createBranch, base: draft.base))
         }
         guard !worktree.path.isEmpty else { throw BackendError.operation("Git did not return a worktree.") }
@@ -137,6 +175,9 @@ struct SessionOperations: SessionServing {
         let match = page.kind == "jira" ? ["key": page.key] : ["branch": result.branch]
         let found: ResolvedWorktree = try await api.get(APIClient.query(Routes.WORKTREE,
             ["path": project.workspace, "strict": "1"].merging(match) { _, new in new }))
+        if found.matched && !found.isWorktree {
+            throw BackendError.operation("\(found.branch) is checked out in the main repo — switch it away there first.")
+        }
         if found.matched {
             result.reuseWorktree = found.path; result.branch = found.branch; result.createBranch = false
         }

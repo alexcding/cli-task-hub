@@ -61,6 +61,8 @@ struct SavedTabs: Decodable, Sendable {
 
 enum SidebarDestination: Hashable, Codable {
     case overview, terminal, activity, settings, project(String), session(String), tab(String)
+
+    var tabURL: String? { if case .tab(let url) = self { url } else { nil } }
 }
 
 /// What the sidebar knows about a session's agent at render time — the Tauri sidebar's

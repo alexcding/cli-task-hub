@@ -28,7 +28,8 @@ private final class DelayedWorkflowCreation: URLProtocol, @unchecked Sendable {
                 }
                 return
             }
-            if request.url!.query?.contains("branch=") == true {
+            // The branch has no checkout until the POST makes one; afterwards the exact-branch check finds it.
+            if request.url!.query?.contains("branch=") == true, Self.probe.started {
                 body = #"{"matched":true,"isWorktree":true,"branch":"feature/rec-7-cancel-checkout","path":"/tmp/workflow-cancel"}"#
             } else { body = #"{"matched":false,"isWorktree":false,"branch":"","path":""}"# }
         case Routes.TASKS:

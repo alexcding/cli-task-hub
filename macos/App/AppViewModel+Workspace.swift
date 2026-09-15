@@ -66,7 +66,7 @@ extension AppViewModel: WorkspaceCoordinating {
         case .createSession: perform(.newSession)
         case .createSessionIn(let projectID):
             let pageURL: String? = if case .tab(let url) = selection { url } else { context.activePage?.url }
-            presentNewSession(in: projectID, pageURL: pageURL)
+            startSession(in: projectID, pageURL: pageURL)
         case .openFile: viewer.openFile(in: context)
         case .addPage: addPage(in: context)
         case .changes: if let session = state.session { showChanges(for: session, context: context) }

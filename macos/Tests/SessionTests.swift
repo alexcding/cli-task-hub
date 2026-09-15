@@ -204,3 +204,105 @@ private let scriptedProject = Project(id: "fixture", name: "Fixture", repo: "fix
     model.input = "feature/x"
     #expect(model.referenceError == "Could not read refs")
 }
+
+private final class ExistingCheckoutFixture: URLProtocol, @unchecked Sendable {
+    nonisolated(unsafe) static var posts: [String] = []
+    static let lock = NSLock()
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        let url = request.url!
+        let branch = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "branch" }?.value ?? ""
+        let body: String
+        switch (url.path, request.httpMethod ?? "GET") {
+        case (Routes.WORKTREE, "POST"):
+            Self.lock.withLock { Self.posts.append(url.path) }
+            body = #"{"path":"/tmp/fixture.worktrees/fresh"}"#
+        case (Routes.WORKTREE, _) where branch == "reuse-me":
+            body = #"{"matched":true,"isWorktree":true,"branch":"reuse-me","path":"/tmp/fixture.worktrees/reuse-me"}"#
+        case (Routes.WORKTREE, _) where branch == "main" || url.query?.contains("key=MAIN-1") == true:
+            body = #"{"matched":true,"isWorktree":false,"branch":"main","path":"/tmp/fixture"}"#
+        case (Routes.WORKTREE, _):
+            body = #"{"matched":false,"isWorktree":false,"branch":"","path":""}"#
+        default: body = #"{"ok":true}"#
+        }
+        client?.urlProtocol(self, didReceive: HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil)!, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Data(body.utf8)); client?.urlProtocolDidFinishLoading(self)
+    }
+    override func stopLoading() {}
+}
+
+@Test func sessionCreationReusesAnExistingCheckoutAndRefusesTheMainCheckout() async throws {
+    let configuration = URLSessionConfiguration.ephemeral
+    configuration.protocolClasses = [ExistingCheckoutFixture.self]
+    let api = try APIClient(baseURL: URL(string: "http://127.0.0.1:12345")!, session: URLSession(configuration: configuration))
+    let operations = SessionOperations(api: api)
+    let project = Project(id: "fixture", name: "Fixture", repo: "fixture/repo", color: nil, workspace: "/tmp/fixture")
+    func draft(_ branch: String) -> SessionDraft { var d = SessionDraft(); d.branch = branch; d.agent = .shell; return d }
+
+    let reused = try await operations.create(project: project, draft: draft("reuse-me"), requireExactBranch: false)
+    #expect(reused.worktree == "/tmp/fixture.worktrees/reuse-me")
+    #expect(ExistingCheckoutFixture.lock.withLock { ExistingCheckoutFixture.posts.isEmpty })
+
+    await #expect(throws: BackendError.self) {
+        _ = try await operations.create(project: project, draft: draft("main"), requireExactBranch: false)
+    }
+    #expect(ExistingCheckoutFixture.lock.withLock { ExistingCheckoutFixture.posts.isEmpty })
+
+    await #expect(throws: BackendError.self) { // a PR whose head branch is the main checkout's is refused, not reused
+        _ = try await operations.resolvePage("https://jira.test/browse/MAIN-1", project: project, draft: SessionDraft())
+    }
+
+    let fresh = try await operations.create(project: project, draft: draft("fresh"), requireExactBranch: false)
+    #expect(fresh.worktree == "/tmp/fixture.worktrees/fresh")
+    #expect(ExistingCheckoutFixture.lock.withLock { ExistingCheckoutFixture.posts.count } == 1)
+}
+
+private actor PageStartService: SessionCreating {
+    let resolution: Result<SessionDraft, any Error>
+    var baseRequests = 0
+    private(set) var createdDraft: SessionDraft?
+    init(_ resolution: Result<SessionDraft, any Error>) { self.resolution = resolution }
+    func references(_ project: Project) -> GitReferences {
+        baseRequests += 1
+        return GitReferences(branches: [.init(name: "main"), .init(name: "develop")], defaultBranch: "main")
+    }
+    func resolvePage(_ raw: String, project: Project, draft: SessionDraft, workflow: Bool) throws -> SessionDraft {
+        var result = try resolution.get(); result.agent = draft.agent; return result
+    }
+    func create(project: Project, draft: SessionDraft, requireExactBranch: Bool) -> WorkspaceSession {
+        createdDraft = draft
+        return WorkspaceSession(id: "page", projectId: project.id, workspace: project.workspace, worktree: draft.reuseWorktree ?? "/tmp/new",
+                                title: draft.title, branch: draft.branch, url: draft.url, createdAt: nil, pinned: false)
+    }
+}
+
+@Test func pageSessionStartCreatesAtOnceFallsBackToTheSheetAndReportsFailures() async {
+    var ticket = SessionDraft(); ticket.url = "https://jira.test/browse/REC-1"; ticket.kind = "jira"; ticket.branch = "REC-1-fix"; ticket.createBranch = true
+    let fresh = PageSessionStart.self
+    let newBranch = PageStartService(.success(ticket))
+    guard case .created(let session) = await fresh.run(url: ticket.url, project: scriptedProject, agent: .codex, operations: newBranch) else {
+        Issue.record("A ticket page should create its session at once"); return
+    }
+    #expect(session.branch == "REC-1-fix")
+    let createdDraft = await newBranch.createdDraft
+    #expect(createdDraft?.base == "develop" && createdDraft?.agent == .codex)
+
+    var reused = ticket; reused.reuseWorktree = "/tmp/existing"; reused.createBranch = false
+    let existing = PageStartService(.success(reused))
+    guard case .created(let onExisting) = await fresh.run(url: ticket.url, project: scriptedProject, agent: .shell, operations: existing) else {
+        Issue.record("An existing checkout should be reused"); return
+    }
+    let baseRequests = await existing.baseRequests
+    #expect(onExisting.worktree == "/tmp/existing" && baseRequests == 0)
+
+    guard case .needsBranch = await fresh.run(url: "https://github.com/fixture/repo/pull/1", project: scriptedProject, agent: .shell,
+                                              operations: PageStartService(.failure(PullRequestBranchUnknown()))) else {
+        Issue.record("An unknown PR branch should fall back to the sheet"); return
+    }
+    guard case .failed(let message) = await fresh.run(url: ticket.url, project: scriptedProject, agent: .shell,
+                                                      operations: PageStartService(.failure(BackendError.operation("feature/x is checked out in the main repo — switch it away there first.")))) else {
+        Issue.record("Other failures should be reported"); return
+    }
+    #expect(message.contains("checked out in the main repo"))
+}
