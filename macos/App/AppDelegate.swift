@@ -50,7 +50,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         popover.delegate = self
         popover.contentSize = NSSize(width: 380, height: 580)
         let tray = model.makeTray(openWindow: { [weak self] in self?.showWindow() },
-            dismiss: { [weak self] in self?.popover.performClose(nil) })
+            dismiss: { [weak self] in self?.popover.performClose(nil) },
+            quit: { NSApp.terminate(nil) }) // through applicationShouldTerminate → the termination coordinator
         self.tray = tray
         popover.contentViewController = NSHostingController(rootView: NativeTrayView(model: tray.model))
         observeStatus()

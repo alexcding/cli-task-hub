@@ -1,5 +1,8 @@
 import SwiftUI
 
+// The menu bar tray, laid out like the Tauri tray menu (src-tauri/src/tray.rs build_menu): Open
+// TaskHub, the review requests, the open tabs by group, plan usage, then Quit TaskHub. Appearance, notification
+// preferences and activity live in the app (Settings, the Activity page), not here.
 public struct NativeTrayView: View {
     let model: TrayViewModel
 
@@ -7,41 +10,43 @@ public struct NativeTrayView: View {
 
     public var body: some View {
         VStack(spacing: 0) {
-            HStack {
-                Text("TaskHub").font(.headline)
-                Spacer()
-                Text(model.connection).font(.caption).foregroundStyle(.secondary)
-                Button("Refresh", systemImage: "arrow.clockwise", action: model.refresh)
-                    .labelStyle(.iconOnly).help("Refresh reviews and usage")
-            }.padding(16)
+            Button(action: model.openWindow) {
+                Text("Open TaskHub").frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain).padding(.horizontal, 16).padding(.vertical, 12)
             Divider()
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     reviews
                     openTabs
-                    RecentActivityView(notifications: model.shell.notifications)
+                    if showsNothing {
+                        Text("Nothing to review or open").foregroundStyle(.secondary).font(.callout)
+                    }
                     Divider()
                     UsagePanel(shell: model.shell)
-                    Divider()
-                    Picker("Appearance", selection: Binding(get: { model.shell.appearance }, set: model.shell.setAppearance)) {
-                        ForEach(AppAppearance.allCases) { Text($0.title).tag($0) }
-                    }.pickerStyle(.segmented)
-                    if let error = model.shell.settingsError { Text(error).font(.caption).foregroundStyle(.orange) }
-                    Divider()
-                    NotificationPreferencesView(shell: model.shell)
                 }.padding(16)
             }
-            if let error = model.actionError { Text(error).font(.caption).foregroundStyle(.orange).padding(.horizontal, 12) }
+            if let error = model.actionError { Text(error).font(.caption).foregroundStyle(.orange).padding(.horizontal, 12).padding(.bottom, 8) }
             Divider()
-            Button("Open TaskHub", action: model.openWindow).padding(12)
+            Button(action: model.quit) {
+                Text("Quit TaskHub").frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain).padding(.horizontal, 16).padding(.vertical, 12)
         }
         .frame(width: 380, height: 580)
         .accessibilityIdentifier("native-tray-panel")
     }
 
+    /// Loaded, with no review request and no open tab (tray.rs "Nothing to review or open").
+    private var showsNothing: Bool {
+        model.shell.trayUpdated != nil && model.shell.trayError == nil && model.pendingReviews.isEmpty && model.tabGroups.isEmpty
+    }
+
     private var reviews: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Review requested").font(.headline)
+            if model.shell.trayUpdated == nil || model.shell.trayError != nil || !model.pendingReviews.isEmpty {
+                Text("Review requested").font(.headline)
+            }
             if let error = model.shell.trayError {
                 Text("Showing last available reviews. \(error)").font(.caption).foregroundStyle(.orange)
             }
@@ -49,9 +54,8 @@ public struct NativeTrayView: View {
                 ProgressView("Loading reviews…").controlSize(.small)
             } else if model.shell.trayUpdated == nil {
                 Text("Connect to load review requests").foregroundStyle(.secondary).font(.callout)
-            } else if model.pendingReviews.isEmpty {
-                Text(model.shell.trayError == nil ? "No pending review requests" : "Reviews unavailable")
-                    .foregroundStyle(.secondary).font(.callout)
+            } else if model.pendingReviews.isEmpty && model.shell.trayError != nil {
+                Text("Reviews unavailable").foregroundStyle(.secondary).font(.callout)
             }
             ForEach(model.pendingReviews) { pr in
                 Button {
@@ -61,7 +65,7 @@ public struct NativeTrayView: View {
                         Image(systemName: ciSymbol(pr)).foregroundStyle(ciColor(pr))
                             .accessibilityLabel(pr.ciLabel)
                         VStack(alignment: .leading, spacing: 3) {
-                            Text("#\(pr.number) \(pr.title)").lineLimit(2).multilineTextAlignment(.leading)
+                            Text("PR #\(pr.number) \(pr.title)").lineLimit(2).multilineTextAlignment(.leading)
                             Text("\(pr.projectName ?? pr.repo) · \(pr.ciLabel)").font(.caption).foregroundStyle(.secondary)
                         }
                         Spacer(minLength: 0)

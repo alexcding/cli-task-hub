@@ -3,7 +3,7 @@ import Observation
 import Testing
 
 @MainActor @Observable private final class TrayRuntimeFixture: TrayCoordinating {
-    var state = TrayState(connection: "Connected", canNavigate: true)
+    var state = TrayState(canNavigate: true)
     var refreshes = 0
     var acknowledged: [TrayPR] = []
     var selected: [SidebarDestination] = []
@@ -27,7 +27,8 @@ import Testing
 @MainActor private final class TrayWindowFixture {
     var events: [String] = []
     var presentation: TrayPresentation {
-        .init(openWindow: { self.events.append("window") }, dismiss: { self.events.append("dismiss") })
+        .init(openWindow: { self.events.append("window") }, dismiss: { self.events.append("dismiss") },
+              quit: { self.events.append("quit") })
     }
 }
 
@@ -135,4 +136,15 @@ private func trayReview(_ number: Int, url: String? = nil, category: String = "r
     #expect(retainedRoot == nil)
     fresh.handle(.openWindow)
     #expect(window.events.isEmpty)
+}
+
+@MainActor @Test func trayQuitClosesThePanelAndQuitsOnlyWhileActive() {
+    let runtime = TrayRuntimeFixture(), window = TrayWindowFixture()
+    let model = TrayViewModel(service: runtime, shell: trayShell())
+    let coordinator = TrayCoordinator(model: model, runtime: runtime, desktop: ProjectPageActions(), presentation: window.presentation)
+    model.quit()
+    #expect(window.events.isEmpty) // a hidden tray can't quit the app
+    coordinator.setActive(true)
+    model.quit()
+    #expect(window.events == ["dismiss", "quit"] && !model.active)
 }

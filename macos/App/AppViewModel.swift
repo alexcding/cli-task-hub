@@ -21,6 +21,8 @@ public final class AppViewModel {
     var logs: LogsViewModel? { coordinator.logsCoordinator?.model }
     var settings: SettingsViewModel? { coordinator.settingsCoordinator?.model }
     let workspaceLaunch: WorkspaceLaunchViewModel
+    /// The sidebar bell's "Today" popover.
+    let todayActivity = TodayActivityViewModel()
     @ObservationIgnored private let platformFactory: any AppPlatformFactory
     @ObservationIgnored private let terminalControl: any TerminalRuntimeControlling
     public private(set) var projects: [Project] = []
@@ -132,6 +134,10 @@ public final class AppViewModel {
         }
         root = coordinator.makeRoot(factory: rootFactory, runtime: self, shell: shell, viewer: viewer)
         coordinator.installNotifications(shell.notifications, runtime: self, desktop: desktop)
+        todayActivity.openPage = { [weak self] entry in
+            guard let self else { throw CancellationError() }
+            try await openActivityEntry(entry)
+        }
     }
 
     var sidebarEntries: [SidebarEntry] {
@@ -389,6 +395,18 @@ public final class AppViewModel {
         })
     }
 
+    /// A Today-popover row: its PR opens by link; a ticket by its key on the configured Jira site.
+    func openActivityEntry(_ entry: LogEntry) async throws {
+        if let link = entry.link {
+            try await openPage(OpenPageRequest(url: link, kind: "github", title: entry.title)); return
+        }
+        guard let key = entry.jiraKey, let api else { throw BackendError.operation("Connect before opening a page.") }
+        let site: JiraSite = try await api.get(Routes.JIRA_SITE, timeout: 30)
+        guard let base = safeWebURL(site.baseUrl) else { throw BackendError.operation("Configure the Jira site to open ticket links.") }
+        try await openPage(OpenPageRequest(url: base.appendingPathComponent("browse").appendingPathComponent(key).absoluteString,
+                                           kind: "jira", title: key))
+    }
+
     func openPage(_ request: OpenPageRequest) async throws {
         try Task.checkCancellation()
         guard safeWebURL(request.url) != nil else { throw BackendError.operation("Invalid page address.") }
@@ -405,9 +423,10 @@ public final class AppViewModel {
         viewer.active?.open(request.url, title: request.title)
     }
 
-    public func makeTray(openWindow: @escaping () -> Void, dismiss: @escaping () -> Void) -> TrayCoordinator {
+    public func makeTray(openWindow: @escaping () -> Void, dismiss: @escaping () -> Void,
+                         quit: @escaping () -> Void = {}) -> TrayCoordinator {
         coordinator.makeTray(factory: trayFactory, runtime: self, shell: shell, desktop: desktop,
-                             presentation: TrayPresentation(openWindow: openWindow, dismiss: dismiss))
+                             presentation: TrayPresentation(openWindow: openWindow, dismiss: dismiss, quit: quit))
     }
 
     func select(_ destination: SidebarDestination) {
@@ -805,7 +824,7 @@ public final class AppViewModel {
                 model.workflows?.connect(backendFactory.workflows(api: api))
                 model.automation?.connect(backendFactory.automation(api: api))
             } }
-            if let api { logs?.connect(backendFactory.logs(api: api)) }
+            if let api { logs?.connect(backendFactory.logs(api: api)); todayActivity.connect(backendFactory.logs(api: api)) }
             if let api { for model in historyModels.values { model.connect(baseURL: api.baseURL, service: backendFactory.history(api: api)) } }
             if let api { for model in diffModels.values { model.connect(baseURL: api.baseURL, service: backendFactory.diff(api: api)); model.actions?.connect(backendFactory.changes(api: api)) } }
             if let api {
@@ -928,6 +947,7 @@ public final class AppViewModel {
         if event.type == "activity", let activity = event.event {
             shell.notifications.receiveActivity(activity, enabled: shell.activityNotify)
             if selection == .activity { logs?.refresh() }
+            todayActivity.activityReceived()
         }
         if event.type == "settings" { shell.loadSettings() }
         if event.type == "config" { settings?.refresh() }

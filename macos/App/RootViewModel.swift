@@ -10,6 +10,7 @@ import Observation
     var projectModels: [String: ProjectPageViewModel] = [:]
     var dashboard: DashboardViewModel?
     var logs: LogsViewModel?
+    var todayActivity: TodayActivityViewModel?
     var settings: SettingsViewModel?
     var error: String?
     var hasTerminal = false
@@ -56,6 +57,7 @@ import Observation
         }
     }
     var canCreateProject: Bool { state.canCreateProject }
+    var todayActivity: TodayActivityViewModel? { state.todayActivity }
     var canCreateSession: Bool { state.canCreateSession }
     var canRefresh: Bool { state.canRefresh }
     var hasWorkspace: Bool { viewer.active != nil }

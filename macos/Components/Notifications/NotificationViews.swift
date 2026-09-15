@@ -30,25 +30,6 @@ struct NotificationPreferencesView: View {
     }
 }
 
-struct RecentActivityView: View {
-    let notifications: NotificationStore
-    var body: some View {
-        if !notifications.recent.isEmpty {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Recent activity").font(.headline)
-                ForEach(notifications.recent) { notice in
-                    VStack(alignment: .leading, spacing: 3) {
-                        if notice.url != nil {
-                            Button(notice.title) { notifications.open(notice) }.buttonStyle(.link)
-                        } else { Text(notice.title).fontWeight(.medium) }
-                        if !notice.body.isEmpty { Text(notice.body).font(.caption).foregroundStyle(.secondary) }
-                    }
-                }
-            }
-        }
-    }
-}
-
 struct ActivityToastView: View {
     let notifications: NotificationStore
     var body: some View {

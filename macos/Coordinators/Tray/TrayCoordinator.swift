@@ -18,6 +18,7 @@ import Observation
 @MainActor struct TrayPresentation {
     let openWindow: () -> Void
     let dismiss: () -> Void
+    var quit: () -> Void = {}
 }
 
 @MainActor @Observable public final class TrayCoordinator {
@@ -51,6 +52,7 @@ import Observation
             runtime.selectTrayDestination(destination)
             model.setActive(false); presentation.openWindow()
         case .openWindow: model.setActive(false); presentation.openWindow()
+        case .quit: model.setActive(false); presentation.dismiss(); presentation.quit()
         }
     }
     func retire() {

@@ -7,7 +7,9 @@ import Testing
     let prs = try JSONDecoder().decode([TrayPR].self, from: data)
     #expect(prs.filter(\.pendingReview).map(\.number) == [1])
     let tabs = prs.map { SavedTab(kind: "github", title: $0.title, url: $0.url, category: $0.category) }
+        + [SavedTab(kind: "web", title: "Docs", url: "https://example.com/docs")]
     let groups = TrayTabGroup.make(tabs: tabs, prs: prs)
+    #expect(groups.map(\.title) == ["Mine", "Review"]) // no web tabs in the tray
     #expect(groups.first { $0.title == "Review" }?.tabs.map(\.url) == [prs[0].url, prs[1].url])
     #expect(groups.first { $0.title == "Mine" }?.tabs.map(\.url) == [prs[2].url])
     #expect(safeWebURL("file:///tmp/a") == nil)
@@ -146,4 +148,48 @@ import Testing
     #expect(reopened.font(.term) == CodeFont(family: "Menlo", size: 24))
     #expect(reopened.font(.diff) == CodeFont(family: "Menlo", size: 18))
     #expect(reopened.remotePageLimit == 4)
+}
+
+private actor TodayLogService: LogService {
+    let body: String
+    init(_ body: String) { self.body = body }
+    func entries(category: String, errorsOnly: Bool) throws -> [LogEntry] {
+        #expect(category == "event" && !errorsOnly)
+        return try JSONDecoder().decode([LogEntry].self, from: Data(body.utf8))
+    }
+    func categories() -> [String] { [] }
+    func clear(category: String) {}
+}
+
+@MainActor @Test(.timeLimit(.minutes(1))) func todayActivityShowsOnlyTodaysEventsAndLoadsWhenOpened() async throws {
+    // Local noon, so "today" and "yesterday" are the same days in every time zone.
+    let now = try #require(Calendar.current.date(bySettingHour: 12, minute: 0, second: 0, of: Date(timeIntervalSince1970: 1_789_000_000)))
+    let stamp = ISO8601DateFormatter()
+    let today = stamp.string(from: now.addingTimeInterval(-600))
+    let yesterday = stamp.string(from: now.addingTimeInterval(-86400))
+    let service = TodayLogService(#"[{"seq":2,"category":"event","level":"info","type":"pr_merged","payload":"{\"pr\":{\"number\":4,\"url\":\"https://github.com/o/r/pull/4\"}}","created_at":"\#(today)"},{"seq":3,"category":"event","level":"error","type":"sync_failed","payload":"{}","created_at":"\#(today)"},{"seq":1,"category":"event","level":"info","type":"pr_opened","payload":"{}","created_at":"\#(yesterday)"}]"#)
+    let model = TodayActivityViewModel(now: { now })
+    model.connect(service)
+    #expect(!model.loaded && !model.loading) // nothing is fetched until the bell opens it
+    model.setVisible(true)
+    while !model.loaded { try await Task.sleep(for: .milliseconds(5)) }
+    #expect(model.entries.map(\.seq) == [2, 3])
+
+    var opened: [Int] = []
+    model.openPage = { opened.append($0.seq) }
+    let merged = try #require(model.entries.first { $0.seq == 2 }), failed = try #require(model.entries.first { $0.seq == 3 })
+    #expect(model.canOpen(merged) && !model.canOpen(failed))
+    let openedMerged = await model.open(merged), openedFailed = await model.open(failed)
+    #expect(openedMerged && !openedFailed)
+    #expect(opened == [2])
+    model.openPage = { _ in throw BackendError.operation("offline") }
+    let openedOffline = await model.open(merged)
+    #expect(!openedOffline)
+    #expect(model.error?.contains("offline") == true)
+
+    model.setVisible(false)
+    model.setVisible(true) // reopening starts from "Loading…", never the previous rows
+    #expect(model.entries.isEmpty && !model.loaded && model.error == nil)
+    while !model.loaded { try await Task.sleep(for: .milliseconds(5)) }
+    model.setVisible(false)
 }

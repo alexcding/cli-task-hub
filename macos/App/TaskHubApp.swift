@@ -6,7 +6,7 @@ struct TaskHubApp: App {
 
     var body: some Scene {
         Window("TaskHub Native", id: "main") {
-            ContentView(model: delegate.model, showTray: delegate.toggleTray)
+            ContentView(model: delegate.model)
                 .modifier(TaskHubWindowChrome())
                 .frame(minWidth: 760, minHeight: 480)
                 .environment(\.terminalFont, delegate.model.shell.font(.term))

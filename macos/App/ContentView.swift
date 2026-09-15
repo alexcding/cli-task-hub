@@ -3,12 +3,11 @@ import SwiftUI
 /// Root window layout; destinations and presentations belong to the coordinator.
 public struct ContentView: View {
     @State private var app: AppViewModel
-    private let showTray: () -> Void
     private var model: RootViewModel { app.root }
 
     public var body: some View {
         NavigationSplitView {
-            SidebarView(model: model, showTray: showTray)
+            SidebarView(model: model)
         } detail: {
             // NavigationSplitView and inspector each install their own hosting
             // views. Bound the content inside those hosts: a window-level
@@ -53,8 +52,7 @@ public struct ContentView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
-    public init(model: AppViewModel, showTray: @escaping () -> Void = {}) {
+    public init(model: AppViewModel) {
         _app = State(initialValue: model)
-        self.showTray = showTray
     }
 }

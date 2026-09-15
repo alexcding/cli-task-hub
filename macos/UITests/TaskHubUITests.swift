@@ -602,8 +602,8 @@ final class TaskHubUITests: XCTestCase {
         XCTAssertTrue(status.waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertFalse(app.windows["TaskHub Native"].exists)
         status.click()
-        XCTAssertTrue(app.staticTexts["Connected"].waitForExistence(timeout: 10), app.debugDescription)
-        XCTAssertTrue(app.buttons["Open TaskHub"].exists)
+        XCTAssertTrue(app.buttons["Open TaskHub"].waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertFalse(app.radioButtons["Dark"].exists) // appearance lives in Settings, not the tray
         app.buttons["Open TaskHub"].click()
         XCTAssertTrue(app.outlines["workspace-sidebar"].waitForExistence(timeout: 10))
         app.typeKey(",", modifierFlags: .command)
@@ -1420,24 +1420,25 @@ final class TaskHubUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["--backend-url", "http://127.0.0.1:1", "--data-dir", path, "--pty-socket", socket]
         app.launch()
-        XCTAssertTrue(app.buttons["Reviews & Usage"].waitForExistence(timeout: 5))
-        app.buttons["Reviews & Usage"].click()
+        let status = app.descendants(matching: .any)["taskhub-status-item"].firstMatch
+        XCTAssertTrue(status.waitForExistence(timeout: 5))
+        status.click()
         XCTAssertTrue(app.staticTexts["Review requested"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["Connect to load review requests"].exists)
         XCTAssertTrue(app.buttons["Open TaskHub"].exists)
-        XCTAssertFalse(app.buttons["Quit TaskHub"].exists)
+        XCTAssertTrue(app.buttons["Quit TaskHub"].exists) // the Tauri tray ends with Quit TaskHub
         app.typeKey(.escape, modifierFlags: [])
         let dismissed = expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: app.buttons["Open TaskHub"])
         wait(for: [dismissed], timeout: 5)
-        XCTAssertTrue(app.buttons["Reviews & Usage"].exists)
-        app.buttons["Reviews & Usage"].click()
+        XCTAssertTrue(status.exists)
+        status.click()
         XCTAssertTrue(app.buttons["Open TaskHub"].waitForExistence(timeout: 5))
         app.buttons["Open TaskHub"].click()
         XCTAssertFalse(app.buttons["Open TaskHub"].exists)
     }
 
     @MainActor
-    func testNativeTrayResolvesSessionTabsAndPreservesOpenDraft() throws {
+    func testNativeTrayListsOnlyPageTabsAndPreservesOpenDraft() throws {
         let environment = ProcessInfo.processInfo.environment
         guard let base = environment["TASKHUB_UI_BACKEND_URL"], let path = environment["TASKHUB_UI_DATA_DIR"],
               let socket = environment["TASKHUB_UI_PTY_SOCKET"] else {
@@ -1446,32 +1447,28 @@ final class TaskHubUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["--backend-url", base, "--data-dir", path, "--pty-socket", socket]
         app.launch()
-        XCTAssertTrue(app.buttons["Reviews & Usage"].waitForExistence(timeout: 10))
-        app.buttons["Reviews & Usage"].click()
-        let sessionTab = app.buttons["Browser fixture"].firstMatch
-        XCTAssertTrue(sessionTab.waitForExistence(timeout: 10), app.debugDescription)
-        sessionTab.click()
-        XCTAssertTrue(app.webViews.staticTexts["Native browser fixture"].waitForExistence(timeout: 10))
-        XCTAssertTrue(app.buttons["Restart Session"].exists, "A saved tab matching a session must select the retained session.")
-        XCTAssertFalse(app.buttons["Open TaskHub"].exists)
+        let status = app.descendants(matching: .any)["taskhub-status-item"].firstMatch
+        XCTAssertTrue(status.waitForExistence(timeout: 10))
+        status.click()
+        XCTAssertTrue(app.buttons["Open TaskHub"].waitForExistence(timeout: 10), app.debugDescription)
+        // The fixture's tabs are plain web pages: like the Tauri tray, only PR and Jira tabs are listed.
+        XCTAssertFalse(app.buttons["Browser fixture"].exists)
+        XCTAssertFalse(app.buttons["Next page"].exists)
+        app.typeKey(.escape, modifierFlags: [])
         app.buttons["New Project"].click()
         let draft = app.sheets.textFields["project-name"]
         XCTAssertTrue(draft.waitForExistence(timeout: 5))
         draft.click(); app.typeText("Keep this tray draft")
-        let status = app.descendants(matching: .any)["taskhub-status-item"].firstMatch
         status.click()
-        let next = app.buttons["Next page"].firstMatch
-        XCTAssertTrue(next.waitForExistence(timeout: 5), app.debugDescription)
-        XCTAssertFalse(next.isEnabled)
+        XCTAssertTrue(app.buttons["Open TaskHub"].waitForExistence(timeout: 5), app.debugDescription)
         app.typeKey(.escape, modifierFlags: [])
         XCTAssertTrue(draft.waitForExistence(timeout: 5))
         XCTAssertEqual(draft.value as? String, "Keep this tray draft")
         app.sheets.buttons["Cancel"].click()
-        app.buttons["Reviews & Usage"].click()
-        XCTAssertTrue(next.waitForExistence(timeout: 5))
-        XCTAssertTrue(next.isEnabled); next.click()
-        XCTAssertTrue(app.webViews.staticTexts["Next page"].waitForExistence(timeout: 10))
-        XCTAssertFalse(app.buttons["Restart Session"].exists)
+        // The sidebar bell is today's activity (events-popover.js), not the tray.
+        app.buttons["Today's activity"].click()
+        XCTAssertTrue(app.descendants(matching: .any)["today-activity-popover"].firstMatch.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["Open TaskHub"].exists)
     }
 
     @MainActor

@@ -51,13 +51,14 @@ struct TrayTabGroup: Identifiable {
 
     static func make(tabs: [SavedTab], prs: [TrayPR]) -> [Self] {
         let byURL = Dictionary(prs.map { ($0.url, $0) }, uniquingKeysWith: { first, _ in first })
-        func group(_ tab: SavedTab) -> String {
+        // PR and Jira tabs only, as in the Tauri tray — a plain web page has no place there.
+        func group(_ tab: SavedTab) -> String? {
             if tab.kind == "jira" { return "Jira" }
-            if tab.kind != "github" { return "Web" }
+            guard tab.kind == "github" else { return nil }
             let review = byURL[tab.url]?.inReviewGroup ?? (tab.category == "review")
             return review ? "Review" : "Mine"
         }
-        return ["Mine", "Review", "Jira", "Web"].compactMap { title in
+        return ["Mine", "Review", "Jira"].compactMap { title in
             let rows = tabs.filter { group($0) == title }
             return rows.isEmpty ? nil : Self(title: title, tabs: rows)
         }

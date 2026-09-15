@@ -5,7 +5,7 @@ import SwiftUI
 // the wordmark with New Project + the activity bell, and Settings pinned in a footer.
 struct SidebarView: View {
     let model: RootViewModel
-    let showTray: () -> Void
+    @State private var showingActivity = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -15,7 +15,16 @@ struct SidebarView: View {
                 Spacer()
                 SidebarAppButton(icon: "appPlus", label: "New Project", help: "New Project") { model.newProject() }
                     .disabled(!model.canCreateProject)
-                SidebarAppButton(icon: "bell", label: "Reviews & Usage", help: "Today's activity") { showTray() }
+                SidebarAppButton(icon: "bell", label: "Today's activity", help: "Today's activity") { showingActivity.toggle() }
+                    .popover(isPresented: $showingActivity, arrowEdge: .bottom) {
+                        if let today = model.todayActivity {
+                            TodayActivityPopover(model: today, showAllEvents: {
+                                showingActivity = false
+                                model.select(.activity)
+                            }, dismiss: { showingActivity = false })
+                        }
+                    }
+                    .onChange(of: showingActivity) { _, open in model.todayActivity?.setVisible(open) }
             }
             .padding(.leading, 16).padding(.trailing, 12).padding(.top, 4).padding(.bottom, 6)
 

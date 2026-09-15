@@ -5,14 +5,8 @@ struct UsagePanel: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text("Usage").font(.headline)
-                Spacer()
-                Picker("Agent", selection: Binding(get: { shell.usageAgent }, set: shell.setUsageAgent)) {
-                    Text("Claude").tag("claude")
-                    Text("Codex").tag("codex")
-                }.labelsHidden().frame(width: 110)
-            }
+            // The agent is chosen in the app (the toolbar's usage picker), as in the Tauri tray.
+            Text(shell.usageAgent == "codex" ? "Codex usage" : "Claude usage").font(.headline)
             if shell.usageLoading && shell.usage == nil {
                 ProgressView("Loading usage…").controlSize(.small)
             }
@@ -40,6 +34,13 @@ struct UsagePanel: View {
         }
     }
 
+    /// Each agent's own accent, as the Tauri tray draws its bars (usage_image.rs ACCENT_CLAUDE /
+    /// ACCENT_CODEX): Claude coral, Codex periwinkle.
+    private var barColor: Color {
+        shell.usageAgent == "codex" ? Color(red: 0x71 / 255, green: 0x7a / 255, blue: 0xf0 / 255)
+            : Color(red: 0xd9 / 255, green: 0x77 / 255, blue: 0x57 / 255)
+    }
+
     private func usageWindow(_ title: String, window: UsageSnapshot.Window, duration: TimeInterval) -> some View {
         TimelineView(.periodic(from: .now, by: 60)) { context in
         VStack(alignment: .leading, spacing: 4) {
@@ -49,7 +50,7 @@ struct UsagePanel: View {
                 Text("\(Int(window.remaining.rounded()))% left").monospacedDigit()
             }.font(.caption)
             ProgressView(value: window.remaining, total: 100)
-                .tint(window.remaining < 20 ? .orange : .accentColor)
+                .tint(barColor)
                 .accessibilityLabel("\(title) remaining")
             if let pace = window.paceRemaining(duration: duration, now: context.date) {
                 let reserve = Int((window.remaining - pace).rounded())

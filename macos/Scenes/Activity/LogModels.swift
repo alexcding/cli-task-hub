@@ -9,6 +9,8 @@ struct LogEntry: Decodable, Identifiable, Equatable, Sendable {
     let created_at: String
     let title: String
     let detail: String
+    /// The event's own one-line summary, without the raw-payload fallback `detail` uses.
+    let summary: String
     let link: String?
     let jiraKey: String?
     var id: Int { seq }
@@ -29,6 +31,7 @@ struct LogEntry: Decodable, Identifiable, Equatable, Sendable {
         let eventPayload = try? JSONDecoder().decode(ActivityEvent.Payload.self, from: data)
         let notice = ActivityEvent(type: type ?? "", payload: eventPayload, created_at: created_at).message
         title = notice.title
+        summary = notice.body
         if !notice.body.isEmpty { detail = notice.body }
         else if let object = try? JSONSerialization.jsonObject(with: data),
                 JSONSerialization.isValidJSONObject(object),

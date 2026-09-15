@@ -2,7 +2,6 @@ import Foundation
 import Observation
 
 @MainActor struct TrayState {
-    var connection = "Connecting"
     var tabs: [SavedTab] = []
     var sessions: [WorkspaceSession] = []
     var reviews: [TrayPR] = []
@@ -17,7 +16,7 @@ import Observation
 }
 
 @MainActor @Observable public final class TrayViewModel {
-    enum Action: Equatable { case refresh, openReview(String), openTab(String), openWindow }
+    enum Action: Equatable { case refresh, openReview(String), openTab(String), openWindow, quit }
     let shell: ShellStore
     @ObservationIgnored var onAction: (Action) -> Void = { _ in }
     @ObservationIgnored private weak var service: (any TrayServing)?
@@ -32,7 +31,6 @@ import Observation
     }
     private var state: TrayState { service?.trayState() ?? TrayState() }
     var available: Bool { !retired && service != nil }
-    var connection: String { state.connection }
     var pendingReviews: [TrayPR] { state.reviews.filter(\.pendingReview) }
     var tabGroups: [TrayTabGroup] { TrayTabGroup.make(tabs: state.tabs, prs: state.reviews) }
     var canNavigate: Bool { available && active && state.canNavigate }
@@ -45,6 +43,7 @@ import Observation
     func openReview(_ review: TrayPR) { request(.openReview(review.id)) }
     func openTab(_ tab: SavedTab) { request(.openTab(tab.id)) }
     func openWindow() { request(.openWindow) }
+    func quit() { request(.quit) }
     private func request(_ action: Action) { if available && active { onAction(action) } }
 
     func performRefresh() { if available { service?.refreshTray() } }
