@@ -23,8 +23,6 @@ struct TaskHubApp: App {
         }
         .defaultSize(width: 1000, height: 680)
         .defaultPosition(.center)
-        .windowResizability(.contentMinSize)
-        .windowToolbarStyle(.unifiedCompact)
         .commands {
             TaskHubCommands(model: delegate.model, perform: delegate.perform,
                             canCheckForUpdates: delegate.canCheckForUpdates)

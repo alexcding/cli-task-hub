@@ -263,6 +263,15 @@ main menu. A window lifecycle adapter forwards the SwiftUI scene delegate's othe
 callbacks while redirecting Close through the existing asynchronous quit contract.
 SwiftUI's standard editing menus keep copy/paste/undo on the responder chain.
 
+`ContentView` uses `GeometryReader` sizing boundaries **inside** the detail and
+inspector columns. Each column gets its own SwiftUI hosting view; bounding only
+the scene root does not prevent the nested hosts from feeding changing content
+minima back into the split view's constraints. The columns supply available bounds
+to their content, and inspector width limits remain present even while switching
+to a destination without an inspector. Retained terminals stay mounted across
+selection changes. The SwiftUI `App` and `Window` lifecycle retains the 760 × 480
+root minimum and the scene's 1000 × 680 default size.
+
 Twelve focused Swift tests pass for callback dispatch, stale root/context rejection,
 factory injection, selection persistence and retained workspace identity. Native UI
 tests pass for the Dashboard, web Sprint Board, Settings/menu navigation and actual
