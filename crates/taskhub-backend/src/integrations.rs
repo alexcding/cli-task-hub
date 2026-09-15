@@ -4,8 +4,11 @@ use std::{
     os::unix::fs::PermissionsExt,
     path::PathBuf,
     process::Stdio,
-    sync::atomic::{AtomicBool, Ordering},
-    time::Duration,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+    time::{Duration, Instant},
 };
 
 use axum::{
@@ -27,14 +30,43 @@ use crate::{cli, error::ApiError, AppState};
 type ApiResult<T> = Result<Json<T>, ApiError>;
 
 pub struct ForwarderManager {
-    children: Mutex<HashMap<String, Child>>,
+    children: Mutex<HashMap<String, Forwarder>>,
+    /// Repos whose forwarder keeps dying on start, with when to try again.
+    backoff: Mutex<HashMap<String, Backoff>>,
     started: AtomicBool,
+}
+
+struct Forwarder {
+    child: Child,
+    since: Instant,
+    /// The tail of the child's stderr. A reader task drains the pipe for as long as the forwarder
+    /// runs: an undrained pipe fills and blocks `gh` mid-run, which `try_wait` would never see.
+    stderr: Arc<Mutex<String>>,
+}
+
+/// Keep the last of a forwarder's stderr, for the failure it is about to report.
+const STDERR_TAIL: usize = 2048;
+
+struct Backoff {
+    failures: u32,
+    retry_at: Instant,
+}
+
+/// A forwarder that exits sooner than this failed to start (e.g. the `gh webhook` extension is
+/// not installed) rather than dropping a working connection.
+const QUICK_EXIT: Duration = Duration::from_secs(30);
+const MAX_BACKOFF: Duration = Duration::from_secs(15 * 60);
+
+/// How long to wait before starting a repo's forwarder again after `failures` quick exits in a row.
+fn backoff_delay(failures: u32) -> Duration {
+    Duration::from_secs(10u64.saturating_mul(1u64 << failures.min(10))).min(MAX_BACKOFF)
 }
 
 impl ForwarderManager {
     pub fn new() -> Self {
         Self {
             children: Mutex::new(HashMap::new()),
+            backoff: Mutex::new(HashMap::new()),
             started: AtomicBool::new(false),
         }
     }
@@ -65,23 +97,46 @@ impl ForwarderManager {
             })
             .collect();
         let mut children = self.children.lock().await;
+        let mut backoff = self.backoff.lock().await;
+        backoff.retain(|repo, _| desired.contains(repo));
         let existing = children.keys().cloned().collect::<Vec<_>>();
         for repo in existing {
             let exited = children
                 .get_mut(&repo)
-                .and_then(|child| child.try_wait().ok())
+                .and_then(|forwarder| forwarder.child.try_wait().ok())
                 .flatten()
                 .is_some();
             if exited || !desired.contains(&repo) {
-                if let Some(mut child) = children.remove(&repo) {
-                    let _ = child.start_kill();
+                let Some(mut forwarder) = children.remove(&repo) else { continue };
+                let _ = forwarder.child.start_kill();
+                if !exited || !desired.contains(&repo) {
+                    continue;
                 }
+                let tail = forwarder.stderr.lock().await.clone();
+                if forwarder.since.elapsed() >= QUICK_EXIT {
+                    backoff.remove(&repo); // it ran; a dropped connection restarts right away
+                    continue;
+                }
+                // Died on start: wait longer each time, and log the reason once per streak — never
+                // a start/exit pair every sync.
+                let failures = backoff.get(&repo).map_or(0, |b| b.failures) + 1;
+                if failures == 1 {
+                    let reason: String = tail.trim().chars().rev().take(500).collect::<Vec<_>>().into_iter().rev().collect();
+                    let _ = app.db.add_log(
+                        "webhook",
+                        "error",
+                        "forwarder_failed",
+                        &json!({"repo":repo,"error":if reason.is_empty() { "gh webhook forward exited immediately".to_owned() } else { reason }}),
+                    );
+                }
+                backoff.insert(repo, Backoff { failures, retry_at: Instant::now() + backoff_delay(failures) });
             }
         }
         for repo in desired {
-            if children.contains_key(&repo) {
+            if children.contains_key(&repo) || backoff.get(&repo).is_some_and(|b| Instant::now() < b.retry_at) {
                 continue;
             }
+            let retrying = backoff.contains_key(&repo);
             let child = crate::cli::command("gh")
                 .args([
                     "webhook",
@@ -92,28 +147,50 @@ impl ForwarderManager {
                 ])
                 .stdin(Stdio::null())
                 .stdout(Stdio::null())
-                .stderr(Stdio::null())
+                .stderr(Stdio::piped())
                 .kill_on_drop(true)
                 .spawn();
             match child {
-                Ok(child) => {
-                    children.insert(repo.clone(), child);
-                    if let Ok(event) = app.db.add_log(
-                        "webhook",
-                        "info",
-                        "forwarder_started",
-                        &json!({"repo":repo}),
-                    ) {
-                        app.broadcast(json!({"type":"activity","event":event}));
+                Ok(mut child) => {
+                    let stderr = Arc::new(Mutex::new(String::new()));
+                    if let Some(pipe) = child.stderr.take() {
+                        let sink = stderr.clone();
+                        tokio::spawn(async move {
+                            use tokio::io::AsyncReadExt;
+                            let mut pipe = pipe;
+                            let mut buffer = [0u8; 1024];
+                            while let Ok(read) = pipe.read(&mut buffer).await {
+                                if read == 0 {
+                                    return;
+                                }
+                                let mut text = sink.lock().await;
+                                text.push_str(&String::from_utf8_lossy(&buffer[..read]));
+                                if text.len() > STDERR_TAIL {
+                                    let cut = text.len() - STDERR_TAIL;
+                                    let cut = (cut..text.len()).find(|i| text.is_char_boundary(*i)).unwrap_or(text.len());
+                                    *text = text[cut..].to_owned();
+                                }
+                            }
+                        });
+                    }
+                    children.insert(repo.clone(), Forwarder { child, since: Instant::now(), stderr });
+                    // A diagnostic log, not activity: it is never broadcast to the apps (the Node
+                    // backend kept webhook logs off the activity stream too).
+                    if !retrying {
+                        let _ = app.db.add_log("webhook", "info", "forwarder_started", &json!({"repo":repo}));
                     }
                 }
                 Err(error) => {
-                    let _ = app.db.add_log(
-                        "webhook",
-                        "error",
-                        "forwarder_failed",
-                        &json!({"repo":repo,"error":error.to_string()}),
-                    );
+                    let failures = backoff.get(&repo).map_or(0, |b| b.failures) + 1;
+                    if failures == 1 {
+                        let _ = app.db.add_log(
+                            "webhook",
+                            "error",
+                            "forwarder_failed",
+                            &json!({"repo":repo,"error":error.to_string()}),
+                        );
+                    }
+                    backoff.insert(repo, Backoff { failures, retry_at: Instant::now() + backoff_delay(failures) });
                 }
             }
         }
@@ -131,10 +208,11 @@ impl ForwarderManager {
     }
     pub async fn stop(&self) {
         let mut children = self.children.lock().await;
-        for (_, child) in children.iter_mut() {
-            let _ = child.start_kill();
+        for (_, forwarder) in children.iter_mut() {
+            let _ = forwarder.child.start_kill();
         }
         children.clear();
+        self.backoff.lock().await.clear();
     }
 }
 
@@ -535,4 +613,18 @@ pub async fn github_webhook(
         }
     }
     StatusCode::OK
+}
+
+#[cfg(test)]
+mod forwarder_tests {
+    use super::*;
+
+    #[test]
+    fn backoff_grows_from_ten_seconds_and_caps_at_fifteen_minutes() {
+        assert_eq!(backoff_delay(1), Duration::from_secs(20));
+        assert_eq!(backoff_delay(2), Duration::from_secs(40));
+        assert_eq!(backoff_delay(6), Duration::from_secs(640));
+        assert_eq!(backoff_delay(7), MAX_BACKOFF);
+        assert_eq!(backoff_delay(u32::MAX), MAX_BACKOFF);
+    }
 }

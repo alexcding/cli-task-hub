@@ -135,12 +135,7 @@ private struct TodayActivityRow: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            let style = Self.style(entry)
-            ZStack {
-                Circle().fill(style.tint.opacity(0.12))
-                style.icon.font(.system(size: 13, weight: .medium)).foregroundStyle(style.tint)
-            }
-            .frame(width: 28, height: 28).padding(.top, 1)
+            ActivityGlyphView(type: entry.type ?? "", level: entry.level).padding(.top, 1)
             VStack(alignment: .leading, spacing: 1) {
                 Text(entry.title).font(.system(size: 13.5)).fixedSize(horizontal: false, vertical: true)
                 if !entry.summary.isEmpty {
@@ -162,20 +157,5 @@ private struct TodayActivityRow: View {
         .contentShape(Rectangle())
         .onHover { hovered = $0 && (entry.link != nil || entry.jiraKey != nil) }
         .accessibilityElement(children: .combine)
-    }
-
-    /// presentEvent's icon + tint per event type (pages/logs.js).
-    private static func style(_ entry: LogEntry) -> (icon: Image, tint: Color) {
-        switch entry.type ?? "" {
-        case "pr_opened": (Image(nsImage: SidebarIcons.image("github", size: 15) ?? NSImage()).renderingMode(.template), .accentColor)
-        case "pr_merged": (Image(systemName: "arrow.triangle.merge"), .purple)
-        case "pr_closed": (Image(systemName: "xmark"), .secondary)
-        case "jira_transitioned": (Image(systemName: "arrow.clockwise"), .green)
-        case "jira_version_created": (Image(systemName: "plus"), .accentColor)
-        case "jira_fixversion_set": (Image(systemName: "checkmark.circle"), .green)
-        case "jira_transition_failed", "jira_fixversion_failed", "sync_failed": (Image(systemName: "exclamationmark.triangle"), .red)
-        default:
-            (Image(systemName: "clock"), entry.level == "error" ? .red : entry.level == "warn" ? .orange : .secondary)
-        }
     }
 }

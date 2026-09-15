@@ -12,8 +12,9 @@ struct TaskHubApp: App {
                 .environment(\.terminalFont, delegate.model.shell.font(.term))
                 .environment(\.documentFont, delegate.model.shell.font(.diff))
                 .overlay(alignment: .topTrailing) {
+                    // #activity-toasts: 20pt in from the right, just under the toolbar.
                     ActivityToastView(notifications: delegate.model.shell.notifications)
-                        .frame(maxWidth: 420).padding(16)
+                        .padding(.top, 6).padding(.trailing, 20)
                 }
                 .background {
                     TaskHubWindowLifecycle(onAttach: delegate.attachWindow,

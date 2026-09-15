@@ -134,12 +134,24 @@ import Observation
         return true
     }
 
+    /// How long an activity toast stays (activity-toast.js LINGER_MS); hovering holds it.
+    static let toastLinger: Duration = .seconds(6)
+
     func showToast(_ notice: NativeNotice) {
         guard !retired else { return }
-        toastTask?.cancel()
         toast = notice
+        armToast()
+    }
+
+    /// The pointer is over the toast: keep it until it leaves.
+    func holdToast() { toastTask?.cancel(); toastTask = nil }
+    func releaseToast() { if toast != nil { armToast() } }
+
+    private func armToast() {
+        guard let notice = toast else { return }
+        toastTask?.cancel()
         toastTask = Task { [weak self] in
-            do { try await Task.sleep(for: .seconds(8)) } catch { return }
+            do { try await Task.sleep(for: Self.toastLinger) } catch { return }
             if self?.toast?.id == notice.id { self?.dismissToast() }
         }
     }

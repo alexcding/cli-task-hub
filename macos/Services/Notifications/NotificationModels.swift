@@ -55,7 +55,7 @@ public struct ActivityEvent: Codable, Equatable, Sendable {
         default: title = type.isEmpty ? "Activity" : type.replacingOccurrences(of: "_", with: " ").capitalized
             body = p?.error ?? p?.detail ?? ""
         }
-        return NativeNotice(kind: .activity, title: title, body: body, url: url.flatMap(safeWebURL)?.absoluteString)
+        return NativeNotice(kind: .activity, title: title, body: body, url: url.flatMap(safeWebURL)?.absoluteString, eventType: type)
     }
 }
 
@@ -90,6 +90,8 @@ struct NativeNotice: Identifiable, Equatable, Sendable {
     var url: String?
     var repo: String?
     var number: Int?
+    /// The activity event's type (`pr_merged`, `sync_failed`, …) — picks the toast's glyph.
+    var eventType: String? = nil
 }
 
 enum NotificationPermission: String, Sendable {
