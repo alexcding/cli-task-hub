@@ -5,12 +5,16 @@ struct TaskHubToolbar: ToolbarContent {
 
     var body: some ToolbarContent {
         if let workspace = model.activeWorkspace {
-            ToolbarItem(placement: .automatic) {
-                SessionWorkspaceLeadingToolbar(model: workspace.model)
+            if workspace.model.session != nil {
+                ToolbarItem(placement: .automatic) {
+                    SessionWorkspaceLeadingToolbar(model: workspace.model)
+                }
             }
-            if #available(macOS 26.0, *) { ToolbarSpacer(.flexible) }
-            ToolbarItem(placement: .primaryAction) {
-                SessionWorkspaceInspectorToolbarButton(model: workspace.model)
+            if workspace.model.showsTerminal {
+                if #available(macOS 26.0, *) { ToolbarSpacer(.flexible) }
+                ToolbarItem(placement: .primaryAction) {
+                    SessionWorkspaceInspectorToolbarButton(model: workspace.model)
+                }
             }
         } else if model.showsDashboard {
             if #available(macOS 26.0, *) { ToolbarSpacer(.flexible) }

@@ -43,6 +43,25 @@ impl Poller {
     fn generation(&self, id: &str) -> u64 {
         *self.generations.lock().unwrap().get(id).unwrap_or(&0)
     }
+
+    fn pr_sync_key(project: &Value, state: &str, generation: u64) -> String {
+        let id = project["id"].as_str().unwrap_or("");
+        let repo = project["repo"].as_str().unwrap_or("");
+        if state == "open" {
+            format!("pr:{id}:{repo}:{generation}")
+        } else {
+            format!("scope:{id}:{state}:{repo}:{generation}")
+        }
+    }
+
+    pub fn pr_syncing(&self, project: &Value, state: &str) -> bool {
+        let key = Self::pr_sync_key(
+            project,
+            state,
+            self.generation(project["id"].as_str().unwrap_or("")),
+        );
+        self.in_flight.lock().unwrap().contains(&key)
+    }
     fn current(&self, app: &AppState, id: &str, generation: u64) -> bool {
         self.generation(id) == generation && app.db.project(id).ok().flatten().is_some()
     }
@@ -111,7 +130,7 @@ impl Poller {
             .unwrap_or("")
             .to_owned();
         let generation = self.generation(&id);
-        let key = format!("pr:{id}:{repo}:{generation}");
+        let key = Self::pr_sync_key(&project, "open", generation);
         if !self.enter(&key) {
             return;
         }
@@ -119,8 +138,8 @@ impl Poller {
             let _ = app
                 .db
                 .set_pr_snapshot(&id, &json!({"prs":[],"lastSynced":now(),"error":null}));
-            app.broadcast(json!({"type":"sync","projectId":id}));
             self.leave(&key);
+            app.broadcast(json!({"type":"sync","projectId":id}));
             return;
         }
         let jira_key = project
@@ -204,15 +223,15 @@ impl Poller {
                     .set_pr_snapshot(&id, &json!({"prs":prs,"lastSynced":now(),"error":message}));
             }
         }
-        app.broadcast(json!({"type":"sync","projectId":id}));
         self.leave(&key);
+        app.broadcast(json!({"type":"sync","projectId":id}));
     }
 
     pub async fn sync_pr_scope(&self, app: &AppState, project: Value, state: &str) {
         let id = project.get("id").and_then(Value::as_str).unwrap_or("");
         let repo = project.get("repo").and_then(Value::as_str).unwrap_or("");
         let generation = self.generation(id);
-        let key = format!("scope:{id}:{state}:{repo}:{generation}");
+        let key = Self::pr_sync_key(&project, state, generation);
         if !self.enter(&key) {
             return;
         }
@@ -238,8 +257,8 @@ impl Poller {
             return;
         }
         let _ = app.db.set_pr_scope_snapshot(&project, state, &snapshot);
-        app.broadcast(json!({"type":"sync","projectId":id}));
         self.leave(&key);
+        app.broadcast(json!({"type":"sync","projectId":id}));
     }
 
     pub async fn sync_all_jira(&self, app: &AppState) {

@@ -307,7 +307,7 @@ pub async fn project_prs(
         project["created_at"]
     ]))
     .unwrap();
-    let snapshot = app
+    let mut snapshot = app
         .db
         .pr_snapshot(&id, state, Some(&identity))?
         .unwrap_or_else(empty_pr_snapshot);
@@ -321,7 +321,8 @@ pub async fn project_prs(
                 .num_seconds()
                 > 30
         });
-    if query.refresh.as_deref() == Some("1") || stale {
+    let refresh_requested = query.refresh.as_deref() == Some("1") || stale;
+    if refresh_requested {
         let app_copy = app.clone();
         let project_copy = project.clone();
         let state_copy = state.to_owned();
@@ -337,6 +338,7 @@ pub async fn project_prs(
         });
     }
     if query.snapshot.as_deref() == Some("1") {
+        snapshot["refreshing"] = json!(refresh_requested || app.poller.pr_syncing(&project, state));
         return Ok(Json(snapshot));
     }
     let mut prs = snapshot

@@ -106,7 +106,7 @@ enum WorkspaceOperation: Equatable {
     var canRun: Bool { showsBuildActions && state.connected && state.canPresent && !state.changingSession }
     var canRemove: Bool { session != nil && state.connected && state.canPresent && !state.changingSession }
     var canRestart: Bool { session != nil && state.canPresent && !state.changingSession }
-    var canToggleContext: Bool { context?.activeID != nil }
+    var canToggleContext: Bool { showsTerminal && context?.activeID != nil }
     var reviewInputs: ReviewInputs {
         .init(pane: context?.pane, section: context?.reviewSection, connected: state.connected, base: state.reviewBase, sessionID: state.session?.id)
     }

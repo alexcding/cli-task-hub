@@ -39,6 +39,8 @@ public struct ContentView: View {
     private var detailContent: some View {
         VStack(alignment: .leading, spacing: 18) {
             if !model.hasWorkspace && !model.showsDashboard { Text(model.title).font(.largeTitle.weight(.semibold)) }
+            // RootViewModel scopes connection feedback to Dashboard and project
+            // detail; it never overlays unrelated web or session content.
             if let error = model.error {
                 Label(error, systemImage: "exclamationmark.triangle")
                     .foregroundStyle(.orange).textSelection(.enabled)

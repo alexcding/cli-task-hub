@@ -22,7 +22,7 @@ struct WebBoardView: View {
                 ContentUnavailableView("No Active Sprint", systemImage: "rectangle.3.group")
             } else {
                 ScrollView(.horizontal) {
-                    HStack(alignment: .top, spacing: 12) {
+                    LazyHStack(alignment: .top, spacing: 12) {
                         ForEach(model.columns, id: \.self) { column in BoardLane(model: model, column: column) }
                     }.padding(.bottom, 8)
                 }
@@ -35,11 +35,19 @@ private struct BoardLane: View {
     let model: WebBoardViewModel
     let column: String
     var body: some View {
+        let tickets = model.tickets(in: column)
         VStack(alignment: .leading, spacing: 8) {
-            HStack { Text(column).font(.headline); Spacer(); Text("\(model.tickets(in: column).count)").foregroundStyle(.secondary) }
-            ForEach(model.tickets(in: column)) { ticket in BoardCard(model: model, ticket: ticket) }
-            Spacer(minLength: 30)
-        }.padding(10).frame(width: 280, alignment: .topLeading).frame(minHeight: 180, alignment: .topLeading)
+            HStack { Text(column).font(.headline); Spacer(); Text("\(tickets.count)").foregroundStyle(.secondary) }
+            // Bound each lane to the viewport. Eager stacks measured every card
+            // (and its menus) on tab entry and compressed long lanes to fit.
+            ScrollView(.vertical) {
+                LazyVStack(alignment: .leading, spacing: 8) {
+                    ForEach(tickets) { ticket in BoardCard(model: model, ticket: ticket) }
+                }
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+                .padding(.bottom, 30)
+            }
+        }.padding(10).frame(width: 280, alignment: .topLeading).frame(maxHeight: .infinity, alignment: .topLeading)
             .background(.quaternary.opacity(0.7), in: RoundedRectangle(cornerRadius: 10))
             .dropDestination(for: String.self) { values, _ in
                 guard let key = values.first, let ticket = model.tickets.first(where: { $0.key == key }) else { return false }

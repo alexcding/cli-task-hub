@@ -262,9 +262,9 @@ struct SessionWorkspaceLeadingToolbar: View {
 
     var body: some View {
         HStack(spacing: 5) {
-            terminalLaunchControls
+            if model.session != nil { terminalLaunchControls }
             if let workflow = model.workflow {
-                toolbarDivider
+                if model.session != nil { toolbarDivider }
                 workflowControls(workflow)
             }
         }

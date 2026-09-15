@@ -31,6 +31,20 @@ struct ProjectPRSnapshot: Decodable, Sendable {
     var refreshing = false
 }
 
+extension ProjectPRSnapshot {
+    private enum CodingKeys: String, CodingKey { case prs, lastSynced, error, refreshing }
+
+    init(from decoder: any Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        prs = try values.decode([DashboardPR].self, forKey: .prs)
+        lastSynced = try values.decodeIfPresent(String.self, forKey: .lastSynced)
+        error = try values.decodeIfPresent(String.self, forKey: .error)
+        // Older Rust backends return the stored snapshot without live refresh
+        // metadata. Keep those cards readable while the helper is upgraded.
+        refreshing = try values.decodeIfPresent(Bool.self, forKey: .refreshing) ?? false
+    }
+}
+
 protocol ProjectService: Sendable {
     func load(_ id: String) async throws -> Project
     func save(_ draft: ProjectDraft, id: String?) async throws -> Project

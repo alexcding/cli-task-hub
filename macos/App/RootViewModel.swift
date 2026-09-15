@@ -48,7 +48,13 @@ import Observation
     var selection: SidebarDestination { state.selection }
     var entries: [SidebarEntry] { state.entries }
     var pinnedIDs: Set<String> { Set(state.sessions.filter(\.pinned).map(\.id)) }
-    var error: String? { state.error }
+    var error: String? {
+        let state = self.state
+        switch state.selection {
+        case .overview, .project: return state.error
+        default: return nil
+        }
+    }
     var canCreateProject: Bool { state.canCreateProject }
     var canCreateSession: Bool { state.canCreateSession }
     var canRefresh: Bool { state.canRefresh }
