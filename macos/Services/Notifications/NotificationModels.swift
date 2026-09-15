@@ -59,6 +59,28 @@ public struct ActivityEvent: Codable, Equatable, Sendable {
     }
 }
 
+extension ActivityEvent {
+    private enum CodingKeys: String, CodingKey { case type, payload, created_at }
+
+    // Both backends broadcast the stored log row, whose `payload` is the JSON
+    // TEXT column as-is (the web renderer JSON.parses it); fixtures and the
+    // Logs page hand over a decoded object. Accept either, and never let one
+    // odd payload fail the whole server event: the stream would drop and the
+    // reconnect banner would follow every activity event.
+    public init(from decoder: any Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        type = try values.decode(String.self, forKey: .type)
+        created_at = try values.decodeIfPresent(String.self, forKey: .created_at)
+        if let object = try? values.decodeIfPresent(Payload.self, forKey: .payload) {
+            payload = object
+        } else if let text = try? values.decodeIfPresent(String.self, forKey: .payload) {
+            payload = try? JSONDecoder().decode(Payload.self, from: Data(text.utf8))
+        } else {
+            payload = nil
+        }
+    }
+}
+
 struct NativeNotice: Identifiable, Equatable, Sendable {
     enum Kind: String, Sendable { case review, activity }
     var id = UUID().uuidString
