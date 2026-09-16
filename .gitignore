@@ -39,3 +39,6 @@ build/icon.iconset/
 
 # Runtime artifact: the port the dev server bound to
 .server-port
+
+# Agent task buckets — session scratch notes, never source
+.claude/scratch/
