@@ -306,3 +306,18 @@ private actor PageStartService: SessionCreating {
     }
     #expect(message.contains("checked out in the main repo"))
 }
+
+@MainActor @Test func onlyPullRequestAndTicketPagesWithAProjectOfferASession() {
+    let widgets = Project(id: "w", name: "Widgets", repo: "Acme/Widgets", color: nil, workspace: "/tmp/widgets", jiraProjectKey: "WID, OPS")
+    let unconfigured = Project(id: "u", name: "No workspace", repo: "acme/other", color: nil, workspace: "", jiraProjectKey: "OTH")
+    let projects = [widgets, unconfigured]
+    #expect(AppViewModel.pageProject("https://github.com/acme/widgets/pull/7", in: projects)?.id == "w")
+    #expect(AppViewModel.pageProject("https://acme.atlassian.net/browse/OPS-12", in: projects)?.id == "w")
+    // No project claims it, or the claiming project has no local workspace.
+    #expect(AppViewModel.pageProject("https://github.com/someone/else/pull/3", in: projects) == nil)
+    #expect(AppViewModel.pageProject("https://github.com/acme/other/pull/3", in: projects) == nil)
+    #expect(AppViewModel.pageProject("https://acme.atlassian.net/browse/OTH-1", in: projects) == nil)
+    // Not a pull request or ticket page, even with a single project.
+    #expect(AppViewModel.pageProject("https://github.com/acme/widgets", in: [widgets]) == nil)
+    #expect(AppViewModel.pageProject("https://example.org/plain", in: [widgets]) == nil)
+}

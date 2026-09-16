@@ -80,11 +80,6 @@ struct BrowserPane: View {
     let page: BrowserPage
     let context: WorkspaceContext
     @Bindable var model: BrowserControlsViewModel
-    let showsCreateSession: Bool
-    let canCreateSession: Bool
-    var sessionProjects: [Project] = []
-    let createSession: () -> Void
-    var createSessionIn: (String) -> Void = { _ in }
     @FocusState private var editingAddress: Bool
     @FocusState private var finding: Bool
 
@@ -96,23 +91,6 @@ struct BrowserPane: View {
                 Button(model.loading ? "Stop Loading" : "Reload Page", systemImage: model.loading ? "xmark" : "arrow.clockwise", action: model.toggleLoading)
                 TextField("Page address", text: $model.address).capsuleField().focused($editingAddress)
                     .onSubmit { if model.submitAddress() { editingAddress = false } }
-                Button("Open in Browser", systemImage: "arrow.up.right.square", action: model.openExternally)
-                    .disabled(!model.canOpenExternally)
-                if showsCreateSession {
-                    Divider().frame(height: 18)
-                    if !canCreateSession && !sessionProjects.isEmpty {
-                        // A page that names no project: pick which one, like the web toolbar.
-                        Menu("Create Session", systemImage: "terminal") {
-                            ForEach(sessionProjects) { project in
-                                Button(project.name) { createSessionIn(project.id) }
-                            }
-                        }
-                        .menuIndicator(.hidden).fixedSize()
-                    } else {
-                        Button("Create Session", systemImage: "terminal", action: createSession)
-                            .disabled(!canCreateSession)
-                    }
-                }
             }.glassIconButtons().padding(8)
             if context.findVisible {
                 HStack {
@@ -254,10 +232,7 @@ private struct SessionWorkspaceContextContent: View {
         } else if let document = context.activeDocument {
             EditorDocumentView(model: document).id(document.id)
         } else if let page = context.activePage {
-            BrowserPane(page: page, context: context, model: page.controls,
-                        showsCreateSession: !model.showsTerminal, canCreateSession: model.canCreateSession,
-                        sessionProjects: model.sessionProjects,
-                        createSession: model.createSession, createSessionIn: model.createSession(in:)).id(page.id)
+            BrowserPane(page: page, context: context, model: page.controls).id(page.id)
         } else {
             ContentUnavailableView("No open pages", systemImage: "globe", description: Text("Add a page or reopen one from History."))
         }

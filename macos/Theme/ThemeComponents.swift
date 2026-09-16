@@ -24,17 +24,14 @@ extension View {
         if #available(macOS 26.0, *) { sized.buttonStyle(.glass).buttonBorderShape(.circle) } else { sized }
     }
 
-    /// A plain text field in a capsule: Liquid Glass on macOS 26 and later, a tinted capsule
-    /// with a hairline border before that.
-    @ViewBuilder func capsuleField() -> some View {
-        let field = textFieldStyle(.plain).padding(.horizontal, 12).padding(.vertical, 5)
-        if #available(macOS 26.0, *) {
-            field.glassEffect(.regular.interactive(), in: .capsule)
-        } else {
-            field
-                .background(Theme.surfaceHover, in: Capsule())
-                .overlay(Capsule().strokeBorder(Theme.border, lineWidth: Theme.Size.hairline))
-        }
+    /// A plain text field in a tinted capsule with a hairline border, as tall as the large round
+    /// buttons beside it.
+    func capsuleField() -> some View {
+        textFieldStyle(.plain)
+            .padding(.horizontal, 12)
+            .frame(height: Theme.Size.largeControl)
+            .background(Theme.surfaceHover, in: Capsule())
+            .overlay(Capsule().strokeBorder(Theme.border, lineWidth: Theme.Size.hairline))
     }
 }
 

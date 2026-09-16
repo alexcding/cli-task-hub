@@ -98,6 +98,8 @@ enum Theme {
     enum Size {
         /// 1 — a hairline rule.
         static let hairline: CGFloat = 1
+        /// 32 — a large round toolbar button, and the fields that sit beside one.
+        static let largeControl: CGFloat = 32
         /// 760 — the Settings column cap, matching the web page.
         static let readableColumn: CGFloat = 760
     }

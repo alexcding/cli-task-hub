@@ -24,10 +24,18 @@ extension AppViewModel: WorkspaceCoordinating {
             changingSession: session.map { changingSessions.contains($0.id) } ?? false,
             openingExternal: workspaceLaunch.opening.contains(context.id), canPresent: coordinator.canPresent,
             canCreateSession: canPerform(.newSession),
-            sessionProjects: session == nil ? sessionProjectChoices(for: selection) : [], editorID: project?.ide,
+            offersPageSession: offersPageSession(in: context), editorID: project?.ide,
             editorLabel: workspaceLaunch.editorLabel(project), gitClientID: shell.gitClient,
             gitClientLabel: workspaceLaunch.gitClientLabel(shell.gitClient), launchError: workspaceLaunch.errors[context.id],
             reviewBase: base)
+    }
+
+    /// Create Session belongs in the toolbar only where the page decides the session: a GitHub PR
+    /// or Jira ticket tab in view whose repository or Jira key maps to a local project. A plain
+    /// page, or one no project claims, gets nothing.
+    private func offersPageSession(in context: WorkspaceContext) -> Bool {
+        guard case .tab(let url) = selection, context.id == "tab:\(url)" else { return false }
+        return Self.pageProject(url, in: projects) != nil
     }
 
     func ownsWorkspace(_ context: WorkspaceContext) -> Bool {
@@ -64,9 +72,6 @@ extension AppViewModel: WorkspaceCoordinating {
                 Task { await workspaceLaunch.openGitClient(session: session, id: shell.gitClient, custom: shell.gitClientCommand) }
             }
         case .createSession: perform(.newSession)
-        case .createSessionIn(let projectID):
-            let pageURL: String? = if case .tab(let url) = selection { url } else { context.activePage?.url }
-            startSession(in: projectID, pageURL: pageURL)
         case .openFile: viewer.openFile(in: context)
         case .addPage: addPage(in: context)
         case .changes: if let session = state.session { showChanges(for: session, context: context) }

@@ -19,6 +19,7 @@ struct TaskHubCommands: Commands {
             command("Open Terminal", .terminal, key: "n", modifiers: [.command, .shift])
             command("Open Link…", .openLink, key: "t")
             command("Open File…", .openFile, key: "o")
+            command("Open Page in Browser", .openPageInBrowser, key: "o", modifiers: [.command, .shift])
         }
         CommandGroup(replacing: .saveItem) {
             command("Save File", .saveFile, key: "s")

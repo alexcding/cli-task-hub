@@ -10,6 +10,15 @@ struct TaskHubToolbar: ToolbarContent {
                     SessionWorkspaceLeadingToolbar(model: workspace.model)
                 }
             }
+            if workspace.model.offersPageSession {
+                if #available(macOS 26.0, *) { ToolbarSpacer(.flexible) }
+                ToolbarItem(placement: .primaryAction) {
+                    Button("Create Session", systemImage: "terminal", action: workspace.model.createSession)
+                        .labelStyle(.titleAndIcon)
+                        .disabled(!workspace.model.canCreateSession)
+                        .help("Start an agent session for this page in its project")
+                }
+            }
             if workspace.model.showsTerminal {
                 if #available(macOS 26.0, *) { ToolbarSpacer(.flexible) }
                 ToolbarItem(placement: .primaryAction) {

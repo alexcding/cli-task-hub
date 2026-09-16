@@ -176,6 +176,7 @@ public final class AppViewModel {
     var terminal: TerminalSession? { activeTerminalKey.flatMap { terminals[$0] } }
     public var hasOpenWork: Bool { !sessions.isEmpty || !tabs.isEmpty }
     public var hasActivePage: Bool { viewer.active?.activeID != nil }
+    private var activePageControls: BrowserControlsViewModel? { viewer.active?.activePage?.controls }
     var activeHistory: GitHistoryViewModel? {
         guard let context = viewer.active, context.pane == .diff, context.reviewSection == .history else { return nil }
         return historyModels[context.id]
@@ -251,13 +252,15 @@ public final class AppViewModel {
         case .session(let id):
             guard let session = sessions.first(where: { $0.id == id }) else { return nil }
             return local.first { $0.id == session.projectId }
-        case .tab(let url) where SessionPage.parse(url) != nil: return pageProject(url, in: local)
+        case .tab(let url) where SessionPage.parse(url) != nil: return Self.pageProject(url, in: projects)
         default: return local.count == 1 ? local[0] : nil
         }
     }
 
-    private func pageProject(_ url: String, in local: [Project]) -> Project? {
+    /// The local project a GitHub PR or Jira ticket page belongs to, or nil for any other page.
+    static func pageProject(_ url: String, in projects: [Project]) -> Project? {
         guard let page = SessionPage.parse(url) else { return nil }
+        let local = projects.filter { !$0.workspace.isEmpty }
         if page.kind == "github" {
             let path = URL(string: page.url)?.path.split(separator: "/").prefix(2).joined(separator: "/").lowercased()
             return local.first { !$0.repo.isEmpty && $0.repo.lowercased() == path }
@@ -266,17 +269,6 @@ public final class AppViewModel {
         return local.first { project in
             (project.jiraProjectKey ?? "").split(separator: ",").contains { $0.trimmingCharacters(in: .whitespaces).uppercased() == prefix }
         }
-    }
-
-    /// The projects a page's Create Session can pick from: the page's own project when it has one,
-    /// else every local project (the page CTA then asks which, like the web toolbar's menu).
-    func sessionProjectChoices(for destination: SidebarDestination) -> [Project] {
-        guard canStartSession else { return [] }
-        if let project = sessionProject(for: destination) { return [project] }
-        // A pull request belongs to its repository's project; with none configured there is
-        // nothing to pick. A ticket or plain page can be started under any local project.
-        if case .tab(let url) = destination, SessionPage.parse(url)?.kind == "github" { return [] }
-        return projects.filter { !$0.workspace.isEmpty }
     }
 
     private var canStartSession: Bool {
@@ -323,6 +315,7 @@ public final class AppViewModel {
         case .openFile: viewer.active != nil && connection == "Connected" && coordinator.canPresent
         case .saveFile: viewer.active?.activeDocument?.loaded == true && viewer.active?.activeDocument?.readOnly == false
         case .findPage: activeHistory != nil || hasActivePage
+        case .openPageInBrowser: coordinator.canPresent && activePageControls?.canOpenExternally == true
         case .zoomIn, .zoomOut, .resetZoom: coordinator.canPresent && viewer.active?.activePage?.controls.active == true
         case .nextPage, .previousPage: (viewer.active?.tabOrder.count ?? 0) > 1
         case .biggerFont, .smallerFont, .resetFont: fontTarget != nil
@@ -342,6 +335,7 @@ public final class AppViewModel {
             let pageURL: String? = if case .tab(let url) = selection { url } else { nil }
             startSession(in: project.id, pageURL: pageURL)
         case .openLink: if canPerform(.openLink) { openLink() }
+        case .openPageInBrowser: if canPerform(.openPageInBrowser) { activePageControls?.openExternally() }
         case .openFile: if canPerform(.openFile), let context = viewer.active { viewer.openFile(in: context) }
         case .saveFile: if let document = viewer.active?.activeDocument { Task { await document.save() } }
         case .closePage: if let context = viewer.active, let id = context.activeID, let tab = context.tab(id) { context.close(tab) }
