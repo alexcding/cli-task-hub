@@ -760,6 +760,42 @@ public final class AppViewModel {
         }
     }
 
+    /// Closes a task-less tab: moves the selection to its neighbour first when it is the tab in
+    /// view, then drops the tab from the backend and releases its pages. A tab whose workflow is
+    /// still preparing stays open, since the run promotes this tab's pages into its session.
+    func closeTab(_ url: String) {
+        guard let api, let index = tabs.firstIndex(where: { $0.url == url }) else { return }
+        let key = "tab:\(url)"
+        if pageWorkflowRuns[key]?.running == true {
+            error = "Wait for the workflow to start before closing this tab."
+            return
+        }
+        if selection == .tab(url) {
+            let sessionURLs = Set(sessions.map(\.url).filter { !$0.isEmpty })
+            select(Self.destination(closing: url, among: tabs.map(\.url).filter { !sessionURLs.contains($0) }))
+        }
+        tabs.remove(at: index)
+        pageWorkflowRuns.removeValue(forKey: key); pageWorkflowTargets.removeValue(forKey: key)
+        Task {
+            await viewer.remove(id: key)
+            do {
+                let saved: SavedTabs = try await api.request(Routes.TABS, method: "DELETE", body: ["url": url])
+                tabs = saved.tabs
+            } catch {
+                self.error = "Could not close tab: \(error.localizedDescription)"
+                refresh()
+            }
+        }
+    }
+
+    /// Where the selection goes when the tab in view closes: the tab now at its place in the
+    /// sidebar's tab list, else the one before it, else the dashboard.
+    static func destination(closing url: String, among visible: [String]) -> SidebarDestination {
+        guard let index = visible.firstIndex(of: url) else { return .overview }
+        let remaining = visible.filter { $0 != url }
+        return remaining.isEmpty ? .overview : .tab(remaining[min(index, remaining.count - 1)])
+    }
+
     public func quit() async throws { try await prepareToTerminate() }
 
     public func prepareForUpdate() async throws { try await prepareToTerminate() }

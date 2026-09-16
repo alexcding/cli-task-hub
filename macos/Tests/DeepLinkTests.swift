@@ -60,6 +60,7 @@ private struct TestRouteHandler: DeepLinkRouteHandling {
     func performRootCommand(_ command: ShellCommand) {}
     func reconnect() async {}
     func togglePin(_ id: String) {}
+    func closeTab(_ url: String) {}
     func openTerminal() { terminals += 1 }
     func openRootBrowser(_ url: URL) {}
 }

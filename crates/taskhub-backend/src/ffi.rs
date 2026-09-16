@@ -510,6 +510,12 @@ mod tests {
 
         let created = call(backend, "POST", "/api/tabs", r#"{"url":"https://example.com/","kind":"web"}"#);
         assert!(created.status < 500, "{}", created.body);
+        let closed = call(backend, "DELETE", "/api/tabs", r#"{"url":"https://example.com/"}"#);
+        assert_eq!(closed.status, 200, "{}", closed.body);
+        let closed: serde_json::Value = serde_json::from_str(&closed.body).unwrap();
+        assert_eq!(closed["tabs"], serde_json::json!([]));
+        let missing_url = call(backend, "DELETE", "/api/tabs", "{}");
+        assert_eq!(missing_url.status, 400);
 
         let bad = call(backend, "GET", "/api/projects/missing", "");
         assert_eq!(bad.status, 404);

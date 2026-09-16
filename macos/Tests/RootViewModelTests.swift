@@ -6,6 +6,7 @@ import Testing
     var state = RootState()
     var commands: [ShellCommand] = []
     var pins: [String] = []
+    var closedTabs: [String] = []
     var selections: [SidebarDestination] = []
     var opens: [URL] = []
     var terminals = 0
@@ -19,6 +20,7 @@ import Testing
     func performRootCommand(_ command: ShellCommand) { commands.append(command) }
     func reconnect() async { reconnects += 1 }
     func togglePin(_ id: String) { pins.append(id) }
+    func closeTab(_ url: String) { closedTabs.append(url) }
     func openTerminal() { terminals += 1 }
     func openRootBrowser(_ url: URL) { opens.append(url) }
 }
@@ -47,11 +49,11 @@ import Testing
     model.select(.session("session"))
     #expect(coordinator.selection == .session("session") && store.load() == .session("session"))
     #expect(runtime.selections == [.session("session")])
-    model.togglePin("session"); model.openTerminal(); model.reconnect()
+    model.togglePin("session"); model.closeTab("https://example.test/tab"); model.openTerminal(); model.reconnect()
     let url = try #require(URL(string: "https://example.test/page"))
     model.openBrowser(url)
     await Task.yield()
-    #expect(runtime.pins == ["session"] && runtime.terminals == 1 && runtime.reconnects == 1 && runtime.opens == [url])
+    #expect(runtime.pins == ["session"] && runtime.closedTabs == ["https://example.test/tab"] && runtime.terminals == 1 && runtime.reconnects == 1 && runtime.opens == [url])
     let replacement = coordinator.makeRoot(factory: factory, runtime: runtime, shell: shell, viewer: viewer)
     model.select(.overview)
     #expect(coordinator.selection == .session("session") && factory.creations == 2)
@@ -107,4 +109,15 @@ import Testing
     preferences.set(Data("corrupt".utf8), forKey: "sidebar.selection")
     let restored = AppCoordinator(factory: NativeCreationFlowFactory(chooseFolder: { nil }), selectionStore: storage)
     #expect(restored.selection == .overview)
+}
+
+@MainActor @Test func closingTheTabInViewSelectsItsSidebarNeighbour() {
+    let tabs = ["a", "b", "c"]
+    #expect(AppViewModel.destination(closing: "a", among: tabs) == .tab("b"))
+    #expect(AppViewModel.destination(closing: "b", among: tabs) == .tab("c"))
+    #expect(AppViewModel.destination(closing: "c", among: tabs) == .tab("b"))
+    #expect(AppViewModel.destination(closing: "a", among: ["a"]) == .overview)
+    // A tab the sidebar does not list (its URL belongs to a session) is never the neighbour.
+    #expect(AppViewModel.destination(closing: "a", among: ["a", "c"]) == .tab("c"))
+    #expect(AppViewModel.destination(closing: "missing", among: tabs) == .overview)
 }

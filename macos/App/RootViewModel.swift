@@ -24,6 +24,7 @@ import Observation
 @MainActor @Observable final class RootViewModel {
     enum Action: Equatable {
         case select(SidebarDestination), command(ShellCommand), togglePin(String), newSession(projectID: String)
+        case closeTab(String)
         case reconnect, openTerminal, openBrowser(URL)
     }
     enum Destination {
@@ -110,6 +111,7 @@ import Observation
     }
     func select(_ destination: SidebarDestination) { onAction(.select(destination)) }
     func togglePin(_ id: String) { onAction(.togglePin(id)) }
+    func closeTab(_ url: String) { onAction(.closeTab(url)) }
     func reconnect() { onAction(.reconnect) }
     func newProject() { if canCreateProject { onAction(.command(.newProject)) } }
     func newSession() { if canCreateSession { onAction(.command(.newSession)) } }

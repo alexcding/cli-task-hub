@@ -119,6 +119,17 @@ pub async fn open_tab(State(state): State<AppState>, Json(body): Json<Value>) ->
     Ok(Json(saved))
 }
 
+pub async fn close_tab(State(state): State<AppState>, Json(body): Json<Value>) -> ApiResult<Value> {
+    let url = body
+        .get("url")
+        .and_then(Value::as_str)
+        .filter(|url| !url.is_empty())
+        .ok_or_else(|| ApiError::bad_request("url required"))?;
+    let saved = state.db.close_tab(url)?;
+    state.broadcast(json!({ "type": "tabs" }));
+    Ok(Json(saved))
+}
+
 pub async fn put_tabs(State(state): State<AppState>, Json(body): Json<Value>) -> ApiResult<Value> {
     let tabs = body
         .get("tabs")

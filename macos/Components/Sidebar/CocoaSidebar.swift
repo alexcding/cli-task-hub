@@ -5,7 +5,7 @@ import SwiftUI
 // snapshots and receives semantic selection/actions. The look follows the web sidebar
 // (src/renderer/components/sidebar.js + css/layout.css, css/viewer.css): flat headings, no
 // disclosure triangles (a click on the already-selected folder collapses it), a neutral
-// rounded highlight, hover-only pin / "+" accessories, and the session status glyph.
+// rounded highlight, hover-only pin / "+" / close accessories, and the session status glyph.
 struct CocoaSidebar: NSViewRepresentable {
     let entries: [SidebarEntry]
     let selection: SidebarDestination
@@ -13,6 +13,7 @@ struct CocoaSidebar: NSViewRepresentable {
     let onSelect: (SidebarDestination) -> Void
     let onTogglePin: (String) -> Void
     var onNewSession: (String) -> Void = { _ in }
+    var onCloseTab: (String) -> Void = { _ in }
 
     func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
 
@@ -39,6 +40,7 @@ struct CocoaSidebar: NSViewRepresentable {
         outline.delegate = context.coordinator
         outline.contextMenu = { [weak coordinator = context.coordinator] item in coordinator?.menu(for: item) }
         outline.onReselect = { [weak coordinator = context.coordinator] item in coordinator?.reselected(item) }
+        outline.onMiddleClick = { [weak coordinator = context.coordinator] item in coordinator?.middleClicked(item) }
         let scroll = NSScrollView()
         scroll.hasVerticalScroller = true
         scroll.autohidesScrollers = true
@@ -184,6 +186,7 @@ struct CocoaSidebar: NSViewRepresentable {
             let expanded = !node.children.isEmpty && outline.isItemExpanded(node)
             cell.onTogglePin = { [weak self] id in self?.parent.onTogglePin(id) }
             cell.onNewSession = { [weak self] id in self?.parent.onNewSession(id) }
+            cell.onCloseTab = { [weak self] url in self?.parent.onCloseTab(url) }
             cell.configure(node.entry, nested: nested, expanded: expanded, spinFrame: spinFrame)
             if row >= 0, let rowView = outline.rowView(atRow: row, makeIfNecessary: false) as? SidebarRowView {
                 rowView.selectable = node.entry.destination != nil
@@ -240,6 +243,11 @@ struct CocoaSidebar: NSViewRepresentable {
             else { outline.animator().expandItem(node) }
         }
 
+        // A middle-click closes a tab row, as in a browser (sidebar.js onauxclick).
+        func middleClicked(_ node: Node) {
+            if case .tab(let url) = node.entry.destination { parent.onCloseTab(url) }
+        }
+
         func outlineViewItemDidCollapse(_ notification: Notification) { expansionChanged(notification, collapsed: true) }
         func outlineViewItemDidExpand(_ notification: Notification) { expansionChanged(notification, collapsed: false) }
         private func expansionChanged(_ notification: Notification, collapsed isCollapsed: Bool) {
@@ -270,6 +278,8 @@ struct CocoaSidebar: NSViewRepresentable {
             } else if case .tab = destination {
                 add("Open in Browser", action: #selector(openBrowser(_:)))
                 add("Copy Link", action: #selector(copyDetail(_:)))
+                menu.addItem(.separator())
+                add("Close Tab", action: #selector(closeTab(_:)))
             }
             return menu.items.isEmpty ? nil : menu
         }
@@ -277,6 +287,10 @@ struct CocoaSidebar: NSViewRepresentable {
         @objc private func togglePin(_ sender: NSMenuItem) {
             guard let node = sender.representedObject as? Node, case .session(let id) = node.entry.destination else { return }
             parent.onTogglePin(id)
+        }
+        @objc private func closeTab(_ sender: NSMenuItem) {
+            guard let node = sender.representedObject as? Node, case .tab(let url) = node.entry.destination else { return }
+            parent.onCloseTab(url)
         }
         @objc private func reveal(_ sender: NSMenuItem) {
             guard let node = sender.representedObject as? Node else { return }
@@ -390,6 +404,7 @@ enum SidebarGlyphs {
 @MainActor final class SidebarCellView: NSTableCellView {
     var onTogglePin: (String) -> Void = { _ in }
     var onNewSession: (String) -> Void = { _ in }
+    var onCloseTab: (String) -> Void = { _ in }
     var hovered = false { didSet { if oldValue != hovered { applyState() } } }
     var selected = false { didSet { if oldValue != selected { applyState() } } }
 
@@ -459,6 +474,9 @@ enum SidebarGlyphs {
         case .tab(let tab):
             title.font = .systemFont(ofSize: 14)
             configureTabIcon(tab)
+            accessory.image = SidebarIcons.image("close", size: 13)
+            accessory.toolTip = "Close tab"
+            accessory.setAccessibilityLabel("Close tab")
         }
         applyState()
     }
@@ -510,7 +528,7 @@ enum SidebarGlyphs {
         icon.contentTintColor = lit ? SidebarPalette.text : SidebarPalette.navText
         switch entry.role {
         case .project(let canCreate): accessory.isHidden = !(hovered && canCreate)
-        case .session: accessory.isHidden = !hovered
+        case .session, .tab: accessory.isHidden = !hovered
         default: accessory.isHidden = true
         }
         needsLayout = true
@@ -519,6 +537,7 @@ enum SidebarGlyphs {
     @objc private func accessoryPressed() {
         if let id = entry.sessionID { onTogglePin(id) }
         else if let id = entry.projectID { onNewSession(id) }
+        else if let url = entry.destination?.tabURL { onCloseTab(url) }
     }
 
     override func layout() {
@@ -596,6 +615,7 @@ enum SidebarGlyphs {
 @MainActor final class SidebarOutlineView: NSOutlineView {
     var contextMenu: ((CocoaSidebar.Node) -> NSMenu?)?
     var onReselect: ((CocoaSidebar.Node) -> Void)?
+    var onMiddleClick: ((CocoaSidebar.Node) -> Void)?
 
     // No disclosure triangles: a project folder collapses by clicking it again.
     override func frameOfOutlineCell(atRow row: Int) -> NSRect { .zero }
@@ -605,6 +625,14 @@ enum SidebarGlyphs {
         let wasSelected = row >= 0 && row == selectedRow
         super.mouseDown(with: event)
         if wasSelected, event.clickCount == 1, let node = item(atRow: row) as? CocoaSidebar.Node { onReselect?(node) }
+    }
+
+    override func otherMouseUp(with event: NSEvent) {
+        let row = row(at: convert(event.locationInWindow, from: nil))
+        guard event.buttonNumber == 2, row >= 0, let node = item(atRow: row) as? CocoaSidebar.Node else {
+            super.otherMouseUp(with: event); return
+        }
+        onMiddleClick?(node)
     }
 
     override func menu(for event: NSEvent) -> NSMenu? {

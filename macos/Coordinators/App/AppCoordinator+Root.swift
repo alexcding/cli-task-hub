@@ -8,6 +8,7 @@ import Foundation
     func openTerminal()
     func openRootBrowser(_ url: URL)
     func newSession(in projectID: String)
+    func closeTab(_ url: String)
 }
 
 extension RootCoordinating {
@@ -34,6 +35,7 @@ extension AppCoordinator {
         case .command(let command): rootRuntime?.performRootCommand(command)
         case .togglePin(let id): rootRuntime?.togglePin(id)
         case .newSession(let projectID): rootRuntime?.newSession(in: projectID)
+        case .closeTab(let url): rootRuntime?.closeTab(url)
         case .reconnect: Task { [weak rootRuntime] in await rootRuntime?.reconnect() }
         case .openTerminal: rootRuntime?.openTerminal()
         case .openBrowser(let url): rootRuntime?.openRootBrowser(url)

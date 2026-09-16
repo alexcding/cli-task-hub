@@ -269,6 +269,11 @@ impl Database {
         self.tabs()
     }
 
+    pub fn close_tab(&self, url: &str) -> rusqlite::Result<Value> {
+        self.durable().execute("DELETE FROM tabs WHERE url=?1", [url])?;
+        self.tabs()
+    }
+
     pub fn tasks(&self) -> rusqlite::Result<Vec<Value>> {
         let conn = self.durable();
         let mut statement = conn.prepare("SELECT * FROM tasks ORDER BY created_at ASC")?;

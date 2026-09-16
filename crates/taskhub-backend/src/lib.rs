@@ -72,7 +72,8 @@ pub fn build_app(state: AppState) -> Router {
             "/api/tabs",
             get(routes::get_tabs)
                 .post(routes::open_tab)
-                .put(routes::put_tabs),
+                .put(routes::put_tabs)
+                .delete(routes::close_tab),
         )
         .route(
             "/api/tasks",

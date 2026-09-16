@@ -31,7 +31,7 @@ struct SidebarView: View {
             CocoaSidebar(entries: model.entries, selection: model.selection,
                          pinnedIDs: model.pinnedIDs,
                          onSelect: model.select, onTogglePin: model.togglePin,
-                         onNewSession: model.newSession(in:))
+                         onNewSession: model.newSession(in:), onCloseTab: model.closeTab)
 
             Divider()
             SidebarFooterRow(title: "Settings", icon: "settings", selected: model.selection == .settings) {

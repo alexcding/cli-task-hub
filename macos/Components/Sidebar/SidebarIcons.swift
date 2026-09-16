@@ -10,6 +10,7 @@ import AppKit
         "dashboard": ##"<svg \##(stroke) stroke-width="1.9"><rect x="2" y="3" width="20" height="17" rx="2.5"/><path d="M2 8.5h20"/><path d="M9.5 8.5V20"/></svg>"##,
         "folder": ##"<svg \##(stroke) stroke-width="1.9"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/><path d="M2 10h20"/></svg>"##,
         "folderOpen": ##"<svg \##(stroke) stroke-width="1.9"><path d="M4 20l2.6-8.3a1 1 0 0 1 .95-.7H22a1 1 0 0 1 .96 1.28l-1.9 6.3a2 2 0 0 1-1.91 1.42H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.93a2 2 0 0 1 1.66.9l.82 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/></svg>"##,
+        "close": ##"<svg \##(stroke) stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg>"##,
         "plus": ##"<svg \##(stroke) stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>"##,
         "appPlus": ##"<svg \##(stroke) stroke-width="1.9"><path d="M12 5v14M5 12h14"/></svg>"##,
         "bell": ##"<svg \##(stroke) stroke-width="1.9"><path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 2H4.5z"/><path d="M10 21a2.2 2.2 0 0 0 4 0"/></svg>"##,
