@@ -18,7 +18,8 @@ QA_PROJECT_ACTION_FIXTURE=0
 if [[ "$QA_TEST" == "TaskHubUITests" || "$QA_TEST" == "TaskHubUITests/TaskHubUITests" || "$QA_TEST" == *testNativeProjectPullRequest* || "$QA_TEST" == *testNativeProjectTicket* || "$QA_TEST" == *testNativeDashboardPendingOpen* ]]; then QA_PROJECT_ACTION_FIXTURE=1; fi
 # XCTest runs a copied app outside the checkout. Supply its PTY helper explicitly
 # instead of relying on source-tree discovery from that copied bundle.
-cargo build --locked --manifest-path "$ROOT/crates/taskhub-ptyd/Cargo.toml" --features terminal-snapshots
+. "$ROOT/macos/scripts/cargo-env.sh"
+cargo_build build --locked --manifest-path "$ROOT/crates/taskhub-ptyd/Cargo.toml" --features terminal-snapshots
 QA_HELPER="$ROOT/crates/taskhub-ptyd/target/debug/taskhub-ptyd"
 test -x "$QA_HELPER"
 BACKEND_PID=""

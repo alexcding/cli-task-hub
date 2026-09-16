@@ -6,8 +6,11 @@ APP="${1:?usage: bash macos/scripts/bundle-backend.sh /absolute/path/TaskHub.app
 test -d "$APP/Contents/MacOS"
 python3 "$ROOT/macos/scripts/check-runtime-frameworks.py" "$APP"
 
-cargo build --locked --release --manifest-path "$ROOT/crates/taskhub-backend/Cargo.toml"
-cargo build --locked --release --manifest-path "$ROOT/crates/taskhub-ptyd/Cargo.toml" --features terminal-snapshots
+# Same normalized cargo environment as the Xcode build, so this reuses what
+# bootstrap.sh already compiled instead of invalidating it (see cargo-env.sh).
+. "$ROOT/macos/scripts/cargo-env.sh"
+cargo_build build --locked --release --manifest-path "$ROOT/crates/taskhub-backend/Cargo.toml"
+cargo_build build --locked --release --manifest-path "$ROOT/crates/taskhub-ptyd/Cargo.toml" --features terminal-snapshots
 
 mkdir -p "$APP/Contents/Helpers" "$APP/Contents/Resources/Licenses"
 cp "$ROOT/crates/taskhub-ptyd/target/release/taskhub-ptyd" "$APP/Contents/Helpers/taskhub-ptyd"

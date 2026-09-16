@@ -69,9 +69,13 @@ fi
 
 # 3. The backend static library the app links (crates/taskhub-backend/src/ffi.rs) and
 #    the PTY helper the shared scheme's launch arguments point at.
+#
+# Cargo goes through the shared normalized environment; see cargo-env.sh for why.
+. "$MACOS/scripts/cargo-env.sh"
+
 log "Building the Rust backend library and PTY helper (release)"
-cargo build --manifest-path "$ROOT/crates/taskhub-backend/Cargo.toml" --release || fail "taskhub-backend build failed"
-cargo build --manifest-path "$ROOT/crates/taskhub-ptyd/Cargo.toml" --release --features terminal-snapshots --locked \
+cargo_build build --manifest-path "$ROOT/crates/taskhub-backend/Cargo.toml" --release --locked || fail "taskhub-backend build failed"
+cargo_build build --manifest-path "$ROOT/crates/taskhub-ptyd/Cargo.toml" --release --features terminal-snapshots --locked \
   || fail "taskhub-ptyd build failed"
 
 log "ready"
