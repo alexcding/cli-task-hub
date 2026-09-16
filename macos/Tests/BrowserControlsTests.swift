@@ -44,7 +44,7 @@ import Testing
     #expect(desktop.opens.map(\.absoluteString) == [page.url])
     for invalid in ["file:///tmp/private", "javascript:alert(1)", "https://user:password@example.test", "not a URL"] {
         model.address = invalid
-        #expect(!model.submitAddress() && model.error == "Enter an HTTP or HTTPS address.")
+        #expect(!model.submitAddress() && model.error == "Enter a web address, like example.com.")
         #expect(model.address == invalid && page.navigations.isEmpty)
     }
     model.address = "  https://example.test/accepted\n"
@@ -156,4 +156,25 @@ import Testing
     model.active = true; replacement = nil
     model.openExternally()
     #expect(replacementDesktop.opens.count == 1)
+}
+
+@Test func typedAddressesBecomeWebURLs() {
+    let cases: [(String, String?)] = [
+        ("https://example.test/a", "https://example.test/a"),
+        ("  http://example.test\n", "http://example.test"),
+        ("example.com", "https://example.com"),
+        ("www.google.com", "https://www.google.com"),
+        ("github.com/org/repo?tab=1#top", "https://github.com/org/repo?tab=1#top"),
+        ("localhost:3000/path", "http://localhost:3000/path"),
+        ("app.localhost", "http://app.localhost"),
+        ("printer.local", "http://printer.local"),
+        ("192.168.1.5:8080", "http://192.168.1.5:8080"),
+        ("[::1]:8080", "http://[::1]:8080"),
+        ("notes", nil), ("not a URL", nil), ("", nil), ("https://", nil),
+        ("file:///tmp/private", nil), ("javascript:alert(1)", nil), ("mailto:someone@example.test", nil),
+        ("data:text/html,hi", nil), ("https://user:password@example.test", nil), ("ftp://example.test", nil),
+    ]
+    for (input, expected) in cases {
+        #expect(webAddress(input)?.absoluteString == expected, "\(input)")
+    }
 }

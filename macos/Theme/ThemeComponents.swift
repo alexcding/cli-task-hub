@@ -13,6 +13,45 @@ extension View {
     }
 }
 
+// MARK: - Controls
+
+extension View {
+    /// Icon-only toolbar buttons at the large control size, each glyph in the same square so every
+    /// button is the same size: round Liquid Glass on macOS 26 and later, the system's default
+    /// button look before that.
+    @ViewBuilder func glassIconButtons() -> some View {
+        let sized = labelStyle(SquareIconLabelStyle()).controlSize(.large)
+        if #available(macOS 26.0, *) { sized.buttonStyle(.glass).buttonBorderShape(.circle) } else { sized }
+    }
+
+    /// A plain text field in a capsule: Liquid Glass on macOS 26 and later, a tinted capsule
+    /// with a hairline border before that.
+    @ViewBuilder func capsuleField() -> some View {
+        let field = textFieldStyle(.plain).padding(.horizontal, 12).padding(.vertical, 5)
+        if #available(macOS 26.0, *) {
+            field.glassEffect(.regular.interactive(), in: .capsule)
+        } else {
+            field
+                .background(Theme.surfaceHover, in: Capsule())
+                .overlay(Capsule().strokeBorder(Theme.border, lineWidth: Theme.Size.hairline))
+        }
+    }
+}
+
+/// Just the icon, centred in a fixed square, so glyphs of different widths make equal buttons.
+/// The title stays on the label as its accessibility name, as with `.iconOnly`.
+struct SquareIconLabelStyle: LabelStyle {
+    var side: CGFloat = 20
+    func makeBody(configuration: Configuration) -> some View {
+        Label {
+            configuration.title
+        } icon: {
+            configuration.icon.frame(width: side, height: side)
+        }
+        .labelStyle(.iconOnly)
+    }
+}
+
 // MARK: - Status tints
 
 /// The semantic tint pairs the web uses for badges and pills. One case per `--*-bg` / `--*` pair.

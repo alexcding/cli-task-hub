@@ -94,7 +94,7 @@ struct BrowserPane: View {
                 Button("Back", systemImage: "chevron.left", action: model.back).disabled(!model.canGoBack)
                 Button("Forward", systemImage: "chevron.right", action: model.forward).disabled(!model.canGoForward)
                 Button(model.loading ? "Stop Loading" : "Reload Page", systemImage: model.loading ? "xmark" : "arrow.clockwise", action: model.toggleLoading)
-                TextField("Page address", text: $model.address).textFieldStyle(.roundedBorder).focused($editingAddress)
+                TextField("Page address", text: $model.address).capsuleField().focused($editingAddress)
                     .onSubmit { if model.submitAddress() { editingAddress = false } }
                 Button("Open in Browser", systemImage: "arrow.up.right.square", action: model.openExternally)
                     .disabled(!model.canOpenExternally)
@@ -113,16 +113,17 @@ struct BrowserPane: View {
                             .disabled(!canCreateSession)
                     }
                 }
-            }.labelStyle(.iconOnly).padding(8)
+            }.glassIconButtons().padding(8)
             if context.findVisible {
                 HStack {
                     TextField("Find in page", text: Binding(get: { context.findText }, set: { context.findText = $0 }))
+                        .capsuleField()
                         .focused($finding).onSubmit { model.find(context.findText) }
                     if model.found == false { Text("No match").font(.caption).foregroundStyle(.secondary) }
                     Button("Previous Match", systemImage: "chevron.up") { model.find(context.findText, backwards: true) }
                     Button("Next Match", systemImage: "chevron.down") { model.find(context.findText) }
                     Button("Close Find", systemImage: "xmark") { context.findVisible = false }
-                }.labelStyle(.iconOnly).padding(8)
+                }.glassIconButtons().padding(8)
             }
             if let error = model.error {
                 HStack { Text(error).font(.callout); Spacer(); Button("Retry", action: model.retry) }

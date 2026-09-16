@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 // The web sidebar's chrome around the outline (src/renderer/index.html <aside>, layout.css):
-// the wordmark with New Project + the activity bell, and Settings pinned in a footer.
+// the wordmark with Open Link, New Project and the activity bell, and Settings pinned in a footer.
 struct SidebarView: View {
     let model: RootViewModel
     @State private var showingActivity = false
@@ -13,6 +13,8 @@ struct SidebarView: View {
                 Text("TaskHub").font(.system(size: 17, weight: .bold)).kerning(-0.3)
                     .foregroundStyle(Color(nsColor: SidebarPalette.text))
                 Spacer()
+                SidebarAppButton(icon: "globe", label: "Open Link", help: "Open Link (⌘T)") { model.openLink() }
+                    .disabled(!model.canOpenLink)
                 SidebarAppButton(icon: "appPlus", label: "New Project", help: "New Project") { model.newProject() }
                     .disabled(!model.canCreateProject)
                 SidebarAppButton(icon: "bell", label: "Today's activity", help: "Today's activity") { showingActivity.toggle() }

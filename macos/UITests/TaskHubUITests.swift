@@ -1134,7 +1134,7 @@ final class TaskHubUITests: XCTestCase {
         XCTAssertTrue(app.webViews.firstMatch.waitForExistence(timeout: 10))
         XCTAssertTrue(app.webViews.staticTexts["Native browser fixture"].waitForExistence(timeout: 10))
         app.buttons["Add Page"].click()
-        let newAddress = app.textFields["HTTP or HTTPS address"]
+        let newAddress = app.textFields["Web address (example.com)"]
         XCTAssertTrue(newAddress.waitForExistence(timeout: 5))
         newAddress.click(); newAddress.typeKey("a", modifierFlags: .command); newAddress.typeText("file:///tmp/private")
         XCTAssertFalse(app.sheets.buttons["Open"].isEnabled)

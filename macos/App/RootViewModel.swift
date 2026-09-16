@@ -15,6 +15,7 @@ import Observation
     var error: String?
     var hasTerminal = false
     var canCreateProject = false
+    var canOpenLink = false
     var canCreateSession = false
     var canRefresh = false
 }
@@ -58,6 +59,7 @@ import Observation
         }
     }
     var canCreateProject: Bool { state.canCreateProject }
+    var canOpenLink: Bool { state.canOpenLink }
     var todayActivity: TodayActivityViewModel? { state.todayActivity }
     var canCreateSession: Bool { state.canCreateSession }
     var canRefresh: Bool { state.canRefresh }
@@ -114,6 +116,7 @@ import Observation
     func closeTab(_ url: String) { onAction(.closeTab(url)) }
     func reconnect() { onAction(.reconnect) }
     func newProject() { if canCreateProject { onAction(.command(.newProject)) } }
+    func openLink() { if canOpenLink { onAction(.command(.openLink)) } }
     func newSession() { if canCreateSession { onAction(.command(.newSession)) } }
     /// A project folder's hover "+": New Session on that project, wherever the window is.
     func newSession(in projectID: String) { onAction(.newSession(projectID: projectID)) }

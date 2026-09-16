@@ -160,7 +160,7 @@ private actor CreationProjectService: ProjectService {
     present()
     let second = try #require(coordinator.sheet)
     guard case .addPage(let fresh) = second.destination else { Issue.record("Wrong destination"); return }
-    #expect(fresh.address == "https://" && model !== fresh)
+    #expect(fresh.address.isEmpty && model !== fresh)
     model.open()
     #expect(opened.count == 2 && coordinator.sheet?.id == second.id)
     coordinator.dismissSheet(id: second.id)

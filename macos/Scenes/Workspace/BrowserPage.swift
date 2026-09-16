@@ -66,7 +66,7 @@ struct WebPageRecord: Codable, Identifiable, Equatable, Sendable {
     }
 
     func navigate(_ address: String) {
-        guard let destination = safeWebURL(address) else { error = "Enter an HTTP or HTTPS address."; return }
+        guard let destination = webAddress(address) else { error = "Enter a web address, like example.com."; return }
         error = nil
         materialize().load(URLRequest(url: destination))
     }

@@ -25,7 +25,7 @@ import Observation
         case invalidAddress, externalBrowser
         var message: String {
             switch self {
-            case .invalidAddress: "Enter an HTTP or HTTPS address."
+            case .invalidAddress: "Enter a web address, like example.com."
             case .externalBrowser: "Could not open this page in the default browser."
             }
         }
@@ -62,13 +62,12 @@ import Observation
 
     @discardableResult func submitAddress() -> Bool {
         guard active, page != nil, onAction != nil else { return false }
-        let trimmed = address.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let url = safeWebURL(trimmed) else {
+        guard let url = webAddress(address) else {
             actionError = .invalidAddress
             return false
         }
         actionError = nil
-        address = trimmed
+        address = url.absoluteString
         perform(.navigate(url))
         return true
     }

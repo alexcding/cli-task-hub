@@ -36,6 +36,23 @@ func safeWebURL(_ value: String) -> URL? {
     return url
 }
 
+/// What someone typed into an address field, as a web URL. A full http(s) URL passes through;
+/// an address without a scheme (`example.com`, `www.example.com/path`, `localhost:3000`,
+/// `192.168.1.5:8080`) gets `https://`, or `http://` for local hosts. Anything else, including
+/// other schemes such as `file:` and `javascript:`, is not a web address.
+func webAddress(_ input: String) -> URL? {
+    let text = input.trimmingCharacters(in: .whitespacesAndNewlines)
+    if let url = safeWebURL(text) { return url }
+    guard !text.isEmpty, !text.contains("://"), !text.contains(where: \.isWhitespace),
+          let url = URL(string: "http://" + text), let host = url.host?.lowercased(), !host.isEmpty else { return nil }
+    let ipv4 = host.split(separator: ".").count == 4 && host.allSatisfy { $0.isNumber || $0 == "." }
+    let local = host == "localhost" || host.hasSuffix(".localhost") || host.hasSuffix(".local") || ipv4 || host.contains(":")
+    // A bare word ("notes") is not an address; a scheme-shaped prefix ("javascript:x") parses as
+    // host plus a non-numeric port and is rejected by URL itself.
+    guard local || host.contains(".") else { return nil }
+    return safeWebURL((local ? "http://" : "https://") + text)
+}
+
 func backendTimestamp(_ value: String) -> Date? {
     let formatter = ISO8601DateFormatter()
     formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]

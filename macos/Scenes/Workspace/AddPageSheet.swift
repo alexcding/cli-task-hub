@@ -7,7 +7,7 @@ struct AddPageSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Add Page").font(.headline)
-            TextField("HTTP or HTTPS address", text: $model.address).textFieldStyle(.roundedBorder)
+            TextField("Web address (example.com)", text: $model.address).textFieldStyle(.roundedBorder)
             if let error = model.error { Text(error).foregroundStyle(.orange).textSelection(.enabled) }
             HStack {
                 Button("Cancel", role: .cancel, action: cancel).keyboardShortcut(.cancelAction)

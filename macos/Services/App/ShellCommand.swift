@@ -2,5 +2,5 @@ import Foundation
 
 public enum ShellCommand: String, Sendable {
     case overview, terminal, activity, settings, sidebar, refresh, tray, biggerFont, smallerFont, resetFont, checkForUpdates
-    case newProject, newSession, openFile, saveFile, closePage, findPage, back, forward, nextPage, previousPage, zoomIn, zoomOut, resetZoom
+    case newProject, newSession, openLink, openFile, saveFile, closePage, findPage, back, forward, nextPage, previousPage, zoomIn, zoomOut, resetZoom
 }

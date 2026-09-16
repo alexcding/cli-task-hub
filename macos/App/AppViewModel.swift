@@ -316,7 +316,7 @@ public final class AppViewModel {
 
     public func canPerform(_ command: ShellCommand) -> Bool {
         switch command {
-        case .newProject: connection == "Connected" && coordinator.canPresent
+        case .newProject, .openLink: connection == "Connected" && coordinator.canPresent
         case .newSession: canStartSession && sessionProject(for: selection) != nil
         case .back: coordinator.canPresent && viewer.active?.activePage?.controls.canGoBack == true
         case .forward: coordinator.canPresent && viewer.active?.activePage?.controls.canGoForward == true
@@ -341,6 +341,7 @@ public final class AppViewModel {
             guard canPerform(.newSession), let project = sessionProject(for: selection) else { return }
             let pageURL: String? = if case .tab(let url) = selection { url } else { nil }
             startSession(in: project.id, pageURL: pageURL)
+        case .openLink: if canPerform(.openLink) { openLink() }
         case .openFile: if canPerform(.openFile), let context = viewer.active { viewer.openFile(in: context) }
         case .saveFile: if let document = viewer.active?.activeDocument { Task { await document.save() } }
         case .closePage: if let context = viewer.active, let id = context.activeID, let tab = context.tab(id) { context.close(tab) }
@@ -390,6 +391,19 @@ public final class AppViewModel {
         coordinator.presentAddPage(openPage: { [weak self, weak context] address in
             guard let self, let context, viewer.contexts[context.id] === context else { return false }
             return context.open(address) != nil
+        })
+    }
+
+    /// Asks for an address and opens it as a sidebar tab, from anywhere in the app.
+    func openLink() {
+        coordinator.presentAddPage(openPage: { [weak self] address in
+            guard let self else { return false }
+            let title = URL(string: address)?.host ?? address
+            Task {
+                do { try await self.openPage(OpenPageRequest(url: address, kind: "web", title: title)) }
+                catch { self.error = "Could not open \(address): \(error.localizedDescription)" }
+            }
+            return true
         })
     }
 
