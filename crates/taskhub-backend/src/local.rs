@@ -482,31 +482,162 @@ pub async fn create_worktree(Json(body): Json<Value>) -> ApiResult<Value> {
         ));
     }
     fs::create_dir_all(&root).map_err(ApiError::internal)?;
-    let _ = git(
-        dir,
-        vec!["fetch".into(), "origin".into(), branch.into()],
-        60,
-    )
-    .await;
-    let mut args = vec!["worktree".into(), "add".into()];
-    if body["create"].as_bool().unwrap_or(false) {
-        let base = body["base"]
-            .as_str()
-            .filter(|v| !v.is_empty())
-            .unwrap_or("main");
-        args.extend([
-            "-b".into(),
-            branch.into(),
-            destination.to_string_lossy().into_owned(),
-            base.into(),
-        ]);
+    // The same sequence as the JS backend (src/server/repositories/github.js:270-355), which
+    // this port matches: clear stale admin entries, let the remote supply a branch that exists
+    // only there, then add. Adding an EXISTING branch is the first move and `-b` the fallback,
+    // so a `create` request whose branch is already present adopts it instead of failing.
+    let _ = git(dir, vec!["worktree".into(), "prune".into()], 20).await;
+    let target = destination.to_string_lossy().into_owned();
+    let create = body["create"].as_bool().unwrap_or(false);
+    let add = vec![
+        "worktree".into(),
+        "add".into(),
+        target.clone(),
+        branch.into(),
+    ];
+    let mut failure = match git(dir, add.clone(), 90).await {
+        Ok(_) => return Ok(Json(json!({"ok":true,"path":destination}))),
+        Err(error) => error.to_string(),
+    };
+    // The one place a fetch earns its cost: adopting a branch that exists only on origin, which
+    // `worktree add` cannot resolve without refs/remotes/origin/<branch>. The JS backend fetched
+    // up front on every path instead; that is what froze New Session for a minute, since a fetch
+    // from the app (Xcode's git, a GUI process resolving credentials) is far slower than from a
+    // shell, and on the create path the ref being fetched provably does not exist yet.
+    if missing_ref(&failure) && !create {
+        let _ = git(
+            dir,
+            vec!["fetch".into(), "origin".into(), branch.into()],
+            10,
+        )
+        .await;
+        match git(dir, add, 90).await {
+            Ok(_) => return Ok(Json(json!({"ok":true,"path":destination}))),
+            Err(error) => failure = error.to_string(),
+        }
+    }
+    // Only a missing ref means "this branch does not exist yet, make it". Anything else (a bad
+    // path, a flag error) must surface as itself rather than silently creating a branch.
+    if !create || !missing_ref(&failure) {
+        return Ok(Json(json!({"error": worktree_failure(branch, failure)})));
+    }
+    let explicit = body["base"].as_str().filter(|v| !v.is_empty());
+    let base = match explicit {
+        Some(base) => base.to_string(),
+        None => default_branch(dir).await,
+    };
+    if explicit.is_some() && !valid_branch(&base) {
+        return Ok(Json(
+            json!({"error":format!("\"{base}\" is not a valid base branch name")}),
+        ));
+    }
+    // No fetch for the base either: a new branch is cut from what this checkout already has, so
+    // creating one never waits on the network. `origin/<base>` is still preferred when it is
+    // present locally, so the start point is the newest tip the checkout knows about.
+    // origin/<base> when it resolves — the freshest tip this checkout has — else the local branch
+    // (a base that was never pushed). An EXPLICIT base resolving nowhere is an error: never
+    // fork off whatever HEAD the main checkout happens to be on.
+    let start = if ref_exists(dir, &format!("origin/{base}")).await {
+        format!("origin/{base}")
+    } else if ref_exists(dir, &base).await {
+        base.clone()
     } else {
-        args.extend([destination.to_string_lossy().into_owned(), branch.into()]);
+        String::new()
+    };
+    if start.is_empty() && explicit.is_some() {
+        return Ok(Json(
+            json!({"error":format!("Base branch \"{base}\" was not found locally or on origin")}),
+        ));
+    }
+    let mut args = vec![
+        "worktree".into(),
+        "add".into(),
+        "-b".into(),
+        branch.into(),
+        target,
+    ];
+    if !start.is_empty() {
+        args.push(start);
     }
     match git(dir, args, 90).await {
         Ok(_) => Ok(Json(json!({"ok":true,"path":destination}))),
-        Err(e) => Ok(Json(json!({"error":e.to_string()}))),
+        Err(e) => Ok(Json(json!({"error": worktree_failure(branch, e.to_string())}))),
     }
+}
+
+/// The narrow set of phrases `worktree add` emits for a ref it cannot resolve — matched, as in
+/// the JS backend, so an unrelated failure is never read as "the branch does not exist yet".
+fn missing_ref(message: &str) -> bool {
+    let message = message.to_ascii_lowercase();
+    message.contains("invalid reference") || message.contains("unknown revision")
+}
+
+/// Git's "invalid reference" says nothing about what to do; a fork's PR branch is the usual way
+/// to reach it, since that branch is on the fork's remote and never on origin.
+fn worktree_failure(branch: &str, message: String) -> String {
+    if missing_ref(&message) {
+        return format!(
+            "Branch \"{branch}\" isn't available locally or on origin (a PR from a fork needs its branch fetched first)"
+        );
+    }
+    error_line(&message)
+}
+
+/// The line that says what went wrong, as the JS backend's `gitErrLine` picks it: git narrates
+/// before it fails ("Preparing worktree (checking out 'x')\nfatal: …"), and a toast showing the
+/// narration first reads as though nothing is wrong.
+fn error_line(message: &str) -> String {
+    message
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .find(|line| {
+            let line = line.to_ascii_lowercase();
+            line.contains("error") || line.contains("rejected") || line.contains("fatal")
+        })
+        .map(str::to_owned)
+        .unwrap_or_else(|| message.trim().to_owned())
+}
+
+async fn ref_exists(dir: &str, reference: &str) -> bool {
+    git(
+        dir,
+        vec![
+            "rev-parse".into(),
+            "--verify".into(),
+            "--quiet".into(),
+            format!("{reference}^{{commit}}"),
+        ],
+        15,
+    )
+    .await
+    .is_ok()
+}
+
+/// origin/HEAD when the remote publishes one, else the first conventional branch that exists.
+async fn default_branch(dir: &str) -> String {
+    if let Ok(head) = git(
+        dir,
+        vec![
+            "symbolic-ref".into(),
+            "--short".into(),
+            "refs/remotes/origin/HEAD".into(),
+        ],
+        15,
+    )
+    .await
+    {
+        let name = head.trim().trim_start_matches("origin/");
+        if !name.is_empty() {
+            return name.to_owned();
+        }
+    }
+    for candidate in ["main", "master", "develop"] {
+        if ref_exists(dir, &format!("refs/heads/{candidate}")).await {
+            return candidate.to_owned();
+        }
+    }
+    "main".to_owned()
 }
 
 pub async fn remove_worktree(Json(body): Json<Value>) -> ApiResult<Value> {
