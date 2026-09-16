@@ -320,12 +320,11 @@ Dashboard; the remaining app pages and action parity are tracked under M4.
 - Verification so far: 26 Swift package tests, 28 backend API tests, generated-route
   drift check, and native app build pass. Tests exercise real worktree creation,
   metadata preservation, targeted PTY stop, navigation/find/cookies, page persistence,
-  offline recovery, and bounded live view retention. Browser UI regression runs with
-  `bash macos/scripts/test-browser-ui.sh` against an isolated external fixture because
-  the XCUITest runner cannot bind its own server socket.
-  The browser UI test now passes find, navigation, last-page close without terminating
-  the session/window, and the native New Session sheet. Xcode reports an internal
-  UI-runner QoS warning; no app crash remains in this exercised flow.
+  offline recovery, and bounded live view retention. The `test-browser-ui.sh` browser
+  UI regression, which ran against an isolated external fixture because the XCUITest
+  runner cannot bind its own server socket, was removed with Node support.
+  It had exercised find, navigation, last-page close without terminating the
+  session/window, and the native New Session sheet.
 - Added removal with a native preview of all sessions sharing the worktree and open
   file holders. Default deletion refuses dirty worktrees; explicit discard warns
   about uncommitted/untracked loss and Xcode close-without-saving. Orphan sessions

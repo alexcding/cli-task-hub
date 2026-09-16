@@ -2,12 +2,6 @@ import AppKit
 import Foundation
 import Testing
 
-private struct FontDiffFixture: DiffService {
-    func load(worktree: String) async throws -> DiffSnapshot {
-        .init(diff: "diff --git a/Example.swift b/Example.swift\n--- a/Example.swift\n+++ b/Example.swift\n@@ -1 +1 @@\n-let value = 1\n+let value = 2\n", untracked: [], branch: "font-test")
-    }
-}
-
 actor FileFixture: FileDocumentService {
     var writes: [String] = []
     var reads = 0
@@ -54,19 +48,18 @@ actor FileFixture: FileDocumentService {
     func dispose() { disposed = true }
 }
 
-@MainActor @Test func nativeMemoryPressurePreservesHiddenDirtyEditor() async throws {
-    let pressure = FixtureMemoryPressureMonitor()
-    let viewer = ViewerStore(memoryPressure: pressure)
+@MainActor @Test func nativeHiddenContextPreservesDirtyEditor() async throws {
+    let viewer = ViewerStore()
     let context = viewer.select(id: "files", url: "session:files", title: "Files")
     let model = try #require(context.openFile("/tmp/unsaved.swift"))
     let surface = BufferFixture()
     model.connect(service: FileFixture(), makeSurface: { surface })
     model.show(appearance: .system); await model.waitForLoad()
     surface.edit("unsaved work")
-    viewer.deactivate()
-    viewer.setPageLimit(1)
-    pressure.emit()
-    viewer.suspendBackgroundPages()
+    // Switching session hides the editor without closing it — nothing prompts to save on a
+    // context switch, so an unsaved buffer that did not survive this would lose work silently.
+    _ = viewer.select(id: "other", url: "session:other", title: "Other")
+    #expect(viewer.active?.id == "other")
     #expect(context.documents.first === model && model.loaded && model.dirty)
     #expect(surface.content == "unsaved work" && !surface.disposed && !surface.frozen)
     await viewer.stop()
@@ -193,85 +186,6 @@ actor FileFixture: FileDocumentService {
     #expect(restored.documents.count == 1) // Legacy metadata must not resurrect the closed file.
     #expect(restored.visits.map(\.title) == context.visits.map(\.title))
 }
-
-#if false
-@MainActor @Test(.timeLimit(.minutes(1))) func removedWebEditorIntegration() async throws {
-    _ = NSApplication.shared
-    let root = TestPaths.checkout
-    let directory = FileManager.default.temporaryDirectory.appendingPathComponent("editor-test-\(UUID().uuidString)")
-    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-    defer { try? FileManager.default.removeItem(at: directory) }
-    let ready = directory.appendingPathComponent("ready")
-    let process = Process()
-    process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-    process.arguments = ["node", root.appendingPathComponent("macos/scripts/backend-fixture.cjs").path]
-    var env = ProcessInfo.processInfo.environment
-    env["TASKHUB_DATA_DIR"] = directory.path; env["TASKHUB_READY_FILE"] = ready.path; env["PORT"] = "0"
-    process.environment = env
-    process.standardOutput = FileHandle.nullDevice; process.standardError = FileHandle.nullDevice
-    try process.run()
-    defer { if process.isRunning { process.terminate(); process.waitUntilExit() } }
-    for _ in 0..<100 {
-        if FileManager.default.fileExists(atPath: ready.path) { break }
-        try await Task.sleep(for: .milliseconds(20))
-    }
-    let base = try #require(URL(string: String(contentsOf: ready, encoding: .utf8)))
-    let api = try APIClient(baseURL: base)
-    let file = directory.appendingPathComponent("Fixture.swift")
-    let original = "\u{feff}let title = \"Unicode 🦊\"\r\n"
-    try Data(original.utf8).write(to: file)
-    let model = EditorDocumentViewModel(record: .init(path: file.path), service: APIFileDocumentService(api: api),
-        makeSurface: { WebEditorSurface(baseURL: base) })
-    defer { model.dispose() }
-    model.show(appearance: .dark)
-    await model.waitForLoad()
-    #expect(model.error == nil)
-    #expect(model.loaded)
-    let view = try #require(model.webView)
-    let surface = try #require(model.surface)
-    #expect(try await surface.snapshot(freeze: false).content == original)
-    _ = try await view.evaluateJavaScript(#"window.monaco.editor.getModels()[0].applyEdits([{range:{startLineNumber:2,startColumn:1,endLineNumber:2,endColumn:1},text:'// edited\r\n'}]); true"#)
-    let beforeFont = try await surface.snapshot(freeze: false)
-    model.setFont(CodeFont(family: "Menlo", size: 19))
-    let info = try await view.evaluateJavaScript("window.monaco.editor.getEditors()[0].getOption(window.monaco.editor.EditorOption.fontInfo).fontSize")
-    #expect(info as? Int == 19)
-    let afterFont = try await surface.snapshot(freeze: false)
-    #expect(afterFont.content == beforeFont.content && afterFont.version == beforeFont.version && afterFont.dirty)
-    #expect(model.webView === view)
-    #expect(await model.save())
-    let savedBytes = try Data(contentsOf: file)
-    #expect(savedBytes == Data((original + "// edited\r\n").utf8))
-    #expect(!model.dirty)
-    // The focused page cannot navigate to a remote origin and retain the bridge.
-    _ = try await view.evaluateJavaScript("window.location.href = 'https://example.com'; true")
-    try await Task.sleep(for: .milliseconds(100))
-    #expect(view.url == base.appendingPathComponent("native/editor.html"))
-    // A remote edit is a conflict, and the native buffer remains available.
-    try Data("external change".utf8).write(to: file)
-    _ = try await view.evaluateJavaScript(#"window.monaco.editor.getModels()[0].setValue('my unsaved content'); true"#)
-    #expect(await model.save() == false)
-    #expect(try await surface.snapshot(freeze: false).content == "my unsaved content")
-    #expect(try String(contentsOf: file, encoding: .utf8) == "external change")
-    #expect(model.error != nil)
-
-    let diff = DiffViewModel(worktree: directory.path, baseURL: base, service: FontDiffFixture())
-    defer { diff.disconnect() }
-    diff.setFont(CodeFont(family: "Menlo", size: 20))
-    diff.show(appearance: .dark)
-    let diffView = try #require(diff.webView)
-    var rendered = false
-    for _ in 0..<200 {
-        rendered = (try? await diffView.evaluateJavaScript("document.querySelector('.diff-root') !== null && document.documentElement.style.getPropertyValue('--diff-font-size') === '20px'")) as? Bool == true
-        if rendered { break }
-        try await Task.sleep(for: .milliseconds(25))
-    }
-    #expect(rendered && diff.error == nil)
-    _ = try await diffView.evaluateJavaScript("window.savedDiffRoot = document.querySelector('.diff-root'); true")
-    diff.setFont(CodeFont(family: "Monaco", size: 16))
-    let retained = try await diffView.evaluateJavaScript("window.savedDiffRoot === document.querySelector('.diff-root') && document.documentElement.style.getPropertyValue('--diff-font-size') === '16px'")
-    #expect(retained as? Bool == true)
-}
-#endif
 
 @MainActor @Test func nativeEditorSurfaceLoadsEditsAndTracksSavedVersions() async throws {
     _ = NSApplication.shared

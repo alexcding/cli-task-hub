@@ -107,10 +107,9 @@ hidden parsing. Pinned rows are additional entries for the same session. Browser
 tabs now open embedded context pages with native controls. Sidebar implementation is authorized ahead of the remaining
 M1 terminal acceptance checks, which are still open.
 
-For an isolated sample hierarchy, run `macos/scripts/backend-fixture.cjs` with
-`TASKHUB_SIDEBAR_FIXTURE=1`, an isolated `TASKHUB_DATA_DIR`, and an unused `PORT`,
-then launch the app with `--backend-url` pointing to it. The fixture starts no
-pollers or agent hooks and uses no daily app data.
+The `backend-fixture.cjs` script used to build an isolated sample hierarchy was
+removed with Node support; the real Rust backend (`--backend-path`) is the only
+fixture path now.
 
 ## Session workspace (M3, in progress)
 
@@ -132,16 +131,13 @@ pages while retaining the active page. Suspended pages retain their tab identity
 shared website storage; unsent forms and in-page navigation state may be lost.
 Editors, terminals and the Sprint board are outside this eviction policy.
 
-Run `bash macos/scripts/test-browser-ui.sh` for the isolated browser UI regression.
+The `test-browser-ui.sh` isolated browser UI regression script was removed with
+Node support.
 
 For real build/install/launch/Stop acceptance, first scaffold an isolated sample and
-choose an available simulator from XcodeBuildMCP:
-
-```bash
-xcodebuildmcp project-scaffolding scaffold-ios --project-name TaskHubBuildProbe --output-path /private/tmp/taskhub-real-build-probe --bundle-identifier com.alexcding.taskhub.acceptance.buildprobe --deployment-target 18.0
-xcodebuildmcp simulator list --enabled
-TASKHUB_BUILD_PROBE_TEMPLATE=/private/tmp/taskhub-real-build-probe TASKHUB_REAL_BUILD_SIMULATOR=YOUR_SIMULATOR_UDID bash macos/scripts/test-browser-ui.sh TaskHubUITests/TaskHubUITests/testNativeRealBuildLaunchStopPreservesSessionTerminal
-```
+choose an available simulator from XcodeBuildMCP, then run
+`TaskHubUITests/TaskHubUITests/testNativeRealBuildLaunchStopPreservesSessionTerminal`
+directly against it (the `test-browser-ui.sh` wrapper that ran this is gone).
 
 The opt-in test copies the sample into its private workspace, assigns a unique
 personal probe bundle ID, and uses real Xcode routes and the native Run/Stop UI.
@@ -587,10 +583,11 @@ byte values with raw mode enabled, reattaches to identical bytes, and verifies t
 incomplete UTF-8 is delivered immediately. Rust integration tests attach native byte
 and legacy text clients to the same PTY, checking invalid input, split codepoints,
 both attachment formats, shared sequences, and continued legacy input support.
-Additional regressions cover stale replies after timeouts, incompatible/malformed
-peers, disconnects, multi-client pause ownership, real PTY history truncation, and
-explicit Quit with no existing connection. `pty-protocol-fixture.cjs` provides a
-temporary Unix-socket peer for error cases without launching any shell.
+Regressions cover invalid geometry, replay, and protocol byte-transport contracts,
+malformed daemon-startup errors, and an unbounded resize-event flood. The
+`pty-protocol-fixture.cjs` Unix-socket peer these once ran against error cases
+without launching any shell was removed with Node support, along with the
+timeout/disconnect, mismatched-helper, and snapshot-download regressions it backed.
 
 The daemon implementation now lives in `crates/taskhub-ptyd/src/lib.rs`. Tauri re-exports
 the same crate; do not create a second implementation. M1 fixes its incremental

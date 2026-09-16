@@ -7,7 +7,6 @@ struct TaskHubApp: App {
     var body: some Scene {
         Window("TaskHub Native", id: "main") {
             ContentView(model: delegate.model)
-                .modifier(TaskHubWindowChrome())
                 .frame(minWidth: 760, minHeight: 480)
                 .environment(\.terminalFont, delegate.model.shell.font(.term))
                 .environment(\.documentFont, delegate.model.shell.font(.diff))
@@ -27,16 +26,6 @@ struct TaskHubApp: App {
         .commands {
             TaskHubCommands(model: delegate.model, perform: delegate.perform,
                             canCheckForUpdates: delegate.canCheckForUpdates)
-        }
-    }
-}
-
-private struct TaskHubWindowChrome: ViewModifier {
-    @ViewBuilder func body(content: Content) -> some View {
-        if #available(macOS 26.0, *) {
-            content.toolbar(removing: .sidebarToggle).toolbar(removing: .title)
-        } else {
-            content
         }
     }
 }

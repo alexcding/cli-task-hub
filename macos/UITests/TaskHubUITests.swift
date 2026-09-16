@@ -346,36 +346,6 @@ final class TaskHubUITests: XCTestCase {
     }
 
     @MainActor
-    func testNativeBrowserMemoryControlsSuspendAndRestorePages() throws {
-        let environment = ProcessInfo.processInfo.environment
-        guard let base = environment["TASKHUB_UI_BACKEND_URL"],
-              let path = environment["TASKHUB_UI_DATA_DIR"], let socket = environment["TASKHUB_UI_PTY_SOCKET"] else {
-            throw XCTSkip("Run macos/scripts/test-browser-ui.sh to provide the isolated fixture.")
-        }
-        let app = XCUIApplication()
-        app.launchArguments = ["--backend-url", base, "--data-dir", path, "--pty-socket", socket]
-        app.launch()
-        let first = app.outlines["workspace-sidebar"].staticTexts["sidebar-1"].firstMatch
-        XCTAssertTrue(first.waitForExistence(timeout: 10)); first.click()
-        XCTAssertTrue(app.webViews.staticTexts["Native browser fixture"].waitForExistence(timeout: 5))
-        app.outlines["workspace-sidebar"].staticTexts["Next page"].firstMatch.click()
-        XCTAssertTrue(app.webViews.staticTexts["Next page"].waitForExistence(timeout: 5))
-        app.typeKey(",", modifierFlags: .command)
-        app.radioButtons["System"].click()
-        XCTAssertTrue(app.descendants(matching: .any)["settings-remote-page-limit"].firstMatch.waitForExistence(timeout: 5))
-        let suspend = app.buttons["Suspend Background Pages"]
-        XCTAssertTrue(suspend.isEnabled)
-        suspend.click()
-        let counts = app.staticTexts["settings-remote-page-counts"]
-        XCTAssertEqual(counts.value as? String, "Loaded: 0 · Suspended: 2")
-        XCTAssertFalse(suspend.isEnabled)
-        first.click()
-        XCTAssertTrue(app.webViews.firstMatch.waitForExistence(timeout: 5))
-        app.typeKey(",", modifierFlags: .command)
-        XCTAssertEqual(counts.value as? String, "Loaded: 1 · Suspended: 1")
-    }
-
-    @MainActor
     func testNativeResourcesShowAppAndBackendAndResumeAfterNavigation() throws {
         let environment = ProcessInfo.processInfo.environment
         guard let base = environment["TASKHUB_UI_BACKEND_URL"],
@@ -600,7 +570,9 @@ final class TaskHubUITests: XCTestCase {
         app.launch()
         let status = app.descendants(matching: .any)["taskhub-status-item"].firstMatch
         XCTAssertTrue(status.waitForExistence(timeout: 10), app.debugDescription)
-        XCTAssertFalse(app.windows["TaskHub Native"].exists)
+        // The window is titled by the active page, so its content is what says it is closed:
+        // this is the mirror of the sidebar assertion after "Open TaskHub" below.
+        XCTAssertFalse(app.outlines["workspace-sidebar"].exists)
         status.click()
         XCTAssertTrue(app.buttons["Open TaskHub"].waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertFalse(app.radioButtons["Dark"].exists) // appearance lives in Settings, not the tray
@@ -1081,7 +1053,8 @@ final class TaskHubUITests: XCTestCase {
         // The native modal owns accessibility focus. Its paused web content must
         // leave the tree and return when the request completes.
         XCTAssertFalse(app.webViews.firstMatch.exists)
-        let newProject = app.windows["TaskHub"].children(matching: .toolbar).buttons["New Project"]
+        // Scoped to the toolbar, not to a window title: the window is titled by the active page.
+        let newProject = app.toolbars.buttons["New Project"]
         XCTAssertFalse(newProject.isEnabled)
         dialog.buttons["Cancel"].click()
         XCTAssertTrue(app.webViews.staticTexts["Prompt cancelled"].waitForExistence(timeout: 5))
