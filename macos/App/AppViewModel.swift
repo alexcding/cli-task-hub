@@ -375,7 +375,7 @@ public final class AppViewModel {
     }
 
     private var fontTarget: CodeFontKind? {
-        if selection == .settings && settings?.section == .general { return .diff }
+        if selection == .settings && settings?.section == .appearance { return .diff }
         if let context = viewer.active {
             if context.pane == .diff { return .diff }
             let hasTerminal = context.id == "scratch" || sessions.contains { "task:\($0.id)" == context.id }

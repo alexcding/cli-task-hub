@@ -53,7 +53,9 @@ struct APISettingsService: SettingsService {
     func sounds() async throws -> [ReviewSound] { try await api.get(Routes.SOUNDS) }
 }
 
+// The tabs the web app shows (renderer `index.html` → `#page-settings .seg-tabs`), in its order.
+// Events is deliberately absent: the native app has Activity as its own destination.
 enum SettingsSection: String, CaseIterable, Identifiable {
-    case general = "General", connections = "Connections", clis = "CLIs", diagnostics = "Diagnostics", resources = "Resources"
+    case appearance = "Appearance", clis = "CLIs", jira = "Jira", system = "System"
     var id: String { rawValue }
 }

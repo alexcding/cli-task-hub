@@ -29,30 +29,35 @@ private actor SectionFontCatalog: CodeFontCatalog {
     #expect(await login.reads == 0)
     #expect(await fonts.reads == 0)
     root.navigate(to: .settings)
-    while model.loginItem.loading || model.fonts.loading { await Task.yield() }
+    // Settings opens on Appearance, which owns the font pickers and nothing else.
+    while model.fonts.loading { await Task.yield() }
+    #expect(await fonts.reads == 1)
+    #expect(await login.reads == 0)
+    #expect(await clis.probes == 0)
+    #expect(runtime.activations == 1)
+    // System carries the login item, the inspector and the resource readout together.
+    model.section = .system
+    while model.loginItem.loading { await Task.yield() }
     #expect(await login.reads == 1)
     #expect(await login.mutations == 0)
-    #expect(await fonts.reads == 1)
-    #expect(await clis.probes == 0)
-    root.navigate(to: .settings); model.section = .general
-    #expect(runtime.activations == 1)
-    #expect(await login.reads == 1)
-    model.section = .diagnostics
     while await diagnostics.calls == 0 { await Task.yield() }
-    #expect(model.diagnostics.loading)
-    model.section = .resources
     while await resources.calls == 0 { await Task.yield() }
-    #expect(!model.diagnostics.loading && model.resources.loading)
+    #expect(model.diagnostics.loading && model.resources.loading)
+    // Leaving System hides both, so a late inspector response is discarded, not surfaced.
+    model.section = .appearance
+    #expect(!model.diagnostics.loading && !model.resources.loading)
     await diagnostics.complete(1, with: .failure(BackendError.operation("Hidden response")))
+    await resources.complete(.init(processes: []))
+    #expect(model.diagnostics.error == nil)
+    model.section = .system
+    while await resources.calls < 2 { await Task.yield() }
+    #expect(model.resources.loading && model.resources.updatedAt == nil)
+    // Backgrounding pauses the resource poll; leaving Settings keeps it paused.
     model.applicationActiveChanged(false)
     #expect(!model.resources.loading)
     await resources.complete(.init(processes: []))
-    model.applicationActiveChanged(true)
-    while await resources.calls < 2 { await Task.yield() }
-    #expect(model.resources.loading && model.resources.updatedAt == nil && model.diagnostics.error == nil)
     root.navigate(to: .overview)
     #expect(!model.active && !model.resources.loading)
-    await resources.complete(.init(processes: []))
     model.applicationActiveChanged(true)
     #expect(await resources.calls == 2)
     model.section = .clis
@@ -61,6 +66,10 @@ private actor SectionFontCatalog: CodeFontCatalog {
     while model.clis.probing || model.clis.loadingHooks { await Task.yield() }
     #expect(await clis.probes == 1)
     #expect(runtime.activations == 2)
+    // Re-entering System started a second inspector read; resume it so retire() leaves nothing
+    // suspended. Diagnostics is hidden by now, so the failure is discarded.
+    await diagnostics.complete(2, with: .failure(BackendError.operation("Discarded response")))
+    #expect(model.diagnostics.error == nil)
     child.retire(); await resources.close()
 }
 
@@ -69,13 +78,13 @@ private actor SectionFontCatalog: CodeFontCatalog {
     await catalog.hold(gate)
     let model = NativeSettingsFeatureFactory(desktop: ProjectPageActions(), copy: { _ in }, loginItem: SectionLoginService(), fontCatalog: catalog).settings()
     model.setActive(true); await gate.waitForStart()
-    model.section = .connections
+    model.section = .system
     #expect(!model.fonts.loading)
-    model.section = .general
+    model.section = .appearance
     while model.fonts.loading { await Task.yield() }
     #expect(model.fonts.families == ["Font 2"])
     await gate.finish()
-    model.section = .connections; model.section = .general
+    model.section = .system; model.section = .appearance
     while model.fonts.loading { await Task.yield() }
     #expect(model.fonts.families == ["Font 3"])
     await model.stop()

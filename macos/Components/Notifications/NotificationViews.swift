@@ -4,29 +4,41 @@ struct NotificationPreferencesView: View {
     let shell: ShellStore
     var sounds: [ReviewSound] = []
 
+    // Rows for a grouped Form; the caller owns the Section. Web order: review sound, then alerts.
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Notifications").font(.headline)
-            Text(shell.notifications.permission.label).font(.caption).foregroundStyle(.secondary)
-            if shell.notifications.permission == .notDetermined {
-                Button("Enable Notifications") { shell.notifications.enable() }
-                    .disabled(!shell.notifications.canEnable)
-            } else if shell.notifications.permission == .denied {
-                Text("Allow TaskHub Native in System Settings → Notifications.").font(.caption)
+        SettingsRow(title: "Review sound", caption: "Plays when a PR newly needs your review") {
+            HStack(spacing: 6) {
+                Picker("Review sound", selection: Binding(get: { shell.reviewSound }, set: shell.setReviewSound)) {
+                    Text("Glass (default)").tag("system")
+                    Text("None").tag("off")
+                    ForEach(sounds) { Text($0.name).tag($0.path) }
+                    if !["system", "off"].contains(shell.reviewSound) && !sounds.contains(where: { $0.path == shell.reviewSound }) {
+                        Text(URL(fileURLWithPath: shell.reviewSound).deletingPathExtension().lastPathComponent)
+                            .tag(shell.reviewSound)
+                    }
+                }.labelsHidden().accessibilityIdentifier("settings-review-sound")
+                Button { shell.notifications.previewSound(shell.reviewSound) } label: { Image(systemName: "play.fill") }
+                    .buttonStyle(.borderless).help("Preview").disabled(shell.reviewSound == "off")
+                    .accessibilityLabel("Preview Sound").accessibilityIdentifier("settings-preview-sound")
             }
-            Toggle("Activity alerts", isOn: Binding(get: { shell.activityNotify }, set: shell.setActivityNotify))
-            Picker("Review sound", selection: Binding(get: { shell.reviewSound }, set: shell.setReviewSound)) {
-                Text("Glass (default)").tag("system")
-                Text("None").tag("off")
-                ForEach(sounds) { Text($0.name).tag($0.path) }
-                if !["system", "off"].contains(shell.reviewSound) && !sounds.contains(where: { $0.path == shell.reviewSound }) {
-                    Text(URL(fileURLWithPath: shell.reviewSound).deletingPathExtension().lastPathComponent)
-                        .tag(shell.reviewSound)
+        }
+        SettingsRow(title: "Activity notifications", caption: "In-app toast when focused, a macOS notification otherwise") {
+            Toggle("", isOn: Binding(get: { shell.activityNotify }, set: shell.setActivityNotify))
+                .labelsHidden().accessibilityIdentifier("settings-activity-notify")
+        }
+        if shell.notifications.permission != .authorized {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(shell.notifications.permission.label).font(.caption).foregroundStyle(.secondary)
+                if shell.notifications.permission == .notDetermined {
+                    Button("Enable Notifications") { shell.notifications.enable() }
+                        .disabled(!shell.notifications.canEnable)
+                } else if shell.notifications.permission == .denied {
+                    Text("Allow TaskHub Native in System Settings → Notifications.").font(.caption)
                 }
             }
-            if let error = shell.notifications.error { Text(error).font(.caption).foregroundStyle(.orange) }
-            if let error = shell.notifications.actionError { Text(error).font(.caption).foregroundStyle(.orange) }
         }
+        if let error = shell.notifications.error { Text(error).font(.caption).foregroundStyle(.orange) }
+        if let error = shell.notifications.actionError { Text(error).font(.caption).foregroundStyle(.orange) }
     }
 }
 

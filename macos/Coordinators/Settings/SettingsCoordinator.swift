@@ -36,7 +36,7 @@ import Observation
         guard !retired, isOwned(), runtime != nil else { return }
         switch action {
         case .loginItem(let action):
-            guard model.active, model.section == .general, canPresent() else { return }
+            guard model.active, model.section == .system, canPresent() else { return }
             model.loginItem.perform(action)
         case .cli(let action):
             guard model.active, model.section == .clis, canPresent() else { return }

@@ -1,49 +1,54 @@
 import SwiftUI
 
-struct CLISettingsView: View {
+/// The web CLIs tab's "CLI integration" card. A Section for a grouped Form; the caller owns the
+/// Form so every settings tab shares one card style. Kept separate from the hooks card because the
+/// web tab puts "Default agent" between the two.
+struct CLIIntegrationSection: View {
     let model: CLISettingsViewModel
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("Command-line tools").font(.headline)
-                Spacer()
-                if model.probing { ProgressView().controlSize(.small) }
-                Button("Check CLIs", action: model.refresh).disabled(model.probing)
-            }
-            Text("TaskHub uses your installed tools and their existing sign-in sessions.").foregroundStyle(.secondary)
+        Section {
+            Text("TaskHub uses your installed tools and their existing sign-in sessions.")
+                .font(.caption).foregroundStyle(.secondary)
             ForEach(ManagedCLI.allCases) { cli in
-                HStack {
-                    Text(cli.title).fontWeight(.medium).frame(width: 140, alignment: .leading)
-                    Text(model.label(cli)).foregroundStyle(.secondary).accessibilityIdentifier("cli-status-\(cli.rawValue)")
-                    Spacer()
+                SettingsStatusRow(title: cli.title, status: model.label(cli),
+                                  statusIdentifier: "cli-status-\(cli.rawValue)") {
                     if model.availability[cli.rawValue]?.present == false {
-                        Button("Installation Guide") { model.openGuide(cli) }
+                        Button("Install") { model.openGuide(cli) }
                     }
                     if cli.loginCommand != nil {
                         Button("Copy Login Command") { model.copyLogin(cli) }.help(cli.loginCommand ?? "")
                     }
-                }.padding(.vertical, 6)
+                }
             }
             if let error = model.probeError { Text(error).foregroundStyle(.orange) }
             if let error = model.actionError { Text(error).foregroundStyle(.orange) }
-            Divider().padding(.vertical, 8)
-            Text("Agent hooks").font(.headline)
+        } header: {
+            SettingsSectionHeader(title: "CLI integration", busy: model.probing) {
+                Button("Refresh", action: model.refresh).disabled(model.probing)
+                    .accessibilityIdentifier("cli-refresh")
+            }
+        }
+    }
+
+}
+
+/// The web CLIs tab's "Workflow hooks" card.
+struct WorkflowHooksSection: View {
+    let model: CLISettingsViewModel
+    var body: some View {
+        Section("Workflow hooks") {
             Text("Hooks report when an agent starts and finishes a turn. TaskHub merges its entries into the agent's configuration and removes only its own entries.")
-                .foregroundStyle(.secondary)
+                .font(.caption).foregroundStyle(.secondary)
             ForEach(ManagedCLI.allCases.filter(\.supportsHooks)) { cli in
-                HStack {
-                    Text(cli.title).fontWeight(.medium).frame(width: 140, alignment: .leading)
-                    Text(model.hookLabel(cli)).foregroundStyle(.secondary).accessibilityIdentifier("hook-status-\(cli.rawValue)")
-                    Spacer()
-                    if model.changing == cli { ProgressView().controlSize(.small) }
-                    Button(model.hooks[cli.rawValue] == "installed" ? "Remove Hooks" : "Install Hooks") {
+                SettingsStatusRow(title: cli.title, status: model.hookLabel(cli),
+                                  statusIdentifier: "hook-status-\(cli.rawValue)", busy: model.changing == cli) {
+                    Button(model.hooks[cli.rawValue] == "installed" ? "Remove hook" : "Install hook") {
                         model.requestToggleHook(cli)
                     }.disabled(!model.canChange(cli)).accessibilityIdentifier("hook-toggle-\(cli.rawValue)")
-                }.padding(.vertical, 6)
+                }
             }
             if let error = model.hookError { Text(error).foregroundStyle(.orange).textSelection(.enabled) }
             if let message = model.message { Text(message).foregroundStyle(.secondary) }
-            Spacer(minLength: 0)
         }
     }
 }

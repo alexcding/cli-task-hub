@@ -1,16 +1,11 @@
 import AppKit
 import SwiftUI
 
+/// The web System tab's "Resource usage" card. A Section for a grouped Form.
 struct ResourceUsageView: View {
     let model: ResourceUsageViewModel
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("Process resources").font(.headline)
-                Spacer()
-                if model.loading { ProgressView().controlSize(.small) }
-                Button("Refresh Resources", action: model.refresh).disabled(model.loading)
-            }
+        Section {
             HStack(spacing: 24) {
                 Text("Listed memory: \(model.memory)").accessibilityIdentifier("resources-memory")
                 Text("Listed CPU: \(model.cpu)").accessibilityIdentifier("resources-cpu")
@@ -24,15 +19,21 @@ struct ResourceUsageView: View {
                 if model.updatedAt != nil { Text("Showing the last successful sample.").foregroundStyle(.secondary) }
             }
             ForEach(model.notes, id: \.self) { Text($0).font(.caption).foregroundStyle(.secondary) }
+            // The Form scrolls, so the table needs an explicit height or it collapses to one row.
             Table(model.rows) {
                 TableColumn("Component") { Text($0.process.group.rawValue) }.width(85)
                 TableColumn("Process") { Text($0.process.name) }
                 TableColumn("PID") { Text(String($0.process.pid)).monospacedDigit() }.width(65)
                 TableColumn("Memory") { Text($0.memory).monospacedDigit() }.width(90)
                 TableColumn("CPU") { Text($0.cpu).monospacedDigit() }.width(90)
-            }.accessibilityIdentifier("resources-processes")
+            }.frame(minHeight: 180, idealHeight: 260).accessibilityIdentifier("resources-processes")
             if let date = model.updatedAt {
                 Text("Sampled \(date.formatted(date: .omitted, time: .standard))").font(.caption).foregroundStyle(.secondary)
+            }
+        } header: {
+            SettingsSectionHeader(title: "Resource usage", busy: model.loading) {
+                Button("Refresh", action: model.refresh).disabled(model.loading)
+                    .accessibilityIdentifier("resources-refresh")
             }
         }
     }

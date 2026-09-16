@@ -11,7 +11,7 @@ import Observation
         }
     }
     private(set) var retired = false
-    var section = SettingsSection.general {
+    var section = SettingsSection.appearance {
         didSet { if oldValue != section { refreshCurrentSection() } }
     }
     private(set) var active = false {
@@ -54,17 +54,20 @@ import Observation
     func setActive(_ value: Bool) { if !retired { active = value } }
     func refreshCurrentSection() {
         guard !retired else { return }
-        diagnostics.setVisible(active && section == .diagnostics)
-        resources.setVisible(active && section == .resources)
-        loginItem.setActive(active && section == .general)
-        if active && section == .general { loginItem.refresh(); fonts.refresh() }
-        else { _ = loginItem.cancelRead(); _ = fonts.cancelRead() }
+        // System carries the login item, the database inspector and the resource readout, so all
+        // three go live together there — the web System tab shows those cards at once too.
+        let system = active && section == .system
+        diagnostics.setVisible(system)
+        resources.setVisible(system)
+        loginItem.setActive(system)
+        if system { loginItem.refresh() } else { _ = loginItem.cancelRead() }
+        if active && section == .appearance { fonts.refresh() } else { _ = fonts.cancelRead() }
         if active && section == .clis { clis.refresh() } else { clis.cancelReads() }
     }
     func applicationActiveChanged(_ value: Bool) {
         guard !retired else { return }
         resources.setForeground(value)
-        if value && active && section == .general { loginItem.refresh() }
+        if value && active && section == .system { loginItem.refresh() }
     }
     var canSave: Bool { !retired && loaded && dirty && !saving && service != nil && draft.validationError == nil }
     func connect(_ service: any SettingsService) {

@@ -8,6 +8,11 @@ enum CodeFontKind: String, CaseIterable, Identifiable {
     case term, diff
     var id: String { rawValue }
     var title: String { self == .term ? "Terminal" : "Code and diffs" }
+    /// Row label and sub-text as the web Appearance card words them.
+    var rowTitle: String { self == .term ? "Terminal font" : "Code font" }
+    var rowCaption: String {
+        self == .term ? "⌘+ / ⌘− resize the pane in view, ⌘0 resets" : "The code editor & the Changes pane (git diff)"
+    }
     var defaultSize: Int { self == .term ? 13 : 12 }
 }
 
@@ -79,33 +84,41 @@ actor InstalledCodeFontCatalog: CodeFontCatalog {
 struct FontSettingsView: View {
     let model: FontSettingsViewModel
     let shell: ShellStore
+    // Rows for a grouped Form; the caller owns the Section.
     var body: some View {
-        Section("Code fonts") {
-            ForEach(CodeFontKind.allCases) { kind in
-                let font = shell.font(kind)
-                Picker("\(kind.title) font", selection: Binding(get: { shell.font(kind).family }, set: { shell.setFont(kind, family: $0) })) {
-                    Text("Default").tag("")
-                    ForEach(model.families, id: \.self) { Text($0).tag($0) }
-                    if !font.family.isEmpty && !model.families.contains(font.family) {
-                        Text("\(font.family) (not available here)").tag(font.family)
+        ForEach(CodeFontKind.allCases) { kind in
+            let font = shell.font(kind)
+            SettingsRow(title: kind.rowTitle, caption: kind.rowCaption) {
+                VStack(alignment: .trailing, spacing: 6) {
+                    Picker(kind.rowTitle, selection: Binding(get: { shell.font(kind).family }, set: { shell.setFont(kind, family: $0) })) {
+                        Text("Default").tag("")
+                        ForEach(model.families, id: \.self) { Text($0).tag($0) }
+                        if !font.family.isEmpty && !model.families.contains(font.family) {
+                            Text("\(font.family) (not available here)").tag(font.family)
+                        }
+                    }.labelsHidden().frame(maxWidth: 240)
+                        .accessibilityIdentifier("settings-\(kind.rawValue)-font-family")
+                    HStack(spacing: 8) {
+                        // Keep the kind in the label: the two steppers are otherwise identical to
+                        // VoiceOver and to `staticTexts[…]` in TaskHubUITests.
+                        Stepper("\(kind.title) size: \(font.size)", value: Binding(get: { shell.font(kind).size }, set: { shell.setFont(kind, size: $0) }), in: 9...24)
+                            .fixedSize().accessibilityIdentifier("settings-\(kind.rawValue)-font-size")
+                        Button("Reset") { shell.setFont(kind, size: kind.defaultSize) }
+                            .buttonStyle(.borderless).disabled(font.size == kind.defaultSize)
+                            .accessibilityIdentifier("settings-\(kind.rawValue)-font-reset")
                     }
-                }.accessibilityIdentifier("settings-\(kind.rawValue)-font-family")
-                HStack {
-                    Stepper("\(kind.title) size: \(font.size)", value: Binding(get: { shell.font(kind).size }, set: { shell.setFont(kind, size: $0) }), in: 9...24)
-                        .accessibilityIdentifier("settings-\(kind.rawValue)-font-size")
-                    Button("Reset \(kind.title) Size") { shell.setFont(kind, size: kind.defaultSize) }
-                }
-                if !font.family.isEmpty {
                     Text("let greeting = \"Hello, 日本語 👋\"")
-                        .font(.custom(font.family, size: CGFloat(font.size))).lineLimit(1)
+                        .font(font.family.isEmpty ? .system(size: CGFloat(font.size), design: .monospaced)
+                                                 : .custom(font.family, size: CGFloat(font.size)))
+                        .lineLimit(1).foregroundStyle(.secondary)
                 }
             }
-            HStack {
-                Text("Defaults use each renderer’s monospace font. Unavailable saved families are kept and fall back locally.")
-                    .font(.caption).foregroundStyle(.secondary)
-                Spacer()
-                Button("Refresh Font List", action: model.refresh).disabled(model.loading)
-            }
+        }
+        HStack {
+            Text("Defaults use each renderer’s monospace font. Unavailable saved families are kept and fall back locally.")
+                .font(.caption).foregroundStyle(.secondary)
+            Spacer()
+            Button("Refresh Font List", action: model.refresh).disabled(model.loading)
         }
     }
 }
