@@ -65,7 +65,7 @@ enum SidebarDestination: Hashable, Codable {
     var tabURL: String? { if case .tab(let url) = self { url } else { nil } }
 }
 
-/// What the sidebar knows about a session's agent at render time — the Tauri sidebar's
+/// What the sidebar knows about a session's agent at render time — the
 /// `.busy` / `.stopped` row states. Busy spins the CLI's glyph; live-but-idle holds it still
 /// in grey; stopped dims the row.
 struct SidebarSessionStatus: Equatable {

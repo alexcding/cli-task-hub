@@ -1,6 +1,7 @@
 // ptyd — the detached PTY daemon. Every terminal TaskHub opens lives HERE, not in the app process,
 // so quitting, crashing, or rebuilding TaskHub never kills a shell (the unpeel / tmux model: the app
-// is only an attachment). `taskhub __ptyd__ <dir>` runs this loop in place of the Tauri app; the
+// is only an attachment). `taskhub __ptyd__ <dir>` runs this loop outside the app, so terminals
+// outlive it; the
 // host (terminals.rs) spawns it detached (own session, stdio to <dir>/ptyd.log) the first time it
 // cannot connect, then talks to it over the Unix socket sock_path().
 //
