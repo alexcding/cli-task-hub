@@ -1,232 +1,122 @@
 # CLAUDE.md — TaskHub
 
-Read `AGENTS.md` first (backend model, run/iterate, conventions, gotchas),
-`docs/ARCHITECTURE.md` for the layered `src/` design (host / preload / server /
-renderer / shared + the HTTP-vs-IPC transport split), and `README.md` for the full
-picture. This file documents the **renderer architecture**, which they cover only briefly.
+Read `AGENTS.md` first (what this is, the snapshot model, run/iterate, backend
+conventions). `macos/README.md` is the long-form guide to individual surfaces, and
+`docs/NATIVE-ARCHITECTURE.md` records why the app is shaped this way. This file documents
+the **native app's architecture**, which they cover only in passing.
 
-The renderer lives in `src/renderer/`: `app.js` (bootstrap/router) + `pages/`,
-`components/`, `stores/`, `services/`, `lib/`, with `index.html` + `css/*` at the web root.
+The app is SwiftUI + AppKit over a Rust backend linked into the same process. There is no
+web layer anywhere: no renderer, no JavaScript, no embedded page of our own.
 
-## Renderer pattern: views and data are separated
+## The layers, and who owns what
 
-The web UI is vanilla ES modules — no framework, no bundler, by choice. The
-separation everything follows:
+`macos/` is a layered tree. Each layer may depend on the ones below it, never above:
 
-**Data lives in two places only:**
-- The server (snapshot DB; see AGENTS.md). The renderer reaches it exclusively
-  through `src/renderer/services/api.js` (`api()` / `apiJson()`) — never raw `fetch`.
-  Route paths come from the shared contract (`/shared/routes.mjs` → `ROUTES`), not literals.
-- `src/renderer/stores/store.js` — the single mutable renderer `state` plus pure lookups
-  over it (`prByUrl`, `jiraByKey`, `projectByRepo`, …). No other module holds
-  long-lived data.
+- **`App/`** — the process. `TaskHubApp.swift` is the entry point; `AppDelegate.swift`
+  owns `AppViewModel` and the app lifetime. `AppViewModel` is split by area into
+  `AppViewModel+{Root,Workspace,Settings,Tray,Notifications}.swift`; `RootViewModel.swift`
+  is what the root view binds to.
+- **`Scenes/`** — one folder per area (`Dashboard`, `Projects`, `Jira`, `Documents`,
+  `Activity`, `Settings`, `Workspace`), each a view plus an `@MainActor @Observable` view
+  model. A view model exposes an `Action` enum and an `onAction` closure; it never reaches
+  for a coordinator or the app.
+- **`Coordinators/`** — presentation identity and model lifetime. A coordinator decides
+  which model is current for a screen, whether it may present, and when it retires.
+  `Coordinators/App/AppCoordinator.swift` is the root; routing and deep links live in
+  `AppCoordinator+Routing.swift`.
+- **`Container/`** — the factories that build models, one protocol per feature
+  (`RootFeatureFactory`, `WorkspaceFeatureFactory`, `ProjectFeatureFactory`,
+  `DocumentFeatureFactory`, `BackendFeatureFactory`, `CreationFlowFactory`,
+  `AppPlatformFactory`). Tests substitute these; production uses the `Native*` versions.
+- **`Services/`** — everything that is not a view, by domain: `Backend/`, `Workspace/`,
+  `Terminal/`, `Jira/`, `Projects/`, `Settings/`, `Notifications/`, `Tray/`.
+- **`Components/`** — reusable widgets with no screen of their own (`Sidebar/`,
+  `Terminal/`, `Tray/`, `Sheet/`, `Notifications/`).
+- **`Theme/`** tokens and fonts, **`Utilities/`** deep links, **`Resources/`** assets,
+  xcconfigs and the provider artwork the toolbar draws.
 
-**Views are functions of that state:**
-- `src/renderer/pages/*.js` — one module per page (`dashboard.js`, `jira.js`, `logs.js`,
-  `settings.js`, `project.js`, `git-tab.js`). A page's `loadX()` fetches via `api.js`,
-  caches anything shared in `state`, and renders HTML strings into its page container.
-  Module-local variables are fine for view-only concerns (filters, render-cache keys) —
-  not for data other modules need.
-- `src/renderer/components/*.js` — reusable render helpers with no page ownership
-  (`cards.js`, `modal.js`, `usage-widget.js`, `sidebar.js`, `viewer.js`, `git.js`, …).
-- Views never call `gh`/`acli`-shaped logic or compute server-side concerns;
-  they present what the API returns.
+## Adding a screen
 
-**Wiring lives in `src/renderer/app.js`:**
-- `showPage(name)` — navigation. A page = `div#page-<name>` in `src/renderer/index.html` +
-  a `.nav-btn[data-page=<name>]` + a branch in `showPage` that sets the title
-  and calls the view's loader.
-- SSE refresh — `refreshActivePage()` re-runs the active page's loader on
-  server `sync` events; new pages that show live data need a branch there.
-- Window bridge — every function referenced from inline `on*` markup must be
-  registered in the `Object.assign(window, {...})` block (ES modules aren't
-  globals). Keep it auditable; remove entries when handlers go away.
+A screen is four things, in this order:
 
-**Markup and style:**
-- Static page markup lives in `src/renderer/index.html`.
-- The stylesheet is split by concern into `src/renderer/css/{tokens,layout,viewer,components,pages}.css`,
-  linked in that order (concatenation = cascade order — keep it). CSS custom-property
-  tokens drive everything; the dark theme is a pure palette swap — never per-widget colors.
-- `css/`, `vendor/`, `img/`, and the favicons sit at the renderer web root (not under a
-  subfolder) so their absolute URLs (`/css`, `/vendor`, `/img`, `/favicon`) stay stable.
+1. **`Scenes/<Area>/<Area>View.swift` + `<Area>ViewModel.swift`** — the view model is
+   `@MainActor @Observable`, owns its own loading and error state, and reports out through
+   `Action`/`onAction` rather than calling into the app.
+2. **`Coordinators/<Area>/<Area>Coordinator.swift`** — a `<Area>FeatureFactory` protocol
+   plus its `Native` implementation, and the coordinator itself: `model`, `retired`,
+   `isOwned`, `canPresent`, `handle`, `retire`. `Coordinators/Dashboard/DashboardCoordinator.swift`
+   is the smallest complete example.
+3. **Registration** — `extension AppCoordinator { install<Area>; make<Area> }`. `install`
+   gates on the current `selection` and stores the coordinator on an `AppCoordinator`
+   property.
+4. **Navigation** — a `SidebarDestination` case (`Components/Sidebar/SidebarModel.swift`),
+   a branch wherever selection is switched (`RootViewModel.Destination`,
+   `AppCoordinator.navigate`), and a deep-link route in `AppCoordinator+Routing.swift` if
+   the screen should be addressable.
 
-## UI conventions
+**Retired is terminal.** When a coordinator retires a model, that model must refuse every
+entry point afterwards — a retired model that can be reactivated goes back on refresh
+timers and fires callbacks for a screen that no longer exists. Guard every public method
+with `!retired`, including the ones that only set appearance or visibility.
 
-- Escape everything interpolated into HTML with `esc()` (`lib/util.js`).
-- PR links open the embedded viewer: `openPrSplit(url, '#<num>', repo, branch)`.
-- **Mine vs Review splits use `store.prGroup(pr)`, never raw `pr.category`.** The dashboard
-  "Review Requested" section routes through `prGroup` (`'review'` when `awaitingMyReview`, else
-  `'mine'`). A PR I've only commented on is `category:'other'` but belongs under Review — grouping
-  on `category` sends it to Mine. The tray/sound are the exception: they intentionally stay on
-  `category==='review'` (see AGENTS.md).
-- **The sidebar is laid out by project → session, and reads ONLY session records.** A session
-  (`services/tasks.js → taskSessions()`, one task record per worktree) is the agent running on a
-  worktree — live or stopped — keyed by id (its terminal's `pairKey`), linked to its context tab by
-  `url`, and titled by **the page it was started from** (a PR's title, `KEY Summary` for a ticket,
-  cut to 60 chars on a word boundary, no ellipsis, in `tasks.js`) or, for a session with no page, by its worktree folder. The renderer keeps no worktree list and shows no
-  worktree UI: a git worktree without a session is invisible in the app.
-  **Open tabs that are not tasks never sit under a project folder**: every task-less tab — PR, Jira
-  issue or plain web page (`kind:'web'`, any URL that isn't a PR) — renders in one "Tabs" group below
-  the projects (`openTabsMarkup`); it becomes a session row under its project the moment a task is
-  created for it (the terminal pane's New Task CTAs on a PR/Jira tab). Sessions are otherwise created
-  only from the sidebar's project "+" (New session dialog) — there is no per-tab task button.
-  Hover "+" on a project creates a worktree + session; clicking a folder focuses its project, clicking
-  the focused folder again collapses/expands its rows (no disclosure caret). Rows sort oldest-created
-  first (`byCreated`) — never by run state, which reshuffled the list under the pointer on every
-  turn. Hover a row for its **pin** (`toggleSessionPin`, also in the right-click menu): `pinned` is a
-  column on the task record, and a pinned session gains a MIRROR row in the "Pinned" group above the
-  projects (`pinnedNavMarkup` → `#pinned-nav`). The pin shows on row hover only (like a project's
-  "+"); a pinned row carries no persistent mark — its presence in the Pinned group is the state, and
-  the hovered pin is filled to read as the toggle that undoes it. Pinning is purely additive — the original row stays
-  where it was, and nothing reorders. Both copies carry the same `data-task`/`data-term`, which is
-  why every post-render pass (`refreshTermBusy`, `syncSpinner`) walks rows with `querySelectorAll`.
-  **Right-click menus are the real macOS menu when the shell offers one** — `window.taskhub`'s
-  `sessionMenu` / `tabMenu` (sidebar) and `ctabMenu` / `folderMenu` / `ideMenu` (viewer), all
-  `src-tauri/bridge.js` → muda `popupMenu`, which resolves the chosen item id; the actions run in the
-  renderer, which owns the state and the confirm dialog. They are native for a reason worth keeping:
-  a DOM menu is painted UNDER the embedded page, which is a native child webview above every DOM
-  layer, so an in-page menu opening over the pane loses its lower half. `components/menu.js`
-  (`openMenu`) stays as the fallback for a plain browser (web-only dev), reached through
-  `nativeMenu(e, items)` — the same file's native-first helper (`window.taskhub.menu` → the generic
-  muda popup), which is what any menu the renderer builds its own items for should use: the
-  toolbar's ＋ and the project picker both open over the pane and so are native too. A native handler is async, so it must
-  `preventDefault()` up front — a returned promise can't cancel WKWebView's own menu.
-  **Restart session** (same menu, `restartTaskSession`) kills the session's terminal and reopens it
-  through the ordinary open path (a fresh shell, the agent resumed by its saved `sessionId`);
-  confirmed only when the terminal is live.
-  Right-click is the only removal:
-  "Remove session" (`deleteTaskSession`, the single path) stops the terminal, forgets the task and
-  force-removes the worktree folder, behind `confirmDialog()` (`components/confirm.js`) — never
-  native `confirm()`. A session's tab is not closable by any browser-tab path (middle-click, ⌘W, the
-  default chip's ×, the native tab menu): `closeTab` refuses task tabs; only `removeTaskRecord` drops
-  one via `removeTaskTab`. A tab whose URL is a task renders only as a session row. There is no
-  Tasks page, no Tasks group, no worktree row, and no grouping setting.
-- **Every session has a CONTEXT tab — one implementation, different UI states.** A session started
-  from a PR/Jira/web tab uses that tab as its context; one started from the sidebar's "+" has no page
-  of its own and gets a synthetic `session:<taskId>` url (`lib/util.js → sessionUrl`, `hasPage`), so it
-  is an ordinary `kind:'web'` viewer tab. Everything downstream — the toolbar (folder chip, Run,
-  split toggle), `canSplitTerminal`, the split, the diff view, the extra web/file tabs, the sidebar
-  row, `taskUrls()` — therefore has ONE code path; a bare session differs only in having no page
-  (no default content-tab chip, and `paintLeft` paints nothing for it). Never add a kind-specific
-  branch for it. Creating and reopening a session both go through
-  `openInSplit → activateTab → openPrPanel` (`openTaskSession` has no second path), which is also
-  the single place an agent is launched or resumed.
-- **A page with no session is ONE webview, not a browser.** A tab under the sidebar's "Tabs" group
-  (or any context whose terminal isn't live) shows no tab strip, no ＋ and nothing to close: the
-  toolbar carries its title, centred (`#bar-title`, `body.page-only`, painted by
-  `content-tabs.js → renderContentTabs`), and the only action on it is the **New session** CTA that
-  converts the page into a session. Back/Forward/Home come UP into that toolbar: the group
-  (`#browser-nav`) is MOVED between the pane's bottom strip and `.bar-nav` by `placeBrowserNav`,
-  never duplicated, and this state has no bottom strip at all (`--foot-h:0`, so the page fills the
-  pane; `--find-h` is pinned because the find bar still docks there). The Diff needs a live terminal and File… needs a worktree, so
-  two of the ＋ menu's three entries can't apply there anyway; a link opened from the page
-  (`__openContentTab`) becomes its own tab under "Tabs" instead of a content tab. Extra tabs a
-  context already has are not lost — they stay persisted and return to the strip once it has a
-  session. The CTA and the content-tab UI are mutually exclusive by design: don't reintroduce the
-  CTA into the session toolbar, or the strip into the page-only one.
-- **Nothing is open in the right pane by default, and the toolbar's ＋ is what fills it.** A new
-  context's pane holds only the context's own page (a bare session has none, so it shows
-  `#pane-empty`); the Diff is NOT pinned there. ＋ (`viewer.js → ctabAdd`, the in-page `openMenu`)
-  offers what the pane can hold — **Diff** (only beside a live terminal, and only once),
-  **Web page**, **File** — the last two opening the inline address chip with the kind forced
-  (`link.want` → `resolveInput`) instead of guessed — and then **History ▸**, this context's own
-  address history (`tab.history`, persisted as `tabs.history`): every page and file it has had open,
-  **oldest first**, every entry whether or not it is currently a chip (picking an open one focuses
-  its chip — never filter open entries out). A PR/Jira context is seeded with its own page
-  (`createTab`), which is what the menu used to hard-code as "Pull request #N" / the ticket key —
-  don't add per-address entries back. **On a task session the page chip is closable** (its × →
-  `closePageTab`, `tab.pageClosed`, persisted as `tabs.page_closed`): the page's webview goes and
-  `hasPage` turns false, so the context reads as a bare session; the page stays in History, and
-  picking it there (`reopenPageTab`) restores the chip. On a task-less tab the same × still closes
-  the whole tab (`closeTab`). A native menu row has no hover ×, so removal is a second
-  pass over the same list ("Remove from History" → `forgetMenu`). `nativeMenu` carries ONE level of
-  submenu (`items`), sending the host the item's path ("4.2") so the answer maps back onto the array
-  that built it; the in-page fallback renders a group inline under a heading. The Diff tab's existence is `tab.diffOpen`,
-  persisted per context (`tabs.diff_open`); its × (`closeDiffTab`) takes it off the bar, ⇧⌘D /
-  `openDiffTab` puts it back. Never re-pin a view onto the bar: everything there was added.
-  **A new tab opens immediately after the ACTIVE chip**, browser-style — the strip has no fixed
-  slots. The page chip is always first (it IS the context); everything after it is one sequence
-  held in ONE list, `tab.chipOrder` — the ids of the extras (`'diff'`, `'build'`, or a link id) in
-  bar order, read by `content-tabs.js` → `chipEntries(t)`. Never go back to an index per chip: two
-  indices can name the same slot, and whichever the composition spliced first won the tie. Only the
-  links (persisted in order) and the Diff's place among them (`tabs.diff_pos` ← `diffPos(t)`)
-  survive a restart; `initChipOrder(t)` rebuilds the list from those, and `'build'` is runtime-only.
-  `nextChipIdx(t)` says where the next tab goes.
-- **The right pane is one toggled state: `tab.paneView`.** `'off'` (hidden — the terminal fills the
-  panel, `body.split-closed`), `'term'` (the context's page; blank for a bare session,
-  `body.pane-blank`), `'diff'` (the worktree diff, `body.pane-diff`) or `'build'` (this context's
-  build terminal, `body.pane-build` — see the IDE/run chip below). `applyPrLayout` is the only
-  place that turns that state into geometry; `setPaneView` the only mutator (it persists + calls it).
-  The toolbar's split toggle (`#split-toggle`) and ⌥⌘Return flip
-  `'off'` ↔ the last shown view. The toggle is a child of `.split-bar` itself, absolutely pinned to
-  the toolbar's right edge — that edge is the right pane's while it's open and the terminal's while
-  it's closed, so the control sits over what it toggles in both states without moving; the segments
-  reserve its width (`.bar-add`, `body.split-closed .bar-term`), and `.bar-toggle[hidden]` is what
-  actually hides it (the pinned/inline-flex rules out-specify the UA `[hidden]`). Never move it between segments: it
-  then flickers across the boundary animation. `--pr-split` is the RIGHT pane's width, so `applyPrLayout`'s
-  `animate` names the edge that moves: `'pane'` (the toggle — the pane grows out of / collapses into
-  the right edge) or `'term'` (a session was just created — the terminal slides in from the left).
-  Only a change in the pane's visibility animates; swapping page↔diff↔build inside an open pane does not.
-  `'build'` is never persisted (the server stores only `off`/`diff`/`term`) and falls back to the
-  page when the build terminal is gone.
-  During a `'pane'` animation `body.pane-resizing` pins the terminal at full width under the pane
-  (it never moves or reflows mid-animation); `body.pr-tweening` is on for any boundary tween and
-  tells the terminals' ResizeObserver to hold its refit until the boundary lands. A context with no live terminal always shows its page, whatever
-  the persisted state says (`rightPaneHidden`).
-- **The terminal toolbar's launchers are two chips, both fed by project settings.** `#split-folder`
-  leads the segment (left), a hairline divider, then `#split-ide`; the workflow Run group is pushed
-  to the segment's right edge. `#split-folder`
-  opens the current folder in the app-level git client (Settings → Appearance), or reveals it in
-  Finder when none is set; Reveal/Delete worktree are its right-click menu, and it shows no folder
-  name (the sidebar already titles the session by its worktree). `#split-ide` is the project's own
-  group: **open** (the IDE, wearing that editor's mark from `lib/ides.js`), **run**, and after it the
-  **destination** segments (Scheme, Simulator), in Xcode's order. Any part can be absent; with all absent the chip hides. What the IDE opens
-  and what `{target}` means is resolved server-side by `GET /api/launch-target` — the project's
-  `ideTarget` (relative to the checkout, so it lands in THIS branch's worktree), else a per-IDE
-  probe (Xcode can't open a folder: `.xcworkspace` → `.xcodeproj` → `Package.swift`), else the
-  folder.
-  **Run is the IDE's runner, nothing else** — there is no free-text run script (the old `runCmd`
-  column is dropped). The **runner** (`lib/ides.js → ideRunner`, per IDE by design — only Xcode has
-  one, so only Xcode projects get Run) composes the lines from a destination the user picked on the toolbar:
-  `pj.runScheme` + `pj.runSim` (a simulator UDID), columns on the project record, chosen from the
-  chip's two segments, "Scheme" and "Simulator" (`viewer.js → pickRunDest(e, kind)`, each an
-  IN-PAGE `openMenu` anchored under its segment — they drop over the terminal, not the pane, and the
-  native popup stalled here: the schemes from `GET /api/xcode/schemes` = `xcodebuild -list -json` on
-  the resolved target; the simulators from `GET /api/xcode/simulators` = `xcrun simctl list`, a
-  heading per runtime). The Xcode runner
-  asks `GET /api/xcode/build-settings` for the .app path + bundle id, then types
-  `simctl boot` → `xcodebuild -quiet build && simctl install && simctl launch --console-pty`, so the
-  app's console lands in the Build terminal and Stop (⌃C) terminates the app. Plain toolchain only
-  (`routes/xcode.js`) — no third-party build tool; a destination-only project PUT skips the
-  GitHub/Jira resync. A run never uses the
-  session's own terminal (the agent lives there and is rarely at a
-  prompt): `components/build.js` gives each context its own `build:<url>`-keyed PTY, shown in the
-  right pane with a pinned Build chip, and polls `term.foreground` to flip the button play↔stop.
-- **A link printed in the terminal opens in the right pane, not the browser.** `terminal.js`
-  (`wireTermLinks`) linkifies both file paths → an editor tab (`openFileTab`) and `http(s)` URLs →
-  a content tab (`window.__openContentTab` → `openWebLink`), so a PR or CI link the agent prints
-  lands beside the terminal that printed it. ⌥-click is the escape hatch to the real browser.
-  `openWebLink` goes through `showActiveView`, so a link arriving while the pane is closed opens it.
-- **Embedded webviews are pooled, by MEMORY not by count.** `tab.wv` / `link.wv` are built lazily on
-  first show and torn down when the loaded pages exceed `state.webviewBudgetMb` (Settings → System,
-  default 2GB), least-recently-shown first, then rebuilt from `tab.cur` / `link.url`. Each page's
-  content-process RSS comes from the host (`bridge.js webviewMemory` → `commands.rs webview_memory`
-  → `viewer.rs webview_procs`, keyed by the shim's webview label, which `wcv-shim.js` puts on
-  `el.dataset.wcv`). A page count (`state.webviewPool`) remains ONLY as the fallback where the host
-  can't measure (a plain browser, non-macOS): the first successful measurement sets `_memMode` and
-  the count stops evicting, so the two never fight. Never cache a `wv` reference; re-read `owner.wv` (may be null) and
-  attach listeners inside `buildTabWebview` / `buildLinkWebview` so they survive a rebuild.
-- Jira keys link via `jiraUrl(key)` with `onclick="jiraClick(event, this.href, key)"`.
-- Icons come from `lib/icons.js` (`ICON` for UI strokes, `TAB_ICON` for GitHub/Jira
-  brand marks). SVG only — no emoji.
-- Project IDs are UUIDs — quote them in inline handlers: `onclick="fn('${id}')"`.
-- Design: restrained slate + single accent; flat, native-mac feel.
+## Talking to the backend
+
+- **`Services/Backend/APIClient.swift`** is the only way to reach the backend. Route paths
+  come from `Routes.swift` — never string literals.
+- **`Routes.swift` is hand-maintained**, and `route_contract` in
+  `crates/taskhub-backend/src/lib.rs` fails the build if it names a path the router does
+  not serve. Add the route in both places.
+- **Two transports, one interface.** By default the backend is a static library in this
+  process and requests dispatch straight into the axum router over the C ABI
+  (`EmbeddedBackend.swift` → `crates/taskhub-backend/src/ffi.rs`). With `--backend-path`
+  or `--backend-url` the same `APIClient` talks HTTP to a separate process. Code above the
+  transport cannot tell the difference, and must not try to.
+- **Events**: embedded mode delivers them directly; process mode subscribes over SSE
+  (`SSEClient.swift`). `BackendRuntime.swift` picks between them.
+- The embedded backend still opens an ephemeral loopback port, written to `.server-port`,
+  for webhook forwarders and agent hooks.
+
+## The terminal stack
+
+Three pieces, deliberately separate:
+
+- **`crates/taskhub-ptyd`** — a detached daemon that owns the PTYs. It has its own session,
+  so shells survive an app restart or crash. The app talks to it over a Unix socket
+  (`Services/Terminal/PtydClient.swift`, launched by `PtydHost.swift`).
+- **GhosttyTerminal** — a prebuilt XCFramework from
+  `github.com/alexcding/ghostty-terminal-spm`, pinned to an exact tag in the pbxproj. This
+  is the on-screen rendering surface.
+- **`crates/taskhub-vt`** — the headless Ghostty VT engine, used for terminal snapshots.
+  Its `build.rs` asserts that the daemon and the renderer were built from the same patched
+  Ghostty, because a snapshot written by one is read by the other.
+
+`macos/patches/ghostty/*.patch` are the Ghostty source patches both sides build against.
+When they change, cut a new tag in the package repo and bump it in **both** the pbxproj
+and `macos/scripts/bootstrap.sh` — they must agree.
+
+## Conventions
+
+- **Mine vs Review splits follow `awaitingMyReview`, never raw `category`.** A PR you have
+  only commented on is `category:'other'` but still belongs under Review. The tray and its
+  sound are the deliberate exception and stay on `category` — see `AGENTS.md`.
+- **A session is one task record per worktree** — the agent running on a worktree, live or
+  stopped, linked to its context and titled by the page it was started from. A git worktree
+  with no session is invisible to the app.
+- **Views present what the API returns.** No view computes `gh`/`acli`-shaped logic or
+  reaches for a CLI; that belongs in the backend.
+- **Theme tokens only** (`Theme/`). The dark theme is a palette swap, never per-widget
+  colors.
+- **Icons are vector assets**, never emoji.
+- Project IDs are UUIDs.
 
 ## Tests
 
-`npm test` (`node --test --test-force-exit 'test/**/*.test.js'`) — API tests boot the
-real server (`test/api.test.js`); `test/contracts.test.js` asserts every `ROUTES` path
-has a handler and the sandboxed preload stays import-clean; `test/poller.test.js` covers
-sync coalescing. Pure renderer logic with no DOM (e.g. `src/renderer/lib/diff-parse.mjs`)
-is tested directly. ES modules under `src/renderer/` that tests import must stay DOM-free
-or guard their DOM access.
+- **`macos/Tests/`** is the `TaskHubTests` target (67 files) and `macos/UITests/` is
+  `TaskHubUITests`; the shared test plan runs both. `GhosttySnapshotTests/` is a separate
+  SPM package and is not in the plan.
+- **Swift Testing ignores `-only-testing:TaskHubTests/someFunctionName`** — it runs zero
+  tests and still prints `TEST SUCCEEDED`. Read the `Executed N tests` line, always.
+- Rust: `cargo test --manifest-path crates/taskhub-backend/Cargo.toml`. `route_contract`
+  keeps `Routes.swift` honest; `cli.rs`'s tests cover process-group teardown.
+- Substitute a `Container/` factory rather than reaching for the real backend, terminal or
+  file system.

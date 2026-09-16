@@ -14,7 +14,7 @@ separate Rust API process. It ships no Node runtime or TaskHub JavaScript.
 
 TaskHub turns the CLIs you already trust into a fast local task hub. It watches
 your pull requests, review requests, CI state, Jira tickets, and worktrees, then
-keeps the active queue visible in a web dashboard and a tiny macOS tray signal.
+keeps the active queue visible in a native app and a tiny macOS tray signal.
 
 No hosted backend. No new API tokens to paste into another app. Just
 authenticated CLI tools, local SQLite snapshots, and a UI built for the daily
@@ -32,26 +32,27 @@ review loop.
   state, Jira links, drafts, and approvals.
 - **Project-aware** - each project maps to one GitHub repo, optional Jira JQL,
   workspace path, color, and merge transition.
-- **Menu-bar signal** - the tray app shows Tasks and Review items without
-  keeping a browser tab front and center.
+- **Menu-bar signal** - the tray shows Tasks and Review items without keeping a
+  window front and center.
 - **Developer surfaces** - dashboard, project pages, activity logs, terminals,
   worktree actions, and Claude/Codex usage at a glance.
 
 ## Native macOS App
 
-Requires macOS, Xcode, Rust ≥1.88, authenticated `gh`, and `acli` for Jira features.
-Build the Rust helpers, then open the Xcode project:
+Requires macOS, Xcode, authenticated `gh`, and `acli` for Jira features. Rust is
+installed for you if missing.
 
 ```bash
-cargo build --manifest-path crates/taskhub-backend/Cargo.toml
-cargo build --manifest-path crates/taskhub-ptyd/Cargo.toml --features terminal-snapshots
-open macos/TaskHub.xcodeproj
+open macos/TaskHub.xcodeproj   # then press ⌘R
 ```
 
-The shared scheme launches `crates/taskhub-backend/target/debug/taskhub-backend`.
-Packaged apps contain `taskhub-backend` and `taskhub-ptyd` in `Contents/Helpers`.
-The older Node web dashboard and Tauri client remain in the repository as legacy
-development clients, but are not copied into the native app.
+That is the whole setup. The scheme's build pre-action runs
+`macos/scripts/bootstrap.sh`, which installs rustup if needed, downloads the pinned
+Ghostty terminal runtime, and builds the Rust backend and PTY helper.
+
+The backend is linked **into** the app as a static library and called over a C ABI, so
+there is no port to manage and no child process in the normal path. Packaged apps carry
+`taskhub-ptyd` in `Contents/Helpers`.
 
 ## How It Works
 
@@ -64,16 +65,17 @@ poller + webhook forwarder
       |
 SQLite snapshots
       |
-Rust API + SSE
+Rust API (linked into the app)
       |
-dashboard + tray + terminals
+SwiftUI app + tray + terminals
 ```
 
 ![TaskHub overview](docs/images/taskhub-overview.png)
 
 The poller owns normal CLI reads and writes lean snapshots. API endpoints serve
 those snapshots instantly, and stale reads trigger background refreshes. Open
-pages update through Server-Sent Events.
+screens update from broadcast change events — delivered in-process when the backend is
+embedded, over SSE when it runs separately.
 
 The important invariant: normal UI reads should stay snapshot-backed. If data
 needs to be fresher, improve the sync path instead of adding CLI calls to request
@@ -89,7 +91,7 @@ TaskHub intentionally keeps auth in the tools you already use:
 - GitHub data comes from the authenticated `gh` CLI.
 - Jira data comes from the authenticated Atlassian `acli` CLI.
 - Git data comes from local repositories and worktrees.
-- The web dashboard and tray read local snapshots through TaskHub's API.
+- The app and tray read local snapshots through TaskHub's own API.
 
 This keeps the app small, inspectable, and compatible with your existing
 terminal setup.
@@ -100,35 +102,32 @@ terminal setup.
 | --- | --- |
 | `crates/taskhub-backend` | Production Rust API, poller, CLI integrations, and SQLite stores |
 | `crates/taskhub-ptyd` | Detached native terminal daemon |
-| `macos` | Production SwiftUI/AppKit macOS client and packaging |
-| `src/server`, `src/renderer`, `src-tauri` | Legacy Node web and Tauri clients; not shipped in the native app |
-| `src/shared` | HTTP routes + shared constants |
+| `crates/taskhub-vt` | Headless Ghostty VT engine used for terminal snapshots |
+| `macos` | The SwiftUI/AppKit client, its tests, and packaging |
 | `docs` | Architecture notes and project images |
 
-## Legacy web and Tauri development
+The repository is Swift and Rust only. There is no JavaScript, Node, web renderer or
+Tauri host; `AGENTS.md` and `CLAUDE.md` describe the current shape.
 
-These clients require Node.js ≥22.12 and npm. They are retained for development
-and are not shipped in the native package. `npm start` serves localhost:3000.
+## Development
 
 ```bash
-npm install
-npm start        # plain local server
-npm run dev      # hot reload server + browser
-bunx tauri dev   # the desktop app (Tauri window + backend)
-npm test         # node:test suite
-bunx tauri build # package the macOS app
+open macos/TaskHub.xcodeproj    # ⌘R runs the app; bootstrap.sh handles the Rust side
+
+cargo test --manifest-path crates/taskhub-backend/Cargo.toml
+xcodebuild test -project macos/TaskHub.xcodeproj -scheme TaskHub \
+  -derivedDataPath macos/.build/xcode -only-testing:TaskHubTests
 ```
 
 Useful notes:
 
-- The renderer is plain HTML/CSS/ES modules; there is no frontend build step.
-- `src/server/services/poller.js` is the normal GitHub sync path.
-- `data.db` and `logs.db` are regenerable caches; `taskhub.db` is durable app
-  config.
+- `crates/taskhub-backend/src/poller.rs` is the only GitHub sync path.
+- `data.db` and `logs.db` are regenerable caches; `taskhub.db` is durable app config.
 - Set `TASKHUB_DATA_DIR` to choose a custom data directory.
-- If `gh webhook` is missing, polling still catches merges. Install the
-  extension with `gh extension install cli/gh-webhook` for faster webhook-based
-  updates.
+- `--backend-path <binary>` runs the backend as a child process and `--backend-url
+  <origin>` points at one you started yourself, instead of the embedded default.
+- If `gh webhook` is missing, polling still catches merges. Install the extension with
+  `gh extension install cli/gh-webhook` for faster webhook-based updates.
 
 ## Releasing
 
@@ -161,4 +160,4 @@ repositories.
 
 ## License
 
-ISC. See `package.json`.
+ISC — see the `license` field in each crate's `Cargo.toml`.
