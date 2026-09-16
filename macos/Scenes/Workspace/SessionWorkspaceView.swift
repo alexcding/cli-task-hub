@@ -58,11 +58,12 @@ private struct ToolbarBrandIcon: View {
         if let image = NSImage(contentsOf: bundled) { return image }
 
         // Xcode development builds do not run the packaging script, so resolve the
-        // same committed renderer artwork from the checkout while iterating.
+        // same committed artwork from the checkout while iterating.
         var directory = URL(fileURLWithPath: #filePath)
         for _ in 0..<8 {
             directory.deleteLastPathComponent()
-            let candidate = directory.appendingPathComponent("src/renderer/img").appendingPathComponent(filename)
+            let candidate = directory.appendingPathComponent("macos/Resources/ProviderImages")
+                .appendingPathComponent(filename)
             if let image = NSImage(contentsOf: candidate) { return image }
         }
         return nil

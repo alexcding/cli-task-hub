@@ -1,9 +1,0 @@
-html, body { height: 100%; overflow: hidden; }
-.native-board { height: 100%; min-height: 0; padding: 12px; gap: 12px; }
-.native-board-controls { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-#scrumboard-query { flex: 1; min-width: 180px; }
-#scrumboard-query-input { width: 100%; }
-#scrumboard-body { flex: 1; min-height: 0; overflow: auto; }
-#scrumboard-body .board { min-height: 100%; }
-#board-error { color: var(--danger); font-size: 13px; }
-#board-error[hidden] { display: none; }

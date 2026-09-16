@@ -17,11 +17,11 @@ cp "$ROOT/crates/taskhub-ptyd/target/release/taskhub-ptyd" "$APP/Contents/Helper
 # The backend is linked into the app binary now; drop a helper left by an older bundle.
 rm -f "$APP/Contents/Helpers/taskhub-backend" "$APP/Contents/Helpers/taskhub-node" "$APP/Contents/Resources/Licenses/Node-LICENSE"
 
-# The native toolbar still uses committed provider artwork. No renderer code
-# or JavaScript runtime is shipped with the application.
+# The native toolbar's provider artwork. The app is native Swift over the Rust
+# backend: no renderer code, no web assets and no JavaScript runtime ship with it.
 rm -rf "$APP/Contents/Resources/TaskHubImages" "$APP/Contents/Resources/backend"
 mkdir -p "$APP/Contents/Resources/TaskHubImages"
-cp -R "$ROOT/src/renderer/img/." "$APP/Contents/Resources/TaskHubImages/"
+cp -R "$ROOT/macos/Resources/ProviderImages/." "$APP/Contents/Resources/TaskHubImages/"
 
 cp "$ROOT/macos/licenses/Sparkle-LICENSE" "$APP/Contents/Resources/Licenses/Sparkle-LICENSE"
 # The GhosttyTerminal package checkout SwiftPM made for the Xcode build (the
