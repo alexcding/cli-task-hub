@@ -4,7 +4,7 @@ import Testing
 @Test func codeFontsValidateConfigurationAndKeepIndependentDefaults() throws {
     #expect(CodeFont(.term, settings: [:]).size == 13)
     #expect(CodeFont(.diff, settings: [:]).size == 12)
-    #expect(CodeFont(.term, settings: ["term_font_size": "999"]).size == 24)
+    #expect(CodeFont(.term, settings: ["term_font_size": "999"]).size == 20)
     #expect(CodeFont(.diff, settings: ["diff_font_size": "-1"]).size == 9)
     #expect(CodeFont(.term, settings: ["term_font_size": "invalid"]).size == 13)
     let saved = CodeFont(.term, settings: ["term_font_family": "Missing Custom Mono", "term_font_size": "17"])

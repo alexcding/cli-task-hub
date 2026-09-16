@@ -14,6 +14,7 @@ enum CodeFontKind: String, CaseIterable, Identifiable {
         self == .term ? "⌘+ / ⌘− resize the pane in view, ⌘0 resets" : "The code editor & the Changes pane (git diff)"
     }
     var defaultSize: Int { self == .term ? 13 : 12 }
+    static let sizeRange: ClosedRange<Int> = 9...20
 }
 
 struct CodeFont: Codable, Equatable, Sendable {
@@ -21,7 +22,7 @@ struct CodeFont: Codable, Equatable, Sendable {
     let size: Int
     init(family: String = "", size: Int) {
         self.family = Self.validFamily(family) ? family : ""
-        self.size = min(24, max(9, size))
+        self.size = min(CodeFontKind.sizeRange.upperBound, max(CodeFontKind.sizeRange.lowerBound, size))
     }
     init(_ kind: CodeFontKind, settings: [String: String]) {
         self.init(family: settings["\(kind.rawValue)_font_family"] ?? "",
@@ -81,44 +82,60 @@ actor InstalledCodeFontCatalog: CodeFontCatalog {
     func stop() async { await cancelRead()?.value }
 }
 
+/// One `Section` per font kind, so a family and its size read as one group instead of two rows
+/// that happen to sit near each other. Every row goes through `SettingsRow`/`LabeledContent`, so
+/// the Form owns the alignment.
 struct FontSettingsView: View {
     let model: FontSettingsViewModel
     let shell: ShellStore
-    // Rows for a grouped Form; the caller owns the Section.
     var body: some View {
         ForEach(CodeFontKind.allCases) { kind in
             let font = shell.font(kind)
-            SettingsRow(title: kind.rowTitle, caption: kind.rowCaption) {
-                VStack(alignment: .trailing, spacing: 6) {
+            Section(kind.rowTitle) {
+                SettingsRow(title: "Family", caption: kind.rowCaption) {
                     Picker(kind.rowTitle, selection: Binding(get: { shell.font(kind).family }, set: { shell.setFont(kind, family: $0) })) {
                         Text("Default").tag("")
                         ForEach(model.families, id: \.self) { Text($0).tag($0) }
                         if !font.family.isEmpty && !model.families.contains(font.family) {
                             Text("\(font.family) (not available here)").tag(font.family)
                         }
-                    }.labelsHidden().frame(maxWidth: 240)
-                        .accessibilityIdentifier("settings-\(kind.rawValue)-font-family")
-                    HStack(spacing: 8) {
-                        // Keep the kind in the label: the two steppers are otherwise identical to
-                        // VoiceOver and to `staticTexts[…]` in TaskHubUITests.
-                        Stepper("\(kind.title) size: \(font.size)", value: Binding(get: { shell.font(kind).size }, set: { shell.setFont(kind, size: $0) }), in: 9...24)
-                            .fixedSize().accessibilityIdentifier("settings-\(kind.rawValue)-font-size")
-                        Button("Reset") { shell.setFont(kind, size: kind.defaultSize) }
-                            .buttonStyle(.borderless).disabled(font.size == kind.defaultSize)
-                            .accessibilityIdentifier("settings-\(kind.rawValue)-font-reset")
-                    }
-                    Text("let greeting = \"Hello, 日本語 👋\"")
-                        .font(font.family.isEmpty ? .system(size: CGFloat(font.size), design: .monospaced)
-                                                 : .custom(font.family, size: CGFloat(font.size)))
-                        .lineLimit(1).foregroundStyle(.secondary)
+                    }.labelsHidden().accessibilityIdentifier("settings-\(kind.rawValue)-font-family")
                 }
+                LabeledContent {
+                    VStack(spacing: 1) {
+                        Slider(value: Binding(get: { Double(shell.font(kind).size) },
+                                              set: { shell.setFont(kind, size: Int($0.rounded())) }),
+                               in: Double(CodeFontKind.sizeRange.lowerBound)...Double(CodeFontKind.sizeRange.upperBound),
+                               step: 1)
+                            .accessibilityIdentifier("settings-\(kind.rawValue)-font-size")
+                            .accessibilityValue("\(font.size), default \(kind.defaultSize)")
+                        SliderDefaultMarker(value: Double(kind.defaultSize),
+                                            range: Double(CodeFontKind.sizeRange.lowerBound)...Double(CodeFontKind.sizeRange.upperBound))
+                    }
+                    // Only the code font claims ⌘0: AppViewModel.fontTarget hard-returns .diff while
+                    // Settings → Appearance is showing, so ⌘0 cannot reach the terminal size here.
+                    .help(kind == .diff ? "Default \(kind.defaultSize) · ⌘0 resets" : "Default \(kind.defaultSize)")
+                } label: {
+                    // Keep the kind in the label: the two rows are otherwise identical to
+                    // VoiceOver and to `staticTexts[…]` in TaskHubUITests.
+                    Text("\(kind.title) size: \(font.size)")
+                }
+                // The sample gets its own full-width row so longer strings are not clipped.
+                Text("let greeting = \"Hello, 日本語 👋\"")
+                    .font(font.family.isEmpty ? .system(size: CGFloat(font.size), design: .monospaced)
+                                              : .custom(font.family, size: CGFloat(font.size)))
+                    .lineLimit(1).truncationMode(.tail)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .foregroundStyle(Theme.textSecondary)
             }
         }
-        HStack {
-            Text("Defaults use each renderer’s monospace font. Unavailable saved families are kept and fall back locally.")
-                .font(.caption).foregroundStyle(.secondary)
-            Spacer()
-            Button("Refresh Font List", action: model.refresh).disabled(model.loading)
+        Section {
+            LabeledContent {
+                Button("Refresh Font List", action: model.refresh).disabled(model.loading)
+            } label: {
+                Text("Installed fonts")
+                Text("Defaults use each renderer’s monospace font. Unavailable saved families are kept and fall back locally.")
+            }
         }
     }
 }

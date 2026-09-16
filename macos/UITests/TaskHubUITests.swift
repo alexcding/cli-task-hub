@@ -328,7 +328,7 @@ final class TaskHubUITests: XCTestCase {
         theme.click(); app.menuItems["Dark"].click()
         XCTAssertEqual(theme.value as? String, "Dark")
         family.click(); app.menuItems["Menlo"].click()
-        app.buttons["settings-diff-font-reset"].click()
+        app.typeKey("0", modifierFlags: .command)
         app.typeKey("=", modifierFlags: .command)
         XCTAssertTrue(app.staticTexts["Code and diffs size: 13"].waitForExistence(timeout: 5), app.debugDescription)
         XCTAssertTrue(app.staticTexts["Terminal size: 13"].exists)

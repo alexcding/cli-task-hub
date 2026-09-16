@@ -1,8 +1,11 @@
 import SwiftUI
 
-/// The web app's `.theme-row`: title plus explanatory sub-text on the left, the control on the
-/// right. Every native settings row goes through this so a section reads like the matching
-/// `.card` in `src/renderer/index.html`.
+/// A settings row: title, optional explanatory sub-text, and the control.
+///
+/// Deliberately thin. `LabeledContent` already renders a second `Text` in its label as the
+/// secondary description, and a `.grouped` Form already owns label/control alignment and the row
+/// insets — so this adds no padding, no fixed widths and no fonts of its own. Overriding those is
+/// what makes a row stop lining up with its neighbours.
 struct SettingsRow<Content: View>: View {
     let title: String
     var caption: String?
@@ -12,18 +15,14 @@ struct SettingsRow<Content: View>: View {
         LabeledContent {
             content
         } label: {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                if let caption {
-                    Text(caption).font(.caption).foregroundStyle(.secondary)
-                }
-            }
+            Text(title)
+            if let caption { Text(caption) }
         }
     }
 }
 
-/// The web `.card-header`: a section title with an action pinned to its right (the Database card's
-/// Refresh button, and the CLI/Resource equivalents).
+/// A section header carrying a trailing action — the Refresh buttons on the CLI, Resource usage
+/// and Database groups.
 struct SettingsSectionHeader<Trailing: View>: View {
     let title: String
     var busy = false
@@ -39,14 +38,14 @@ struct SettingsSectionHeader<Trailing: View>: View {
     }
 }
 
-/// The web `.input-reveal`: a secret field with an eye button that flips it to plain text.
+/// A secret field with an eye button that flips it to plain text (the web's `.input-reveal`).
 struct RevealableSecureField: View {
     let prompt: String
     @Binding var text: String
     @State private var revealed = false
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack {
             Group {
                 if revealed { TextField(prompt, text: $text) } else { SecureField(prompt, text: $text) }
             }
@@ -57,21 +56,26 @@ struct RevealableSecureField: View {
     }
 }
 
-/// A status row shaped like the web `.hook-row`: a fixed-width name, a state label, then actions.
+/// A tool row: name, a tinted status pill, then its actions. Goes through `LabeledContent` so the
+/// name column lines up with every other row in the section instead of a hand-set width.
 struct SettingsStatusRow<Actions: View>: View {
     let title: String
     let status: String
+    var tone: ThemeTone = .neutral
     var statusIdentifier: String?
     var busy = false
     @ViewBuilder var actions: Actions
 
     var body: some View {
-        HStack(spacing: 8) {
-            Text(title).frame(width: 150, alignment: .leading)
-            Text(status).foregroundStyle(.secondary).accessibilityIdentifier(statusIdentifier ?? "")
-            Spacer()
-            if busy { ProgressView().controlSize(.small) }
-            actions
+        LabeledContent {
+            HStack {
+                StatusPill(text: status, tone: tone, identifier: statusIdentifier)
+                Spacer()
+                if busy { ProgressView().controlSize(.small) }
+                actions
+            }
+        } label: {
+            Text(title)
         }
     }
 }

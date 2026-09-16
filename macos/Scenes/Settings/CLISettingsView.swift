@@ -8,9 +8,9 @@ struct CLIIntegrationSection: View {
     var body: some View {
         Section {
             Text("TaskHub uses your installed tools and their existing sign-in sessions.")
-                .font(.caption).foregroundStyle(.secondary)
+                .font(.caption).foregroundStyle(Theme.textSecondary)
             ForEach(ManagedCLI.allCases) { cli in
-                SettingsStatusRow(title: cli.title, status: model.label(cli),
+                SettingsStatusRow(title: cli.title, status: model.label(cli), tone: tone(cli),
                                   statusIdentifier: "cli-status-\(cli.rawValue)") {
                     if model.availability[cli.rawValue]?.present == false {
                         Button("Install") { model.openGuide(cli) }
@@ -20,8 +20,8 @@ struct CLIIntegrationSection: View {
                     }
                 }
             }
-            if let error = model.probeError { Text(error).foregroundStyle(.orange) }
-            if let error = model.actionError { Text(error).foregroundStyle(.orange) }
+            if let error = model.probeError { Text(error).foregroundStyle(Theme.danger) }
+            if let error = model.actionError { Text(error).foregroundStyle(Theme.danger) }
         } header: {
             SettingsSectionHeader(title: "CLI integration", busy: model.probing) {
                 Button("Refresh", action: model.refresh).disabled(model.probing)
@@ -30,6 +30,18 @@ struct CLIIntegrationSection: View {
         }
     }
 
+
+    /// Mirrors `CLIAvailability.label(for:)`. `authed` is only probed for CLIs that have a
+    /// sign-in check (gh/acli), so nil means "not applicable" or "couldn't tell" — a warning tint
+    /// there would contradict the "Installed" label sitting next to it.
+    private func tone(_ cli: ManagedCLI) -> ThemeTone {
+        guard let state = model.availability[cli.rawValue], state.present else { return .neutral }
+        switch state.authed {
+        case true: return .success
+        case false: return .warning
+        default: return cli.supportsHooks ? .success : .neutral
+        }
+    }
 }
 
 /// The web CLIs tab's "Workflow hooks" card.
@@ -38,17 +50,18 @@ struct WorkflowHooksSection: View {
     var body: some View {
         Section("Workflow hooks") {
             Text("Hooks report when an agent starts and finishes a turn. TaskHub merges its entries into the agent's configuration and removes only its own entries.")
-                .font(.caption).foregroundStyle(.secondary)
+                .font(.caption).foregroundStyle(Theme.textSecondary)
             ForEach(ManagedCLI.allCases.filter(\.supportsHooks)) { cli in
                 SettingsStatusRow(title: cli.title, status: model.hookLabel(cli),
+                                  tone: model.hooks[cli.rawValue] == "installed" ? .success : .neutral,
                                   statusIdentifier: "hook-status-\(cli.rawValue)", busy: model.changing == cli) {
                     Button(model.hooks[cli.rawValue] == "installed" ? "Remove hook" : "Install hook") {
                         model.requestToggleHook(cli)
                     }.disabled(!model.canChange(cli)).accessibilityIdentifier("hook-toggle-\(cli.rawValue)")
                 }
             }
-            if let error = model.hookError { Text(error).foregroundStyle(.orange).textSelection(.enabled) }
-            if let message = model.message { Text(message).foregroundStyle(.secondary) }
+            if let error = model.hookError { Text(error).foregroundStyle(Theme.danger).textSelection(.enabled) }
+            if let message = model.message { Text(message).foregroundStyle(Theme.textSecondary) }
         }
     }
 }

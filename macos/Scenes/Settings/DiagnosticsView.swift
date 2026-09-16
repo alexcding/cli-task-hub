@@ -8,10 +8,10 @@ struct DiagnosticsView: View {
     var body: some View {
         Section {
             Text("Reads the saved snapshots. Refreshing this inspector does not run GitHub or Jira commands.")
-                .font(.caption).foregroundStyle(.secondary)
+                .font(.caption).foregroundStyle(Theme.textSecondary)
             if let error = model.error {
-                Text(error).foregroundStyle(.orange).textSelection(.enabled)
-                if model.snapshot != nil { Text("Showing the last successful read.").foregroundStyle(.secondary) }
+                Text(error).foregroundStyle(Theme.danger).textSelection(.enabled)
+                if model.snapshot != nil { Text("Showing the last successful read.").foregroundStyle(Theme.textSecondary) }
             }
             if let snapshot = model.snapshot {
                 HStack(spacing: 24) {
@@ -26,21 +26,21 @@ struct DiagnosticsView: View {
                         Text("Syncs in flight: \(snapshot.ghStats.inflight) · Coalesced: \(snapshot.ghStats.coalesced)")
                     }.frame(maxWidth: .infinity, alignment: .leading).padding(6)
                 }
-                if model.projects.isEmpty { Text("No projects configured.").foregroundStyle(.secondary) }
+                if model.projects.isEmpty { Text("No projects configured.").foregroundStyle(Theme.textSecondary) }
                 ForEach(model.projects) { project in
                     GroupBox {
                         VStack(alignment: .leading, spacing: 10) {
-                            Text(project.repository).foregroundStyle(.secondary)
-                            Text(project.automation).foregroundStyle(.secondary)
+                            Text(project.repository).foregroundStyle(Theme.textSecondary)
+                            Text(project.automation).foregroundStyle(Theme.textSecondary)
                             ForEach(project.caches) { cache in
                                 VStack(alignment: .leading, spacing: 3) {
                                     HStack {
                                         Text(cache.title).fontWeight(.medium).frame(width: 110, alignment: .leading)
                                         Text(cache.count)
                                         Spacer()
-                                        Text(cache.lastSync).foregroundStyle(.secondary)
+                                        Text(cache.lastSync).foregroundStyle(Theme.textSecondary)
                                     }
-                                    if let error = cache.error { Text(error).foregroundStyle(.orange) }
+                                    if let error = cache.error { Text(error).foregroundStyle(Theme.danger) }
                                 }.accessibilityIdentifier("diagnostics-cache-\(project.id)-\(cache.id)")
                             }
                         }.frame(maxWidth: .infinity, alignment: .leading).padding(6)
@@ -49,7 +49,7 @@ struct DiagnosticsView: View {
                 .textSelection(.enabled)
                 if let updatedAt = model.updatedAt {
                     Text("Inspector updated \(updatedAt.formatted(date: .abbreviated, time: .standard))")
-                        .font(.caption).foregroundStyle(.secondary)
+                        .font(.caption).foregroundStyle(Theme.textSecondary)
                 }
             } else if !model.loading && model.error == nil {
                 ContentUnavailableView("Waiting for backend", systemImage: "externaldrive")

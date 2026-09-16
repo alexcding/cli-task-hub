@@ -11,14 +11,14 @@ struct ResourceUsageView: View {
                 Text("Listed CPU: \(model.cpu)").accessibilityIdentifier("resources-cpu")
             }.monospacedDigit()
             Text("CPU updates every 3 seconds while this view is active; 100% means one CPU core. Memory is resident size and may count shared pages more than once.")
-                .font(.caption).foregroundStyle(.secondary)
+                .font(.caption).foregroundStyle(Theme.textSecondary)
             Text("Includes the app, connected backend, PTY helper and their descendants. macOS-managed WebKit/GPU processes outside these trees are excluded. Totals cover only listed processes.")
-                .font(.caption).foregroundStyle(.secondary)
+                .font(.caption).foregroundStyle(Theme.textSecondary)
             if let error = model.error {
-                Text(error).foregroundStyle(.orange)
-                if model.updatedAt != nil { Text("Showing the last successful sample.").foregroundStyle(.secondary) }
+                Text(error).foregroundStyle(Theme.danger)
+                if model.updatedAt != nil { Text("Showing the last successful sample.").foregroundStyle(Theme.textSecondary) }
             }
-            ForEach(model.notes, id: \.self) { Text($0).font(.caption).foregroundStyle(.secondary) }
+            ForEach(model.notes, id: \.self) { Text($0).font(.caption).foregroundStyle(Theme.textSecondary) }
             // The Form scrolls, so the table needs an explicit height or it collapses to one row.
             Table(model.rows) {
                 TableColumn("Component") { Text($0.process.group.rawValue) }.width(85)
@@ -28,7 +28,7 @@ struct ResourceUsageView: View {
                 TableColumn("CPU") { Text($0.cpu).monospacedDigit() }.width(90)
             }.frame(minHeight: 180, idealHeight: 260).accessibilityIdentifier("resources-processes")
             if let date = model.updatedAt {
-                Text("Sampled \(date.formatted(date: .omitted, time: .standard))").font(.caption).foregroundStyle(.secondary)
+                Text("Sampled \(date.formatted(date: .omitted, time: .standard))").font(.caption).foregroundStyle(Theme.textSecondary)
             }
         } header: {
             SettingsSectionHeader(title: "Resource usage", busy: model.loading) {
