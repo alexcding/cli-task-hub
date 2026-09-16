@@ -9,6 +9,8 @@ struct JiraTicket: Decodable, Identifiable, Equatable, Sendable {
     var assignee: String?
     var assigneeId: String?
     var statusId: String?
+    var statusCategory: String?
+    var assigneeEmail: String?
     var id: String { key }
     var projectKey: String { String(key.split(separator: "-").first ?? "") }
 }
@@ -20,7 +22,16 @@ struct JiraSnapshot: Decodable, Sendable {
     var error: String?
 }
 
-struct JiraSite: Decodable, Sendable { let baseUrl: String }
+struct JiraSite: Decodable, Sendable {
+    let baseUrl: String
+    var me: JiraAccount? = nil
+}
+
+/// The acli login. `accountId` is only known with a REST token; otherwise match by email.
+struct JiraAccount: Decodable, Equatable, Sendable {
+    var email: String?
+    var accountId: String?
+}
 
 enum JiraFacet: String, CaseIterable, Identifiable {
     case project, status, type, priority
