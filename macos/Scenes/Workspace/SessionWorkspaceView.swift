@@ -229,16 +229,8 @@ private struct SessionWorkspaceContextContent: View {
                 ScrollView(.horizontal) {
                     HStack(spacing: 6) {
                         ForEach(context.tabs) { page in
-                            HStack(spacing: 6) {
-                                Button { model.selectTab(page) } label: {
-                                    Text((page.dirty ? "● " : "") + page.title).lineLimit(1).frame(maxWidth: 190)
-                                }.buttonStyle(.plain)
-                                Button("Close \(page.title)", systemImage: "xmark") { model.closeTab(page) }
-                                    .labelStyle(.iconOnly).buttonStyle(.plain)
-                            }
-                            .padding(.horizontal, 10).padding(.vertical, 6)
-                            .background(context.activeID == page.id ? Color.accentColor.opacity(0.15) : Color.secondary.opacity(0.08),
-                                        in: RoundedRectangle(cornerRadius: 6))
+                            ContextTabChip(title: page.title, dirty: page.dirty, active: context.activeID == page.id,
+                                           select: { model.selectTab(page) }, close: { model.closeTab(page) })
                         }
                     }
                 }
@@ -268,6 +260,59 @@ private struct SessionWorkspaceContextContent: View {
         } else {
             ContentUnavailableView("No open pages", systemImage: "globe", description: Text("Add a page or reopen one from History."))
         }
+    }
+}
+
+/// One page chip. The close button shows on the active chip and on whichever chip the pointer is
+/// over, at the trailing edge on top of the title; the title fades out beneath it.
+private struct ContextTabChip: View {
+    let title: String
+    let dirty: Bool
+    let active: Bool
+    let select: () -> Void
+    let close: () -> Void
+    @State private var hovering = false
+    @State private var hoveringClose = false
+
+    private var showsClose: Bool { hovering || active }
+    private var fill: Color { active ? Theme.accentBackground : Theme.surfaceHover }
+
+    var body: some View {
+        Button(action: select) {
+            Text((dirty ? "● " : "") + title)
+                .lineLimit(1)
+                // The minimum keeps a short title centred clear of the close button's fade.
+                .frame(minWidth: 52, maxWidth: 190)
+                .mask {
+                    HStack(spacing: 0) {
+                        Color.black
+                        LinearGradient(colors: [.black, .black.opacity(showsClose ? 0 : 1)], startPoint: .leading, endPoint: .trailing)
+                            .frame(width: 18)
+                    }
+                }
+                .padding(.horizontal, 16).padding(.vertical, 6)
+                .background(fill, in: RoundedRectangle(cornerRadius: 6))
+                .contentShape(RoundedRectangle(cornerRadius: 6))
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(active ? .isSelected : [])
+        .accessibilityAction(named: "Close \(title)", close)
+        .overlay(alignment: .trailing) {
+            Button("Close \(title)", systemImage: "xmark", action: close)
+                .labelStyle(.iconOnly).buttonStyle(.plain)
+                .imageScale(.small)
+                .foregroundStyle(hoveringClose ? Theme.textSecondary : Theme.textTertiary)
+                .frame(width: 18, height: 18)
+                .background(hoveringClose ? Theme.border : Color.clear, in: Circle())
+                .onHover { hoveringClose = $0 }
+                .padding(.trailing, 5)
+                .opacity(showsClose ? 1 : 0)
+                .allowsHitTesting(showsClose)
+                .accessibilityHidden(!showsClose)
+                .help("Close tab")
+        }
+        .onHover { hovering = $0 }
+        .animation(.easeOut(duration: 0.12), value: showsClose)
     }
 }
 

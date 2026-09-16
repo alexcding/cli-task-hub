@@ -18,14 +18,14 @@ public struct ContentView: View {
             // The page name is the window's own title, not a heading inside the content.
             .navigationTitle(model.title)
             .inspector(isPresented: Binding(
-                get: {
-                    guard let workspace = model.activeWorkspace else { return false }
-                    return workspace.model.showsTerminal && (workspace.model.showsPage || workspace.model.showsBuild)
-                },
+                get: { inspectorPresented },
                 set: { model.activeWorkspace?.model.setInspectorPresented($0) }
             )) {
                 GeometryReader { _ in
-                    if let workspace = model.activeWorkspace {
+                    // The inspector builds its content even while hidden. A page's web view can
+                    // only live in one place, so a hidden copy here would take it from the detail
+                    // pane and leave the page blank there.
+                    if inspectorPresented, let workspace = model.activeWorkspace {
                         SessionWorkspaceInspectorContent(context: workspace.context, model: workspace.model)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
@@ -34,6 +34,11 @@ public struct ContentView: View {
             }
             .toolbar { TaskHubToolbar(model: model) }
         }
+    }
+
+    private var inspectorPresented: Bool {
+        guard let workspace = model.activeWorkspace else { return false }
+        return workspace.model.showsTerminal && (workspace.model.showsPage || workspace.model.showsBuild)
     }
 
     private var detailContent: some View {
