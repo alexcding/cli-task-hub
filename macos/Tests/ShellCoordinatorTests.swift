@@ -95,18 +95,16 @@ private actor ControlledShellData: ShellDataServing {
     let shell = ShellStore(preferences: preferences), service = ControlledShellData()
     let platform = RecordingShellAppearance(), coordinator = ShellCoordinator(model: shell, appearance: platform)
     defer { withExtendedLifetime(coordinator) {} }
-    var limits: [Int] = []
-    shell.remotePageLimitChanged = { limits.append($0) }
     shell.connect(service)
     try await shellEventually { await service.reads == 1 }
-    let snapshot: [String: String?] = ["theme": "dark", "native.remotePageLimit": "3"]
+    let snapshot: [String: String?] = ["theme": "dark"]
     await service.finish(snapshot)
     try await shellEventually { shell.appearance == .dark }
-    #expect(platform.applied == [.dark] && limits == [3])
+    #expect(platform.applied == [.dark])
     try await shellEventually { shell.loadSettings(); return await service.reads == 2 }
     await service.finish(snapshot)
     try await shellEventually { shell.loadSettings(); return await service.reads == 3 }
-    #expect(platform.applied == [.dark] && limits == [3])
+    #expect(platform.applied == [.dark])
     #expect(preferences.string(forKey: "native.theme") == "dark")
     await service.finish(snapshot)
     await shell.stop()
@@ -120,21 +118,20 @@ private actor ControlledShellData: ShellDataServing {
     let platform = RecordingShellAppearance(), coordinator = ShellCoordinator(model: shell, appearance: platform)
     defer { withExtendedLifetime(coordinator) {} }
     shell.setAppearance(.light)
-    shell.setRemotePageLimit(4)
     shell.connect(service)
     try await shellEventually { await service.reads == 1 }
-    await service.finish(["theme": "dark", "native.remotePageLimit": "9"])
+    await service.finish(["theme": "dark"])
     try await shellEventually { shell.trayUpdated != nil }
     // Starting the next read proves that the previous snapshot was processed.
     try await shellEventually { shell.loadSettings(); return await service.reads == 2 }
     shell.setAppearance(.system) // Supersedes the read already in flight.
-    await service.finish(["theme": "dark", "native.remotePageLimit": "9", "usageAgent": "codex"])
+    await service.finish(["theme": "dark", "usageAgent": "codex"])
     try await shellEventually { shell.loadSettings(); return await service.reads == 3 }
-    #expect(shell.appearance == .system && shell.remotePageLimit == 4)
+    #expect(shell.appearance == .system)
     #expect(shell.usageAgent == "claude") // Reject the whole stale snapshot, including unedited fields.
     #expect(platform.applied == [.light, .system])
     let pending = preferences.dictionary(forKey: "native.pendingSettings") as? [String: String]
-    #expect(pending?["theme"] == "auto" && pending?["native.remotePageLimit"] == "4")
+    #expect(pending?["theme"] == "auto")
     await service.finish([:])
     await shell.stop()
 }

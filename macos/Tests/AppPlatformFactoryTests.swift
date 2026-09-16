@@ -12,15 +12,13 @@ private actor RecordingTerminalControl: TerminalRuntimeControlling {
 @MainActor private final class RecordingAppPlatform: AppPlatformFactory {
     let homeDirectory = "/tmp/taskhub-injected-home"
     let control = RecordingTerminalControl()
-    let pressure = FixtureMemoryPressureMonitor()
     var requests: [AppTerminalRequest] = []
     var viewerCreations = 0
     var launcherCreations = 0
     var actionCreations = 0
     private var native: NativeAppPlatformFactory {
         NativeAppPlatformFactory(homeDirectory: homeDirectory,
-            configuration: { throw BackendError.configuration("Injected terminal configuration unavailable") },
-            memoryPressure: { self.pressure })
+            configuration: { throw BackendError.configuration("Injected terminal configuration unavailable") })
     }
     func viewer(desktop: any DesktopActions, dialogs: BrowserDialogCoordinator,
                 documents: any DocumentFeatureFactory, close: EditorCloseCoordinator) -> ViewerStore {
@@ -69,7 +67,6 @@ private actor RecordingTerminalControl: TerminalRuntimeControlling {
     #expect(await platform.control.paired == [[record.id]])
     #expect(platform.requests.last == .init(key: record.id, directory: record.worktree, paired: true))
     await model.stop()
-    #expect(platform.pressure.stopped)
     #expect(await platform.control.quits == 0) // Backend stop never owns detached shells.
 }
 
@@ -84,7 +81,7 @@ private actor RecordingTerminalControl: TerminalRuntimeControlling {
                             selectionStore: TransientSidebarSelectionStore(.overview))
     if update { try await model.prepareForUpdate() } else { try await model.quit() }
     #expect(await platform.control.quits == 1)
-    #expect(platform.pressure.stopped && platform.requests.isEmpty)
+    #expect(platform.requests.isEmpty)
 }
 
 @MainActor @Test func platformTerminalConfigurationFailureCannotFallBackToDailyDaemon() async throws {

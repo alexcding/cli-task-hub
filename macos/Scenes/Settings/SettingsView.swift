@@ -1,12 +1,10 @@
 import AppKit
 import SwiftUI
 
-/// Mirrors the web Settings page (`src/renderer/index.html` → `#page-settings`): the same four
-/// tabs, in the same order, with one card per web `.card` and one `SettingsRow` per `.theme-row`.
+/// Four tabs, one card per group, one `SettingsRow` per setting.
 struct SettingsView: View {
     @Bindable var model: SettingsViewModel
     let shell: ShellStore
-    let viewer: ViewerStore
 
     var body: some View {
         Form {
@@ -132,24 +130,6 @@ struct SettingsView: View {
 
     @ViewBuilder private var system: some View {
             LoginItemView(model: model.loginItem)
-            Section("Memory") {
-                SettingsRow(title: "Pages kept in memory",
-                            caption: "Older background pages reload when selected; unsent web forms may be lost. macOS memory pressure also suspends background pages. Editors, terminals and the Sprint board are kept.") {
-                    Stepper("\(shell.remotePageLimit)",
-                            value: Binding(get: { shell.remotePageLimit }, set: shell.setRemotePageLimit),
-                            in: RemotePageRetention.range)
-                        .accessibilityIdentifier("settings-remote-page-limit")
-                }
-                Text("Loaded: \(viewer.livePageCount) · Suspended: \(viewer.suspendedPageCount)")
-                    .accessibilityIdentifier("settings-remote-page-counts")
-                Text("This is a page-count limit, not a memory budget in MB. The web app's GB budget is a separate setting.")
-                    .font(.caption).foregroundStyle(Theme.textSecondary)
-                HStack {
-                    Spacer()
-                    Button("Suspend Background Pages", action: viewer.suspendBackgroundPages)
-                        .disabled(viewer.backgroundPageCount == 0)
-                }
-            }
             ResourceUsageView(model: model.resources)
             DiagnosticsView(model: model.diagnostics)
     }

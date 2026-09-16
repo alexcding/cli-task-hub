@@ -853,9 +853,8 @@ application before mounting its window; backend-loaded and user-selected changes
 use the same model/coordinator path. Theme application remains global while
 Settings is hidden. The shell model no longer imports AppKit.
 
-Guarded `appearance.didSet` and `remotePageLimit.didSet` own their reactions for both
-local edits and backend snapshots. Duplicate values do not repeat platform or
-retention updates. Views render bindings and forward user input; this extraction
+A guarded `appearance.didSet` owns its reactions for both local edits and backend
+snapshots. Duplicate values do not repeat platform updates. Views render bindings and forward user input; this extraction
 adds no view `.onChange` or `.task(id:)` behavior.
 
 ## Implemented: native platform assembly and terminal control

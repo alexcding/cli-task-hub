@@ -38,7 +38,7 @@ struct AppCoordinatorView: View {
         case .activity:
             if let child = coordinator.logsCoordinator { LogsCoordinatorView(coordinator: child) }
         case .settings(let settings):
-            SettingsView(model: settings, shell: model.shell, viewer: model.viewer)
+            SettingsView(model: settings, shell: model.shell)
         case .terminal:
             VStack(alignment: .leading, spacing: 16) {
                 Text("Open an interactive shell.").foregroundStyle(.secondary)

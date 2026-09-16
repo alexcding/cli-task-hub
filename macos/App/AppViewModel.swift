@@ -105,11 +105,9 @@ public final class AppViewModel {
             canOpenExternalRoute: {
                 NSApplication.shared.modalWindow == nil && !NSApplication.shared.windows.contains { $0.attachedSheet != nil }
             })
-        viewer.setPageLimit(shell.remotePageLimit)
         coordinator.hasDocumentPresentation = { [weak self] in
             self?.diffModels.values.contains { $0.coordinator.isPresenting } == true
         }
-        shell.remotePageLimitChanged = { [weak viewer] in viewer?.setPageLimit($0) }
         coordinator.appearance = shell.appearance
         shell.documentStyleChanged = { [weak self] in
             guard let self else { return }

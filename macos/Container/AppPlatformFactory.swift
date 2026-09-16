@@ -37,13 +37,12 @@ struct NativeTerminalRuntimeControl: TerminalRuntimeControlling {
 @MainActor struct NativeAppPlatformFactory: AppPlatformFactory {
     var homeDirectory = FileManager.default.homeDirectoryForCurrentUser.path
     var configuration: @Sendable () throws -> PtydConfiguration = { try .current() }
-    var memoryPressure: () -> any MemoryPressureMonitoring = { NativeMemoryPressureMonitor() }
     var launcher: any WorkspaceCommandLauncher = NativeWorkspaceCommandLauncher()
 
     func viewer(desktop: any DesktopActions, dialogs: BrowserDialogCoordinator,
                 documents: any DocumentFeatureFactory, close: EditorCloseCoordinator) -> ViewerStore {
         ViewerStore(cacheURL: try? configuration().directory.appendingPathComponent("page-tabs.json"),
-                    memoryPressure: memoryPressure(), pageFactory: BrowserPageFactory(desktop: desktop, dialogs: dialogs),
+                    pageFactory: BrowserPageFactory(desktop: desktop, dialogs: dialogs),
                     documentFactory: documents, closeCoordinator: close)
     }
     func workspaceLauncher() -> WorkspaceLaunchViewModel { WorkspaceLaunchViewModel(launcher: launcher) }

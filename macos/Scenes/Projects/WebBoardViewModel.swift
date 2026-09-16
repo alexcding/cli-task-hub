@@ -129,7 +129,14 @@ struct APIBoardService: BoardService {
         if active { refresh() }
     }
     func pause() { task?.cancel(); task = nil; generation = UUID(); cancelActions() }
-    func show(appearance: AppAppearance) { self.appearance = appearance; active = true }
+    // Retired is terminal: the coordinator has handed this model's screen to another instance, so
+    // reactivating here would put a detached board back on the refresh timer and let its callbacks
+    // fire again. Every other entry point already refuses; this one did not.
+    func show(appearance: AppAppearance) {
+        guard !retired else { return }
+        self.appearance = appearance
+        active = true
+    }
     func refresh(force: Bool = false) {
         guard !retired, active, task == nil else { return }
         let generation = generation, service = service

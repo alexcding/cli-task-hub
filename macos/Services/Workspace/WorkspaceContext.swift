@@ -310,30 +310,24 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
     @ObservationIgnored private var loading: Task<Void, Never>?
     @ObservationIgnored private var restoring = false
     @ObservationIgnored private var restoreGeneration = UUID()
-    @ObservationIgnored private var lru: [String] = []
-    private(set) var pageLimit: Int
-    private(set) var pressureCleanupCount = 0
-    @ObservationIgnored private let memoryPressure: (any MemoryPressureMonitoring)?
     @ObservationIgnored private let pageFactory: BrowserPageFactory
     @ObservationIgnored private let documentFactory: any DocumentFeatureFactory
     private let cacheURL: URL?
     private struct Cache: Codable { let snapshots: [String: ContextSnapshot]; let pending: Set<String> }
-    init(limit: Int = RemotePageRetention.defaultLimit, cacheURL: URL? = nil, memoryPressure: (any MemoryPressureMonitoring)? = nil,
+    init(cacheURL: URL? = nil,
          pageFactory: BrowserPageFactory = BrowserPageFactory(),
          documentFactory: any DocumentFeatureFactory = NativeDocumentFeatureFactory(),
          closeCoordinator: EditorCloseCoordinator? = nil) {
-        pageLimit = RemotePageRetention.clamp(limit); self.cacheURL = cacheURL
+        self.cacheURL = cacheURL
         self.pageFactory = pageFactory
         self.documentFactory = documentFactory
         self.closeCoordinator = closeCoordinator ?? EditorCloseCoordinator(factory: documentFactory)
         fileOpen = documentFactory.fileOpen()
         fileOpenCoordinator = documentFactory.fileOpenCoordinator()
-        self.memoryPressure = memoryPressure
         fileOpenCoordinator.bind(fileOpen, activeContext: { [weak self] in self?.active })
         if let cacheURL, let data = try? Data(contentsOf: cacheURL), let cache = try? JSONDecoder().decode(Cache.self, from: data) {
             saved = cache.snapshots; dirty = cache.pending; edited = cache.pending
         }
-        memoryPressure?.start { [weak self] in self?.handleMemoryPressure() }
     }
     var active: WorkspaceContext? { activeContextID.flatMap { contexts[$0] } }
     func configure(_ document: EditorDocumentViewModel) {
@@ -369,25 +363,8 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
             // Include documents opened by other routes while a save awaits.
         }
     }
-    var livePageCount: Int { contexts.values.flatMap(\.pages).filter { $0.webView != nil }.count }
-    var suspendedPageCount: Int { contexts.values.flatMap(\.pages).filter { $0.webView == nil }.count }
-    var backgroundPageCount: Int { livePageCount - (active?.activePage?.webView == nil ? 0 : 1) }
-
-    func setPageLimit(_ value: Int) {
-        pageLimit = RemotePageRetention.clamp(value)
-        trimPages(maximum: pageLimit)
-    }
-
-    func suspendBackgroundPages() { trimPages(maximum: active?.activePage?.webView == nil ? 0 : 1) }
-
-    private func handleMemoryPressure() {
-        pressureCleanupCount += 1
-        suspendBackgroundPages()
-    }
-
     func connect(_ api: APIClient) {
         fileOpenCoordinator.enabled = true
-        memoryPressure?.start { [weak self] in self?.handleMemoryPressure() }
         self.api = api
         loading?.cancel()
         restoring = true
@@ -481,20 +458,11 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
         cache()
         if let api { try? await api.setSetting("native.context.\(id)", value: "") }
     }
+    // WKWebView owns its own memory: each page is a separate content process that macOS
+    // reclaims under pressure. The app used to evict pages itself on an LRU with a page-count
+    // budget, inherited from the web renderer where every page shared one process.
     private func activate(_ page: BrowserPage) {
         page.materialize()
-        lru.removeAll { $0 == page.id }; lru.append(page.id)
-        trimPages(maximum: pageLimit)
-    }
-    private func trimPages(maximum: Int) {
-        let all = contexts.values.flatMap(\.pages)
-        lru.removeAll { id in !all.contains { $0.id == id && $0.webView != nil } }
-        let protectedID = active?.activePage?.id
-        while lru.count > maximum {
-            guard let index = lru.firstIndex(where: { $0 != protectedID }) else { break }
-            let id = lru.remove(at: index)
-            all.first { $0.id == id }?.evict()
-        }
     }
     private func save(_ context: WorkspaceContext) {
         edited.insert(context.id)
@@ -526,7 +494,6 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
     }
     func stop() async {
         fileOpenCoordinator.enabled = false
-        memoryPressure?.stop()
         loading?.cancel(); await loading?.value; loading = nil
         for task in writes.values { await task.value }
         writes.removeAll(); api = nil
