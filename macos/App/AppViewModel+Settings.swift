@@ -3,7 +3,9 @@ import Foundation
 
 extension AppViewModel: SettingsCoordinating {
     func activateSettings() {
-        settings?.applicationActiveChanged(NSApp.isActive)
+        // Reached from AppViewModel.init() via installSettings, which runs before NSApplication
+        // finishes wiring NSApp — an implicitly-unwrapped nil there traps on launch.
+        settings?.applicationActiveChanged(NSApp?.isActive ?? false)
         shell.loadSettings(); shell.notifications.refreshAuthorization()
     }
     func applySettingsSave(_ patch: [String: String]) async {
