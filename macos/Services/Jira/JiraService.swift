@@ -67,7 +67,8 @@ struct APIJiraService: JiraService {
     }
 }
 
-// Keep keyword/key/JQL interpretation aligned with src/shared/jql.mjs.
+// Keyword/key/JQL interpretation is owned here now; the shared jql.mjs it was written
+// against went with the node backend.
 enum JiraQuery {
     static func looksLikeJQL(_ text: String) -> Bool {
         if text.range(of: #"[=~<>!]|(?:^|\s)order\s+by\s"#, options: [.regularExpression, .caseInsensitive]) != nil { return true }

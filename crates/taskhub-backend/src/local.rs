@@ -482,10 +482,9 @@ pub async fn create_worktree(Json(body): Json<Value>) -> ApiResult<Value> {
         ));
     }
     fs::create_dir_all(&root).map_err(ApiError::internal)?;
-    // The same sequence as the JS backend (src/server/repositories/github.js:270-355), which
-    // this port matches: clear stale admin entries, let the remote supply a branch that exists
-    // only there, then add. Adding an EXISTING branch is the first move and `-b` the fallback,
-    // so a `create` request whose branch is already present adopts it instead of failing.
+    // Clear stale admin entries, then add. Adding an EXISTING branch is the first move and
+    // `-b` the fallback, so a `create` request whose branch is already present adopts it
+    // instead of failing. This shape came from the node backend this crate replaced.
     let _ = git(dir, vec!["worktree".into(), "prune".into()], 20).await;
     let target = destination.to_string_lossy().into_owned();
     let create = body["create"].as_bool().unwrap_or(false);
