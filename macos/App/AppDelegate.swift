@@ -5,7 +5,10 @@ import Observation
 @MainActor @Observable
 final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     let model = AppViewModel()
-    @ObservationIgnored private weak var window: NSWindow?
+    /// The single SwiftUI `Window("main")` scene, looked up on demand.
+    private var window: NSWindow? {
+        NSApp.windows.first { $0.identifier?.rawValue.hasSuffix("main") == true && !($0 is NSPanel) }
+    }
     @ObservationIgnored private var statusItem: NSStatusItem?
     private let popover = NSPopover()
     @ObservationIgnored private var tray: TrayCoordinator?
@@ -59,16 +62,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         Task { await model.start() }
         if !quietLaunch || receivedLaunchURL || windowRequested { showWindow() }
         else { window?.orderOut(nil); NSApp.hide(nil) }
-    }
-
-    func attachWindow(_ window: NSWindow) {
-        guard self.window !== window else { return }
-        self.window = window
-        window.titleVisibility = .hidden
-        window.setFrameAutosaveName("TaskHubNativeMain")
-        guard finishedLaunching else { return }
-        if !quietLaunch || receivedLaunchURL || windowRequested { showWindow() }
-        else { window.orderOut(nil) }
     }
 
     var canCheckForUpdates: Bool {
@@ -131,7 +124,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         NSApp.setActivationPolicy(.regular)
         NSApp.unhide(nil)
         popover.performClose(nil)
-        window?.makeKeyAndOrderFront(nil)
+        if let window {
+            window.titleVisibility = .hidden
+            window.setFrameAutosaveName("TaskHubNativeMain")
+            window.makeKeyAndOrderFront(nil)
+        }
         NSApp.activate(ignoringOtherApps: true)
     }
 

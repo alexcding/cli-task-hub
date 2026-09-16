@@ -68,8 +68,6 @@ application sources or depends on a TaskHub Swift package.
 toolbar, font environment, notification overlay and `TaskHubCommands` menus.
 `AppDelegate` is connected through `NSApplicationDelegateAdaptor` for backend
 startup, the status-item popover, deep links and asynchronous quit/update cleanup.
-`TaskHubWindowLifecycle` extends the SwiftUI window delegate without replacing
-its other behavior, keeping the window alive while quit awaits document decisions.
 `ContentView` lays out the sidebar, inspector and toolbar; `AppCoordinatorView`
 renders destinations, retained workspaces and coordinator-owned presentations.
 
