@@ -222,3 +222,31 @@ private extension NSView {
     #expect(surface.location?.0 == 30 && surface.location?.1 == 2)
     model.dispose()
 }
+
+@MainActor @Test func browserAndFilesModesKeepSeparateTabsAndSelections() throws {
+    let context = WorkspaceContext(id: "task:modes", sourceURL: "session:modes", title: "")
+    let home = try #require(context.open("https://example.com/home", title: "Home"))
+    let docs = try #require(context.open("https://example.com/docs", title: "Docs"))
+    #expect(context.pane == .term && context.lastMode == .browser)
+    let first = try #require(context.openFile("/tmp/first.swift"))
+    #expect(context.pane == .files && context.activeDocument === first && context.activePage == nil)
+    #expect(context.fileTabs.map(\.id) == [first.id] && context.pageTabs.map(\.id) == [home.id, docs.id])
+    let second = try #require(context.openFile("/tmp/second.swift"))
+    context.cycle(1)
+    #expect(context.activeDocument === first, "cycling stays within the Files tabs")
+    context.setPane(.term)
+    #expect(context.activePage === docs && context.activeDocument == nil, "Browser restores its last page")
+    context.setPane(.off)
+    #expect(context.lastMode == .browser)
+    context.setPane(.files)
+    #expect(context.activeDocument === first, "Files restores its last file, not the last opened")
+    context.remove(first)
+    #expect(context.activeDocument === second, "closing a file picks a file neighbour, never a page")
+    context.remove(second)
+    #expect(context.activeID == nil && context.pane == .files, "an emptied mode stays selected and blank")
+    context.setPane(.term)
+    #expect(context.activePage === docs)
+    let snapshot = context.snapshot
+    let restored = WorkspaceContext(id: context.id, sourceURL: "session:modes", title: "", snapshot: snapshot)
+    #expect(restored.pane == .term && restored.activePage?.id == docs.id)
+}

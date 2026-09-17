@@ -36,6 +36,7 @@ private struct TauriToolbarIcon: View {
 private struct ToolbarBrandIcon: View {
     let name: String?
     let fallback: TauriToolbarIcon.Kind
+    var height: CGFloat = 18
 
     var body: some View {
         if let name, let image = Self.load(name) {
@@ -43,7 +44,7 @@ private struct ToolbarBrandIcon: View {
                 .resizable()
                 .interpolation(.high)
                 .scaledToFit()
-                .frame(height: 18)
+                .frame(height: height)
                 .clipShape(RoundedRectangle(cornerRadius: 4))
         } else {
             TauriToolbarIcon(kind: fallback)
@@ -195,40 +196,45 @@ private struct SessionWorkspaceContextContent: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if model.showsTerminal {
-                webContextToolbar
+            if model.showsTerminal, !model.showsChanges {
+                tabStrip
                 Divider()
             }
             contextBody
         }
     }
 
-    private var webContextToolbar: some View {
+    private var tabs: [WorkspaceTab] { model.mode == .files ? context.fileTabs : context.pageTabs }
+    private var visits: [WorkspaceVisit] { model.mode == .files ? context.fileVisits : context.pageVisits }
+
+    private var tabStrip: some View {
         HStack(spacing: 8) {
             // Always present, even with nothing open: it is how the pane gets its first item.
-            Menu("Add to this panel", systemImage: "plus") {
-                Button("New Tab", action: model.newTab)
-                Button("Open File", action: model.openFile)
-                if model.canShowChanges { Button("Changes", action: model.toggleChanges) }
-                Divider()
-                Menu("History") {
-                    if context.visits.isEmpty { Text("No closed or visited pages") }
-                    ForEach(context.visits.reversed()) { record in
-                        Button(record.title) { model.reopen(record) }
-                    }
-                }
+            if model.mode == .files {
+                Button("Open File", systemImage: "plus", action: model.openFile).help("Open a file in a new tab")
+            } else {
+                Button("New Tab", systemImage: "plus", action: model.newTab).help("Open a new web tab")
             }
-            .labelStyle(.iconOnly)
             ScrollView(.horizontal) {
                 HStack(spacing: 6) {
-                    ForEach(context.tabs) { page in
-                        ContextTabChip(title: page.title, dirty: page.dirty, active: context.activeID == page.id,
-                                       select: { model.selectTab(page) }, close: { model.closeTab(page) })
+                    ForEach(tabs) { tab in
+                        ContextTabChip(title: tab.title, dirty: tab.dirty, active: context.activeID == tab.id,
+                                       select: { model.selectTab(tab) }, close: { model.closeTab(tab) })
                     }
                 }
             }
             Spacer(minLength: 4)
+            Menu("Recently Closed", systemImage: "clock.arrow.circlepath") {
+                if visits.isEmpty { Text(model.mode == .files ? "No closed or visited files" : "No closed or visited pages") }
+                ForEach(visits.reversed()) { record in
+                    Button(record.title) { model.reopen(record) }
+                }
+            }
+            .menuIndicator(.hidden)
+            .fixedSize()
         }
+        .labelStyle(.iconOnly)
+        .buttonStyle(.borderless)
         .padding(.horizontal, 12)
         .frame(height: 52)
     }
@@ -242,13 +248,30 @@ private struct SessionWorkspaceContextContent: View {
                 if context.reviewSection == .history, let history = model.history { GitHistoryView(model: history) }
                 else if context.reviewSection == .changes, let diff = model.diff { DiffView(model: diff) }
             }
-        } else if let document = context.activeDocument {
+        } else if model.mode == .files, let document = context.activeDocument {
             EditorDocumentView(model: document).id(document.id)
-        } else if let page = context.activePage {
+        } else if model.mode == .browser, let page = context.activePage {
             BrowserPane(page: page, context: context, model: page.controls).id(page.id)
         } else {
             BlankPane(context: context, model: model)
         }
+    }
+}
+
+struct SessionWorkspaceModePicker: View {
+    let model: SessionWorkspaceViewModel
+
+    var body: some View {
+        Picker("Panel", selection: Binding(get: { model.mode }, set: model.selectMode)) {
+            ForEach(WorkspaceMode.allCases.filter { $0 != .diff || model.session != nil }) { mode in
+                Image(systemName: mode.symbol).help(mode.title).tag(mode)
+                    .disabled(!model.canSelectMode(mode))
+            }
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .fixedSize()
+        .accessibilityIdentifier("workspace-mode-picker")
     }
 }
 
@@ -260,17 +283,15 @@ struct BlankPane: View {
 
     private var hint: Text {
         let lead = Text("Use ＋ to open ").foregroundColor(Theme.textTertiary)
-        guard model.canShowChanges else {
-            return lead + Text("a web page or a file.").foregroundColor(Theme.textTertiary)
+        switch model.mode {
+        case .files: return lead + Text("a file from this worktree.").foregroundColor(Theme.textTertiary)
+        case .diff, .browser: return lead + Text("a web page.").foregroundColor(Theme.textTertiary)
         }
-        return lead + Text("this worktree’s ").foregroundColor(Theme.textTertiary)
-            + Text("Diff").fontWeight(.semibold).foregroundColor(Theme.textSecondary)
-            + Text(", a web page or a file.").foregroundColor(Theme.textTertiary)
     }
 
     var body: some View {
         VStack(spacing: 5) {
-            Text("Nothing open in this panel")
+            Text(model.mode == .files ? "No file open" : "Nothing open in this panel")
                 .font(Theme.Typography.emptyTitle)
                 .foregroundStyle(Theme.textSecondary)
             hint.font(Theme.Typography.emptyHint).multilineTextAlignment(.center)
@@ -343,7 +364,7 @@ struct SessionWorkspaceGitClientButton: View {
         Button {
             if model.gitClientLabel == nil { model.reveal() } else { model.openGitClient() }
         } label: {
-            ToolbarBrandIcon(name: model.gitClientID, fallback: .folder)
+            ToolbarBrandIcon(name: model.gitClientID, fallback: .folder, height: 22)
         }
         .buttonStyle(.plain)
         .controlSize(.small)
@@ -365,7 +386,7 @@ struct SessionWorkspaceLeadingToolbar: View {
             }
         }
         .padding(.horizontal, 8)
-        .controlSize(.small)
+        .controlSize(.regular)
         .imageScale(.medium)
     }
 
@@ -373,7 +394,7 @@ struct SessionWorkspaceLeadingToolbar: View {
         HStack(spacing: 6) {
             if let title = model.editorLabel {
                 Button(action: model.openEditor) {
-                    ToolbarBrandIcon(name: model.editorID, fallback: .code)
+                    ToolbarBrandIcon(name: model.editorID, fallback: .code, height: 22)
                 }
                 .buttonStyle(.borderless)
                 .help(title)
@@ -390,13 +411,13 @@ struct SessionWorkspaceLeadingToolbar: View {
                         .help("Build and run \(model.runScheme)")
                         .disabled(!model.canRun)
                 }
-                Button(action: model.run) {
+                Button(action: model.configureRun) {
                     HStack(spacing: 3) {
                         Text(model.runScheme).lineLimit(1)
                         Image(systemName: "chevron.down").font(.caption2.weight(.semibold))
                     }
                 }
-                    .help("Project scheme")
+                    .help("Choose the scheme and simulator")
                     .disabled(!model.canRun)
             }
         }

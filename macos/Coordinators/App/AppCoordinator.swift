@@ -227,14 +227,14 @@ import Observation
         sheet = Sheet(id: id, destination: .removal(model))
     }
 
-    func presentBuild(_ makeModel: () -> BuildWorkspaceViewModel?) {
+    func presentBuild(purpose: BuildDestinationViewModel.Purpose = .run, _ makeModel: () -> BuildWorkspaceViewModel?) {
         guard canPresent, let runtime = makeModel() else { return }
-        let model = workspaceFactory.buildDestination(runtime: runtime)
+        let model = workspaceFactory.buildDestination(runtime: runtime, purpose: purpose)
         guard !model.retired else { return }
         cancelPageActions()
         let id = UUID()
         model.onAction = { [weak self] action in
-            switch action { case .started: _ = self?.complete(id) }
+            switch action { case .started, .saved: _ = self?.complete(id) }
         }
         sheet = Sheet(id: id, destination: .build(model))
     }

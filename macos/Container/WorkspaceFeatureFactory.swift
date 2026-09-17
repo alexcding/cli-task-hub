@@ -6,7 +6,7 @@ import Foundation
                  didRemove: @escaping ([WorkspaceSession]) async -> Void, finished: @escaping () -> Void) -> SessionRemovalViewModel
     func build(api: APIClient, project: Project, session: WorkspaceSession,
                terminalFactory: @escaping () throws -> any BuildTerminal, reveal: @escaping () -> Void) -> BuildWorkspaceViewModel
-    func buildDestination(runtime: BuildWorkspaceViewModel) -> BuildDestinationViewModel
+    func buildDestination(runtime: BuildWorkspaceViewModel, purpose: BuildDestinationViewModel.Purpose) -> BuildDestinationViewModel
 }
 
 @MainActor struct NativeWorkspaceFeatureFactory: WorkspaceFeatureFactory {
@@ -22,7 +22,7 @@ import Foundation
                terminalFactory: @escaping () throws -> any BuildTerminal, reveal: @escaping () -> Void) -> BuildWorkspaceViewModel {
         BuildWorkspaceViewModel(service: APIBuildService(api: api), project: project, session: session, terminalFactory: terminalFactory, reveal: reveal)
     }
-    func buildDestination(runtime: BuildWorkspaceViewModel) -> BuildDestinationViewModel {
-        BuildDestinationViewModel(runtime: runtime)
+    func buildDestination(runtime: BuildWorkspaceViewModel, purpose: BuildDestinationViewModel.Purpose) -> BuildDestinationViewModel {
+        BuildDestinationViewModel(runtime: runtime, purpose: purpose)
     }
 }

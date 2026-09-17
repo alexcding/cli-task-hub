@@ -54,6 +54,7 @@ extension AppCoordinator {
             }
         case .operation(let operation): runtime.performWorkspaceOperation(operation, in: context)
         case .run: presentBuild { runtime.makeWorkspaceBuild(in: context) }
+        case .configureRun: presentBuild(purpose: .configure) { runtime.makeWorkspaceBuild(in: context) }
         case .remove: presentRemoval { runtime.makeWorkspaceRemoval(in: context) }
         case .restart:
             guard let session = runtime.workspaceState(in: context).session else { return }

@@ -8,7 +8,18 @@ enum ReviewSection: String, Codable, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
-enum WorkspacePane: String, Codable, CaseIterable { case off, term, diff, build }
+enum WorkspacePane: String, Codable, CaseIterable { case off, term, diff, build, files }
+
+enum WorkspaceMode: String, CaseIterable, Identifiable {
+    case browser, diff, files
+    var id: String { rawValue }
+    var pane: WorkspacePane { switch self { case .browser: .term; case .diff: .diff; case .files: .files } }
+    var title: String { switch self { case .browser: "Browser"; case .diff: "Diff"; case .files: "Files" } }
+    var symbol: String { switch self { case .browser: "globe"; case .diff: "arrow.left.arrow.right"; case .files: "doc.text" } }
+    init?(pane: WorkspacePane) {
+        switch pane { case .term: self = .browser; case .diff: self = .diff; case .files: self = .files; default: return nil }
+    }
+}
 
 struct ContextSnapshot: Codable, Equatable, Sendable {
     var pages: [WebPageRecord] = []
@@ -77,8 +88,14 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
     }
     private(set) var history: [WebPageRecord] = []
     private(set) var pane: WorkspacePane = .term {
-        didSet { if oldValue != pane { workspaceViewModel?.reviewStateChanged() } }
+        didSet {
+            if let mode = WorkspaceMode(pane: pane) { lastMode = mode }
+            if oldValue != pane { workspaceViewModel?.reviewStateChanged() }
+        }
     }
+    private(set) var lastMode: WorkspaceMode = .browser
+    @ObservationIgnored private var lastPageID: String?
+    @ObservationIgnored private var lastDocumentID: String?
     private(set) var reviewSection: ReviewSection = .changes {
         didSet { if oldValue != reviewSection { workspaceViewModel?.reviewStateChanged() } }
     }
@@ -134,6 +151,10 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
             pane = WorkspacePane(rawValue: snapshot.pane) ?? .term
             reviewSection = snapshot.reviewSection ?? .changes
             if pane == .build { pane = .term }
+            if pane == .term, activeDocument != nil { pane = .files }
+            if pane == .files, activeDocument == nil, activePage != nil { pane = .term }
+            lastPageID = activePage?.id; lastDocumentID = activeDocument?.id
+            lastMode = WorkspaceMode(pane: pane) ?? (activeDocument != nil ? .files : .browser)
         } else if safeWebURL(sourceURL) != nil {
             let page = pageFactory.make(.init(url: sourceURL, title: title))
             pages = [page]; tabOrder = [page.id]; activeID = page.id
@@ -144,10 +165,15 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
 
     var activeDocument: EditorDocumentViewModel? { documents.first { $0.id == activeID } }
     var tabs: [WorkspaceTab] { tabOrder.compactMap(tab) }
+    var pageTabs: [WorkspaceTab] { tabs.filter { if case .page = $0 { true } else { false } } }
+    var fileTabs: [WorkspaceTab] { tabs.filter { if case .file = $0 { true } else { false } } }
     var visits: [WorkspaceVisit] { historyOrder.compactMap { id in
         if let page = history.first(where: { $0.id == id }) { return .page(page) }
         return fileHistory.first(where: { $0.id == id }).map(WorkspaceVisit.file)
     } }
+    var pageVisits: [WorkspaceVisit] { visits.filter { if case .page = $0 { true } else { false } } }
+    var fileVisits: [WorkspaceVisit] { visits.filter { if case .file = $0 { true } else { false } } }
+    var modeTabs: [WorkspaceTab] { pane == .files ? fileTabs : pageTabs }
     func tab(_ id: String) -> WorkspaceTab? {
         if let page = pages.first(where: { $0.id == id }) { return .page(page) }
         return documents.first(where: { $0.id == id }).map(WorkspaceTab.file)
@@ -163,7 +189,17 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
               legacyDocuments: legacyDocuments, legacyFileHistory: legacyFileHistory)
     }
     func setReviewSection(_ value: ReviewSection) { reviewSection = value; changed() }
-    func setPane(_ value: WorkspacePane) { pane = value; changed() }
+    func setPane(_ value: WorkspacePane) {
+        switch value {
+        case .term where activePage == nil:
+            activeID = pages.first { $0.id == lastPageID }?.id ?? pageTabs.last?.id
+        case .files where activeDocument == nil:
+            activeID = documents.first { $0.id == lastDocumentID }?.id ?? fileTabs.last?.id
+        default: break
+        }
+        pane = value; changed()
+    }
+    func present() { if pane == .off { setPane(lastMode.pane) } }
     fileprivate func absorb(_ source: WorkspaceContext) {
         let pageIDs = Set(pages.map(\.id)), documentIDs = Set(documents.map(\.id))
         let incomingPages = source.pages.filter { !pageIDs.contains($0.id) }
@@ -175,19 +211,26 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
         fileHistory += source.fileHistory.filter { value in !fileHistory.contains { $0.id == value.id } }
         historyOrder = Self.order(historyOrder + source.historyOrder, ids: history.map(\.id) + fileHistory.map(\.id))
         trimHistory()
-        if let selected = source.activeID, tabOrder.contains(selected) { activeID = selected }
+        if let selected = source.activeID, tabOrder.contains(selected) {
+            activeID = selected
+            if activeDocument != nil { lastDocumentID = selected; pane = .files }
+            else { lastPageID = selected; if pane == .files { pane = .term } }
+        }
         source.changed = {}; source.activatePage = { _ in }; source.activateDocument = { _ in }
         source.pages = []; source.documents = []; source.tabOrder = []; source.activeID = nil
     }
-    func select(_ page: BrowserPage) { activeID = page.id; pane = .term; activatePage(page); changed() }
+    func select(_ page: BrowserPage) {
+        activeID = page.id; lastPageID = page.id; pane = .term; activatePage(page); changed()
+    }
     func select(_ tab: WorkspaceTab) {
         switch tab { case .page(let page): select(page)
-        case .file(let file): activeID = file.id; pane = .term; activateDocument(file); changed() }
+        case .file(let file): activeID = file.id; lastDocumentID = file.id; pane = .files; activateDocument(file); changed() }
     }
     func cycle(_ direction: Int) {
-        guard !tabOrder.isEmpty else { return }
-        let index = tabOrder.firstIndex(of: activeID ?? "") ?? 0
-        if let tab = tab(tabOrder[(index + direction + tabOrder.count) % tabOrder.count]) { select(tab) }
+        let order = modeTabs.map(\.id)
+        guard !order.isEmpty else { return }
+        let index = order.firstIndex(of: activeID ?? "") ?? 0
+        if let tab = tab(order[(index + direction + order.count) % order.count]) { select(tab) }
     }
     @discardableResult func openFile(_ path: String, line: Int = 1, column: Int = 1) -> EditorDocumentViewModel? {
         guard path.hasPrefix("/"), !path.contains("\0") else { error = "Choose an absolute file path."; return nil }
@@ -215,13 +258,18 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
     }
     func remove(_ file: EditorDocumentViewModel) {
         guard documents.contains(where: { $0 === file }) else { return }
-        noteHistory(file.record); file.dispose(); documents.removeAll { $0 === file }; removeTab(file.id)
+        noteHistory(file.record); file.dispose(); documents.removeAll { $0 === file }; removeTab(file.id, page: false)
     }
-    private func removeTab(_ id: String) {
-        let index = tabOrder.firstIndex(of: id) ?? 0
+    private func removeTab(_ id: String, page: Bool) {
+        let kin = Set((page ? pages.map(\.id) : documents.map(\.id)) + [id])
+        let siblings = tabOrder.filter(kin.contains)
+        let index = siblings.firstIndex(of: id) ?? 0
         tabOrder.removeAll { $0 == id }
+        if lastPageID == id { lastPageID = nil }
+        if lastDocumentID == id { lastDocumentID = nil }
         if activeID == id {
-            activeID = tabOrder.isEmpty ? nil : tabOrder[min(index, tabOrder.count - 1)]
+            let remaining = siblings.filter { $0 != id }
+            activeID = remaining.isEmpty ? nil : remaining[min(index, remaining.count - 1)]
             if let activeID, let tab = tab(activeID) { select(tab) }
         }
         changed()
@@ -259,13 +307,15 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
         noteHistory(page.record)
         page.evict()
         pages.remove(at: index)
-        removeTab(page.id)
+        removeTab(page.id, page: true)
     }
     func apply(_ snapshot: ContextSnapshot) {
         // Used only for the first backend load, before the user edits this context.
         pages.forEach { $0.evict() }; documents.forEach { $0.dispose() }
         let restored = WorkspaceContext(id: id, sourceURL: sourceURL, title: "", snapshot: snapshot, pageFactory: pageFactory, documentFactory: documentFactory, closeCoordinator: closeCoordinator)
         pages = restored.pages; activeID = restored.activeID; history = restored.history; pane = restored.pane
+        lastPageID = restored.activePage?.id; lastDocumentID = restored.activeDocument?.id
+        lastMode = restored.lastMode
         reviewSection = restored.reviewSection
         documents = restored.documents; tabOrder = restored.tabOrder; fileHistory = restored.fileHistory; historyOrder = restored.historyOrder
         documents.forEach(wire)
@@ -466,7 +516,7 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
             source.id = destinationID; contexts[destinationID] = source; context = source
         }
         if activeContextID == sourceID { activeContextID = destinationID }
-        context.setPane(.term)
+        context.setPane(context.activeDocument != nil ? .files : .term)
         // Keep the old persisted snapshot as history for reopening the page.
         // Outstanding writes under its old key cannot overwrite this context.
     }

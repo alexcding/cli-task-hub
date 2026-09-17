@@ -23,7 +23,7 @@ struct PageTitleToolbarItem<Accessory: View>: ToolbarContent {
     private var label: some View {
         HStack(spacing: 8) {
             accessory()
-            Text(title).font(.title3).fontWeight(.medium).lineLimit(1).truncationMode(.tail)
+            Text(title).font(.title3).fontWeight(.regular).lineLimit(1).truncationMode(.tail)
                 .frame(maxWidth: 320, alignment: .leading)
         }
         .buttonStyle(.plain)

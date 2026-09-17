@@ -39,7 +39,7 @@ enum WorkspaceOperation: Equatable {
 
 @MainActor @Observable final class SessionWorkspaceViewModel {
     enum Action: Equatable {
-        case operation(WorkspaceOperation), run, remove, restart, selectTab(String), closeTab(String), reopen(String)
+        case operation(WorkspaceOperation), run, configureRun, remove, restart, selectTab(String), closeTab(String), reopen(String)
         case newTab
     }
     struct ReviewInputs: Equatable {
@@ -105,8 +105,17 @@ enum WorkspaceOperation: Equatable {
     var showsTerminal: Bool { session != nil || context?.id == "scratch" }
     var showsChanges: Bool { session != nil && context?.pane == .diff }
     var showsPage: Bool {
-        !showsTerminal || showsChanges || (!showsBuild && context?.pane == .term)
+        !showsTerminal || showsChanges || (!showsBuild && (context?.pane == .term || context?.pane == .files))
     }
+    var mode: WorkspaceMode {
+        guard let context else { return .browser }
+        if let mode = WorkspaceMode(pane: context.pane), mode != .diff || session != nil { return mode }
+        return context.lastMode == .diff && session == nil ? .browser : context.lastMode
+    }
+    var showsBrowser: Bool { showsPage && !showsChanges && mode == .browser }
+    var showsFiles: Bool { showsPage && !showsChanges && mode == .files }
+    var showsModePicker: Bool { showsTerminal || context?.documents.isEmpty == false }
+    func canSelectMode(_ mode: WorkspaceMode) -> Bool { mode != .diff || canShowChanges }
     var showsBuildActions: Bool { session != nil && state.project?.ide == "xcode" }
     var canCreateSession: Bool { state.canCreateSession }
     var offersPageSession: Bool { session == nil && state.offersPageSession }
@@ -154,12 +163,12 @@ enum WorkspaceOperation: Equatable {
         state.history?.presentation = .init(active: reviewing && context?.reviewSection == .history,
                                             appearance: state.appearance, font: state.documentFont)
         for page in context?.pages ?? [] {
-            let activePage = visible && showsPage && !showsChanges && page === context?.activePage
+            let activePage = visible && showsBrowser && page === context?.activePage
             page.controls.active = activePage
             page.dialogs.active = activePage
         }
         for document in context?.documents ?? [] {
-            document.presentation = .init(active: visible && showsPage && !showsChanges && document === context?.activeDocument,
+            document.presentation = .init(active: visible && showsFiles && document === context?.activeDocument,
                                            appearance: state.appearance, font: state.documentFont)
         }
     }
@@ -170,17 +179,25 @@ enum WorkspaceOperation: Equatable {
     func createSession() { if canCreateSession { perform(.createSession) } }
     func openFile() { perform(.openFile) }
     func toggleChanges() { if canShowChanges { perform(.changes) } }
+    func selectMode(_ mode: WorkspaceMode) {
+        guard let context, canSelectMode(mode) else { return }
+        switch mode {
+        case .diff: if context.pane != .diff { perform(.changes) }
+        case .browser, .files: context.setPane(mode.pane)
+        }
+    }
     func run() { if canRun { onAction(.run) } }
+    func configureRun() { if canRun { onAction(.configureRun) } }
     func remove() { if canRemove { onAction(.remove) } }
     func restart() { if canRestart { onAction(.restart) } }
     func openTerminal() { if showsTerminal { perform(.openTerminal) } }
     func openHookSettings() { perform(.hookSettings) }
     func stopBuild() async { await build?.stop() }
     func toggleBuild() { if buildTerminal != nil { context?.setPane(showsBuild ? .term : .build) } }
-    func toggleContext() { if canToggleContext { context?.setPane(context?.pane == .term ? .off : .term) } }
+    func toggleContext() { setContextPresented(!(showsPage || showsBuild)) }
     func setContextPresented(_ presented: Bool) {
-        guard canToggleContext else { return }
-        context?.setPane(presented ? .term : .off)
+        guard canToggleContext, let context else { return }
+        if presented { context.setPane(context.lastMode.pane) } else { context.setPane(.off) }
     }
     func reopen(_ visit: WorkspaceVisit) {
         guard active, state.canPresent else { return }

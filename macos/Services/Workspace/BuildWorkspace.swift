@@ -76,7 +76,7 @@ struct APIBuildService: BuildServing {
     private(set) var running = false
     private(set) var error: String?
     private let service: any BuildServing
-    private let project: Project
+    private var project: Project
     private let session: WorkspaceSession
     private let terminalFactory: () throws -> any BuildTerminal
     private let reveal: () -> Void
@@ -94,6 +94,12 @@ struct APIBuildService: BuildServing {
         scheme = project.runScheme ?? ""; simulator = project.runSim ?? ""
     }
     var canRun: Bool { valid && !loading && !starting && !running && schemes.contains(scheme) && simulators.contains { $0.udid == simulator } }
+    func adopt(_ project: Project) {
+        self.project = project
+        guard presentationID == nil, !starting, !running else { return }
+        if let scheme = project.runScheme, !scheme.isEmpty { self.scheme = scheme }
+        if let simulator = project.runSim, !simulator.isEmpty { self.simulator = simulator }
+    }
     fileprivate func beginPresentation(_ id: UUID) -> Bool {
         guard valid, !starting else { return false }
         presentationID = id; loadGeneration = UUID(); loading = false
@@ -104,24 +110,39 @@ struct APIBuildService: BuildServing {
         presentationID = nil; loadGeneration = UUID(); loading = false
     }
     fileprivate func isCurrent(_ id: UUID) -> Bool { valid && presentationID == id }
+    static var cachedDestinations: [String: (BuildSchemes, [BuildSimulator])] = [:]
     fileprivate func load(presentation id: UUID) async {
         guard isCurrent(id), !Task.isCancelled, !loading, !starting else { return }
+        if schemes.isEmpty, let cached = Self.cachedDestinations[project.id] { apply(cached) }
         let generation = UUID(); loadGeneration = generation
-        loading = true; error = nil
+        loading = schemes.isEmpty || simulators.isEmpty; error = nil
         defer { if loadGeneration == generation { loading = false } }
         do {
             let values = try await service.destinations(project: project, session: session)
             try Task.checkCancellation()
             guard isCurrent(id), loadGeneration == generation else { return }
-            self.schemes = values.0.schemes; self.simulators = values.1
-            if !self.schemes.contains(scheme) {
-                let targetName = URL(fileURLWithPath: values.0.target).deletingPathExtension().lastPathComponent
-                scheme = self.schemes.first { $0.caseInsensitiveCompare(targetName) == .orderedSame }
-                    ?? self.schemes.first { $0.caseInsensitiveCompare(project.name) == .orderedSame }
-                    ?? self.schemes.first ?? ""
-            }
-            if !self.simulators.contains(where: { $0.udid == simulator }) { simulator = self.simulators.first?.udid ?? "" }
+            Self.cachedDestinations[project.id] = values
+            apply(values)
         } catch { if isCurrent(id) && loadGeneration == generation && !Task.isCancelled { self.error = error.localizedDescription } }
+    }
+    func warmDestinations() {
+        guard valid, Self.cachedDestinations[project.id] == nil, warming == nil else { return }
+        warming = Task { [service, project, session] in
+            defer { warming = nil }
+            guard let values = try? await service.destinations(project: project, session: session), valid else { return }
+            if Self.cachedDestinations[project.id] == nil { Self.cachedDestinations[project.id] = values }
+        }
+    }
+    @ObservationIgnored private var warming: Task<Void, Never>?
+    private func apply(_ values: (BuildSchemes, [BuildSimulator])) {
+        schemes = values.0.schemes; simulators = values.1
+        if !schemes.contains(scheme) {
+            let targetName = URL(fileURLWithPath: values.0.target).deletingPathExtension().lastPathComponent
+            scheme = schemes.first { $0.caseInsensitiveCompare(targetName) == .orderedSame }
+                ?? schemes.first { $0.caseInsensitiveCompare(project.name) == .orderedSame }
+                ?? schemes.first ?? ""
+        }
+        if !simulators.contains(where: { $0.udid == simulator }) { simulator = simulators.first?.udid ?? "" }
     }
     fileprivate func run(presentation id: UUID) async -> Bool {
         guard isCurrent(id), canRun, !Task.isCancelled else { return false }
@@ -168,6 +189,18 @@ struct APIBuildService: BuildServing {
         } catch { if isCurrent(id) && !Task.isCancelled { self.error = error.localizedDescription } }
         return false
     }
+    fileprivate func save(presentation id: UUID) async -> Bool {
+        guard isCurrent(id), canRun, !Task.isCancelled else { return false }
+        let scheme = scheme, simulator = simulator
+        starting = true; error = nil
+        defer { starting = false }
+        do {
+            try await service.saveDestination(projectID: project.id, scheme: scheme, simulator: simulator)
+            try Task.checkCancellation()
+            return isCurrent(id)
+        } catch { if isCurrent(id) && !Task.isCancelled { self.error = error.localizedDescription } }
+        return false
+    }
     func stop() async {
         guard valid, running else { return }
         do { try await terminal?.interrupt() }
@@ -181,14 +214,16 @@ struct APIBuildService: BuildServing {
 
 /// One model per sheet; retiring it leaves the cached build and its PTY running.
 @MainActor @Observable final class BuildDestinationViewModel {
-    enum Action { case started }
+    enum Action { case started, saved }
+    enum Purpose { case run, configure }
     @ObservationIgnored var onAction: (Action) -> Void = { _ in }
+    let purpose: Purpose
     private let runtime: BuildWorkspaceViewModel
     private let id = UUID()
     private(set) var retired = false
 
-    init(runtime: BuildWorkspaceViewModel) {
-        self.runtime = runtime
+    init(runtime: BuildWorkspaceViewModel, purpose: Purpose = .run) {
+        self.runtime = runtime; self.purpose = purpose
         retired = !runtime.beginPresentation(id)
     }
     private var active: Bool { !retired && runtime.isCurrent(id) }
@@ -213,6 +248,13 @@ struct APIBuildService: BuildServing {
         retire()
         action(.started)
     }
+    func save() async {
+        guard active, await runtime.save(presentation: id), active else { return }
+        let action = onAction
+        retire()
+        action(.saved)
+    }
+    func confirm() async { if purpose == .run { await run() } else { await save() } }
     func retire() {
         retired = true; onAction = { _ in }
         runtime.endPresentation(id)
@@ -224,7 +266,7 @@ struct BuildDestinationView: View {
     let cancel: () -> Void
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Run Destination").font(.title2.weight(.semibold))
+            Text(model.purpose == .run ? "Run Destination" : "Build Destination").font(.title2.weight(.semibold))
             Picker("Scheme", selection: $model.scheme) {
                 ForEach(model.schemes, id: \.self) { Text($0).tag($0) }
             }.disabled(model.starting).accessibilityIdentifier("build-scheme")
@@ -237,7 +279,7 @@ struct BuildDestinationView: View {
                 Button("Cancel", role: .cancel, action: cancel).keyboardShortcut(.cancelAction)
                 Spacer()
                 if model.starting { ProgressView().controlSize(.small) }
-                Button("Run") { Task { await model.run() } }
+                Button(model.purpose == .run ? "Run" : "Save") { Task { await model.confirm() } }
                     .keyboardShortcut(.defaultAction).disabled(!model.canRun)
             }.disabled(model.starting)
         }.padding(24).frame(width: 480)

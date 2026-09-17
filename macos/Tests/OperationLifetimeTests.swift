@@ -208,3 +208,37 @@ func operationLifetimeRemovalRetriesOnceAndCoordinatorPreservesUnrelatedNavigati
     #expect(cleaned == 1 && finished == 1 && callbacks == 0 && model.completed && !model.removing)
     #expect(await service.removals == 1)
 }
+
+@MainActor @Test(.timeLimit(.minutes(1))) func configureDestinationSavesWithoutBuilding() async {
+    let service = OperationBuildService()
+    var factories = 0, actions: [BuildDestinationViewModel.Action] = []
+    let runtime = BuildWorkspaceViewModel(service: service, project: operationProject, session: operationSession,
+        terminalFactory: { factories += 1; return OperationBuildTerminal() }, reveal: {})
+    let destination = BuildDestinationViewModel(runtime: runtime, purpose: .configure)
+    destination.onAction = { actions.append($0) }
+    await destination.load()
+    await destination.confirm()
+    #expect(destination.retired && !runtime.running && factories == 0)
+    #expect(actions.count == 1)
+    if case .saved = actions.first {} else { Issue.record("configure must report .saved, got \(actions)") }
+    #expect(await service.saves == 1)
+    #expect(await service.settingsReads == 0)
+}
+
+@MainActor @Test func idleBuildModelAdoptsProjectDestinationButABusyOneKeepsItsOwn() async {
+    let service = OperationBuildService()
+    let runtime = BuildWorkspaceViewModel(service: service, project: operationProject, session: operationSession,
+        terminalFactory: { OperationBuildTerminal() }, reveal: {})
+    var project = operationProject
+    project.runScheme = "Other"; project.runSim = "sim-other"
+    runtime.adopt(project)
+    #expect(runtime.scheme == "Other" && runtime.simulator == "sim-other")
+    let destination = BuildDestinationViewModel(runtime: runtime, purpose: .configure)
+    destination.scheme = "Sheet"
+    project.runScheme = "Later"
+    runtime.adopt(project)
+    #expect(runtime.scheme == "Sheet", "a presented sheet keeps the user's in-progress choice")
+    destination.retire()
+    runtime.adopt(project)
+    #expect(runtime.scheme == "Later")
+}

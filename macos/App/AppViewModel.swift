@@ -205,7 +205,7 @@ public final class AppViewModel {
     var sessionOperations: (any SessionServing)? { api.map { backendFactory.sessions(api: $0) } }
 
     func showChanges(for session: WorkspaceSession, context: WorkspaceContext) {
-        if context.pane == .diff { context.setPane(.term); return }
+        if context.pane == .diff { context.setPane(context.activeDocument != nil ? .files : .term); return }
         prepareChanges(for: session, context: context)
         if diffModels[context.id] != nil { context.setPane(.diff) }
     }
@@ -341,7 +341,7 @@ public final class AppViewModel {
         case .findPage: activeHistory != nil || hasActivePage
         case .openPageInBrowser: coordinator.canPresent && activePageControls?.canOpenExternally == true
         case .zoomIn, .zoomOut, .resetZoom: coordinator.canPresent && viewer.active?.activePage?.controls.active == true
-        case .nextPage, .previousPage: (viewer.active?.tabOrder.count ?? 0) > 1
+        case .nextPage, .previousPage: (viewer.active?.modeTabs.count ?? 0) > 1
         case .biggerFont, .smallerFont, .resetFont: fontTarget != nil
         case .refresh: connection == "Connected"
         default: true
@@ -380,7 +380,7 @@ public final class AppViewModel {
         case .terminal:
             if activeTerminalKey == nil { select(.terminal) }
             openTerminal()
-            viewer.active?.setPane(.term)
+            viewer.active?.present()
             terminal?.showsSurface = true
             terminal?.surface.requestFocus()
         case .refresh: refresh()
@@ -396,7 +396,7 @@ public final class AppViewModel {
         if let context = viewer.active {
             if context.pane == .diff { return .diff }
             let hasTerminal = context.id == "scratch" || sessions.contains { "task:\($0.id)" == context.id }
-            if context.activeDocument != nil && (!hasTerminal || context.pane == .term) { return .diff }
+            if context.activeDocument != nil && (!hasTerminal || context.pane == .files) { return .diff }
         }
         return terminal?.ready == true && terminal?.showsSurface == true ? .term : nil
     }
@@ -553,8 +553,9 @@ public final class AppViewModel {
             }
         case .session(let id):
             if let session = sessions.first(where: { $0.id == id }) {
-                viewer.select(id: "task:\(id)", url: session.url, title: session.title, legacy: tabs.first { $0.url == session.url })
+                let context = viewer.select(id: "task:\(id)", url: session.url, title: session.title, legacy: tabs.first { $0.url == session.url })
                 _ = workflowRunModel(for: session)
+                buildModel(for: session, context: context)?.warmDestinations()
                 openTerminal()
             } else { viewer.deactivate() }
         case .terminal:
@@ -594,6 +595,14 @@ public final class AppViewModel {
         })
         workflowRuns[record.id] = model
         return model
+    }
+
+    private func adoptProjectDestinations() {
+        for (contextID, model) in buildModels {
+            guard let session = sessions.first(where: { "task:\($0.id)" == contextID }),
+                  let project = projects.first(where: { $0.id == session.projectId }) else { continue }
+            model.adopt(project)
+        }
     }
 
     func workflowModel(in context: WorkspaceContext) -> WorkflowRunViewModel? {
@@ -735,8 +744,9 @@ public final class AppViewModel {
     }
 
     func buildModel(for record: WorkspaceSession, context: WorkspaceContext) -> BuildWorkspaceViewModel? {
-        if let existing = buildModels[context.id] { return existing }
-        guard let api, let project = projects.first(where: { $0.id == record.projectId }), project.ide == "xcode" else { return nil }
+        let project = projects.first { $0.id == record.projectId }
+        if let existing = buildModels[context.id] { if let project { existing.adopt(project) }; return existing }
+        guard let api, let project, project.ide == "xcode" else { return nil }
         let model = workspaceFactory.build(api: api, project: project, session: record, terminalFactory: { [weak self] in
             guard let self else { throw BackendError.operation("The workspace closed before the build could start.") }
             let key = "build:\(record.url)"
@@ -1021,7 +1031,7 @@ public final class AppViewModel {
                     // A save/delete or newer SSE refresh supersedes this batch.
                     // Do not apply its older inventory or retire newly created models.
                     guard requestID == refreshRequestID else { refreshPending = true; continue }
-                    if projects != snapshot { projects = snapshot }
+                    if projects != snapshot { projects = snapshot; adoptProjectDestinations() }
                     for model in coordinator.removeMissingProjects(Set(snapshot.map(\.id))) { retireProject(model) }
                     if sessions != sessionSnapshot {
                         let retained = Set(sessionSnapshot.map(\.id))

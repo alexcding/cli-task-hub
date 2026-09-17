@@ -26,8 +26,12 @@ struct SessionWorkspaceToolbar: ToolbarContent {
                     .help("Start an agent session for this page in its project")
             }
         }
-        if model.showsTerminal {
+        if model.showsModePicker {
             if #available(macOS 26.0, *) { ToolbarSpacer(.flexible) }
+            ToolbarItem(placement: .primaryAction) { SessionWorkspaceModePicker(model: model) }
+        }
+        if model.showsTerminal {
+            if #available(macOS 26.0, *) { ToolbarSpacer(.fixed) }
             ToolbarItem(placement: .primaryAction) { SessionWorkspaceContextToggle(model: model) }
         }
     }
