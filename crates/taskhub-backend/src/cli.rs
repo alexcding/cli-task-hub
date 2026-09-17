@@ -14,8 +14,9 @@ use tokio::process::{Child, Command};
 /// child gets the usual install locations too. Set per command: mutating the process
 /// environment would race with every other thread in the host app.
 pub(crate) fn command(program: &str) -> Command {
-    let mut command = Command::new(program);
-    // A PATH set on the Command is also the one used to resolve `program`.
+    // Resolved here rather than by the spawn: see `resolve`.
+    let mut command = Command::new(resolve(program, search_path()));
+    // The child still gets the same PATH, for the programs IT starts (`npx` runs `node`).
     command.env("PATH", search_path());
     // Its own process group, because the backend runs INSIDE the app: a child left in the
     // host's group shares its fate in both directions. Anything group-directed would reach
@@ -23,6 +24,59 @@ pub(crate) fn command(program: &str) -> Command {
     // outlive it holding its output pipe open, which is what `wait_or_kill` below now ends.
     command.process_group(0);
     command
+}
+
+/// The program as an absolute path: the file `path` resolves it to, or — when nothing matches —
+/// where it would have been, which fails at the spawn with the same ENOENT as before.
+///
+/// It must never answer with a bare name. `fork()` inside a live AppKit process deadlocks: the
+/// atfork handlers take the malloc and ObjC locks, and the host's main thread holds them often
+/// enough that a launch-time `ghostty_init` -> `setlocale` -> malloc wedged the whole app
+/// against a usage poll's `ccusage`. std only takes its fork-free `posix_spawn` path when the
+/// program is a path: with PATH set on the Command and a bare name it must fall back to
+/// fork+exec, because `posix_spawnp` would resolve against the PARENT's PATH. That applies just
+/// as much to a program that is not installed — `ccusage` usually is not — so the miss gets a
+/// path of its own rather than the name back.
+///
+/// Deliberately not cached: a CLI installed while the app runs must be found.
+fn resolve(program: &str, path: &str) -> std::ffi::OsString {
+    if program.contains('/') {
+        return program.into();
+    }
+    let mut first: Option<std::path::PathBuf> = None;
+    for directory in path.split(':').filter(|entry| !entry.is_empty()) {
+        let directory = Path::new(directory);
+        // `execvp` resolves a relative entry against the CHILD's cwd, which `run_in` may have
+        // changed. Only the child knows that directory, so skip the entry rather than name a
+        // file resolved against ours.
+        if !directory.is_absolute() {
+            continue;
+        }
+        let candidate = directory.join(program);
+        if is_executable(&candidate) {
+            return candidate.into_os_string();
+        }
+        first.get_or_insert(candidate);
+    }
+    first
+        .unwrap_or_else(|| Path::new("/").join(program))
+        .into_os_string()
+}
+
+/// Whether the spawn could execute this file. `access(X_OK)` rather than the mode bits, because
+/// "somebody may execute it" is not "we may": a root-owned 0700 binary earlier on PATH would
+/// otherwise shadow the copy that actually runs, which is not what `execvp` does — it tries the
+/// exec, takes the EACCES and keeps searching.
+fn is_executable(candidate: &Path) -> bool {
+    use std::os::unix::ffi::OsStrExt;
+    let Ok(path) = std::ffi::CString::new(candidate.as_os_str().as_bytes()) else {
+        return false;
+    };
+    if unsafe { libc::access(path.as_ptr(), libc::X_OK) } != 0 {
+        return false;
+    }
+    // `access` answers X_OK for a directory too, and a directory is not a program.
+    std::fs::metadata(candidate).is_ok_and(|data| data.is_file())
 }
 
 /// The group a child leads, or `None` if it does not lead one. Read once while the child is
@@ -225,16 +279,50 @@ mod tests {
         );
     }
 
-    // The fix relies on the Command's own PATH resolving the program, not the parent's.
+    // A program is resolved to its file before the spawn, so std never reaches for fork().
     #[tokio::test]
-    async fn a_command_resolves_programs_through_its_own_path() {
+    async fn a_command_resolves_programs_against_the_search_path() {
         use std::os::unix::fs::PermissionsExt;
         let dir = tempfile::tempdir().unwrap();
         let tool = dir.path().join("taskhub-path-probe");
         std::fs::write(&tool, "#!/bin/sh\necho found\n").unwrap();
         std::fs::set_permissions(&tool, std::fs::Permissions::from_mode(0o755)).unwrap();
-        let output = Command::new("taskhub-path-probe")
-            .env("PATH", format!("{}:/usr/bin:/bin", dir.path().display()))
+        let path = format!("{}:/usr/bin:/bin", dir.path().display());
+
+        assert_eq!(resolve("taskhub-path-probe", &path), tool.as_os_str());
+        // A path of its own is already spawnable, and may be relative to the CHILD's cwd.
+        assert_eq!(resolve("./taskhub-path-probe", &path), "./taskhub-path-probe");
+        // A directory on PATH is not a program, so it is no match. The answer is still a path,
+        // never the bare name — a bare name is what makes std fork — and the spawn fails on it.
+        std::fs::create_dir(dir.path().join("taskhub-path-dir")).unwrap();
+        let miss = resolve("taskhub-path-dir", &path);
+        assert_ne!(miss, "taskhub-path-dir");
+        assert!(Path::new(&miss).is_absolute(), "{miss:?}");
+        // Nothing on PATH matches at all: still a path, and still where it would have been.
+        let missing = resolve("taskhub-path-probe", "/usr/bin:/bin");
+        assert_eq!(missing, "/usr/bin/taskhub-path-probe");
+        // A file nobody may execute is not a match, and does not shadow the one further along.
+        let blocked = tempfile::tempdir().unwrap();
+        let shadow = blocked.path().join("taskhub-path-probe");
+        std::fs::write(&shadow, "#!/bin/sh\necho shadow\n").unwrap();
+        std::fs::set_permissions(&shadow, std::fs::Permissions::from_mode(0o644)).unwrap();
+        assert_eq!(
+            resolve(
+                "taskhub-path-probe",
+                &format!("{}:{}", blocked.path().display(), dir.path().display())
+            ),
+            tool.as_os_str()
+        );
+
+        // The property that keeps the app off fork(): what `command` spawns is always a path.
+        for program in ["sh", "taskhub-definitely-not-installed"] {
+            let built = command(program);
+            let spawned = Path::new(built.as_std().get_program());
+            assert!(spawned.is_absolute(), "{program} spawned as {spawned:?}");
+        }
+
+        // And the resolved command still runs.
+        let output = Command::new(resolve("taskhub-path-probe", &path))
             .output()
             .await
             .unwrap();
