@@ -34,6 +34,9 @@ struct WebPageRecord: Codable, Identifiable, Equatable, Sendable {
         if let webView { return webView }
         let configuration = configuration ?? WKWebViewConfiguration()
         configuration.websiteDataStore = .default()
+        // WebKit's bare default UA has no "Version/x Safari/x" suffix, so sites such as Google
+        // treat it as an unknown browser and serve their legacy layout. Present as Safari.
+        configuration.applicationNameForUserAgent = Self.safariApplicationName
         // Remote pages never receive a document bridge, local file read access,
         // terminal handlers, or injected app scripts.
         let view = WKWebView(frame: .zero, configuration: configuration)
@@ -52,6 +55,13 @@ struct WebPageRecord: Codable, Identifiable, Equatable, Sendable {
         if load, let address = safeWebURL(url) { view.load(URLRequest(url: address)) }
         return view
     }
+
+    /// The Safari suffix WebKit appends to its default user agent: the latest Safari, or this
+    /// OS's version when it is newer still.
+    static let safariApplicationName: String = {
+        let major = max(26, ProcessInfo.processInfo.operatingSystemVersion.majorVersion)
+        return "Version/\(major).0 Safari/605.1.15"
+    }()
 
     func evict() {
         dialogs.cancel()

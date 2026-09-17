@@ -94,6 +94,9 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
     @ObservationIgnored var activateDocument: (EditorDocumentViewModel) -> Void = { _ in }
     @ObservationIgnored var activatePage: (BrowserPage) -> Void = { _ in }
     @ObservationIgnored var isOwned: () -> Bool = { true }
+    /// A link that asked for a new window. Returning true means the owner opened it as a
+    /// new tab; false keeps it as a popup page inside this context.
+    @ObservationIgnored var openInNewTab: (URL) -> Bool = { _ in false }
     @ObservationIgnored private let closeCoordinator: EditorCloseCoordinator
     @ObservationIgnored private let pageFactory: BrowserPageFactory
     @ObservationIgnored private let documentFactory: any DocumentFeatureFactory
@@ -297,7 +300,11 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
             noteHistory(page.record); changed()
         }
         page.openPopup = { [weak self] url, configuration in
-            self?.open(url.absoluteString, configuration: configuration)?.webView
+            guard let self else { return nil }
+            // about:blank popups are login flows that script the child window; they need
+            // the web view back. Everything else is a link and belongs under Tabs.
+            if url.absoluteString != "about:blank", openInNewTab(url) { return nil }
+            return open(url.absoluteString, configuration: configuration)?.webView
         }
     }
 }

@@ -73,7 +73,6 @@ extension AppViewModel: WorkspaceCoordinating {
             }
         case .createSession: perform(.newSession)
         case .openFile: viewer.openFile(in: context)
-        case .addPage: addPage(in: context)
         case .changes: if let session = state.session { showChanges(for: session, context: context) }
         case .openTerminal: openTerminal()
         case .hookSettings: openWorkflowHookSettings()

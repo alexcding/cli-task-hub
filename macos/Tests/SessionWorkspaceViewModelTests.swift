@@ -41,7 +41,8 @@ import Testing
     service.state.session = WorkspaceSession(id: "one", projectId: "p", workspace: "/tmp", worktree: "/tmp/one", title: "One",
                                              branch: "one", url: "", createdAt: nil, pinned: false)
     service.state.project = Project(id: "p", name: "Project", repo: "", color: nil, workspace: "/tmp", ide: "xcode")
-    #expect(model.showsTerminal && !model.showsPage && !model.showsBuild && !model.canRun)
+    // A session shows the blank page pane even before any tab is open.
+    #expect(model.showsTerminal && model.showsPage && model.canToggleContext && !model.showsBuild && !model.canRun)
     _ = try #require(context.open("https://example.test/context"))
     #expect(model.showsPage && model.canToggleContext)
     model.toggleContext(); #expect(context.pane == .off && !model.showsPage)
@@ -59,7 +60,7 @@ import Testing
     model.openEditor(); model.openGitClient(); model.run(); model.remove(); model.restart()
     #expect(service.actions.count == 5 && !model.canRun && !model.canRemove)
     service.state.changingSession = false; service.state.canPresent = false
-    model.run(); model.remove(); model.restart(); model.addPage()
+    model.run(); model.remove(); model.restart()
     #expect(service.actions.count == 5)
     service.state.connected = false
     #expect(!model.canShowChanges)

@@ -94,7 +94,7 @@ state; completion is tied to the presentation ID, so an old or duplicate callbac
 cannot dismiss a newer sheet or repeat navigation. Cancelling and reopening creates
 a new model. Save failure retains the original model and draft for retry.
 
-`AppCoordinatorSheetView`, `NewProjectSheet`, `NewSessionView` and `AddPageSheet` render the supplied
+`AppCoordinatorSheetView`, `NewProjectSheet`, and `NewSessionView` render the supplied
 models. They do not construct models, resolve services or navigate after observing
 a completion flag. Their button/task closures forward events to model/coordinator
 methods. Project validation, persistence, session preparation and error state stay

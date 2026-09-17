@@ -110,6 +110,8 @@ struct SidebarTabIcon: Equatable {
     var login: String?
     var avatar: String?
     var ci: CI = .none
+    /// The page address, for the domain favicon on web rows.
+    var url: String?
 }
 
 struct SidebarEntry: Equatable {
@@ -181,7 +183,7 @@ struct SidebarEntry: Equatable {
             result += unownedTabs.map {
                 .init(id: "tab:\($0.id)", title: $0.title.isEmpty ? ($0.url.isEmpty ? "New Tab" : $0.url) : $0.title, symbol: "", detail: $0.url,
                       destination: .tab($0.id),
-                      role: .tab(tabIcons[$0.url] ?? SidebarTabIcon(kind: $0.kind, login: $0.login, avatar: $0.avatar)))
+                      role: .tab(tabIcons[$0.url] ?? SidebarTabIcon(kind: $0.kind, login: $0.login, avatar: $0.avatar, url: $0.url)))
             }
         }
         return result

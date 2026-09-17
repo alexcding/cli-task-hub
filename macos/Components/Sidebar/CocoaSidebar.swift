@@ -15,6 +15,8 @@ struct CocoaSidebar: NSViewRepresentable {
     var onNewSession: (String) -> Void = { _ in }
     var onCloseTab: (String) -> Void = { _ in }
     var onNewTab: () -> Void = {}
+    var onMoveTab: (String, String?) -> Void = { _, _ in }
+    static let tabDragType = NSPasteboard.PasteboardType("com.taskhub.sidebar-tab")
 
     func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
 
@@ -39,6 +41,9 @@ struct CocoaSidebar: NSViewRepresentable {
         outline.columnAutoresizingStyle = .lastColumnOnlyAutoresizingStyle
         outline.dataSource = context.coordinator
         outline.delegate = context.coordinator
+        outline.registerForDraggedTypes([Self.tabDragType])
+        outline.setDraggingSourceOperationMask(.move, forLocal: true)
+        outline.draggingDestinationFeedbackStyle = .gap
         outline.contextMenu = { [weak coordinator = context.coordinator] item in coordinator?.menu(for: item) }
         outline.onReselect = { [weak coordinator = context.coordinator] item in coordinator?.reselected(item) }
         outline.onMiddleClick = { [weak coordinator = context.coordinator] item in coordinator?.middleClicked(item) }
@@ -161,6 +166,43 @@ struct CocoaSidebar: NSViewRepresentable {
         func outlineView(_ outlineView: NSOutlineView, child index: Int, ofItem item: Any?) -> Any { children(item)[index] }
         func outlineView(_ outlineView: NSOutlineView, isItemExpandable item: Any) -> Bool { (item as? Node)?.children.isEmpty == false }
         func outlineView(_ outlineView: NSOutlineView, shouldSelectItem item: Any) -> Bool { (item as? Node)?.entry.destination != nil }
+
+        // Drag to reorder: only tab rows move, and only within the Tabs section at the root.
+        func outlineView(_ outlineView: NSOutlineView, pasteboardWriterForItem item: Any) -> NSPasteboardWriting? {
+            guard let node = item as? Node, case .tab(let id) = node.entry.destination else { return nil }
+            let pasteboardItem = NSPasteboardItem()
+            pasteboardItem.setString(id, forType: CocoaSidebar.tabDragType)
+            return pasteboardItem
+        }
+        /// The tab id the dragged row should land before (`.some(nil)` for the end of the list),
+        /// or `.none` when the drop target is not inside the Tabs section.
+        private func dropTarget(item: Any?, index: Int) -> String?? {
+            guard let header = roots.firstIndex(where: { $0.entry.role == .tabsHeader }) else { return .none }
+            if let node = item as? Node {
+                guard case .tab(let id) = node.entry.destination else { return .none }
+                return .some(id)
+            }
+            guard index > header else { return .none }
+            guard index < roots.count else { return .some(nil) }
+            guard case .tab(let id) = roots[index].entry.destination else { return .none }
+            return .some(id)
+        }
+        func outlineView(_ outlineView: NSOutlineView, validateDrop info: NSDraggingInfo, proposedItem item: Any?,
+                         proposedChildIndex index: Int) -> NSDragOperation {
+            guard info.draggingPasteboard.string(forType: CocoaSidebar.tabDragType) != nil,
+                  let target = dropTarget(item: item, index: index) else { return [] }
+            // Dropping on a tab row lands before it; retarget to the gap so the feedback matches.
+            if item != nil, let before = target, let node = nodes["tab:\(before)"], let position = roots.firstIndex(of: node) {
+                outlineView.setDropItem(nil, dropChildIndex: position)
+            }
+            return .move
+        }
+        func outlineView(_ outlineView: NSOutlineView, acceptDrop info: NSDraggingInfo, item: Any?, childIndex index: Int) -> Bool {
+            guard let id = info.draggingPasteboard.string(forType: CocoaSidebar.tabDragType),
+                  let target = dropTarget(item: item, index: index) else { return false }
+            parent.onMoveTab(id, target)
+            return true
+        }
         func outlineView(_ outlineView: NSOutlineView, heightOfRowByItem item: Any) -> CGFloat {
             (item as? Node)?.entry.isHeading == true ? SidebarMetrics.labelHeight : SidebarMetrics.rowHeight
         }
@@ -494,7 +536,11 @@ enum SidebarGlyphs {
         applyState()
     }
 
+    /// A tab row's leading image size: brand glyphs fill the 20pt slot, favicons match the toolbar.
+    private var iconSize: CGFloat = 20
+
     private func configureTabIcon(_ tab: SidebarTabIcon) {
+        iconSize = 20
         switch tab.kind {
         case "github":
             if let avatar = SidebarAvatars.image(login: tab.login, frozen: tab.avatar) {
@@ -516,7 +562,15 @@ enum SidebarGlyphs {
                 badge.layer?.borderColor = NSColor.windowBackgroundColor.cgColor
             }
         case "jira": icon.image = SidebarIcons.image("jira", size: 20)
-        default: icon.image = SidebarIcons.image("globe", size: 20)
+        default:
+            if let url = tab.url, let favicon = FaviconStore.shared.image(forURL: url) {
+                icon.image = favicon
+                iconSize = 18
+                icon.layer?.cornerRadius = 3
+                icon.layer?.masksToBounds = true
+            } else {
+                icon.image = SidebarIcons.image("globe", size: 20)
+            }
         }
     }
 
@@ -583,7 +637,7 @@ enum SidebarGlyphs {
             glyph.frame = NSRect(x: left - 2, y: ((height - glyphHeight) / 2).rounded(), width: 20, height: glyphHeight)
             titleX = left + 16 - 2 + 8
         case .tab:
-            icon.frame = centered(left, 20)
+            icon.frame = centered(left + (20 - iconSize) / 2, iconSize)
             badge.frame = NSRect(x: icon.frame.maxX - 5, y: icon.frame.maxY - 6, width: 7, height: 7)
             titleX = left + 20 + 8
         }

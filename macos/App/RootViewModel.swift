@@ -15,7 +15,6 @@ import Observation
     var error: String?
     var hasTerminal = false
     var canCreateProject = false
-    var canOpenLink = false
     var canCreateSession = false
     var canRefresh = false
 }
@@ -25,7 +24,7 @@ import Observation
 @MainActor @Observable final class RootViewModel {
     enum Action: Equatable {
         case select(SidebarDestination), command(ShellCommand), togglePin(String), newSession(projectID: String)
-        case closeTab(String), newTab
+        case closeTab(String), newTab, moveTab(String, before: String?)
         case reconnect, openTerminal, openBrowser(URL)
     }
     struct Workspace: Identifiable {
@@ -54,7 +53,6 @@ import Observation
         }
     }
     var canCreateProject: Bool { state.canCreateProject }
-    var canOpenLink: Bool { state.canOpenLink }
     var todayActivity: TodayActivityViewModel? { state.todayActivity }
     var canCreateSession: Bool { state.canCreateSession }
     var canRefresh: Bool { state.canRefresh }
@@ -95,11 +93,12 @@ import Observation
     func select(_ destination: SidebarDestination) { onAction(.select(destination)) }
     func togglePin(_ id: String) { onAction(.togglePin(id)) }
     func closeTab(_ id: String) { onAction(.closeTab(id)) }
+    /// Drops `id` before `before` in the Tabs list, or at its end when nil.
+    func moveTab(_ id: String, before: String?) { onAction(.moveTab(id, before: before)) }
     /// The Tabs heading's "+": a blank tab in the current workspace's second panel.
     func newTab() { onAction(.newTab) }
     func reconnect() { onAction(.reconnect) }
     func newProject() { if canCreateProject { onAction(.command(.newProject)) } }
-    func openLink() { if canOpenLink { onAction(.command(.openLink)) } }
     func newSession() { if canCreateSession { onAction(.command(.newSession)) } }
     /// A project folder's hover "+": New Session on that project, wherever the window is.
     func newSession(in projectID: String) { onAction(.newSession(projectID: projectID)) }

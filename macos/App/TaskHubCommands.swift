@@ -17,7 +17,7 @@ struct TaskHubCommands: Commands {
             command("New Project…", .newProject)
             command("New Session…", .newSession, key: "n")
             command("Open Terminal", .terminal, key: "n", modifiers: [.command, .shift])
-            command("Open Link…", .openLink, key: "t")
+            command("New Tab", .newTab, key: "t")
             command("Open File…", .openFile, key: "o")
             command("Open Page in Browser", .openPageInBrowser, key: "o", modifiers: [.command, .shift])
         }

@@ -161,6 +161,11 @@ async fn settings_and_tabs_preserve_existing_json_shapes() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(renamed["tabs"][1]["title"], "Loaded");
     assert_eq!(renamed["tabs"][0]["title"], "PR 1");
+    let first = renamed["tabs"][0]["id"].as_str().unwrap().to_owned();
+    let (status, reordered) = json_request(&app, "PATCH", "/api/tabs", json!({"order": [id, "missing", &first, id]})).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(reordered["tabs"][0]["id"], id);
+    assert_eq!(reordered["tabs"][1]["id"], first);
 }
 
 #[tokio::test]

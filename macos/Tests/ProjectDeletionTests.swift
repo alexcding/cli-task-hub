@@ -75,7 +75,6 @@ private actor ProjectDeletionService: ProjectService {
     let first = try #require(child.deletionConfirmation)
     model.editor.requestDeletion()
     #expect(child.deletionConfirmation?.id == first.id && !root.canPresent)
-    root.presentAddPage { _ in Issue.record("Competing page operation"); return true }
     root.presentNewProject(service: service, didSave: { _ in Issue.record("Competing creation") })
     root.presentRestart { Issue.record("Competing restart") }
     #expect(root.sheet == nil && root.restartConfirmation == nil)

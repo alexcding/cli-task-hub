@@ -13,7 +13,6 @@ import Observation
         enum Destination {
             case newProject(ProjectEditorViewModel)
             case newSession(NewSessionViewModel)
-            case addPage(AddPageViewModel)
             case removal(SessionRemovalViewModel)
             case build(BuildDestinationViewModel)
         }
@@ -24,7 +23,6 @@ import Observation
             switch destination {
             case .newProject(let model): model.retire()
             case .newSession(let model): model.retire()
-            case .addPage(let model): model.retire()
             case .removal(let model): model.retire()
             case .build(let model): model.retire()
             }
@@ -34,7 +32,6 @@ import Observation
             switch destination {
             case .newProject(let model): !model.busy
             case .newSession(let model): !model.creating
-            case .addPage: true
             case .removal(let model): !model.removing
             case .build(let model): !model.starting
             }
@@ -185,20 +182,6 @@ import Observation
         settingsCoordinator?.cancelNavigation()
         projectCoordinator?.model.cancelActions(); dashboardCoordinator?.model.cancelActions()
         logsCoordinator?.model.cancelActions()
-    }
-
-    func presentAddPage(openPage: @escaping (String) -> Bool) {
-        guard canPresent else { return }
-        cancelPageActions()
-        let id = UUID()
-        let model = factory.addPage(openPage: { [weak self] address in
-            guard self?.sheet?.id == id else { return false }
-            return openPage(address)
-        })
-        model.onAction = { [weak self] action in
-            switch action { case .opened: _ = self?.complete(id) }
-        }
-        sheet = Sheet(id: id, destination: .addPage(model))
     }
 
     func presentNewProject(service: any ProjectService, didSave: @escaping (Project) -> Void) {

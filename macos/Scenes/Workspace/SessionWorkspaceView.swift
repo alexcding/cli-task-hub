@@ -205,6 +205,20 @@ private struct SessionWorkspaceContextContent: View {
 
     private var webContextToolbar: some View {
         HStack(spacing: 8) {
+            // Always present, even with nothing open: it is how the pane gets its first item.
+            Menu("Add to this panel", systemImage: "plus") {
+                Button("New Tab", action: model.newTab)
+                Button("Open File", action: model.openFile)
+                if model.canShowChanges { Button("Changes", action: model.toggleChanges) }
+                Divider()
+                Menu("History") {
+                    if context.visits.isEmpty { Text("No closed or visited pages") }
+                    ForEach(context.visits.reversed()) { record in
+                        Button(record.title) { model.reopen(record) }
+                    }
+                }
+            }
+            .labelStyle(.iconOnly)
             ScrollView(.horizontal) {
                 HStack(spacing: 6) {
                     ForEach(context.tabs) { page in
@@ -233,8 +247,31 @@ private struct SessionWorkspaceContextContent: View {
         } else if let page = context.activePage {
             BrowserPane(page: page, context: context, model: page.controls).id(page.id)
         } else {
-            ContentUnavailableView("No open pages", systemImage: "globe", description: Text("Add a page or reopen one from History."))
+            BlankPane(context: context)
         }
+    }
+}
+
+/// The right pane with nothing in it, as the Tauri app drew it: a real surface that names what
+/// the pane is for, not a void. It gives the open/close animation something to resize.
+struct BlankPane: View {
+    let context: WorkspaceContext
+
+    var body: some View {
+        VStack(spacing: 5) {
+            Text("Nothing open in this panel")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(Theme.textSecondary)
+            (Text("Use ＋ to open this worktree’s ").foregroundColor(Theme.textTertiary)
+             + Text("Diff").fontWeight(.semibold).foregroundColor(Theme.textSecondary)
+             + Text(", a web page or a file.").foregroundColor(Theme.textTertiary))
+                .font(.system(size: 12))
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: 260)
+        .padding(24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(nsColor: .windowBackgroundColor))
     }
 }
 
@@ -320,7 +357,7 @@ struct SessionWorkspaceLeadingToolbar: View {
                 workflowControls(workflow)
             }
         }
-        .padding(.leading, 4)
+        .padding(.horizontal, 8)
         .controlSize(.small)
         .imageScale(.medium)
     }

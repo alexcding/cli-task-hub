@@ -8,7 +8,11 @@ struct SessionWorkspaceToolbar: ToolbarContent {
 
     var body: some ToolbarContent {
         PageTitleToolbarItem(title: title) {
-            if model.session != nil { SessionWorkspaceGitClientButton(model: model) }
+            if model.session != nil {
+                SessionWorkspaceGitClientButton(model: model)
+            } else if let url = model.activePageURL {
+                FaviconImage(url: url, size: 18)
+            }
         }
         if model.session != nil {
             ToolbarItem(placement: .principal) { SessionWorkspaceLeadingToolbar(model: model) }

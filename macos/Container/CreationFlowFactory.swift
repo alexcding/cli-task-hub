@@ -12,15 +12,10 @@ struct SessionCreationRequest {
 @MainActor protocol CreationFlowFactory {
     func projectEditor(project: Project?, service: any ProjectService) -> ProjectEditorViewModel
     func newSession(request: SessionCreationRequest, operations: (any SessionCreating)?) -> NewSessionViewModel
-    func addPage(openPage: @escaping (String) -> Bool) -> AddPageViewModel
 }
 
 @MainActor struct NativeCreationFlowFactory: CreationFlowFactory {
     var chooseFolder: () async -> String? = NativeFolderPicker.choose
-
-    func addPage(openPage: @escaping (String) -> Bool) -> AddPageViewModel {
-        AddPageViewModel(openPage: openPage)
-    }
 
     func projectEditor(project: Project?, service: any ProjectService) -> ProjectEditorViewModel {
         ProjectEditorViewModel(project: project, service: service, chooseFolder: chooseFolder)

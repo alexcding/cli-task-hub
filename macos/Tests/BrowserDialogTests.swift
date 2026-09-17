@@ -107,7 +107,7 @@ import Testing
     let root = AppCoordinator(factory: NativeCreationFlowFactory(), browserDialogCoordinator: dialogs)
     let model = BrowserDialogViewModel()
     model.active = true; dialogs.bind(model, isOwned: { true }, window: { nil })
-    root.presentAddPage { _ in true }
+    root.presentNewProject(service: ProjectPageService(), didSave: { _ in })
     let draftID = root.sheet?.id
     var responses: [BrowserDialogViewModel.Response] = []
     model.begin(.confirm("Background request"), origin: "example.test") { responses.append($0) }
@@ -115,11 +115,11 @@ import Testing
     if let draftID { root.dismissSheet(id: draftID) }
     model.begin(.confirm("Current request"), origin: "example.test") { responses.append($0) }
     #expect(!root.canPresent)
-    root.presentAddPage { _ in true }
+    root.presentNewProject(service: ProjectPageService(), didSave: { _ in })
     #expect(root.sheet == nil)
     presenter.completions[0](.confirm(true))
     #expect(root.canPresent && responses == [.cancel, .confirm(true)])
-    root.presentAddPage { _ in true }
+    root.presentNewProject(service: ProjectPageService(), didSave: { _ in })
     #expect(root.sheet != nil)
 }
 

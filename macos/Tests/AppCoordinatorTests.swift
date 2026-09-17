@@ -123,9 +123,6 @@ private actor CreationProjectService: ProjectService {
     let native = NativeCreationFlowFactory(chooseFolder: { "/tmp/injected-folder" })
     var projectCompletions: [(Project) -> Void] = []
     var sessionCompletions: [(WorkspaceSession) -> Void] = []
-    func addPage(openPage: @escaping (String) -> Bool) -> AddPageViewModel {
-        native.addPage(openPage: openPage)
-    }
     func projectEditor(project: Project?, service: any ProjectService) -> ProjectEditorViewModel {
         let model = native.projectEditor(project: project, service: service)
         projectCompletions.append { [weak model] in model?.onAction(.saved($0)) }
@@ -136,37 +133,6 @@ private actor CreationProjectService: ProjectService {
         sessionCompletions.append { [weak model] in model?.onAction(.created($0)) }
         return model
     }
-}
-
-@MainActor @Test func creationCoordinatorValidatesPageAddressesAndRejectsActionsFromDismissedSheets() throws {
-    let coordinator = AppCoordinator(factory: NativeCreationFlowFactory(chooseFolder: { nil }))
-    var accepts = false
-    var opened: [String] = []
-    let present = { coordinator.presentAddPage { opened.append($0); return accepts } }
-    present()
-    let first = try #require(coordinator.sheet)
-    guard case .addPage(let model) = first.destination else { Issue.record("Wrong destination"); return }
-    #expect(!model.canOpen)
-    model.address = "file:///tmp/private"
-    model.open()
-    #expect(opened.isEmpty && model.error != nil && coordinator.sheet?.id == first.id)
-    model.address = "  https://example.test/new-page\n"
-    model.open()
-    #expect(opened == ["https://example.test/new-page"] && model.error != nil)
-    #expect(coordinator.sheet?.id == first.id && model.address.hasPrefix("  "))
-    accepts = true
-    model.open()
-    #expect(coordinator.sheet == nil && model.error == nil)
-    present()
-    let second = try #require(coordinator.sheet)
-    guard case .addPage(let fresh) = second.destination else { Issue.record("Wrong destination"); return }
-    #expect(fresh.address.isEmpty && model !== fresh)
-    model.open()
-    #expect(opened.count == 2 && coordinator.sheet?.id == second.id)
-    coordinator.dismissSheet(id: second.id)
-    fresh.address = "https://example.test/late"
-    fresh.open()
-    #expect(opened.count == 2 && coordinator.sheet == nil)
 }
 
 @MainActor @Test func creationCoordinatorRetainsDraftRejectsDuplicateRoutesAndIgnoresStaleCompletion() async throws {

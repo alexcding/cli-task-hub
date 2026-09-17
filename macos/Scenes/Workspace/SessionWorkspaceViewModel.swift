@@ -29,7 +29,7 @@ import Observation
 }
 
 enum WorkspaceOperation: Equatable {
-    case reveal, openEditor, openGitClient, createSession, openFile, addPage
+    case reveal, openEditor, openGitClient, createSession, openFile
     case changes, openTerminal, hookSettings, prepareChanges
 }
 
@@ -89,6 +89,11 @@ enum WorkspaceOperation: Equatable {
         if let scheme = state.project?.runScheme, !scheme.isEmpty { return scheme }
         return "Scheme"
     }
+    /// The active web page's address when this workspace shows a page, for its favicon.
+    var activePageURL: String? {
+        guard let url = context?.activePage?.url, FaviconStore.host(of: url) != nil else { return nil }
+        return url
+    }
     var workspaceTitle: String {
         if context?.id == "scratch" { return "Terminal" }
         return context?.activeDocument?.title ?? context?.activePage?.title ?? "Workspace"
@@ -100,7 +105,7 @@ enum WorkspaceOperation: Equatable {
     var showsTerminal: Bool { session != nil || context?.id == "scratch" }
     var showsChanges: Bool { session != nil && context?.pane == .diff }
     var showsPage: Bool {
-        !showsTerminal || showsChanges || (!showsBuild && context?.pane == .term && context?.activeID != nil)
+        !showsTerminal || showsChanges || (!showsBuild && context?.pane == .term)
     }
     var showsBuildActions: Bool { session != nil && state.project?.ide == "xcode" }
     var canCreateSession: Bool { state.canCreateSession }
@@ -110,7 +115,7 @@ enum WorkspaceOperation: Equatable {
     var canRun: Bool { showsBuildActions && state.connected && state.canPresent && !state.changingSession }
     var canRemove: Bool { session != nil && state.connected && state.canPresent && !state.changingSession }
     var canRestart: Bool { session != nil && state.canPresent && !state.changingSession }
-    var canToggleContext: Bool { showsTerminal && context?.activeID != nil }
+    var canToggleContext: Bool { showsTerminal && context != nil }
     var reviewInputs: ReviewInputs {
         .init(pane: context?.pane, section: context?.reviewSection, connected: state.connected, base: state.reviewBase, sessionID: state.session?.id)
     }
@@ -164,7 +169,6 @@ enum WorkspaceOperation: Equatable {
     func openGitClient() { if canOpenExternal && gitClientLabel != nil { perform(.openGitClient) } }
     func createSession() { if canCreateSession { perform(.createSession) } }
     func openFile() { perform(.openFile) }
-    func addPage() { if state.canPresent { perform(.addPage) } }
     func toggleChanges() { if canShowChanges { perform(.changes) } }
     func run() { if canRun { onAction(.run) } }
     func remove() { if canRemove { onAction(.remove) } }

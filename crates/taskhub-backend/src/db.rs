@@ -287,8 +287,37 @@ impl Database {
         self.tabs()
     }
 
+    /// Places the listed tabs first, in the given order; tabs not listed keep their relative
+    /// order after them. Unknown ids are ignored.
+    pub fn reorder_tabs(&self, order: &[&str]) -> rusqlite::Result<Value> {
+        {
+            let mut conn = self.durable();
+            let tx = conn.transaction()?;
+            let existing: Vec<String> = tx
+                .prepare("SELECT id FROM tabs ORDER BY position ASC")?
+                .query_map([], |row| row.get(0))?
+                .collect::<rusqlite::Result<_>>()?;
+            // Listed ids first (a repeated id keeps its first place), unlisted ones after.
+            let mut ordered: Vec<&str> = Vec::with_capacity(existing.len());
+            for id in order.iter().copied().chain(existing.iter().map(String::as_str)) {
+                if existing.iter().any(|e| e == id) && !ordered.contains(&id) {
+                    ordered.push(id);
+                }
+            }
+            for (position, id) in ordered.iter().enumerate() {
+                tx.execute(
+                    "UPDATE tabs SET position=?2 WHERE id=?1",
+                    params![id, position as i64],
+                )?;
+            }
+            tx.commit()?;
+        }
+        self.tabs()
+    }
+
     pub fn close_tab(&self, id: &str) -> rusqlite::Result<Value> {
-        self.durable().execute("DELETE FROM tabs WHERE id=?1", [id])?;
+        self.durable()
+            .execute("DELETE FROM tabs WHERE id=?1", [id])?;
         self.tabs()
     }
 

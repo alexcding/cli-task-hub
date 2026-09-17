@@ -141,6 +141,11 @@ public final class AppViewModel {
         viewer.prepareContext = { [weak self] context in
             guard let self else { return }
             context.configureWorkspace(factory: workspaceFactory, service: self)
+            context.openInNewTab = { [weak self] url in
+                guard let self, api != nil, safeWebURL(url.absoluteString) != nil else { return false }
+                Task { try? await self.openPage(OpenPageRequest(url: url.absoluteString, kind: "web", title: url.host ?? "")) }
+                return true
+            }
             if let model = context.workspaceViewModel { coordinator.bindWorkspace(model, context: context, runtime: self) }
         }
         root = coordinator.makeRoot(factory: rootFactory, runtime: self, shell: shell, viewer: viewer)
@@ -323,7 +328,8 @@ public final class AppViewModel {
 
     public func canPerform(_ command: ShellCommand) -> Bool {
         switch command {
-        case .newProject, .openLink: connection == "Connected" && coordinator.canPresent
+        case .newProject: connection == "Connected" && coordinator.canPresent
+        case .newTab: coordinator.canPresent
         case .newSession: canStartSession && sessionProject(for: selection) != nil
         case .back: coordinator.canPresent && viewer.active?.activePage?.controls.canGoBack == true
         case .forward: coordinator.canPresent && viewer.active?.activePage?.controls.canGoForward == true
@@ -349,7 +355,7 @@ public final class AppViewModel {
             guard canPerform(.newSession), let project = sessionProject(for: selection) else { return }
             let pageURL: String? = if case .tab(let id) = selection { tabURL(id) } else { nil }
             startSession(in: project.id, pageURL: pageURL)
-        case .openLink: if canPerform(.openLink) { openLink() }
+        case .newTab: if canPerform(.newTab) { newTab() }
         case .openPageInBrowser: if canPerform(.openPageInBrowser) { activePageControls?.openExternally() }
         case .openFile: if canPerform(.openFile), let context = viewer.active { viewer.openFile(in: context) }
         case .saveFile: if let document = viewer.active?.activeDocument { Task { await document.save() } }
@@ -394,13 +400,6 @@ public final class AppViewModel {
 
     func revealWorktree(_ session: WorkspaceSession) {
         desktop.reveal(URL(fileURLWithPath: session.worktree))
-    }
-
-    func addPage(in context: WorkspaceContext) {
-        coordinator.presentAddPage(openPage: { [weak self, weak context] address in
-            guard let self, let context, viewer.contexts[context.id] === context else { return false }
-            return context.open(address) != nil
-        })
     }
 
     /// The Tabs heading's "+": a new draft at the end of Tabs, selected, with a blank page whose
@@ -448,18 +447,37 @@ public final class AppViewModel {
         }
     }
 
-    /// Asks for an address and opens it as a sidebar tab, from anywhere in the app.
-    func openLink() {
-        coordinator.presentAddPage(openPage: { [weak self] address in
-            guard let self else { return false }
-            let title = URL(string: address)?.host ?? address
-            Task {
-                do { try await self.openPage(OpenPageRequest(url: address, kind: "web", title: title)) }
-                catch { self.error = "Could not open \(address): \(error.localizedDescription)" }
+    /// Reorders the Tabs list. Saved tabs persist their order through the backend; drafts
+    /// only exist locally and always follow the saved ones.
+    func moveTab(_ id: String, before: String?) {
+        guard id != before else { return }
+        // Reorder the list as the sidebar shows it, then split it back: saved tabs keep
+        // their relative order, drafts keep theirs and stay after the saved ones.
+        var shown = visibleTabs
+        guard let index = shown.firstIndex(where: { $0.id == id }) else { return }
+        let moving = shown.remove(at: index)
+        let target = before.flatMap { b in shown.firstIndex { $0.id == b } } ?? shown.count
+        shown.insert(moving, at: target)
+        let previous = tabs
+        draftTabs = shown.filter { isDraftTab($0.id) }
+        tabs = shown.filter { !isDraftTab($0.id) }
+        guard let api, tabs.map(\.id) != previous.map(\.id) else { return }
+        let order = tabs.map(\.id)
+        tabOrderGeneration += 1
+        let generation = tabOrderGeneration
+        Task {
+            do {
+                let saved: SavedTabs = try await api.request(Routes.TABS, method: "PATCH", body: ["order": order])
+                // A newer drag owns the list now; its own response will land.
+                if generation == tabOrderGeneration { tabs = saved.tabs }
+            } catch {
+                if generation == tabOrderGeneration { tabs = previous }
+                self.error = "Could not save tab order: \(error.localizedDescription)"
             }
-            return true
-        })
+        }
     }
+    /// Counts reorders so a stale PATCH response cannot undo a newer drag.
+    private var tabOrderGeneration = 0
 
     /// A Today-popover row: its PR opens by link; a ticket by its key on the configured Jira site.
     func openActivityEntry(_ entry: LogEntry) async throws {

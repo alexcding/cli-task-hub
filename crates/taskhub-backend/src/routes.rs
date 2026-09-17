@@ -131,6 +131,12 @@ pub async fn close_tab(State(state): State<AppState>, Json(body): Json<Value>) -
 }
 
 pub async fn rename_tab(State(state): State<AppState>, Json(body): Json<Value>) -> ApiResult<Value> {
+    if let Some(order) = body.get("order").and_then(Value::as_array) {
+        let ids: Vec<&str> = order.iter().filter_map(Value::as_str).collect();
+        let saved = state.db.reorder_tabs(&ids)?;
+        state.broadcast(json!({ "type": "tabs" }));
+        return Ok(Json(saved));
+    }
     let id = body
         .get("id")
         .and_then(Value::as_str)

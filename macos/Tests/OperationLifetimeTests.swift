@@ -186,7 +186,7 @@ func operationLifetimeRemovalRetriesOnceAndCoordinatorPreservesUnrelatedNavigati
     #expect(model.completed && model.retired && !model.canRemove && cleaned == 1 && finished == 2)
     #expect(coordinator.sheet == nil && coordinator.selection == (selected ? .overview : .settings))
     #expect(await service.removals == 2)
-    coordinator.presentAddPage { _ in true }
+    coordinator.presentNewProject(service: ProjectPageService(), didSave: { _ in })
     let next = try #require(coordinator.sheet)
     oldAction(.removed([operationSession]))
     #expect(coordinator.sheet?.id == next.id)
