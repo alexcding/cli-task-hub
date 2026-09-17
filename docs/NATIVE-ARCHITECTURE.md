@@ -259,8 +259,12 @@ native Dashboard and native Sprint Board.
 
 The `NSApplicationDelegateAdaptor` retains the native startup, tray, deep-link,
 and quit/update hooks. It does not construct the main NSWindow or install a custom
-main menu. A window lifecycle adapter forwards the SwiftUI scene delegate's other
-callbacks while redirecting Close through the existing asynchronous quit contract.
+main menu. The close button is re-targeted to order the window out — no close, no
+minimise animation — and a Dock click or the tray brings it back; Command-Q, Dock Quit and
+the tray's Quit go through `applicationShouldTerminate` and the termination coordinator's
+asynchronous quit contract. A second copy of the app
+yields to the running one before touching the backend or the PTY daemon, because a quit
+in either copy would take the shared daemon down.
 SwiftUI's standard editing menus keep copy/paste/undo on the responder chain.
 
 `ContentView` uses `GeometryReader` sizing boundaries **inside** the detail and
@@ -293,8 +297,8 @@ empty path segments, unknown sections and oversized URLs are rejected. URLs do
 not accept commands, file paths, arbitrary web destinations or session creation.
 Selecting a session/terminal does not itself open a shell.
 
-The AppKit delegate forwards URL events and brings the window forward, including
-quiet launches. `CFBundleURLTypes` registers the scheme. The coordinator retains
+The AppKit delegate forwards URL events and brings the window forward.
+`CFBundleURLTypes` registers the scheme. The coordinator retains
 the latest valid link until a complete project/session/tab snapshot has loaded;
 stop, reconnect and failed refresh suspend dispatch. It revalidates IDs against the
 current snapshot and reports a missing target without replacing the current view.
@@ -307,8 +311,8 @@ callbacks run. Explicit sidebar/main-menu navigation cancels an older queued lin
 Twelve focused Swift tests pass, including URL round trips and malformed URLs,
 handler/factory injection, readiness, removed targets, child lifetime, latest-link
 replacement and presentation ordering. Native UI verification passes for actual
-cold and warm URL delivery, a quiet launch opening its session, draft preservation,
-deferred navigation after cancellation, project tickets and missing targets. The
+cold and warm URL delivery, draft preservation, deferred navigation after
+cancellation, project tickets and missing targets. The
 test verifies warm delivery stays in the same process; selecting the session leaves
 its shell unopened. Broader terminal and release acceptance remain separate gates.
 

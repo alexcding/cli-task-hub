@@ -1,6 +1,6 @@
 # TaskHub
 
-**A local dashboard and macOS menu-bar app for developers who live in GitHub,
+**A local dashboard and macOS app, with a menu-bar signal, for developers who live in GitHub,
 Jira, and the terminal.**
 
 The production macOS client is in [`macos/`](macos/README.md): SwiftUI dashboard,

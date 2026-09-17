@@ -25,19 +25,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     }, failed: { [weak self] error in
         self?.showTerminationError(error)
     })
-    @ObservationIgnored private var receivedLaunchURL = false
-    @ObservationIgnored private var finishedLaunching = false
-    @ObservationIgnored private var quietLaunch = false
-    @ObservationIgnored private var windowRequested = false
+
+    /// A second copy of TaskHub must not start: both would share the PTY daemon and the
+    /// database, and whichever quits first takes the daemon — and the other's terminals —
+    /// with it. Decided before anything is touched; `applicationDidFinishLaunching` then hands
+    /// focus and any launch URLs to the running copy and leaves.
+    @ObservationIgnored private var runningCopy: NSRunningApplication?
+    @ObservationIgnored private var forwardedURLs: [URL] = []
 
     func applicationWillFinishLaunching(_ notification: Notification) {
-        NSApp.setActivationPolicy(.accessory)
+        guard let identifier = Bundle.main.bundleIdentifier else { return }
+        let me = ProcessInfo.processInfo.processIdentifier
+        runningCopy = NSRunningApplication.runningApplications(withBundleIdentifier: identifier)
+            .first { $0.processIdentifier != me && !$0.isTerminated }
+    }
+
+    private func yield(to other: NSRunningApplication) {
+        other.activate()
+        // `exit`, never `terminate`: terminating would run the quit contract and kill the
+        // daemon the other copy is using — the very failure this prevents.
+        guard !forwardedURLs.isEmpty, let bundle = other.bundleURL else { exit(0) }
+        NSWorkspace.shared.open(forwardedURLs, withApplicationAt: bundle, configuration: .init()) { _, _ in exit(0) }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { exit(0) }
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        quietLaunch = AppLaunchContext.startsQuietly
-        finishedLaunching = true
+        if let other = runningCopy { yield(to: other); return }
         model.shell.applyAppearance()
+        // SwiftUI can have made the window key before this runs, so cover both orders.
+        NotificationCenter.default.addObserver(self, selector: #selector(windowDidBecomeKey),
+            name: NSWindow.didBecomeKeyNotification, object: nil)
+        adoptWindow()
         NotificationCenter.default.addObserver(self, selector: #selector(sheetDidEnd),
             name: NSWindow.didEndSheetNotification, object: nil)
         // ⌘T is New Tab everywhere in the app. The terminal surface binds ⌘T itself and
@@ -69,8 +87,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         observeStatus()
         updater = AppUpdater()
         Task { await model.start() }
-        if !quietLaunch || receivedLaunchURL || windowRequested { showWindow() }
-        else { window?.orderOut(nil); NSApp.hide(nil) }
     }
 
     var canCheckForUpdates: Bool {
@@ -78,11 +94,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     }
 
     func application(_ application: NSApplication, open urls: [URL]) {
+        if runningCopy != nil { forwardedURLs += urls; return }
         var handled = false
         for url in urls { if model.handleOpenURL(url) { handled = true } }
         guard handled else { return }
-        receivedLaunchURL = true
-        if window != nil { showWindow() }
+        showWindow()
     }
 
     @objc private func sheetDidEnd(_ notification: Notification) { model.resumePendingDeepLink() }
@@ -91,17 +107,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         switch command {
         case .checkForUpdates: updater?.checkForUpdates()
         case .closePage:
-            if model.hasActivePage { model.perform(command) } else { window?.performClose(nil) }
+            if model.hasActivePage { model.perform(command) } else { hideMainWindow() }
         case .tray: toggleTray()
         case .sidebar:
-            showWindow()
             func findOutline(_ view: NSView) -> NSView? {
                 if view.identifier?.rawValue == "workspace-sidebar" { return view }
                 return view.subviews.lazy.compactMap(findOutline).first
             }
+            revealWindow()
             if let root = window?.contentView, let outline = findOutline(root) { window?.makeFirstResponder(outline) }
         default:
-            showWindow()
+            revealWindow()
             model.perform(command)
         }
     }
@@ -128,24 +144,56 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         }
     }
 
-    @objc private func showWindow() {
-        windowRequested = true
-        NSApp.setActivationPolicy(.regular)
-        NSApp.unhide(nil)
+    /// The red close button (and ⌘W with no page open) puts the window away instead of
+    /// closing it: sessions keep running and the app quits only through Quit. `orderOut`
+    /// rather than `miniaturize`, so there is no genie animation and no Dock thumbnail; the
+    /// Dock icon or the tray brings it back. The button is re-targeted rather than the window
+    /// delegate swapped — replacing SwiftUI's delegate mid-layout is what tripped AppKit's
+    /// constraint-pass assertion before (0cfa497).
+    @objc private func windowDidBecomeKey(_ notification: Notification) {
+        if (notification.object as? NSWindow) === window { adoptWindow() }
+    }
+
+    /// One-time setup on the SwiftUI window: the close button hides rather than closes, and
+    /// the frame persists across launches (SwiftUI does not restore it for this scene).
+    private func adoptWindow() {
+        guard let window else { return }
+        if window.frameAutosaveName != "TaskHubNativeMain" { window.setFrameAutosaveName("TaskHubNativeMain") }
+        guard let close = window.standardWindowButton(.closeButton), close.target !== self else { return }
+        close.target = self
+        close.action = #selector(hideMainWindow)
+    }
+
+    @objc private func hideMainWindow() { window?.orderOut(nil) }
+
+    /// The menu bar stays up after the window is put away, so a menu command can arrive
+    /// with nothing on screen; what it does must be visible.
+    private func revealWindow() { if window?.isVisible != true { showWindow() } }
+
+    // With no visible window AppKit asks whether to quit, and SwiftUI's own delegate says
+    // yes. The window was only put away, so no: quitting is Quit's job.
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
+        if !hasVisibleWindows { showWindow() }
+        return true
+    }
+
+    /// Brings TaskHub forward from the background: a notification, the tray, a deep link, a
+    /// Dock click after the window was put away, or a failed quit. The window always exists —
+    /// closing only orders it out — so this undoes a hide. Menu commands never need it; they
+    /// only fire while TaskHub is active.
+    private func showWindow() {
         popover.performClose(nil)
+        NSApp.unhide(nil)
         if let window {
-            window.setFrameAutosaveName("TaskHubNativeMain")
+            if window.isMiniaturized { window.deminiaturize(nil) }
             window.makeKeyAndOrderFront(nil)
         }
-        NSApp.activate(ignoringOtherApps: true)
+        NSApp.activate()
     }
 
     func applicationDidHide(_ notification: Notification) { model.cancelBrowserPresentation() }
-
-    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        showWindow()
-        return true
-    }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         switch termination.systemTermination(updateRequested: updater?.restartRequested == true) {

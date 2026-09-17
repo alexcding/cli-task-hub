@@ -78,4 +78,22 @@ cargo_build build --manifest-path "$ROOT/crates/taskhub-backend/Cargo.toml" --re
 cargo_build build --manifest-path "$ROOT/crates/taskhub-ptyd/Cargo.toml" --release --features terminal-snapshots --locked \
   || fail "taskhub-ptyd build failed"
 
+# 4. The PTY helper inside the app bundle, where PtydHost looks when no --ptyd-path is
+#    given. The scheme passes one, but a Dock or Finder relaunch of the same build does
+#    not, and closing the window quits the app, so that relaunch is routine. Release
+#    packaging (bundle-backend.sh) copies the same file. Only when Xcode runs us as a
+#    build phase: as a scheme pre-action there is no bundle yet.
+if [[ -n "${TARGET_BUILD_DIR:-}" && -n "${CONTENTS_FOLDER_PATH:-}" ]]; then
+  HELPERS="$TARGET_BUILD_DIR/$CONTENTS_FOLDER_PATH/Helpers"
+  HELPER="$ROOT/crates/taskhub-ptyd/target/release/taskhub-ptyd"
+  if ! cmp -s "$HELPER" "$HELPERS/taskhub-ptyd"; then
+    log "Bundling the PTY helper into $CONTENTS_FOLDER_PATH/Helpers"
+    mkdir -p "$HELPERS"
+    # A daemon from the previous build may still be running from this path; a rename
+    # gives it a fresh inode instead of overwriting the one it is executing.
+    cp "$HELPER" "$HELPERS/taskhub-ptyd.tmp" && codesign --force --sign - "$HELPERS/taskhub-ptyd.tmp" \
+      && mv -f "$HELPERS/taskhub-ptyd.tmp" "$HELPERS/taskhub-ptyd" || fail "could not bundle taskhub-ptyd"
+  fi
+fi
+
 log "ready"

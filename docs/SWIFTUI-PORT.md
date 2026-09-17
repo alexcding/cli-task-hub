@@ -2789,6 +2789,23 @@ user's implementation-first direction.
   hides the app; crash/rebuild preserves shells for reattachment.
 - Restrained slate + single accent, flat, SF Symbols / SVG, no emoji.
 
+### Regular app lifecycle — 2026-09-16
+
+- The menu-bar-only model is removed. The app no longer starts as an accessory or
+  sets `LSUIElement`; there is no quiet launch and no `--autostart`. Login launches
+  open the app with its window and Dock icon like any other launch.
+- The red close button (and Command-W with no page open) orders the window out instead
+  of closing or minimising it — instant, no genie animation — and the Dock icon or the
+  tray brings it back. Only Command-Q, Dock Quit and the tray's Quit run
+  `applicationShouldTerminate` and the termination coordinator, tearing down shells and
+  the PTY daemon. The menu-bar item and its popover stay, and live only as long as the app.
+- A second copy of the app (another build's bundle, or a Dock relaunch racing the first)
+  activates the running copy, forwards any launch URLs to it and exits without the quit
+  contract, so it can never kill the daemon the running copy's terminals live in.
+- `AppLaunchContext` and the quiet-startup UI test are deleted; `showWindow` is now
+  only for background triggers (notification, tray Open, deep link, failed quit).
+  Earlier entries describing quiet launch record what the app did at the time.
+
 ## Milestones
 
 | # | Goal | Exit criterion |
@@ -2843,6 +2860,9 @@ terminal correctness work must not be traded away to meet the old estimate.
 - M1 terminal correctness remains a release gate. User authorized the M2 Cocoa
   sidebar to proceed while the remaining terminal checks are tracked explicitly.
 - Preserve explicit tray Quit teardown; crashes/rebuilds retain shells.
+- 2026-09-16: TaskHub is a regular app, not a menu-bar resident. The close button puts
+  the window away without animation; Quit quits; a second copy yields to the running one; the menu-bar item exists only while the
+  app runs; quiet launch is gone.
 
 ## Open questions
 

@@ -21,8 +21,6 @@ MACOSX_DEPLOYMENT_TARGET = 14.0
 // Info PLIST
 // ==========================================
 GENERATE_INFOPLIST_FILE = YES
-// Login launches stay out of the Dock until the user opens the main window.
-INFOPLIST_KEY_LSUIElement = YES
 
 // ==========================================
 // Entitlements

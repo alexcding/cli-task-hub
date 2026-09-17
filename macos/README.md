@@ -243,11 +243,10 @@ through the backend. Custom commands group arguments with quotes and substitute
 approval, and links to Login Items settings when approval is needed. Registration
 is available only in packaged release builds with a bundled backend; development
 builds may remove an existing native registration. No login item is registered on
-startup or by opening Settings. Login launches start quietly in the menu bar; opening
-TaskHub restores its normal window and Dock presence. `--autostart` exercises quiet
-startup without changing login items. A legacy Tauri login item is separate and is
-not automatically changed by the native app. Real registration and logout/login
-acceptance remain part of packaged-release verification.
+startup or by opening Settings. Login launches open the app normally with its window
+and Dock icon. A legacy Tauri login item is separate and is not automatically changed
+by the native app. Real registration and logout/login acceptance remain part of
+packaged-release verification.
 
 **Code fonts** offers installed monospace families and independent terminal and
 code/diff sizes (9–24 points). Preferences share the existing backend keys, retain
@@ -295,7 +294,7 @@ five-hour session and seven-day weekly windows.
 Native File/Edit/View/Go/Window menus are owned by AppKit. Copy/paste/undo follow
 the focused responder. Command-1 opens Overview, Command-2 focuses the terminal,
 Control-Command-S focuses the sidebar, and Control-Command-T reveals/focuses the
-current terminal. Closing the window, Command-Q, and Dock/app-menu Quit all tear down the app.
+current terminal. The close button puts the window away (no animation; Dock click restores it); Command-Q and Dock/app-menu Quit tear down the app.
 Command-plus/minus/zero changes or resets the visible code/diff font, or the terminal
 font when no code document is visible, without recreating its emulator. In General
 settings these shortcuts change the code/diff size. Page zoom remains separate.
@@ -357,8 +356,8 @@ arguments or the launch command's `--launch-args` option:
   `TASKHUB_DATA_DIR` or `--data-dir`.
 
 A port conflict fails visibly; the app never kills by port or adopts a foreign process.
-Window close, Command-Q, and Dock/app-menu Quit stop the owned backend and every
-session PTY, then exit. On launch, every saved session gets a new terminal and its saved
+Command-Q and Dock/app-menu Quit stop the owned backend and every session PTY, then
+exit. On launch, every saved session gets a new terminal and its saved
 Claude or Codex conversation is resumed. Quit waits for PTY teardown; a failure keeps
 the app open with an error so teardown can be retried.
 

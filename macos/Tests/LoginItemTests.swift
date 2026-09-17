@@ -1,5 +1,3 @@
-import AppKit
-import CoreServices
 import Foundation
 import Testing
 
@@ -106,18 +104,4 @@ actor LoginItemFixture: LoginItemService {
     #expect(LoginItemRegistrationPolicy.unavailableReason(debug: true, packaged: true) != nil)
     #expect(LoginItemRegistrationPolicy.unavailableReason(debug: false, packaged: false) != nil)
     #expect(LoginItemRegistrationPolicy.unavailableReason(debug: false, packaged: true) == nil)
-}
-
-@Test func loginLaunchDetectionRequiresTheOpenApplicationEventAndLoginMarker() {
-    func event(_ eventID: AEEventID = kAEOpenApplication, marker: OSType? = nil) -> NSAppleEventDescriptor {
-        let result = NSAppleEventDescriptor(eventClass: kCoreEventClass, eventID: eventID, targetDescriptor: nil,
-            returnID: AEReturnID(kAutoGenerateReturnID), transactionID: AETransactionID(kAnyTransactionID))
-        if let marker { result.setParam(NSAppleEventDescriptor(enumCode: marker), forKeyword: keyAEPropData) }
-        return result
-    }
-    #expect(!AppLaunchContext.isLoginLaunch(event: nil))
-    #expect(!AppLaunchContext.isLoginLaunch(event: event()))
-    #expect(AppLaunchContext.isLoginLaunch(event: event(marker: keyAELaunchedAsLogInItem)))
-    #expect(!AppLaunchContext.isLoginLaunch(event: event(kAEReopenApplication, marker: keyAELaunchedAsLogInItem)))
-    #expect(!AppLaunchContext.isLoginLaunch(event: event(marker: keyAELaunchedAsServiceItem)))
 }
