@@ -9,18 +9,40 @@ import Foundation
 }
 
 extension AppCoordinator {
-    func bindWorkspace(_ model: SessionWorkspaceViewModel, context: WorkspaceContext, runtime: any WorkspaceCoordinating) {
-        model.onAction = { [weak self, weak context, weak runtime] action in
-            guard let self, let context, let runtime, runtime.ownsWorkspace(context) else { return }
-            self.handle(action, context: context, runtime: runtime)
-        }
+    @discardableResult
+    func bindWorkspace(_ model: SessionWorkspaceViewModel, context: WorkspaceContext,
+                       runtime: any WorkspaceCoordinating) -> SessionWorkspaceCoordinator {
+        pruneWorkspaces()
+        if let existing = workspaceCoordinator(for: context), existing.model === model { return existing }
+        workspaceCoordinators.removeAll { $0.context === context }
+        let child = SessionWorkspaceCoordinator(model: model, context: context)
+        workspaceRuntime = runtime
+        child.action = { [weak self] in self?.handle($0) }
+        workspaceCoordinators.append(child)
+        return child
     }
 
-    private func handle(_ action: SessionWorkspaceViewModel.Action, context: WorkspaceContext, runtime: any WorkspaceCoordinating) {
+    func workspaceCoordinator(for context: WorkspaceContext) -> SessionWorkspaceCoordinator? {
+        workspaceCoordinators.first { $0.context === context }
+    }
+
+    /// Drops coordinators whose contexts the viewer no longer holds.
+    func pruneWorkspaces() {
+        guard let viewer = rootModel?.viewer else { return }
+        let live = viewer.contexts.values
+        workspaceCoordinators.removeAll { child in !live.contains { $0 === child.context } }
+    }
+
+    func handleWorkspace(_ action: SessionWorkspaceViewModel.Action, in context: WorkspaceContext) {
+        guard let runtime = workspaceRuntime, runtime.ownsWorkspace(context),
+              workspaceCoordinator(for: context) != nil else { return }
         switch action {
         case .selectTab(let id):
             guard canPresent, let tab = context.tab(id) else { return }
             context.select(tab)
+        case .newTab:
+            guard canPresent else { return }
+            context.openBlankPage()
         case .closeTab(let id):
             guard canPresent, let tab = context.tab(id) else { return }
             context.close(tab)

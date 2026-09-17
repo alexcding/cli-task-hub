@@ -147,8 +147,20 @@ async fn settings_and_tabs_preserve_existing_json_shapes() {
     assert_eq!(settings["theme"], "dark");
 
     let (_, tabs) = json_request(&app, "POST", "/api/tabs", json!({"url":"https://github.com/openai/codex/pull/1","kind":"github","title":"PR 1","repo":"openai/codex","branch":"feature","category":"review","login":"octocat"})).await;
-    assert_eq!(tabs["active"], "https://github.com/openai/codex/pull/1");
+    assert_eq!(tabs["active"], tabs["tabs"][0]["id"]);
+    assert_eq!(tabs["tabs"][0]["url"], "https://github.com/openai/codex/pull/1");
     assert_eq!(tabs["tabs"][0]["paneView"], "term");
+    // The same page opens again as a second tab: tabs are keyed by id, not URL.
+    let (_, again) = json_request(&app, "POST", "/api/tabs", json!({"url":"https://github.com/openai/codex/pull/1","kind":"github"})).await;
+    assert_eq!(again["tabs"].as_array().map(Vec::len), Some(2));
+    assert_ne!(again["tabs"][0]["id"], again["tabs"][1]["id"]);
+    assert_eq!(again["active"], again["tabs"][1]["id"]);
+    // A title change touches one row and leaves the other tab alone.
+    let id = again["tabs"][1]["id"].as_str().unwrap().to_owned();
+    let (status, renamed) = json_request(&app, "PATCH", "/api/tabs", json!({"id": id, "title": "Loaded"})).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(renamed["tabs"][1]["title"], "Loaded");
+    assert_eq!(renamed["tabs"][0]["title"], "PR 1");
 }
 
 #[tokio::test]

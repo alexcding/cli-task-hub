@@ -13,8 +13,6 @@ struct SidebarView: View {
                 Text("TaskHub").font(.system(size: 17, weight: .bold)).kerning(-0.3)
                     .foregroundStyle(Color(nsColor: SidebarPalette.text))
                 Spacer()
-                SidebarAppButton(icon: "globe", label: "Open Link", help: "Open Link (⌘T)") { model.openLink() }
-                    .disabled(!model.canOpenLink)
                 SidebarAppButton(icon: "appPlus", label: "New Project", help: "New Project") { model.newProject() }
                     .disabled(!model.canCreateProject)
                 SidebarAppButton(icon: "bell", label: "Today's activity", help: "Today's activity") { showingActivity.toggle() }
@@ -33,7 +31,7 @@ struct SidebarView: View {
             CocoaSidebar(entries: model.entries, selection: model.selection,
                          pinnedIDs: model.pinnedIDs,
                          onSelect: model.select, onTogglePin: model.togglePin,
-                         onNewSession: model.newSession(in:), onCloseTab: model.closeTab)
+                         onNewSession: model.newSession(in:), onCloseTab: model.closeTab, onNewTab: model.newTab)
 
             Divider()
             SidebarFooterRow(title: "Settings", icon: "settings", selected: model.selection == .settings) {

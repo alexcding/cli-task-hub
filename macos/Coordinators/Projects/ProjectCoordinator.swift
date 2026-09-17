@@ -10,30 +10,44 @@ import Observation
 }
 
 /// Consumes the project-owned remainder after the root has selected its project.
-@MainActor @Observable final class ProjectCoordinator {
-    enum Action { case saved(Project, ProjectSaveSource), deleted(String), presentationEnded }
+@MainActor @Observable final class ProjectCoordinator: Coordinatable {
+    /// Lifecycle events the parent needs: a save, a deletion, or the end of a presentation.
+    enum Event { case saved(Project, ProjectSaveSource), deleted(String), presentationEnded }
+    var root: Destination = .none
+    var path: [Destination] = []
+    @ObservationIgnored var action: ((Action) -> Void)?
+
     let model: ProjectPageViewModel
     private(set) var deletionConfirmation: ProjectEditorViewModel.DeletionRequest?
     private(set) var deleting = false
     private(set) var retired = false
-    @ObservationIgnored var onAction: (Action) -> Void = { _ in }
+    @ObservationIgnored var onEvent: (Event) -> Void = { _ in }
     @ObservationIgnored var canPresent: () -> Bool = { true }
     @ObservationIgnored var isOwned: () -> Bool = { true }
     var isPresenting: Bool { deletionConfirmation != nil || deleting }
     init(model: ProjectPageViewModel) {
         self.model = model
+        root = .project(model)
         model.onAction = { [weak self] in self?.handle($0) }
+    }
+    func makeDestination(for route: Route) -> Destination { .none }
+    /// Sections are not pushed; the page switches in place.
+    func navigate(to route: Route) {
+        if case .projectSection(let section) = route { handle(.selectSection(section)) }
+    }
+    func handle(_ action: Action) {
+        if case .project(let action) = action { handle(action) } else { self.action?(action) }
     }
 
     func handle(_ action: ProjectPageViewModel.Action) {
         guard !retired, isOwned() else { return }
         switch action {
         case .selectSection(let section): model.setSection(section)
-        case .saved(let project, let source): onAction(.saved(project, source))
+        case .saved(let project, let source): onEvent(.saved(project, source))
         case .deleted(let id):
             guard id == model.project.id else { return }
             deletionConfirmation = nil
-            onAction(.deleted(id))
+            onEvent(.deleted(id))
         case .requestDeletion(let request):
             guard !isPresenting, canPresent(), model.editor.canDelete(request) else { return }
             model.cancelActions()
@@ -59,7 +73,7 @@ import Observation
         guard !retired, !deleting, let request = deletionConfirmation, request.id == id else { return }
         guard isOwned(), model.editor.canDelete(request) else { endPresentation(); return }
         deleting = true
-        defer { deleting = false; onAction(.presentationEnded) }
+        defer { deleting = false; onEvent(.presentationEnded) }
         await model.editor.delete(request)
     }
 
@@ -68,12 +82,12 @@ import Observation
         model.cancelActions()
         guard deletionConfirmation != nil else { return }
         deletionConfirmation = nil
-        onAction(.presentationEnded)
+        onEvent(.presentationEnded)
     }
 
     func retire() {
         retired = true; deletionConfirmation = nil
-        onAction = { _ in }; canPresent = { false }; isOwned = { false }
+        onEvent = { _ in }; canPresent = { false }; isOwned = { false }
         model.retire()
     }
 

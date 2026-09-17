@@ -73,6 +73,7 @@ pub fn build_app(state: AppState) -> Router {
             get(routes::get_tabs)
                 .post(routes::open_tab)
                 .put(routes::put_tabs)
+                .patch(routes::rename_tab)
                 .delete(routes::close_tab),
         )
         .route(

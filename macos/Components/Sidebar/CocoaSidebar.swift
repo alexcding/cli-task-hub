@@ -14,6 +14,7 @@ struct CocoaSidebar: NSViewRepresentable {
     let onTogglePin: (String) -> Void
     var onNewSession: (String) -> Void = { _ in }
     var onCloseTab: (String) -> Void = { _ in }
+    var onNewTab: () -> Void = {}
 
     func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
 
@@ -161,11 +162,12 @@ struct CocoaSidebar: NSViewRepresentable {
         func outlineView(_ outlineView: NSOutlineView, isItemExpandable item: Any) -> Bool { (item as? Node)?.children.isEmpty == false }
         func outlineView(_ outlineView: NSOutlineView, shouldSelectItem item: Any) -> Bool { (item as? Node)?.entry.destination != nil }
         func outlineView(_ outlineView: NSOutlineView, heightOfRowByItem item: Any) -> CGFloat {
-            (item as? Node)?.entry.role == .label ? SidebarMetrics.labelHeight : SidebarMetrics.rowHeight
+            (item as? Node)?.entry.isHeading == true ? SidebarMetrics.labelHeight : SidebarMetrics.rowHeight
         }
         func outlineView(_ outlineView: NSOutlineView, rowViewForItem item: Any) -> NSTableRowView? {
             let row = SidebarRowView()
             row.selectable = (item as? Node)?.entry.destination != nil
+            row.hoverable = (item as? Node).map { $0.entry.destination != nil || $0.entry.role == .tabsHeader } ?? false
             return row
         }
         func outlineView(_ outlineView: NSOutlineView, viewFor tableColumn: NSTableColumn?, item: Any) -> NSView? {
@@ -187,9 +189,11 @@ struct CocoaSidebar: NSViewRepresentable {
             cell.onTogglePin = { [weak self] id in self?.parent.onTogglePin(id) }
             cell.onNewSession = { [weak self] id in self?.parent.onNewSession(id) }
             cell.onCloseTab = { [weak self] url in self?.parent.onCloseTab(url) }
+        cell.onNewTab = { [weak self] in self?.parent.onNewTab() }
             cell.configure(node.entry, nested: nested, expanded: expanded, spinFrame: spinFrame)
             if row >= 0, let rowView = outline.rowView(atRow: row, makeIfNecessary: false) as? SidebarRowView {
                 rowView.selectable = node.entry.destination != nil
+                rowView.hoverable = node.entry.destination != nil || node.entry.role == .tabsHeader
                 cell.hovered = rowView.hovered
                 cell.selected = rowView.isSelected
             }
@@ -365,6 +369,8 @@ enum SidebarGlyphs {
 
 @MainActor final class SidebarRowView: NSTableRowView {
     var selectable = true { didSet { if oldValue != selectable { needsDisplay = true } } }
+    /// Rows that react to the pointer without being selectable: headings with a hover accessory.
+    var hoverable = true
     private(set) var hovered = false {
         didSet {
             guard oldValue != hovered else { return }
@@ -383,7 +389,7 @@ enum SidebarGlyphs {
         addTrackingArea(area); tracking = area
         super.updateTrackingAreas()
     }
-    override func mouseEntered(with event: NSEvent) { hovered = selectable }
+    override func mouseEntered(with event: NSEvent) { hovered = hoverable }
     override func mouseExited(with event: NSEvent) { hovered = false }
     override func prepareForReuse() { super.prepareForReuse(); hovered = false }
 
@@ -392,7 +398,7 @@ enum SidebarGlyphs {
         return NSBezierPath(roundedRect: rect, xRadius: SidebarMetrics.radius, yRadius: SidebarMetrics.radius)
     }
     override func drawBackground(in dirtyRect: NSRect) {
-        guard hovered, !isSelected else { return }
+        guard hovered, selectable, !isSelected else { return }
         SidebarPalette.hover.setFill(); plate.fill()
     }
     override func drawSelection(in dirtyRect: NSRect) {
@@ -405,6 +411,7 @@ enum SidebarGlyphs {
     var onTogglePin: (String) -> Void = { _ in }
     var onNewSession: (String) -> Void = { _ in }
     var onCloseTab: (String) -> Void = { _ in }
+    var onNewTab: () -> Void = {}
     var hovered = false { didSet { if oldValue != hovered { applyState() } } }
     var selected = false { didSet { if oldValue != selected { applyState() } } }
 
@@ -449,6 +456,12 @@ enum SidebarGlyphs {
         case .label:
             icon.isHidden = true
             title.font = .systemFont(ofSize: 13, weight: .medium)
+        case .tabsHeader:
+            icon.isHidden = true
+            title.font = .systemFont(ofSize: 13, weight: .medium)
+            accessory.image = SidebarIcons.image("plus", size: 16)
+            accessory.toolTip = "New tab"
+            accessory.setAccessibilityLabel("New tab")
         case .nav:
             icon.image = SidebarIcons.image(entry.symbol)
             title.font = .systemFont(ofSize: 14)
@@ -456,7 +469,7 @@ enum SidebarGlyphs {
             icon.image = SidebarIcons.image(expanded ? "folderOpen" : "folder")
             title.font = .systemFont(ofSize: 14)
             if canCreate {
-                accessory.image = SidebarIcons.image("plus", size: 13)
+                accessory.image = SidebarIcons.image("plus", size: 16)
                 accessory.toolTip = "New session on a new worktree"
                 accessory.setAccessibilityLabel("New session")
             }
@@ -520,7 +533,7 @@ enum SidebarGlyphs {
     private func applyState() {
         let lit = hovered || selected
         let color: NSColor = switch entry.role {
-        case .label: SidebarPalette.text3
+        case .label, .tabsHeader: SidebarPalette.text3
         case .session where stopped: SidebarPalette.text3
         default: lit ? SidebarPalette.text : SidebarPalette.navText
         }
@@ -528,16 +541,17 @@ enum SidebarGlyphs {
         icon.contentTintColor = lit ? SidebarPalette.text : SidebarPalette.navText
         switch entry.role {
         case .project(let canCreate): accessory.isHidden = !(hovered && canCreate)
-        case .session, .tab: accessory.isHidden = !hovered
+        case .session, .tab, .tabsHeader: accessory.isHidden = !hovered
         default: accessory.isHidden = true
         }
         needsLayout = true
     }
 
     @objc private func accessoryPressed() {
-        if let id = entry.sessionID { onTogglePin(id) }
+        if entry.role == .tabsHeader { onNewTab() }
+        else if let id = entry.sessionID { onTogglePin(id) }
         else if let id = entry.projectID { onNewSession(id) }
-        else if let url = entry.destination?.tabURL { onCloseTab(url) }
+        else if let id = entry.destination?.tabID { onCloseTab(id) }
     }
 
     override func layout() {
@@ -551,10 +565,14 @@ enum SidebarGlyphs {
         }
         var titleX = left
         switch entry.role {
-        case .label:
+        case .label, .tabsHeader:
             title.sizeToFit()
             let titleHeight = title.frame.height
-            title.frame = NSRect(x: inset + 8, y: height - 4 - titleHeight, width: max(0, bounds.width - inset * 2 - 16), height: titleHeight)
+            // The heading's "+" sits in the same trailing slot as a project row's, centred on the title.
+            let titleY = height - 4 - titleHeight
+            accessory.frame = NSRect(x: right - 18, y: (titleY + (titleHeight - 18) / 2).rounded(), width: 18, height: 18)
+            let titleRight = accessory.isHidden ? bounds.width - inset - 16 : right - 18 - 6
+            title.frame = NSRect(x: inset + 8, y: titleY, width: max(0, titleRight - inset - 8), height: titleHeight)
             return
         case .nav, .project:
             icon.frame = centered(left, 16)
@@ -569,8 +587,8 @@ enum SidebarGlyphs {
             badge.frame = NSRect(x: icon.frame.maxX - 5, y: icon.frame.maxY - 6, width: 7, height: 7)
             titleX = left + 20 + 8
         }
-        // .task-pin: a 20px slot pulled 4px into the padding; .proj-add: a 16px slot.
-        let slot: CGFloat = entry.sessionID != nil ? 20 : 16
+        // .task-pin: a 20px slot pulled 4px into the padding; .proj-add: an 18px slot.
+        let slot: CGFloat = entry.sessionID != nil ? 20 : 18
         let slotX = right - slot + (entry.sessionID != nil ? 4 : 0)
         accessory.frame = centered(slotX, slot)
         let titleRight = accessory.isHidden ? right : slotX - 6

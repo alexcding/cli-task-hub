@@ -32,6 +32,13 @@ public final class AppViewModel {
     public private(set) var backendAddress = ""
     private(set) var sessions: [WorkspaceSession] = [] { didSet { if oldValue != sessions { updateWorkspaceReviewState() } } }
     private(set) var tabs: [SavedTab] = []
+    /// Tabs the user opened from the sidebar but has not given an address yet. They live only
+    /// here until their first navigation turns them into saved tabs.
+    private(set) var draftTabs: [SavedTab] = []
+    var visibleTabs: [SavedTab] { tabs + draftTabs }
+    func isDraftTab(_ id: String) -> Bool { draftTabs.contains { $0.id == id } }
+    @ObservationIgnored private var committingDrafts: Set<String> = []
+    func tabURL(_ id: String) -> String? { visibleTabs.first { $0.id == id }?.url }
     var selection: SidebarDestination { coordinator.selection }
     private(set) var terminals: [String: TerminalSession] = [:] {
         didSet { updateWorkspaceTerminalState() }
@@ -118,13 +125,19 @@ public final class AppViewModel {
         _ = coordinator.makeDashboard(factory: dashboardFactory, pageActions: platformFactory.pageActions(open: { [weak self] request in
             guard let self else { throw BackendError.operation("The workspace has closed.") }
             try await self.openPage(request)
-        }, desktop: desktop, copy: copy))
+        }, desktop: desktop, copy: copy), shell: shell)
         _ = coordinator.makeLogs(factory: logsFactory, pageActions: platformFactory.pageActions(open: { [weak self] request in
             guard let self else { throw BackendError.operation("The workspace has closed.") }
             try await self.openPage(request)
         }, desktop: desktop, copy: copy), copy: copy)
         dashboard?.snapshotChanged = { [weak self] in self?.updateWorkspaceReviewState() }
-        _ = coordinator.makeSettings(factory: settingsFactory ?? NativeSettingsFeatureFactory(desktop: desktop, copy: copy), runtime: self)
+        _ = coordinator.makeSettings(factory: settingsFactory ?? NativeSettingsFeatureFactory(desktop: desktop, copy: copy), shell: shell, runtime: self)
+        viewer.contextRemoved = { [weak self] _ in self?.coordinator.pruneWorkspaces() }
+        viewer.contextChanged = { [weak self] context in
+            guard let self, viewer.contexts[context.id] === context else { return }
+            commitDraftTab(context)
+            syncTabTitle(context)
+        }
         viewer.prepareContext = { [weak self] context in
             guard let self else { return }
             context.configureWorkspace(factory: workspaceFactory, service: self)
@@ -162,7 +175,7 @@ public final class AppViewModel {
             }
             tabIcons[tab.url] = SidebarTabIcon(kind: tab.kind, login: pr?.author?.login ?? tab.login, avatar: tab.avatar, ci: ci)
         }
-        return SidebarEntry.make(projects: projects, sessions: sessions, tabs: tabs, status: status,
+        return SidebarEntry.make(projects: projects, sessions: sessions, tabs: visibleTabs, status: status,
             workflowProgress: workflowRuns.filter { $0.value.running }.mapValues { "\($0.step)/\($0.total)" },
             tabIcons: tabIcons)
     }
@@ -252,7 +265,9 @@ public final class AppViewModel {
         case .session(let id):
             guard let session = sessions.first(where: { $0.id == id }) else { return nil }
             return local.first { $0.id == session.projectId }
-        case .tab(let url) where SessionPage.parse(url) != nil: return Self.pageProject(url, in: projects)
+        case .tab(let id):
+            guard let url = tabURL(id), SessionPage.parse(url) != nil else { return local.count == 1 ? local[0] : nil }
+            return Self.pageProject(url, in: projects)
         default: return local.count == 1 ? local[0] : nil
         }
     }
@@ -273,7 +288,7 @@ public final class AppViewModel {
 
     private var canStartSession: Bool {
         connection == "Connected" && coordinator.canPresent && pageWorkflowRuns[viewer.activeContextID ?? ""]?.running != true
-            && !(selection.tabURL.map(startingPages.contains) ?? false)
+            && !(selection.tabID.flatMap(tabURL).map(startingPages.contains) ?? false)
     }
 
     /// New Session from where it was asked. A PR or ticket page already decides its branch, so its
@@ -332,7 +347,7 @@ public final class AppViewModel {
             coordinator.presentNewProject(service: backendFactory.projects(api: api), didSave: { [weak self] in self?.savedProject($0) })
         case .newSession:
             guard canPerform(.newSession), let project = sessionProject(for: selection) else { return }
-            let pageURL: String? = if case .tab(let url) = selection { url } else { nil }
+            let pageURL: String? = if case .tab(let id) = selection { tabURL(id) } else { nil }
             startSession(in: project.id, pageURL: pageURL)
         case .openLink: if canPerform(.openLink) { openLink() }
         case .openPageInBrowser: if canPerform(.openPageInBrowser) { activePageControls?.openExternally() }
@@ -388,6 +403,51 @@ public final class AppViewModel {
         })
     }
 
+    /// The Tabs heading's "+": a new draft at the end of Tabs, selected, with a blank page whose
+    /// address field takes focus. Entering an address commits it as a saved tab.
+    func newTab() {
+        guard coordinator.canPresent else { return }
+        let draft = SavedTab(id: UUID().uuidString, kind: "web", title: "New Tab", url: "")
+        draftTabs.append(draft)
+        select(.tab(draft.id))
+    }
+
+    /// A draft's page reached a real address: save it as a tab under the same id, so the
+    /// live context and its web view stay where they are.
+    private func commitDraftTab(_ context: WorkspaceContext) {
+        guard let draft = draftTabs.first(where: { "tab:\($0.id)" == context.id }),
+              let page = context.activePage, let address = safeWebURL(page.url)?.absoluteString,
+              let api else { return }
+        let request = OpenPageRequest(id: draft.id, url: address, kind: "web",
+                                      title: page.title.isEmpty ? (URL(string: address)?.host ?? address) : page.title)
+        guard committingDrafts.insert(draft.id).inserted else { return }
+        Task {
+            defer { committingDrafts.remove(draft.id) }
+            do {
+                let saved: SavedTabs = try await api.request(Routes.TABS, method: "POST", body: request)
+                // The draft stays listed until the saved tab can take its place, so the sidebar
+                // row and the selection never blink out between the two.
+                draftTabs.removeAll { $0.id == draft.id }
+                tabs = saved.tabs
+            } catch {
+                self.error = "Could not save \(address): \(error.localizedDescription)"
+            }
+        }
+    }
+
+    /// The page in a saved tab has a title now, or a new one: the sidebar follows the page.
+    /// Renames touch one row, so a concurrent open or close is never overwritten.
+    private func syncTabTitle(_ context: WorkspaceContext) {
+        guard let index = tabs.firstIndex(where: { "tab:\($0.id)" == context.id }), let page = context.activePage,
+              !page.title.isEmpty, page.title != tabs[index].title, safeWebURL(page.url) != nil, let api else { return }
+        let id = tabs[index].id, title = page.title
+        tabs[index].title = title
+        Task {
+            do { let saved: SavedTabs = try await api.request(Routes.TABS, method: "PATCH", body: ["id": id, "title": title]); tabs = saved.tabs }
+            catch { self.error = "Could not save tab title: \(error.localizedDescription)" }
+        }
+    }
+
     /// Asks for an address and opens it as a sidebar tab, from anywhere in the app.
     func openLink() {
         coordinator.presentAddPage(openPage: { [weak self] address in
@@ -425,7 +485,8 @@ public final class AppViewModel {
         let saved: SavedTabs = try await api.request(Routes.TABS, method: "POST", body: request)
         try Task.checkCancellation()
         tabs = saved.tabs
-        select(.tab(request.url))
+        guard let id = saved.active else { return }
+        select(.tab(id))
         viewer.active?.open(request.url, title: request.title)
     }
 
@@ -461,8 +522,11 @@ public final class AppViewModel {
             } else { viewer.deactivate() }
         case .terminal:
             viewer.select(id: "scratch", url: "", title: "Terminal")
-        case .tab(let url):
-            let context = viewer.select(id: "tab:\(url)", url: url, title: tabs.first { $0.url == url }?.title ?? url, legacy: tabs.first { $0.url == url })
+        case .tab(let id):
+            let tab = visibleTabs.first { $0.id == id }
+            let context = viewer.select(id: "tab:\(id)", url: tab?.url ?? "", title: tab?.title ?? "New Tab", legacy: tabs.first { $0.id == id })
+            // A draft has no address to load; it starts as one blank page with the address field focused.
+            if isDraftTab(id), context.pages.isEmpty { context.openBlankPage() }
             preparePageWorkflowModel(context)
         default: viewer.deactivate()
         }
@@ -556,7 +620,7 @@ public final class AppViewModel {
         // the HTTP response. Cancellation is checked before any agent startup.
         if !sessions.contains(where: { $0.id == record.id }) { sessions.append(record) }
         let destination = "task:\(record.id)"
-        let wasSelected = selection == .tab(target.page.url)
+        let wasSelected = sourceID.hasPrefix("tab:") && selection == .tab(String(sourceID.dropFirst("tab:".count)))
         try viewer.promoteContext(from: sourceID, to: destination)
         pageWorkflowRuns.removeValue(forKey: sourceID)
         pageWorkflowTargets.removeValue(forKey: sourceID)
@@ -771,23 +835,28 @@ public final class AppViewModel {
     /// Closes a task-less tab: moves the selection to its neighbour first when it is the tab in
     /// view, then drops the tab from the backend and releases its pages. A tab whose workflow is
     /// still preparing stays open, since the run promotes this tab's pages into its session.
-    func closeTab(_ url: String) {
-        guard let api, let index = tabs.firstIndex(where: { $0.url == url }) else { return }
-        let key = "tab:\(url)"
+    func closeTab(_ id: String) {
+        let sessionURLs = Set(sessions.map(\.url).filter { !$0.isEmpty })
+        let visible = visibleTabs.filter { !sessionURLs.contains($0.url) }.map(\.id)
+        if let index = draftTabs.firstIndex(where: { $0.id == id }) {
+            if selection == .tab(id) { select(Self.destination(closing: id, among: visible)) }
+            draftTabs.remove(at: index)
+            Task { await viewer.remove(id: "tab:\(id)") }
+            return
+        }
+        guard let api, let index = tabs.firstIndex(where: { $0.id == id }) else { return }
+        let key = "tab:\(id)"
         if pageWorkflowRuns[key]?.running == true {
             error = "Wait for the workflow to start before closing this tab."
             return
         }
-        if selection == .tab(url) {
-            let sessionURLs = Set(sessions.map(\.url).filter { !$0.isEmpty })
-            select(Self.destination(closing: url, among: tabs.map(\.url).filter { !sessionURLs.contains($0) }))
-        }
+        if selection == .tab(id) { select(Self.destination(closing: id, among: visible)) }
         tabs.remove(at: index)
         pageWorkflowRuns.removeValue(forKey: key); pageWorkflowTargets.removeValue(forKey: key)
         Task {
             await viewer.remove(id: key)
             do {
-                let saved: SavedTabs = try await api.request(Routes.TABS, method: "DELETE", body: ["url": url])
+                let saved: SavedTabs = try await api.request(Routes.TABS, method: "DELETE", body: ["id": id])
                 tabs = saved.tabs
             } catch {
                 self.error = "Could not close tab: \(error.localizedDescription)"

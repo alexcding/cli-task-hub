@@ -6,7 +6,7 @@ struct TaskHubApp: App {
 
     var body: some Scene {
         Window("TaskHub Native", id: "main") {
-            ContentView(model: delegate.model)
+            AppCoordinatorView(coordinator: delegate.model.coordinator)
                 .frame(minWidth: 760, minHeight: 480)
                 .environment(\.terminalFont, delegate.model.shell.font(.term))
                 .environment(\.documentFont, delegate.model.shell.font(.diff))
@@ -15,6 +15,7 @@ struct TaskHubApp: App {
                         .padding(.top, 6).padding(.trailing, 20)
                 }
         }
+        .windowToolbarStyle(.unified(showsTitle: false))
         .defaultSize(width: 1000, height: 680)
         .defaultPosition(.center)
         .commands {

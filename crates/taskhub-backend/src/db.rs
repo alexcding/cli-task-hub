@@ -212,7 +212,7 @@ impl Database {
         let active = rows
             .iter()
             .find(|row| row.get("_active").and_then(Value::as_bool) == Some(true))
-            .and_then(|row| row.get("url"))
+            .and_then(|row| row.get("id"))
             .cloned()
             .unwrap_or(Value::Null);
         let tabs = rows
@@ -238,18 +238,26 @@ impl Database {
             else {
                 continue;
             };
-            insert_tab(&tx, tab, position as i64, active == Some(url))?;
+            let id = tab.get("id").and_then(Value::as_str).unwrap_or(url);
+            insert_tab(&tx, tab, position as i64, active == Some(id))?;
         }
         tx.commit()
     }
 
+    /// Opening a page always makes a new tab: the same URL may be open several times. A caller
+    /// that already holds an id (a draft tab getting its first address) reuses it.
     pub fn open_tab(&self, tab: &Map<String, Value>) -> rusqlite::Result<Value> {
-        let url = tab.get("url").and_then(Value::as_str).unwrap_or("");
+        let id = tab
+            .get("id")
+            .and_then(Value::as_str)
+            .filter(|value| !value.is_empty())
+            .map(str::to_owned)
+            .unwrap_or_else(|| Uuid::new_v4().to_string());
         let mut conn = self.durable();
         let tx = conn.transaction()?;
         let exists: bool = tx.query_row(
-            "SELECT EXISTS(SELECT 1 FROM tabs WHERE url=?1)",
-            [url],
+            "SELECT EXISTS(SELECT 1 FROM tabs WHERE id=?1)",
+            [&id],
             |row| row.get(0),
         )?;
         if !exists {
@@ -258,19 +266,29 @@ impl Database {
                 [],
                 |row| row.get(0),
             )?;
-            insert_tab(&tx, tab, position, false)?;
+            let mut with_id = tab.clone();
+            with_id.insert("id".into(), Value::String(id.clone()));
+            insert_tab(&tx, &with_id, position, false)?;
         }
         tx.execute(
-            "UPDATE tabs SET active=CASE WHEN url=?1 THEN 1 ELSE 0 END",
-            [url],
+            "UPDATE tabs SET active=CASE WHEN id=?1 THEN 1 ELSE 0 END",
+            [&id],
         )?;
         tx.commit()?;
         drop(conn);
         self.tabs()
     }
 
-    pub fn close_tab(&self, url: &str) -> rusqlite::Result<Value> {
-        self.durable().execute("DELETE FROM tabs WHERE url=?1", [url])?;
+    /// A title change alone. Narrower than `set_tabs`, so it cannot erase a tab another
+    /// request is inserting at the same time.
+    pub fn rename_tab(&self, id: &str, title: &str) -> rusqlite::Result<Value> {
+        self.durable()
+            .execute("UPDATE tabs SET title=?2 WHERE id=?1", params![id, title])?;
+        self.tabs()
+    }
+
+    pub fn close_tab(&self, id: &str) -> rusqlite::Result<Value> {
+        self.durable().execute("DELETE FROM tabs WHERE id=?1", [id])?;
         self.tabs()
     }
 
@@ -715,7 +733,37 @@ fn initialize_durable(conn: &Connection) -> rusqlite::Result<()> {
     ] {
         let _ = conn.execute(migration, []);
     }
+    migrate_tabs_to_ids(conn)?;
     Ok(())
+}
+
+/// Tabs used to be keyed by URL, so two tabs could never show the same page. Each tab now has
+/// its own id; existing rows get one and keep everything else.
+fn migrate_tabs_to_ids(conn: &Connection) -> rusqlite::Result<()> {
+    let columns: Vec<String> = conn
+        .prepare("PRAGMA table_info(tabs)")?
+        .query_map([], |r| r.get::<_, String>(1))?
+        .collect::<rusqlite::Result<_>>()?;
+    if columns.is_empty() || columns.iter().any(|name| name == "id") {
+        return Ok(());
+    }
+    conn.execute_batch(
+        "BEGIN;
+         DROP TABLE IF EXISTS tabs_with_ids;
+         CREATE TABLE tabs_with_ids (
+           id TEXT PRIMARY KEY, url TEXT NOT NULL, kind TEXT NOT NULL, title TEXT, repo TEXT, branch TEXT,
+           pane_view TEXT NOT NULL DEFAULT 'term', diff_open INTEGER NOT NULL DEFAULT 0,
+           page_closed INTEGER NOT NULL DEFAULT 0, diff_pos INTEGER NOT NULL DEFAULT 0,
+           category TEXT NOT NULL DEFAULT '', login TEXT NOT NULL DEFAULT '', avatar TEXT NOT NULL DEFAULT '',
+           links TEXT NOT NULL DEFAULT '[]', cur TEXT NOT NULL DEFAULT '', history TEXT NOT NULL DEFAULT '[]',
+           position INTEGER NOT NULL DEFAULT 0, active INTEGER NOT NULL DEFAULT 0
+         );
+         INSERT INTO tabs_with_ids(id,url,kind,title,repo,branch,pane_view,diff_open,page_closed,diff_pos,category,login,avatar,links,cur,history,position,active)
+           SELECT lower(hex(randomblob(16))),url,kind,title,repo,branch,pane_view,diff_open,page_closed,diff_pos,category,login,avatar,links,cur,history,position,active FROM tabs;
+         DROP TABLE tabs;
+         ALTER TABLE tabs_with_ids RENAME TO tabs;
+         COMMIT;",
+    )
 }
 
 fn initialize_cache(conn: &Connection) -> rusqlite::Result<()> {
@@ -762,6 +810,7 @@ fn tab_from_row(row: &Row<'_>) -> rusqlite::Result<Value> {
         pane
     };
     Ok(json!({
+        "id": row.get::<_,String>("id")?,
         "kind": row.get::<_,String>("kind")?, "title": text(row,"title")?, "url": row.get::<_,String>("url")?,
         "cur": text(row,"cur")?, "repo": text(row,"repo")?, "branch": text(row,"branch")?,
         "paneView": pane,
@@ -780,6 +829,11 @@ fn insert_tab(
 ) -> rusqlite::Result<()> {
     let get = |key: &str| tab.get(key).and_then(Value::as_str).unwrap_or("");
     let url = get("url");
+    let generated = Uuid::new_v4().to_string();
+    let id = match get("id") {
+        "" => generated.as_str(),
+        value => value,
+    };
     let kind = match get("kind") {
         "jira" => "jira",
         "web" => "web",
@@ -807,8 +861,8 @@ fn insert_tab(
         .cloned()
         .unwrap_or_else(|| json!([]))
         .to_string();
-    conn.execute("INSERT INTO tabs(url,kind,title,cur,repo,branch,pane_view,diff_open,page_closed,diff_pos,category,login,avatar,links,history,position,active) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17)",
-        params![url,kind,title,get("cur"),get("repo"),get("branch"),pane,bool_int(tab.get("diffOpen"),false),bool_int(tab.get("pageClosed"),false),tab.get("diffIdx").and_then(Value::as_i64).unwrap_or(0).max(0),get("category"),get("login"),get("avatar"),links,history,position,i64::from(active)])?;
+    conn.execute("INSERT INTO tabs(id,url,kind,title,cur,repo,branch,pane_view,diff_open,page_closed,diff_pos,category,login,avatar,links,history,position,active) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18)",
+        params![id,url,kind,title,get("cur"),get("repo"),get("branch"),pane,bool_int(tab.get("diffOpen"),false),bool_int(tab.get("pageClosed"),false),tab.get("diffIdx").and_then(Value::as_i64).unwrap_or(0).max(0),get("category"),get("login"),get("avatar"),links,history,position,i64::from(active)])?;
     Ok(())
 }
 

@@ -25,13 +25,8 @@ import Observation
 @MainActor @Observable final class RootViewModel {
     enum Action: Equatable {
         case select(SidebarDestination), command(ShellCommand), togglePin(String), newSession(projectID: String)
-        case closeTab(String)
+        case closeTab(String), newTab
         case reconnect, openTerminal, openBrowser(URL)
-    }
-    enum Destination {
-        case dashboard(DashboardViewModel), activity(LogsViewModel), settings(SettingsViewModel)
-        case project(ProjectPageViewModel)
-        case terminal, session(WorkspaceSession), tab(String, URL?), unavailable(String)
     }
     struct Workspace: Identifiable {
         let id: String
@@ -85,35 +80,23 @@ import Observation
         case .settings: return "Settings"
         case .project(let id): return state.projects.first { $0.id == id }?.name ?? "Project"
         case .session(let id): return state.sessions.first { $0.id == id }?.label ?? "Session"
-        case .tab(let url): return state.tabs.first { $0.url == url }?.title ?? "Tab"
+        case .tab(let id):
+            let tab = state.tabs.first { $0.id == id }
+            return tab.map { $0.title.isEmpty ? ($0.url.isEmpty ? "New Tab" : $0.url) : $0.title } ?? "Tab"
         }
     }
-    var destination: Destination {
-        let state = self.state
-        switch state.selection {
-        case .overview:
-            return state.dashboard.map(Destination.dashboard) ?? .unavailable("Connect to load the dashboard.")
-        case .activity:
-            return state.logs.map(Destination.activity) ?? .unavailable("Connect to load activity.")
-        case .settings:
-            return state.settings.map(Destination.settings) ?? .unavailable("Connect to load settings.")
-        case .terminal: return .terminal
-        case .project(let id):
-            guard let project = state.projectModels[id] else {
-                return .unavailable("Connect to load this project.")
-            }
-            return .project(project)
-        case .session(let id):
-            return state.sessions.first { $0.id == id }.map(Destination.session) ?? .unavailable("Session is not available.")
-        case .tab(let url):
-            let address = URL(string: url)
-            let valid = address.map { ["http", "https"].contains($0.scheme?.lowercased() ?? "") } ?? false
-            return .tab(url, valid ? address : nil)
-        }
+    func session(_ id: String) -> WorkspaceSession? { state.sessions.first { $0.id == id } }
+    func tab(_ id: String) -> SavedTab? { state.tabs.first { $0.id == id } }
+    /// A tab's address when it is a web URL the system browser can open.
+    func browserAddress(_ url: String) -> URL? {
+        guard let address = URL(string: url), ["http", "https"].contains(address.scheme?.lowercased() ?? "") else { return nil }
+        return address
     }
     func select(_ destination: SidebarDestination) { onAction(.select(destination)) }
     func togglePin(_ id: String) { onAction(.togglePin(id)) }
-    func closeTab(_ url: String) { onAction(.closeTab(url)) }
+    func closeTab(_ id: String) { onAction(.closeTab(id)) }
+    /// The Tabs heading's "+": a blank tab in the current workspace's second panel.
+    func newTab() { onAction(.newTab) }
     func reconnect() { onAction(.reconnect) }
     func newProject() { if canCreateProject { onAction(.command(.newProject)) } }
     func openLink() { if canOpenLink { onAction(.command(.openLink)) } }

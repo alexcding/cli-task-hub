@@ -62,7 +62,7 @@ import Observation
         let state = state
         guard let tab = state.tabs.first(where: { $0.id == id }), safeWebURL(tab.url) != nil else { return nil }
         if let session = state.sessions.first(where: { $0.url == tab.url }) { return .session(session.id) }
-        return .tab(tab.url)
+        return .tab(tab.id)
     }
     func retire() { active = false; retired = true; onAction = { _ in }; service = nil }
 }

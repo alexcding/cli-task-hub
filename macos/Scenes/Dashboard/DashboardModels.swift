@@ -84,6 +84,8 @@ struct DashboardRow: Identifiable, Equatable {
 }
 
 struct OpenPageRequest: Encodable, Sendable {
+    /// Reuses a draft tab's id; nil lets the backend mint one.
+    var id: String? = nil
     let url: String
     let kind: String
     let title: String

@@ -114,7 +114,10 @@ struct BrowserPane: View {
             }
             else { ContentUnavailableView("Page suspended", systemImage: "globe", description: Text("Select this tab to reload it.")) }
         }
-        .onAppear(perform: model.synchronizeAddress)
+        .onAppear {
+            model.synchronizeAddress()
+            if model.isBlank { editingAddress = true }
+        }
         .onChange(of: editingAddress) { _, value in model.setEditingAddress(value) }
         .onDisappear { model.setEditingAddress(false) }
         .onChange(of: context.findVisible) { _, value in if value { finding = true } }
@@ -137,9 +140,19 @@ struct SessionWorkspaceView: View {
         }
     }
 
+    // One width shared by every session; show/hide is per session via its context pane.
+    @AppStorage("workspace.contextPaneWidth") private var contextPaneWidth: Double = 560
+
     @ViewBuilder private var primaryContent: some View {
         if model.showsTerminal {
-            terminalContent
+            ResizableSplitView(showsTrailing: model.showsPage || model.showsBuild,
+                               trailingWidth: Binding(
+                                   get: { CGFloat(contextPaneWidth) },
+                                   set: { contextPaneWidth = Double($0) })) {
+                terminalContent
+            } trailing: {
+                SessionWorkspaceContextPane(context: context, model: model)
+            }
         } else {
             VStack(spacing: 0) {
                 Divider()
@@ -163,7 +176,7 @@ struct SessionWorkspaceView: View {
 
 }
 
-struct SessionWorkspaceInspectorContent: View {
+struct SessionWorkspaceContextPane: View {
     let context: WorkspaceContext
     let model: SessionWorkspaceViewModel
 
@@ -192,25 +205,11 @@ private struct SessionWorkspaceContextContent: View {
 
     private var webContextToolbar: some View {
         HStack(spacing: 8) {
-            Menu("Add to this panel", systemImage: "plus") {
-                Button("Add Page", action: model.addPage)
-                Button("Open File", action: model.openFile)
-                Divider()
-                Menu("History") {
-                    if context.visits.isEmpty { Text("No closed or visited pages") }
-                    ForEach(context.visits.reversed()) { record in
-                        Button(record.title) { model.reopen(record) }
-                    }
-                }
-            }
-            .labelStyle(.iconOnly)
-            if !context.tabs.isEmpty {
-                ScrollView(.horizontal) {
-                    HStack(spacing: 6) {
-                        ForEach(context.tabs) { page in
-                            ContextTabChip(title: page.title, dirty: page.dirty, active: context.activeID == page.id,
-                                           select: { model.selectTab(page) }, close: { model.closeTab(page) })
-                        }
+            ScrollView(.horizontal) {
+                HStack(spacing: 6) {
+                    ForEach(context.tabs) { page in
+                        ContextTabChip(title: page.title, dirty: page.dirty, active: context.activeID == page.id,
+                                       select: { model.selectTab(page) }, close: { model.closeTab(page) })
                     }
                 }
             }
@@ -292,6 +291,24 @@ private struct ContextTabChip: View {
     }
 }
 
+/// The git client (or Finder) button that opens the session's worktree.
+struct SessionWorkspaceGitClientButton: View {
+    let model: SessionWorkspaceViewModel
+
+    var body: some View {
+        Button {
+            if model.gitClientLabel == nil { model.reveal() } else { model.openGitClient() }
+        } label: {
+            ToolbarBrandIcon(name: model.gitClientID, fallback: .folder)
+        }
+        .buttonStyle(.plain)
+        .controlSize(.small)
+        .imageScale(.medium)
+        .help(model.gitClientLabel ?? "Reveal Worktree")
+        .disabled(model.gitClientLabel != nil && !model.canOpenExternal)
+    }
+}
+
 struct SessionWorkspaceLeadingToolbar: View {
     let model: SessionWorkspaceViewModel
 
@@ -310,16 +327,7 @@ struct SessionWorkspaceLeadingToolbar: View {
 
     private var terminalLaunchControls: some View {
         HStack(spacing: 6) {
-            Button {
-                if model.gitClientLabel == nil { model.reveal() } else { model.openGitClient() }
-            } label: {
-                ToolbarBrandIcon(name: model.gitClientID, fallback: .folder)
-            }
-            .buttonStyle(.borderless)
-            .help(model.gitClientLabel ?? "Reveal Worktree")
-            .disabled(model.gitClientLabel != nil && !model.canOpenExternal)
             if let title = model.editorLabel {
-                toolbarDivider
                 Button(action: model.openEditor) {
                     ToolbarBrandIcon(name: model.editorID, fallback: .code)
                 }
@@ -328,7 +336,7 @@ struct SessionWorkspaceLeadingToolbar: View {
                 .disabled(!model.canOpenExternal)
             }
             if model.showsBuildActions {
-                toolbarDivider
+                if model.editorLabel != nil { toolbarDivider }
                 if model.build?.running == true {
                     Button("Stop Build", systemImage: "stop.fill") { Task { await model.stopBuild() } }
                         .labelStyle(.iconOnly)
@@ -377,17 +385,16 @@ struct SessionWorkspaceLeadingToolbar: View {
     }
 }
 
-struct SessionWorkspaceInspectorToolbarButton: View {
+struct SessionWorkspaceContextToggle: View {
     let model: SessionWorkspaceViewModel
 
     var body: some View {
-        Toggle(isOn: Binding(
-            get: { model.showsTerminal && (model.showsPage || model.showsBuild) },
-            set: model.setInspectorPresented
-        )) {
-            TauriToolbarIcon(kind: .split)
+        // A plain button, not a toggle: no pressed-state fill while the pane is shown.
+        Button {
+            model.setContextPresented(!(model.showsPage || model.showsBuild))
+        } label: {
+            Image(systemName: "sidebar.trailing")
         }
-        .toggleStyle(.button)
         .help(model.showsPage || model.showsBuild ? "Hide Context Pane" : "Show Context Pane")
         .disabled(!model.canToggleContext)
     }

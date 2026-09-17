@@ -4,7 +4,8 @@ struct ProjectCoordinatorView: View {
     @Bindable var coordinator: ProjectCoordinator
 
     var body: some View {
-        ProjectPageView(model: coordinator.model)
+        coordinator.root.view()
+            .toolbar { PageTitleToolbarItem(title: coordinator.model.project.name) }
             .sheet(item: Binding(get: { coordinator.deletionConfirmation }, set: { value in
                 if value == nil, let request = coordinator.deletionConfirmation { coordinator.cancelDeletion(id: request.id) }
             })) { request in

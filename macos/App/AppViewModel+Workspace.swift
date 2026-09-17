@@ -34,7 +34,7 @@ extension AppViewModel: WorkspaceCoordinating {
     /// or Jira ticket tab in view whose repository or Jira key maps to a local project. A plain
     /// page, or one no project claims, gets nothing.
     private func offersPageSession(in context: WorkspaceContext) -> Bool {
-        guard case .tab(let url) = selection, context.id == "tab:\(url)" else { return false }
+        guard case .tab(let id) = selection, context.id == "tab:\(id)", let url = tabURL(id) else { return false }
         return Self.pageProject(url, in: projects) != nil
     }
 

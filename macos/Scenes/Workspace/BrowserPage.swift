@@ -57,12 +57,29 @@ struct WebPageRecord: Codable, Identifiable, Equatable, Sendable {
         dialogs.cancel()
         update()
         observations.removeAll()
-        webView?.stopLoading()
-        webView?.navigationDelegate = nil; webView?.uiDelegate = nil
-        webView?.removeFromSuperview()
+        if let webView {
+            // Dropping the view does not stop a playing page: its web process keeps the
+            // audio going until WebKit tears it down. End playback and unload the document
+            // first, so closing a tab is silent immediately.
+            webView.stopLoading()
+            webView.pauseAllMediaPlayback()
+            webView.closeAllMediaPresentations()
+            webView.navigationDelegate = nil; webView.uiDelegate = nil
+            webView.loadHTMLString("", baseURL: nil)
+            webView.removeFromSuperview()
+            Self.releaseWebContentProcess(of: webView)
+        }
         webView = nil
         loading = false
         canGoBack = false; canGoForward = false
+    }
+
+    /// WebKit keeps a closed page's web content process in a cache for reuse, so its memory
+    /// survives the view. Terminating the process returns it now. The selector is private, so
+    /// it is looked up at runtime and skipped when absent; the view is released either way.
+    private static func releaseWebContentProcess(of webView: WKWebView) {
+        let kill = NSSelectorFromString("_killWebContentProcessAndResetState")
+        if webView.responds(to: kill) { _ = webView.perform(kill) }
     }
 
     func navigate(_ address: String) {

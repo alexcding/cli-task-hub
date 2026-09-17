@@ -3,7 +3,8 @@ import SwiftUI
 struct LogsCoordinatorView: View {
     @Bindable var coordinator: LogsCoordinator
     var body: some View {
-        LogsView(model: coordinator.model)
+        coordinator.root.view()
+            .toolbar { PageTitleToolbarItem(title: "Activity") }
             .sheet(item: Binding(get: { coordinator.confirmation }, set: { value in
                 if value == nil, let request = coordinator.confirmation { coordinator.cancel(id: request.id) }
             })) { request in

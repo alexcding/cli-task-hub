@@ -21,16 +21,26 @@ import Observation
     func activateSettings()
 }
 
-@MainActor @Observable final class SettingsCoordinator {
+@MainActor @Observable final class SettingsCoordinator: Coordinatable {
+    var root: Destination = .none
+    var path: [Destination] = []
+    @ObservationIgnored var action: ((Action) -> Void)?
+
     let model: SettingsViewModel
+    let shell: ShellStore
     private(set) var retired = false
     @ObservationIgnored private weak var runtime: (any SettingsCoordinating)?
     @ObservationIgnored var isOwned: () -> Bool = { true }
     @ObservationIgnored var canPresent: () -> Bool = { true }
     @ObservationIgnored private var completion: Task<Void, Never>?
-    init(model: SettingsViewModel, runtime: any SettingsCoordinating) {
-        self.model = model; self.runtime = runtime
+    init(model: SettingsViewModel, shell: ShellStore = ShellStore(), runtime: any SettingsCoordinating) {
+        self.model = model; self.shell = shell; self.runtime = runtime
+        root = .settings(model, shell)
         model.onAction = { [weak self] in self?.handle($0) }
+    }
+    func makeDestination(for route: Route) -> Destination { .none }
+    func handle(_ action: Action) {
+        if case .settings(let action) = action { handle(action) } else { self.action?(action) }
     }
     func handle(_ action: SettingsViewModel.Action) {
         guard !retired, isOwned(), runtime != nil else { return }
@@ -69,11 +79,11 @@ import Observation
 }
 
 extension AppCoordinator {
-    @discardableResult func installSettings(_ model: SettingsViewModel, runtime: any SettingsCoordinating) -> SettingsCoordinator {
+    @discardableResult func installSettings(_ model: SettingsViewModel, shell: ShellStore = ShellStore(), runtime: any SettingsCoordinating) -> SettingsCoordinator {
         if let existing = settingsCoordinator, existing.model === model { return existing }
         model.loginItem.inheritRegistration(from: settingsCoordinator?.model.loginItem)
         settingsCoordinator?.retire()
-        let child = SettingsCoordinator(model: model, runtime: runtime)
+        let child = SettingsCoordinator(model: model, shell: shell, runtime: runtime)
         child.isOwned = { [weak self, weak model] in
             guard let self, let model else { return false }
             return settingsCoordinator?.model === model
@@ -83,9 +93,10 @@ extension AppCoordinator {
         }
         settingsCoordinator = child
         child.setActive(selection == .settings)
+        refreshRoot()
         return child
     }
-    func makeSettings(factory: any SettingsFeatureFactory, runtime: any SettingsCoordinating) -> SettingsViewModel {
-        installSettings(factory.settings(), runtime: runtime).model
+    func makeSettings(factory: any SettingsFeatureFactory, shell: ShellStore = ShellStore(), runtime: any SettingsCoordinating) -> SettingsViewModel {
+        installSettings(factory.settings(), shell: shell, runtime: runtime).model
     }
 }

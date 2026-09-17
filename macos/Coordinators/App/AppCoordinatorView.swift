@@ -1,20 +1,17 @@
 import SwiftUI
 
+/// Root of the window. Lays out the sidebar and the detail column, renders the
+/// coordinator's `root` destination, keeps every workspace mounted, and hosts the
+/// app-wide presentations. Each child coordinator view owns its own toolbar.
 struct AppCoordinatorView: View {
-    let coordinator: AppCoordinator
-    let model: RootViewModel
+    @Bindable var coordinator: AppCoordinator
 
     var body: some View {
-        ZStack(alignment: .topLeading) {
-            // Keep every opened emulator mounted. Selection changes only
-            // visibility, never the PTY identity or parser state.
-            ForEach(model.workspaces) { workspace in
-                SessionWorkspaceView(context: workspace.context, model: workspace.model)
-                    .opacity(workspace.active ? 1 : 0).allowsHitTesting(workspace.active).accessibilityHidden(!workspace.active)
-            }
-            if model.showsDestination { selectedContent }
+        NavigationSplitView {
+            if let model = coordinator.rootModel { SidebarView(model: model) }
+        } detail: {
+            detailContent
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .sheet(item: Binding(get: { coordinator.sheet }, set: { value in
             if value == nil, let sheet = coordinator.sheet { coordinator.dismissSheet(id: sheet.id) }
         })) { sheet in
@@ -31,44 +28,35 @@ struct AppCoordinatorView: View {
         }
     }
 
-    @ViewBuilder private var selectedContent: some View {
-        switch model.destination {
-        case .dashboard(let dashboard):
-            DashboardView(model: dashboard, shell: model.shell)
-        case .activity:
-            if let child = coordinator.logsCoordinator { LogsCoordinatorView(coordinator: child) }
-        case .settings(let settings):
-            SettingsView(model: settings, shell: model.shell)
-        case .terminal:
-            VStack(alignment: .leading, spacing: 16) {
-                Text("Open an interactive shell.").foregroundStyle(.secondary)
-                Button("Open native terminal", systemImage: "terminal", action: model.openTerminal)
-                    .buttonStyle(.borderedProminent)
-            }
-        case .project:
-            if let child = coordinator.projectCoordinator {
-                ProjectCoordinatorView(coordinator: child).id(child.model.project.id)
-            }
-        case .session(let session):
-            VStack(alignment: .leading, spacing: 16) {
-                Text(session.title).font(.headline)
-                LabeledContent("Worktree", value: session.worktree)
-                LabeledContent("Branch", value: session.branch)
-                HStack {
-                    Button("Open Terminal", systemImage: "terminal", action: model.openTerminal)
-                        .buttonStyle(.borderedProminent)
-                    Button(session.pinned ? "Unpin Session" : "Pin Session", systemImage: "pin") { model.togglePin(session.id) }
+    @ViewBuilder private var detailContent: some View {
+        if let model = coordinator.rootModel {
+            VStack(alignment: .leading, spacing: 18) {
+                // RootViewModel scopes connection feedback to Dashboard and project
+                // detail; it never overlays unrelated web or session content.
+                if let error = model.error {
+                    Label(error, systemImage: "exclamationmark.triangle")
+                        .foregroundStyle(.orange).textSelection(.enabled)
+                    Button("Reconnect", action: model.reconnect)
                 }
-            }.textSelection(.enabled)
-        case .tab(let url, let address):
-            VStack(alignment: .leading, spacing: 16) {
-                Text(url).textSelection(.enabled).foregroundStyle(.secondary)
-                if let address {
-                    Button("Open in Browser") { model.openBrowser(address) }
+                ZStack(alignment: .topLeading) {
+                    // Keep every opened emulator mounted. Selection changes only
+                    // visibility, never the PTY identity or parser state.
+                    ForEach(model.workspaces) { workspace in
+                        if let child = coordinator.workspaceCoordinator(for: workspace.context) {
+                            SessionWorkspaceCoordinatorView(coordinator: child, title: model.title, active: workspace.active)
+                        }
+                    }
+                    if model.showsDestination {
+                        coordinator.root.view()
+                            // Placeholders have no coordinator of their own; the root titles them.
+                            .toolbar { if coordinator.rootIsPlaceholder { PageTitleToolbarItem(title: model.title) } }
+                    }
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
-        case .unavailable(let message):
-            Text(message).foregroundStyle(.secondary)
+            .padding(.horizontal, model.hasWorkspace ? 0 : 28)
+            .padding(.vertical, model.hasWorkspace ? 0 : model.showsDashboard ? 16 : 28)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
     }
 }

@@ -44,8 +44,12 @@ import Observation
     @ObservationIgnored var bindingID = UUID()
 
     init(page: any BrowserControlling) {
-        self.page = page; address = page.url
+        self.page = page; address = Self.displayAddress(page.url)
     }
+
+    /// A blank tab has no address to show.
+    var isBlank: Bool { page.map { WorkspaceContext.isBlankAddress($0.url) } == true }
+    private static func displayAddress(_ url: String) -> String { WorkspaceContext.isBlankAddress(url) ? "" : url }
 
     var loading: Bool { page?.loading == true }
     var canGoBack: Bool { active && page?.canGoBack == true }
@@ -57,7 +61,7 @@ import Observation
     func setEditingAddress(_ value: Bool) { editingAddress = value }
     func synchronizeAddress() {
         guard !editingAddress, let page else { return }
-        address = page.url
+        address = Self.displayAddress(page.url)
     }
 
     @discardableResult func submitAddress() -> Bool {

@@ -68,8 +68,10 @@ application sources or depends on a TaskHub Swift package.
 toolbar, font environment, notification overlay and `TaskHubCommands` menus.
 `AppDelegate` is connected through `NSApplicationDelegateAdaptor` for backend
 startup, the status-item popover, deep links and asynchronous quit/update cleanup.
-`ContentView` lays out the sidebar, inspector and toolbar; `AppCoordinatorView`
-renders destinations, retained workspaces and coordinator-owned presentations.
+`AppCoordinatorView` is the window root: sidebar, detail column, destinations,
+retained workspaces and coordinator-owned presentations. Each coordinator view owns
+its screen's toolbar; a session workspace splits terminal and context pane with
+`ResizableSplitView`.
 
 GhosttyTerminal (github.com/alexcding/ghostty-terminal-spm, TaskHub's fork of
 libghostty-spm with the wrapper patches committed and a prebuilt XCFramework as its

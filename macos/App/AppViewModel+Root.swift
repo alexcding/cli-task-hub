@@ -2,7 +2,7 @@ import Foundation
 
 extension AppViewModel: RootCoordinating, ProjectCoordinating {
     func rootState() -> RootState {
-        RootState(selection: selection, entries: sidebarEntries, projects: projects, sessions: sessions, tabs: tabs,
+        RootState(selection: selection, entries: sidebarEntries, projects: projects, sessions: sessions, tabs: visibleTabs,
                   projectModels: projectModels, dashboard: dashboard, logs: logs, todayActivity: todayActivity, settings: settings, error: coordinator.routingError ?? error,
                   hasTerminal: terminal != nil, canCreateProject: canPerform(.newProject), canOpenLink: canPerform(.openLink),
                   canCreateSession: canPerform(.newSession), canRefresh: canPerform(.refresh))

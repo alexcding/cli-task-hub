@@ -1,16 +1,10 @@
 import Foundation
 
-/// Navigation routes are separate from user intents emitted by ViewModels.
-enum AppRoute: Equatable {
-    case destination(SidebarDestination)
-    case projectSection(ProjectSection)
-}
-
 struct DeepLink: Equatable {
-    let routes: [AppRoute]
-    init(_ routes: [AppRoute]) { self.routes = routes }
-    init(_ route: AppRoute) { routes = [route] }
-    var first: AppRoute? { routes.first }
+    let routes: [Route]
+    init(_ routes: [Route]) { self.routes = routes }
+    init(_ route: Route) { routes = [route] }
+    var first: Route? { routes.first }
     func droppingFirst() -> Self { Self(Array(routes.dropFirst())) }
 
     /// Validate the whole chain before changing any visible navigation state.
@@ -88,7 +82,7 @@ struct ProjectRouteHandler: DeepLinkRouteHandling {
                                                      "workflows": .workflows, "automation": .automation, "settings": .settings]
     func parse(_ components: [String]) -> DeepLink? {
         guard (2...3).contains(components.count), components[0] == "projects" else { return nil }
-        let root = AppRoute.destination(.project(components[1]))
+        let root = Route.destination(.project(components[1]))
         if components.count == 2 { return DeepLink(root) }
         guard let section = sections[components[2]] else { return nil }
         return DeepLink([root, .projectSection(section)])

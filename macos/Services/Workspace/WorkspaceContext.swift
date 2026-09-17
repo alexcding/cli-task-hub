@@ -237,6 +237,20 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
         noteHistory(page.record)
         return page
     }
+    /// The address a new, still-empty page carries until the user enters one.
+    static let blankPageURL = "about:blank"
+    static func isBlankAddress(_ url: String) -> Bool { url.hasPrefix(blankPageURL) }
+
+    /// A new empty tab. It is never persisted or noted in history until it has a web address.
+    @discardableResult func openBlankPage() -> BrowserPage {
+        let page = pageFactory.make(.init(url: Self.blankPageURL, title: "New Tab"))
+        wire(page)
+        pages.append(page); insert(page.id)
+        error = nil
+        select(page)
+        return page
+    }
+
     func close(_ page: BrowserPage) {
         guard let index = pages.firstIndex(where: { $0 === page }) else { return }
         noteHistory(page.record)
@@ -302,6 +316,10 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
         }
     }
     @ObservationIgnored var prepareContext: (WorkspaceContext) -> Void = { _ in }
+    /// Called after a context leaves `contexts`, so owners can drop what they hold for it.
+    @ObservationIgnored var contextRemoved: (WorkspaceContext) -> Void = { _ in }
+    /// Called whenever a context's snapshot changes: a page navigated, a tab opened or closed.
+    @ObservationIgnored var contextChanged: (WorkspaceContext) -> Void = { _ in }
     @ObservationIgnored private var api: APIClient?
     @ObservationIgnored private var saved: [String: ContextSnapshot] = [:]
     @ObservationIgnored private var dirty: Set<String> = []
@@ -448,6 +466,7 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
         if fileOpen.request?.contextID == id { fileOpen.cancel() }
         let context = contexts.removeValue(forKey: id)
         context?.workspaceViewModel?.setActive(false)
+        if let context { contextRemoved(context) }
         context?.changed = {}
         context?.pages.forEach { $0.evict() }
         context?.documents.forEach { $0.dispose() }
@@ -465,6 +484,7 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
         page.materialize()
     }
     private func save(_ context: WorkspaceContext) {
+        contextChanged(context)
         edited.insert(context.id)
         dirty.insert(context.id)
         saved[context.id] = context.snapshot

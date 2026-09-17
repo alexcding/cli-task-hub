@@ -1,9 +1,14 @@
 import Foundation
 import Observation
 
-/// Owns presentation identity and model lifetime, following elevate-ios's
-/// route -> model-bearing destination -> rendering view separation.
-@MainActor @Observable final class AppCoordinator {
+/// The window's coordinator. Owns the sidebar selection, the current `root` destination
+/// it maps to, the child coordinators behind each screen, and app-wide presentations.
+/// Follows record-ios: route -> model-bearing destination -> `Destination.view()`.
+@MainActor @Observable final class AppCoordinator: Coordinatable {
+    var root: Destination = .none
+    var path: [Destination] = []
+    @ObservationIgnored var action: ((Action) -> Void)?
+
     struct Sheet: Identifiable {
         enum Destination {
             case newProject(ProjectEditorViewModel)
@@ -56,6 +61,13 @@ import Observation
     @ObservationIgnored let projectCoordinatorFactory: any ProjectCoordinatorFactory
     @ObservationIgnored let canOpenExternalRoute: () -> Bool
     var projectCoordinators: [String: ProjectCoordinator] = [:]
+    /// One per live workspace context, matched by the context object: ids change on promotion.
+    var workspaceCoordinators: [SessionWorkspaceCoordinator] = []
+    @ObservationIgnored weak var workspaceRuntime: (any WorkspaceCoordinating)?
+    struct WeakProjectRuntime { weak var runtime: (any ProjectCoordinating)? }
+    @ObservationIgnored var projectRuntimes: [String: WeakProjectRuntime] = [:]
+    /// The sidebar and root placeholders bind to this; `makeRoot` installs it.
+    var rootModel: RootViewModel?
     var appearance = AppAppearance.system {
         didSet { if oldValue != appearance { projectModels.values.forEach { $0.appearance = appearance } } }
     }
@@ -113,6 +125,60 @@ import Observation
         settingsCoordinator?.setActive(destination == .settings)
         selectionStore.save(destination)
         rootRuntime?.activateRootDestination()
+        refreshRoot()
+    }
+
+    func navigate(to route: Route) {
+        switch route {
+        case .destination(let destination): navigate(to: destination)
+        case .projectSection: projectCoordinator?.navigate(to: route)
+        }
+    }
+
+    /// The selection's destination, built from whichever child coordinator serves it.
+    func makeDestination(for route: Route) -> Destination {
+        guard case .destination(let destination) = route else { return .none }
+        switch destination {
+        case .overview:
+            return dashboardCoordinator.map(Destination.dashboardCoordinator) ?? .unavailable("Connect to load the dashboard.")
+        case .activity:
+            return logsCoordinator.map(Destination.logsCoordinator) ?? .unavailable("Connect to load activity.")
+        case .settings:
+            return settingsCoordinator.map(Destination.settingsCoordinator) ?? .unavailable("Connect to load settings.")
+        case .terminal:
+            return rootModel.map(Destination.terminal) ?? .none
+        case .project(let id):
+            return projectCoordinators[id].map(Destination.projectCoordinator) ?? .unavailable("Connect to load this project.")
+        case .session(let id):
+            return rootModel.map { .session(id: id, $0) } ?? .none
+        case .tab(let id):
+            return rootModel.map { .tab(id: id, $0) } ?? .none
+        }
+    }
+
+    /// True when `root` is a screen without a child coordinator to own its toolbar.
+    var rootIsPlaceholder: Bool {
+        switch root {
+        case .terminal, .session, .tab, .unavailable, .none: true
+        default: false
+        }
+    }
+
+    /// Child coordinators arrive after the selection is restored, so `root` is rebuilt
+    /// whenever the selection or the set of children changes.
+    func refreshRoot() {
+        pruneWorkspaces()
+        root = makeDestination(for: .destination(selection))
+    }
+
+    func handle(_ action: Action) {
+        switch action {
+        case .root(let action): handle(action)
+        case .workspace(let action, let context): handleWorkspace(action, in: context)
+        case .projectEvent(let event, let id): handleProjectEvent(event, projectID: id)
+        case .dashboard, .logs, .settings, .project:
+            self.action?(action) // Screen actions belong to their child coordinators.
+        }
     }
 
     private func cancelPageActions() {

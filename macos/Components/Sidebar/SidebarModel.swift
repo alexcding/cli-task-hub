@@ -39,8 +39,10 @@ struct SavedTabContent: Codable, Equatable, Sendable {
 }
 
 struct SavedTab: Codable, Identifiable, Equatable, Sendable {
+    /// The backend's identity for the tab. Several tabs may show the same URL.
+    let id: String
     let kind: String
-    let title: String
+    var title: String
     let url: String
     var category: String? = nil
     var cur: String? = nil
@@ -51,8 +53,34 @@ struct SavedTab: Codable, Identifiable, Equatable, Sendable {
     var avatar: String? = nil
     var links: [SavedTabContent]? = nil
     var history: [SavedTabContent]? = nil
-    var id: String { url }
+
+    init(id: String? = nil, kind: String, title: String, url: String, category: String? = nil, cur: String? = nil,
+         paneView: String? = nil, reviewView: String? = nil, pageClosed: Bool? = nil, login: String? = nil,
+         avatar: String? = nil, links: [SavedTabContent]? = nil, history: [SavedTabContent]? = nil) {
+        self.id = id ?? url; self.kind = kind; self.title = title; self.url = url
+        self.category = category; self.cur = cur; self.paneView = paneView; self.reviewView = reviewView
+        self.pageClosed = pageClosed; self.login = login; self.avatar = avatar; self.links = links; self.history = history
+    }
+
+    init(from decoder: any Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        url = try values.decode(String.self, forKey: .url)
+        id = try values.decodeIfPresent(String.self, forKey: .id) ?? url // Records saved before tabs had ids.
+        kind = try values.decode(String.self, forKey: .kind)
+        title = try values.decodeIfPresent(String.self, forKey: .title) ?? ""
+        category = try values.decodeIfPresent(String.self, forKey: .category)
+        cur = try values.decodeIfPresent(String.self, forKey: .cur)
+        paneView = try values.decodeIfPresent(String.self, forKey: .paneView)
+        reviewView = try values.decodeIfPresent(String.self, forKey: .reviewView)
+        pageClosed = try values.decodeIfPresent(Bool.self, forKey: .pageClosed)
+        login = try values.decodeIfPresent(String.self, forKey: .login)
+        avatar = try values.decodeIfPresent(String.self, forKey: .avatar)
+        links = try values.decodeIfPresent([SavedTabContent].self, forKey: .links)
+        history = try values.decodeIfPresent([SavedTabContent].self, forKey: .history)
+    }
 }
+
+
 
 struct SavedTabs: Decodable, Sendable {
     let tabs: [SavedTab]
@@ -62,7 +90,7 @@ struct SavedTabs: Decodable, Sendable {
 enum SidebarDestination: Hashable, Codable {
     case overview, terminal, activity, settings, project(String), session(String), tab(String)
 
-    var tabURL: String? { if case .tab(let url) = self { url } else { nil } }
+    var tabID: String? { if case .tab(let id) = self { id } else { nil } }
 }
 
 /// What the sidebar knows about a session's agent at render time — the
@@ -85,9 +113,11 @@ struct SidebarTabIcon: Equatable {
 }
 
 struct SidebarEntry: Equatable {
+    var isHeading: Bool { role == .label || role == .tabsHeader }
     enum Role: Equatable {
         case nav                                  // Dashboard
-        case label                                // "Pinned" / "Projects" / "Tabs" heading
+        case label                                // "Pinned" / "Projects" heading
+        case tabsHeader                           // "Tabs" heading with a hover "+" for a new tab
         case project(canCreateSession: Bool)
         case session(SidebarSessionStatus, pinned: Bool)
         case tab(SidebarTabIcon)
@@ -146,11 +176,11 @@ struct SidebarEntry: Equatable {
         result += ordered.filter { !projectIDs.contains($0.projectId) }.map { row($0) }
         let taskURLs = Set(sessions.map(\.url).filter { !$0.isEmpty })
         let unownedTabs = tabs.filter { !taskURLs.contains($0.url) }
+        result.append(Self(id: "label:tabs", title: "Tabs", symbol: "", role: .tabsHeader))
         if !unownedTabs.isEmpty {
-            result.append(label("label:tabs", "Tabs"))
             result += unownedTabs.map {
-                .init(id: "tab:\($0.url)", title: $0.title.isEmpty ? $0.url : $0.title, symbol: "", detail: $0.url,
-                      destination: .tab($0.url),
+                .init(id: "tab:\($0.id)", title: $0.title.isEmpty ? ($0.url.isEmpty ? "New Tab" : $0.url) : $0.title, symbol: "", detail: $0.url,
+                      destination: .tab($0.id),
                       role: .tab(tabIcons[$0.url] ?? SidebarTabIcon(kind: $0.kind, login: $0.login, avatar: $0.avatar)))
             }
         }

@@ -15,8 +15,8 @@ extension AppCoordinator {
 
     func removeMissingProjects(_ ids: Set<String>) -> [ProjectPageViewModel] {
         let removed = projectCoordinators.filter { !ids.contains($0.key) }
-        for id in removed.keys { projectCoordinators.removeValue(forKey: id)?.retire() }
-        if !removed.isEmpty { schedulePendingDeepLink() }
+        for id in removed.keys { projectCoordinators.removeValue(forKey: id)?.retire(); projectRuntimes.removeValue(forKey: id) }
+        if !removed.isEmpty { refreshRoot(); schedulePendingDeepLink() }
         return removed.values.map(\.model)
     }
 
@@ -41,27 +41,37 @@ extension AppCoordinator {
         child.canPresent = { [weak self, weak runtime] in
             runtime?.ownsProject(id) == true && self?.selection == .project(id) && self?.canPresent == true
         }
-        child.onAction = { [weak self, weak runtime, weak model] action in
+        child.onEvent = { [weak self, weak model] event in
+            // A retired coordinator's late event must not act on whichever model now owns the id.
             guard let self, let model, projectCoordinators[id]?.model === model else { return }
-            if case .presentationEnded = action { schedulePendingDeepLink(); return }
-            guard let runtime, runtime.ownsProject(id) else { return }
-            switch action {
-            case .saved(let project, let source):
-                guard project.id == id else { return }
-                runtime.applyProjectSave(project, source: source)
-            case .deleted(let deletedID):
-                guard deletedID == id else { return }
-                projectCoordinators.removeValue(forKey: id)?.retire()
-                runtime.applyProjectDeletion(id, model: model)
-                if selection == .project(id) { navigate(to: .overview) }
-                schedulePendingDeepLink()
-            case .presentationEnded: break
-            }
+            handle(.projectEvent(event, projectID: id))
         }
+        projectRuntimes[id] = runtime.map { WeakProjectRuntime(runtime: $0) }
         projectCoordinators[id] = child
         model.appearance = appearance
         model.active = selection == .project(id)
+        refreshRoot()
         schedulePendingDeepLink()
         return child
+    }
+
+    func handleProjectEvent(_ event: ProjectCoordinator.Event, projectID id: String) {
+        guard let model = projectCoordinators[id]?.model else { return }
+        if case .presentationEnded = event { schedulePendingDeepLink(); return }
+        guard let runtime = projectRuntimes[id]?.runtime, runtime.ownsProject(id) else { return }
+        switch event {
+        case .saved(let project, let source):
+            guard project.id == id else { return }
+            runtime.applyProjectSave(project, source: source)
+        case .deleted(let deletedID):
+            guard deletedID == id else { return }
+            projectCoordinators.removeValue(forKey: id)?.retire()
+            projectRuntimes.removeValue(forKey: id)
+            runtime.applyProjectDeletion(id, model: model)
+            if selection == .project(id) { navigate(to: .overview) }
+            refreshRoot()
+            schedulePendingDeepLink()
+        case .presentationEnded: break
+        }
     }
 }

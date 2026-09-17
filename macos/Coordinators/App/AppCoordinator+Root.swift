@@ -9,10 +9,12 @@ import Foundation
     func openRootBrowser(_ url: URL)
     func newSession(in projectID: String)
     func closeTab(_ url: String)
+    func newTab()
 }
 
 extension RootCoordinating {
     func newSession(in projectID: String) {}
+    func newTab() {}
 }
 
 extension AppCoordinator {
@@ -24,8 +26,10 @@ extension AppCoordinator {
         let model = factory.root(service: runtime, shell: shell, viewer: viewer)
         model.onAction = { [weak self] action in
             guard let self, rootBindingID == bindingID else { return }
-            handle(action)
+            handle(.root(action))
         }
+        rootModel = model
+        refreshRoot()
         return model
     }
 
@@ -36,6 +40,7 @@ extension AppCoordinator {
         case .togglePin(let id): rootRuntime?.togglePin(id)
         case .newSession(let projectID): rootRuntime?.newSession(in: projectID)
         case .closeTab(let url): rootRuntime?.closeTab(url)
+        case .newTab: rootRuntime?.newTab()
         case .reconnect: Task { [weak rootRuntime] in await rootRuntime?.reconnect() }
         case .openTerminal: rootRuntime?.openTerminal()
         case .openBrowser(let url): rootRuntime?.openRootBrowser(url)

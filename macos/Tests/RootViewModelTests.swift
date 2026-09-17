@@ -81,18 +81,16 @@ import Testing
     runtime.state.projects = [Project(id: "p", name: "Native Project", repo: "", color: nil, workspace: "/tmp")]
     runtime.state.selection = .project("p")
     #expect(model.title == "Native Project")
-    guard case .unavailable = model.destination else { Issue.record("Missing project unexpectedly rendered a model"); return }
     runtime.state.sessions = [WorkspaceSession(id: "s", projectId: "p", workspace: "/tmp", worktree: "/tmp/worktree", title: "Title",
         branch: "feature", url: "", createdAt: nil, pinned: true)]
     runtime.state.selection = .session("s")
     #expect(model.title == "worktree" && model.pinnedIDs == ["s"])
-    guard case .session(let record) = model.destination else { Issue.record("Missing session destination"); return }
-    #expect(record.id == "s")
+    #expect(model.session("s")?.id == "s")
     runtime.state.sessions = []
-    guard case .unavailable = model.destination else { Issue.record("Removed session still displayed"); return }
+    #expect(model.session("s") == nil)
     runtime.state.selection = .tab("file:///tmp/private")
-    guard case .tab(_, let address) = model.destination else { Issue.record("Missing tab fallback"); return }
-    #expect(address == nil)
+    #expect(model.browserAddress("file:///tmp/private") == nil)
+    #expect(model.browserAddress("https://example.com")?.host == "example.com")
 }
 
 @MainActor @Test func sidebarSelectionPreservesExistingJSONFormatAndIgnoresCorruption() throws {

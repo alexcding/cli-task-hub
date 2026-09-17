@@ -9,15 +9,26 @@ import Observation
     func dashboard(pageActions: any PageActionServing) -> DashboardViewModel { DashboardViewModel(pageActions: pageActions) }
 }
 
-@MainActor @Observable final class DashboardCoordinator {
+@MainActor @Observable final class DashboardCoordinator: Coordinatable {
+    var root: Destination = .none
+    var path: [Destination] = []
+    @ObservationIgnored var action: ((Action) -> Void)?
+
     let model: DashboardViewModel
+    let shell: ShellStore
     private(set) var retired = false
     @ObservationIgnored var isOwned: () -> Bool = { true }
     @ObservationIgnored var canPresent: () -> Bool = { true }
 
-    init(model: DashboardViewModel) {
+    init(model: DashboardViewModel, shell: ShellStore = ShellStore()) {
         self.model = model
+        self.shell = shell
+        root = .dashboard(model, shell)
         model.onAction = { [weak self] in self?.handle($0) }
+    }
+    func makeDestination(for route: Route) -> Destination { .none }
+    func handle(_ action: Action) {
+        if case .dashboard(let action) = action { handle(action) } else { self.action?(action) }
     }
     func handle(_ action: DashboardViewModel.Action) {
         guard !retired, isOwned(), canPresent() else { return }
@@ -27,10 +38,10 @@ import Observation
 }
 
 extension AppCoordinator {
-    @discardableResult func installDashboard(_ model: DashboardViewModel) -> DashboardCoordinator {
+    @discardableResult func installDashboard(_ model: DashboardViewModel, shell: ShellStore = ShellStore()) -> DashboardCoordinator {
         if let existing = dashboardCoordinator, existing.model === model { return existing }
         dashboardCoordinator?.retire()
-        let child = DashboardCoordinator(model: model)
+        let child = DashboardCoordinator(model: model, shell: shell)
         child.isOwned = { [weak self, weak model] in
             guard let self, let model else { return false }
             return dashboardCoordinator?.model === model
@@ -39,10 +50,11 @@ extension AppCoordinator {
             self?.selection == .overview && self?.canPresent == true && self?.canOpenExternalRoute() == true
         }
         dashboardCoordinator = child
+        refreshRoot()
         return child
     }
 
-    func makeDashboard(factory: any DashboardFeatureFactory, pageActions: any PageActionServing) -> DashboardViewModel {
-        installDashboard(factory.dashboard(pageActions: pageActions)).model
+    func makeDashboard(factory: any DashboardFeatureFactory, pageActions: any PageActionServing, shell: ShellStore = ShellStore()) -> DashboardViewModel {
+        installDashboard(factory.dashboard(pageActions: pageActions), shell: shell).model
     }
 }

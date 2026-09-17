@@ -125,7 +125,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         NSApp.unhide(nil)
         popover.performClose(nil)
         if let window {
-            window.titleVisibility = .hidden
             window.setFrameAutosaveName("TaskHubNativeMain")
             window.makeKeyAndOrderFront(nil)
         }

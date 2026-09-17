@@ -10,7 +10,11 @@ import Observation
     }
 }
 
-@MainActor @Observable final class LogsCoordinator {
+@MainActor @Observable final class LogsCoordinator: Coordinatable {
+    var root: Destination = .none
+    var path: [Destination] = []
+    @ObservationIgnored var action: ((Action) -> Void)?
+
     let model: LogsViewModel
     private(set) var confirmation: LogsViewModel.ClearRequest?
     private(set) var retired = false
@@ -20,7 +24,12 @@ import Observation
     var isPresenting: Bool { confirmation != nil || model.clearing }
     init(model: LogsViewModel) {
         self.model = model
+        root = .logs(model)
         model.onAction = { [weak self] in self?.handle($0) }
+    }
+    func makeDestination(for route: Route) -> Destination { .none }
+    func handle(_ action: Action) {
+        if case .logs(let action) = action { handle(action) } else { self.action?(action) }
     }
     func handle(_ action: LogsViewModel.Action) {
         guard !retired, isOwned(), !isPresenting, canPresent() else { return }
@@ -64,7 +73,7 @@ extension AppCoordinator {
             self?.selection == .activity && self?.canPresent == true && self?.canOpenExternalRoute() == true
         }
         child.presentationEnded = { [weak self] in self?.schedulePendingDeepLink() }
-        logsCoordinator = child; schedulePendingDeepLink()
+        logsCoordinator = child; refreshRoot(); schedulePendingDeepLink()
         return child
     }
     func makeLogs(factory: any LogsFeatureFactory, pageActions: any PageActionServing, copy: @escaping (String) -> Void) -> LogsViewModel {
