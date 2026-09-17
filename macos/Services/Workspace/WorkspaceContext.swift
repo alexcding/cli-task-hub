@@ -299,11 +299,12 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
             guard let self, let page else { return }
             noteHistory(page.record); changed()
         }
-        page.openPopup = { [weak self] url, configuration in
+        page.openPopup = { [weak self] url, configuration, linkActivated in
             guard let self else { return nil }
-            // about:blank popups are login flows that script the child window; they need
-            // the web view back. Everything else is a link and belongs under Tabs.
-            if url.absoluteString != "about:blank", openInNewTab(url) { return nil }
+            // Scripted popups (window.open, OAuth and payment flows, about:blank) need the
+            // child web view back so the opener handshake completes. A plain link click that
+            // asked for a new window belongs under Tabs instead.
+            if linkActivated, url.absoluteString != "about:blank", openInNewTab(url) { return nil }
             return open(url.absoluteString, configuration: configuration)?.webView
         }
     }

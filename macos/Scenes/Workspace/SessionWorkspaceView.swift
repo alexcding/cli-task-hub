@@ -247,7 +247,7 @@ private struct SessionWorkspaceContextContent: View {
         } else if let page = context.activePage {
             BrowserPane(page: page, context: context, model: page.controls).id(page.id)
         } else {
-            BlankPane(context: context)
+            BlankPane(context: context, model: model)
         }
     }
 }
@@ -256,22 +256,29 @@ private struct SessionWorkspaceContextContent: View {
 /// the pane is for, not a void. It gives the open/close animation something to resize.
 struct BlankPane: View {
     let context: WorkspaceContext
+    let model: SessionWorkspaceViewModel
+
+    private var hint: Text {
+        let lead = Text("Use ＋ to open ").foregroundColor(Theme.textTertiary)
+        guard model.canShowChanges else {
+            return lead + Text("a web page or a file.").foregroundColor(Theme.textTertiary)
+        }
+        return lead + Text("this worktree’s ").foregroundColor(Theme.textTertiary)
+            + Text("Diff").fontWeight(.semibold).foregroundColor(Theme.textSecondary)
+            + Text(", a web page or a file.").foregroundColor(Theme.textTertiary)
+    }
 
     var body: some View {
         VStack(spacing: 5) {
             Text("Nothing open in this panel")
-                .font(.system(size: 13, weight: .semibold))
+                .font(Theme.Typography.emptyTitle)
                 .foregroundStyle(Theme.textSecondary)
-            (Text("Use ＋ to open this worktree’s ").foregroundColor(Theme.textTertiary)
-             + Text("Diff").fontWeight(.semibold).foregroundColor(Theme.textSecondary)
-             + Text(", a web page or a file.").foregroundColor(Theme.textTertiary))
-                .font(.system(size: 12))
-                .multilineTextAlignment(.center)
+            hint.font(Theme.Typography.emptyHint).multilineTextAlignment(.center)
         }
         .frame(maxWidth: 260)
         .padding(24)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background(Theme.paneBackground)
     }
 }
 

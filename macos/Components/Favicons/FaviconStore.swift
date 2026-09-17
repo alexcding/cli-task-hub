@@ -18,16 +18,25 @@ import SwiftUI
         return host.lowercased()
     }
 
-    func image(forURL url: String) -> NSImage? { Self.host(of: url).flatMap(image(host:)) }
+    /// Hosts whose name may be sent to the public icon service: a routable, dotted public name.
+    /// Bare names, `.local`/`.internal`/`.lan`/`.corp`/`.home`/`.test` suffixes and IP literals stay private.
+    static func isPublicHost(_ host: String) -> Bool {
+        guard host.contains("."), host != "localhost" else { return false }
+        if host.allSatisfy({ $0.isNumber || $0 == "." }) || host.contains(":") { return false }
+        let suffix = host.split(separator: ".").last.map(String.init) ?? ""
+        return !["local", "internal", "lan", "corp", "home", "test", "localhost", "intranet"].contains(suffix)
+    }
 
-    func image(host: String) -> NSImage? {
+    func image(forURL url: String) -> NSImage? { Self.host(of: url).flatMap { image(host: $0, url: url) } }
+
+    func image(host: String, url: String? = nil) -> NSImage? {
         if let hit = images[host] { return hit }
         // A failed fetch may retry after a minute, not on every row refresh and not never.
         if let failed = failures[host], Date().timeIntervalSince(failed) < 60 { return nil }
         guard pending.insert(host).inserted else { return nil }
         Task {
             defer { pending.remove(host) }
-            if let image = await Self.fetch(host) {
+            if let image = await Self.fetch(host, scheme: url.flatMap { URL(string: $0)?.scheme } ?? "https") {
                 failures[host] = nil
                 images[host] = image
                 NotificationCenter.default.post(name: SidebarAvatars.loaded, object: nil)
@@ -38,8 +47,9 @@ import SwiftUI
         return nil
     }
 
-    private static func fetch(_ host: String) async -> NSImage? {
-        let candidates = ["https://\(host)/favicon.ico", "https://icons.duckduckgo.com/ip3/\(host).ico"]
+    private static func fetch(_ host: String, scheme: String) async -> NSImage? {
+        var candidates = ["\(scheme)://\(host)/favicon.ico"]
+        if isPublicHost(host) { candidates.append("https://icons.duckduckgo.com/ip3/\(host).ico") }
         for candidate in candidates {
             guard let url = URL(string: candidate),
                   let (data, response) = try? await URLSession.shared.data(from: url),

@@ -143,7 +143,10 @@ public final class AppViewModel {
             context.configureWorkspace(factory: workspaceFactory, service: self)
             context.openInNewTab = { [weak self] url in
                 guard let self, api != nil, safeWebURL(url.absoluteString) != nil else { return false }
-                Task { try? await self.openPage(OpenPageRequest(url: url.absoluteString, kind: "web", title: url.host ?? "")) }
+                Task {
+                    do { try await self.openPage(OpenPageRequest(url: url.absoluteString, kind: "web", title: url.host ?? "")) }
+                    catch { self.error = "Could not open \(url.absoluteString): \(error.localizedDescription)" }
+                }
                 return true
             }
             if let model = context.workspaceViewModel { coordinator.bindWorkspace(model, context: context, runtime: self) }
@@ -453,15 +456,11 @@ public final class AppViewModel {
         guard id != before else { return }
         // Reorder the list as the sidebar shows it, then split it back: saved tabs keep
         // their relative order, drafts keep theirs and stay after the saved ones.
-        var shown = visibleTabs
-        guard let index = shown.firstIndex(where: { $0.id == id }) else { return }
-        let moving = shown.remove(at: index)
-        let target = before.flatMap { b in shown.firstIndex { $0.id == b } } ?? shown.count
-        shown.insert(moving, at: target)
-        let previous = tabs
+        guard let shown = Self.reordered(visibleTabs, moving: id, before: before) else { return }
+        let previous = tabs.map(\.id)
         draftTabs = shown.filter { isDraftTab($0.id) }
         tabs = shown.filter { !isDraftTab($0.id) }
-        guard let api, tabs.map(\.id) != previous.map(\.id) else { return }
+        guard let api, tabs.map(\.id) != previous else { return }
         let order = tabs.map(\.id)
         tabOrderGeneration += 1
         let generation = tabOrderGeneration
@@ -471,13 +470,33 @@ public final class AppViewModel {
                 // A newer drag owns the list now; its own response will land.
                 if generation == tabOrderGeneration { tabs = saved.tabs }
             } catch {
-                if generation == tabOrderGeneration { tabs = previous }
+                // Tabs may have been opened, renamed or closed meanwhile: restore only the
+                // old relative order of whatever is listed now, never an old snapshot.
+                if generation == tabOrderGeneration { tabs = Self.ordered(tabs, by: previous) }
                 self.error = "Could not save tab order: \(error.localizedDescription)"
             }
         }
     }
     /// Counts reorders so a stale PATCH response cannot undo a newer drag.
     private var tabOrderGeneration = 0
+    /// `shown` with `id` moved in front of `before`, or to the end when `before` is nil or
+    /// unknown. Nil when `id` is not listed.
+    static func reordered(_ shown: [SavedTab], moving id: String, before: String?) -> [SavedTab]? {
+        var shown = shown
+        guard let index = shown.firstIndex(where: { $0.id == id }) else { return nil }
+        let moving = shown.remove(at: index)
+        let target = before.flatMap { b in shown.firstIndex { $0.id == b } } ?? shown.count
+        shown.insert(moving, at: target)
+        return shown
+    }
+    /// `tabs` in the relative order `ids` gives; tabs `ids` does not know keep their place at the end.
+    static func ordered(_ tabs: [SavedTab], by ids: [String]) -> [SavedTab] {
+        let rank = Dictionary(ids.enumerated().map { ($1, $0) }, uniquingKeysWith: { first, _ in first })
+        return tabs.enumerated().sorted { lhs, rhs in
+            let l = rank[lhs.element.id] ?? Int.max, r = rank[rhs.element.id] ?? Int.max
+            return l != r ? l < r : lhs.offset < rhs.offset
+        }.map(\.element)
+    }
 
     /// A Today-popover row: its PR opens by link; a ticket by its key on the configured Jira site.
     func openActivityEntry(_ entry: LogEntry) async throws {

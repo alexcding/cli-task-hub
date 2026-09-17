@@ -21,7 +21,9 @@ struct WebPageRecord: Codable, Identifiable, Equatable, Sendable {
     let dialogs = BrowserDialogViewModel()
     @ObservationIgnored var isOwned: () -> Bool = { false }
     @ObservationIgnored var changed: () -> Void = {}
-    @ObservationIgnored var openPopup: ((URL, WKWebViewConfiguration) -> WKWebView?)?
+    /// `linkActivated` is true for a plain user click on a target=_blank link; false for a
+    /// scripted `window.open` or a popup that asked for window features.
+    @ObservationIgnored var openPopup: ((URL, WKWebViewConfiguration, _ linkActivated: Bool) -> WKWebView?)?
     @ObservationIgnored private var observations: [NSKeyValueObservation] = []
     @ObservationIgnored lazy var controls = BrowserControlsViewModel(page: self)
 
@@ -157,7 +159,9 @@ struct WebPageRecord: Codable, Identifiable, Equatable, Sendable {
                  for action: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
         guard action.targetFrame == nil, let url = action.request.url,
               safeWebURL(url.absoluteString) != nil || url.absoluteString == "about:blank" else { return nil }
-        return openPopup?(url, configuration)
+        let sized = windowFeatures.width != nil || windowFeatures.height != nil
+            || windowFeatures.x != nil || windowFeatures.y != nil
+        return openPopup?(url, configuration, action.navigationType == .linkActivated && !sized)
     }
     private func requestDialog(_ kind: BrowserDialogViewModel.Kind, from webView: WKWebView, frame: WKFrameInfo,
                                completion: @escaping (BrowserDialogViewModel.Response) -> Void) {

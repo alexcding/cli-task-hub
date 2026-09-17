@@ -73,3 +73,36 @@ private func workspaceSession(_ id: String, created: String?, pinned: Bool = fal
     #expect(rows.first { $0.id == "tab:https://github.com/o/r/pull/1" }?.role == .tab(.init(kind: "github", login: "octocat", url: "https://github.com/o/r/pull/1")))
     #expect(rows.first { $0.id == "project:p1" }?.role == .project(canCreateSession: true))
 }
+
+private func savedTab(_ id: String) -> SavedTab { SavedTab(id: id, kind: "web", title: id, url: "https://\(id).example") }
+
+@MainActor @Test func tabReorderMovesBeforeTargetOrToEndAndKeepsDraftsAfterSavedTabs() throws {
+    let shown = ["a", "b", "c", "d1", "d2"].map(savedTab)
+    let drafts: Set<String> = ["d1", "d2"]
+    func split(_ list: [SavedTab]) -> ([String], [String]) {
+        (list.filter { !drafts.contains($0.id) }.map(\.id), list.filter { drafts.contains($0.id) }.map(\.id))
+    }
+    #expect(try #require(AppViewModel.reordered(shown, moving: "c", before: "a")).map(\.id) == ["c", "a", "b", "d1", "d2"])
+    #expect(try #require(AppViewModel.reordered(shown, moving: "a", before: nil)).map(\.id) == ["b", "c", "d1", "d2", "a"])
+    #expect(try #require(AppViewModel.reordered(shown, moving: "a", before: "missing")).map(\.id) == ["b", "c", "d1", "d2", "a"])
+    #expect(AppViewModel.reordered(shown, moving: "missing", before: "a") == nil)
+    // A saved tab dropped among drafts still lands in the saved list; a draft dropped among
+    // saved tabs stays a draft and follows them, each list keeping its relative order.
+    let mixed = try #require(AppViewModel.reordered(shown, moving: "a", before: "d2"))
+    #expect(split(mixed) == (["b", "c", "a"], ["d1", "d2"]))
+    let draftFirst = try #require(AppViewModel.reordered(shown, moving: "d2", before: "a"))
+    #expect(split(draftFirst) == (["a", "b", "c"], ["d2", "d1"]))
+}
+
+@MainActor @Test func tabOrderRollbackRestoresRelativeOrderAndKeepsUnknownTabsAtTheEnd() {
+    let current = ["c", "new", "a", "b"].map(savedTab)
+    #expect(AppViewModel.ordered(current, by: ["a", "b", "c", "gone"]).map(\.id) == ["a", "b", "c", "new"])
+    #expect(AppViewModel.ordered([], by: ["a"]).isEmpty)
+}
+
+@MainActor @Test func faviconFallbackIsLimitedToPublicHosts() {
+    #expect(FaviconStore.isPublicHost("github.com") && FaviconStore.isPublicHost("issues.apache.org"))
+    for host in ["localhost", "jira", "jira.internal", "build.corp", "printer.local", "nas.lan", "10.0.0.4", "::1", "app.test"] {
+        #expect(!FaviconStore.isPublicHost(host), "\(host) should stay private")
+    }
+}

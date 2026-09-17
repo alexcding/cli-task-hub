@@ -93,7 +93,14 @@ enum Theme {
     enum Typography {
         /// 11.5 — `.hook-pill`.
         static let pill = Font.system(size: 11.5)
+        /// 13 semibold — `.pane-empty-t`.
+        static let emptyTitle = Font.system(size: 13, weight: .semibold)
+        /// 12 — `.pane-empty-s`.
+        static let emptyHint = Font.system(size: 12)
     }
+
+    /// `--bg`: the surface a content pane sits on. Follows the window appearance.
+    static var paneBackground: Color { Color(nsColor: .windowBackgroundColor) }
 
     enum Size {
         /// 1 — a hairline rule.
