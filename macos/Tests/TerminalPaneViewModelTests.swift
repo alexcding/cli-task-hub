@@ -5,9 +5,9 @@ import Testing
     var showsSurface = true
     var ready = true
     var updates: [(active: Bool, focus: Bool)] = []
-    var font: CodeFont?
+    var style: TerminalStyle?
     var starts = 0
-    func setFont(_ value: CodeFont) { font = value }
+    func setStyle(_ value: TerminalStyle) { style = value }
     func start() async { starts += 1 }
     func ownsPresentationWindow(_ window: NSWindow) -> Bool { false }
     func applyPresentation(active: Bool, focus: Bool) { updates.append((active, focus)) }
@@ -23,9 +23,9 @@ import Testing
     let session = TerminalPresentationFixture(), model = TerminalPaneViewModel(session: session)
     model.presentation.active = true; model.appear()
     #expect(session.updates.isEmpty)
-    model.presentation.font = CodeFont(size: 14)
-    model.presentation.font = CodeFont(size: 18)
-    #expect(session.font == nil)
+    model.presentation.style = TerminalStyle(font: CodeFont(size: 14))
+    model.presentation.style = TerminalStyle(font: CodeFont(size: 18))
+    #expect(session.style == nil)
     model.visible = false; model.visibilityChanged(false)
     model.visible = true; model.visibilityChanged(true)
     model.presentation.active = false
@@ -33,8 +33,8 @@ import Testing
     await flushPresentation()
     #expect(session.updates.count == 1)
     #expect(session.updates[0].active == false && session.updates[0].focus == false)
-    #expect(session.font == CodeFont(size: 18))
-    model.presentation = .init(active: false, font: CodeFont(size: 18))
+    #expect(session.style == TerminalStyle(font: CodeFont(size: 18)))
+    model.presentation = .init(active: false, style: TerminalStyle(font: CodeFont(size: 18)))
     await flushPresentation()
     #expect(session.updates.count == 1) // Equal input does not enqueue display work.
 
@@ -71,14 +71,14 @@ import Testing
     var session: TerminalPresentationFixture? = TerminalPresentationFixture()
     weak var retained = session
     let model = TerminalPaneViewModel(session: session!)
-    let font = CodeFont(size: 16)
-    model.presentation.font = font; await model.start()
-    #expect(session?.font == font && session?.starts == 1)
+    let style = TerminalStyle(font: CodeFont(size: 16))
+    model.presentation.style = style; await model.start()
+    #expect(session?.style == style && session?.starts == 1)
     model.presentation.active = true; model.appear()
     session = nil
     #expect(retained == nil)
     await flushPresentation()
     #expect(!model.visible)
     model.presentation.active = false
-    model.presentation.font = font; await model.start()
+    model.presentation.style = style; await model.start()
 }

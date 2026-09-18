@@ -4,7 +4,7 @@ import Observation
 @MainActor protocol TerminalPaneServing: AnyObject {
     var showsSurface: Bool { get set }
     var ready: Bool { get }
-    func setFont(_ value: CodeFont)
+    func setStyle(_ value: TerminalStyle)
     func start() async
     func ownsPresentationWindow(_ window: NSWindow) -> Bool
     func applyPresentation(active: Bool, focus: Bool)
@@ -14,12 +14,12 @@ import Observation
 @MainActor @Observable final class TerminalPaneViewModel {
     struct Presentation: Equatable {
         var active = false
-        var font = CodeFont(size: 13)
+        var style = TerminalStyle()
     }
     var presentation = Presentation() {
         didSet {
             guard oldValue != presentation else { return }
-            if oldValue.font != presentation.font { pendingFont = presentation.font }
+            if oldValue.style != presentation.style { pendingStyle = presentation.style }
             refreshVisibility()
         }
     }
@@ -27,7 +27,7 @@ import Observation
     @ObservationIgnored private var mounted = false
     @ObservationIgnored private var scheduled = false
     @ObservationIgnored private var pendingFocus = false
-    @ObservationIgnored private var pendingFont: CodeFont?
+    @ObservationIgnored private var pendingStyle: TerminalStyle?
 
     init(session: any TerminalPaneServing) { self.session = session }
 
@@ -50,9 +50,9 @@ import Observation
     func surfaceChanged() { refreshVisibility() }
     func becameReady() { refreshVisibility(focus: true) }
     func start() async {
-        pendingFont = presentation.font; refreshVisibility()
+        pendingStyle = presentation.style; refreshVisibility()
         // SwiftUI tasks may execute synchronously up to their first suspension.
-        // Apply the queued font after the update pass, before attaching output.
+        // Apply the queued style after the update pass, before attaching output.
         await withCheckedContinuation { continuation in
             DispatchQueue.main.async { continuation.resume() }
         }
@@ -76,10 +76,10 @@ import Observation
             scheduled = false
             let focus = pendingFocus
             pendingFocus = false
-            let font = pendingFont
-            pendingFont = nil
+            let style = pendingStyle
+            pendingStyle = nil
             guard let session else { return }
-            if let font { session.setFont(font) }
+            if let style { session.setStyle(style) }
             let presentationActive = mounted && presentation.active
             session.applyPresentation(active: presentationActive, focus: focus && presentationActive && session.showsSurface && session.ready)
         }

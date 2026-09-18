@@ -85,7 +85,8 @@ import Observation
         let general = active && section == .general
         loginItem.setActive(general)
         if general { loginItem.refresh() } else { _ = loginItem.cancelRead() }
-        if active && section == .appearance { fonts.refresh() } else { _ = fonts.cancelRead() }
+        // Both tabs show a family picker, so the installed-font catalogue is read for either.
+        if active && (section == .appearance || section == .terminal) { fonts.refresh() } else { _ = fonts.cancelRead() }
         if active && section == .clis { clis.refresh() } else { clis.cancelReads() }
     }
     func applicationActiveChanged(_ value: Bool) {

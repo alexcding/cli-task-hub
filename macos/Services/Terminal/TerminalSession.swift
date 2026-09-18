@@ -19,8 +19,9 @@ final class TerminalSession: Identifiable {
     let agentTurns = AgentTurnTracker()
     var agentBusy: Bool { agentTurns.busy }
     private(set) var ready = false
-    private(set) var font = CodeFont(size: 13)
-    private(set) var fontError: String?
+    private(set) var style = TerminalStyle()
+    /// Everything in the current style that did not apply, joined for display. Never fatal.
+    private(set) var styleError: String?
     @ObservationIgnored private var pipe: TerminalPipe!
     @ObservationIgnored private var client: PtydClient?
     @ObservationIgnored private var host: PtydHost?
@@ -57,7 +58,9 @@ final class TerminalSession: Identifiable {
         let wasVisible = surface.isSurfaceVisible
         surfaceGeneration = UUID()
         let generation = surfaceGeneration
-        surface = TerminalViewState(terminalConfiguration: font.terminalConfiguration)
+        let resolved = style.resolve()
+        styleError = resolved.issues.isEmpty ? nil : resolved.issues.joined(separator: " ")
+        surface = TerminalViewState(theme: resolved.theme, terminalConfiguration: resolved.configuration)
         surface.isSurfaceVisible = wasVisible
         pipe = TerminalPipe(onError: { [weak self] text in
             Task { @MainActor in
@@ -87,18 +90,32 @@ final class TerminalSession: Identifiable {
         }
     }
 
-    func setFont(_ value: CodeFont) {
-        guard font != value else { return }
+    func setStyle(_ value: TerminalStyle) {
+        guard style != value else { return }
+        let previous = style
+        let resolved = value.resolve()
+        var issues = resolved.issues
         // Changing surface.configuration would rebuild the emulator. Reconfigure
         // its controller in place, preserving parser/surface and daemon ownership.
-        guard surface.setTerminalConfiguration(value.terminalConfiguration) else {
-            fontError = surface.controller.lastConfigurationIssue ?? "Could not apply the terminal font."
-            return
+        //
+        // The difference is checked here first because setTerminalConfiguration also returns
+        // false for a configuration equal to the one already applied. Calling it unguarded
+        // reports "could not apply" for every style change that leaves the font alone — a
+        // theme switch, say — which is the opposite of what happened.
+        if resolved.configuration != surface.terminalConfiguration,
+           !surface.setTerminalConfiguration(resolved.configuration) {
+            issues.append(surface.controller.lastConfigurationIssue ?? "Could not apply the terminal font.")
         }
-        font = value; fontError = nil
+        if resolved.theme != surface.theme, !surface.setTheme(resolved.theme) {
+            issues.append(surface.controller.lastConfigurationIssue ?? "Could not apply the terminal theme.")
+        }
+        style = value
+        styleError = issues.isEmpty ? nil : issues.joined(separator: " ")
         // A prior native zoom action marks the size as manually adjusted; reset
         // to the newly configured size so future preference updates keep working.
-        _ = surface.performBindingAction("reset_font_size")
+        // Only a font change needs it: resetting after a theme or smoothing change
+        // would throw away a zoom the surface was legitimately holding.
+        if previous.font != value.font { _ = surface.performBindingAction("reset_font_size") }
     }
 
     func start() async {

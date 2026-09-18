@@ -11,7 +11,7 @@ struct TerminalPane: View {
             if let error = session.error {
                 Text(error).foregroundStyle(.orange).textSelection(.enabled).padding(10)
             }
-            if let error = session.fontError { Text(error).foregroundStyle(.orange).padding(8) }
+            if let error = session.styleError { Text(error).foregroundStyle(.orange).padding(8) }
             ZStack {
                 TerminalSurfaceView(context: session.surface)
                     .id(session.surfaceGeneration)

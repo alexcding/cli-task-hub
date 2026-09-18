@@ -12,7 +12,7 @@ import Observation
     var workflow: WorkflowRunViewModel?
     var appearance: AppAppearance = .system
     var documentFont = CodeFont(size: 12)
-    var terminalFont = CodeFont(size: 13)
+    var terminalStyle = TerminalStyle()
     var connected = false
     var changingSession = false
     var openingExternal = false
@@ -155,8 +155,8 @@ enum WorkspaceOperation: Equatable {
         if presentedTerminal !== terminal { presentedTerminal?.presentation.active = false }
         if presentedBuildTerminal !== build { presentedBuildTerminal?.presentation.active = false }
         presentedTerminal = terminal; presentedBuildTerminal = build
-        terminal?.presentation = .init(active: active && showsTerminal, font: state.terminalFont)
-        build?.presentation = .init(active: active && showsBuild, font: state.terminalFont)
+        terminal?.presentation = .init(active: active && showsTerminal, style: state.terminalStyle)
+        build?.presentation = .init(active: active && showsBuild, style: state.terminalStyle)
     }
     func documentStateChanged() {
         let state = state

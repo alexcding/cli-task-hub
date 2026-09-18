@@ -8,7 +8,6 @@ struct TaskHubApp: App {
         Window("TaskHub Native", id: "main") {
             AppCoordinatorView(coordinator: delegate.model.coordinator)
                 .frame(minWidth: 760, minHeight: 480)
-                .environment(\.terminalFont, delegate.model.shell.font(.term))
                 .environment(\.documentFont, delegate.model.shell.font(.diff))
                 .overlay(alignment: .topTrailing) {
                     ActivityToastView(notifications: delegate.model.shell.notifications)

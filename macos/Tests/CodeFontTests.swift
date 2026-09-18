@@ -17,7 +17,6 @@ import Testing
     let json = try #require(JSONSerialization.jsonObject(with: Data(font.json.utf8)) as? [String: Any])
     #expect(json["family"] as? String == font.family)
     #expect(json["size"] as? Int == 18)
-    #expect(font.terminalConfiguration.rendered.contains("font-size = 18"))
 }
 
 @Test func installedFontCatalogContainsLocalMonospaceFamilies() async {

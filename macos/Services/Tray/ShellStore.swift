@@ -28,6 +28,18 @@ import Observation
     private(set) var terminalCodeFont: CodeFont {
         didSet { if oldValue != terminalCodeFont { terminalStyleChanged() } }
     }
+    private(set) var terminalFontThicken: Bool {
+        didSet { if oldValue != terminalFontThicken { terminalStyleChanged() } }
+    }
+    private(set) var terminalFontThickenStrength: Int {
+        didSet { if oldValue != terminalFontThickenStrength { terminalStyleChanged() } }
+    }
+    private(set) var terminalDarkTheme: String {
+        didSet { if oldValue != terminalDarkTheme { terminalStyleChanged() } }
+    }
+    private(set) var terminalLightTheme: String {
+        didSet { if oldValue != terminalLightTheme { terminalStyleChanged() } }
+    }
     private(set) var documentCodeFont: CodeFont {
         didSet { if oldValue != documentCodeFont { documentStyleChanged() } }
     }
@@ -64,6 +76,12 @@ import Observation
                                      "\(kind.rawValue)_font_size": preferences.string(forKey: "native.\(kind.rawValue)_font_size") ?? String(kind.defaultSize)])
         }
         terminalCodeFont = savedFont(.term); documentCodeFont = savedFont(.diff)
+        // Thickening defaults on: without it libghostty renders noticeably thinner than the
+        // standalone Ghostty app, which is the state this setting exists to correct.
+        terminalFontThicken = preferences.string(forKey: "native.terminalThicken") != "off"
+        terminalFontThickenStrength = TerminalStyle.clampThickenStrength(preferences.string(forKey: "native.terminalThickenStrength"))
+        terminalDarkTheme = preferences.string(forKey: "native.terminalThemeDark") ?? ""
+        terminalLightTheme = preferences.string(forKey: "native.terminalThemeLight") ?? ""
     }
 
     var pendingReviews: [TrayPR] { prs.filter(\.pendingReview) }
@@ -217,6 +235,38 @@ import Observation
         }
     }
 
+    /// Everything a terminal surface is configured from, assembled from the stored preferences.
+    var terminalStyle: TerminalStyle {
+        TerminalStyle(font: terminalCodeFont, thicken: terminalFontThicken,
+                      thickenStrength: terminalFontThickenStrength,
+                      darkTheme: terminalDarkTheme, lightTheme: terminalLightTheme)
+    }
+    func setTerminalFontThicken(_ enabled: Bool) {
+        guard enabled != terminalFontThicken else { return }
+        terminalFontThicken = enabled
+        preferences.set(enabled ? "on" : "off", forKey: "native.terminalThicken")
+        saveSetting("terminalThicken", value: enabled ? "on" : "off")
+    }
+    func setTerminalFontThickenStrength(_ value: Int) {
+        let next = TerminalStyle.clampThickenStrength(value)
+        guard next != terminalFontThickenStrength else { return }
+        terminalFontThickenStrength = next
+        preferences.set(String(next), forKey: "native.terminalThickenStrength")
+        saveSetting("terminalThickenStrength", value: String(next), debounce: true)
+    }
+    func setTerminalTheme(dark: String? = nil, light: String? = nil) {
+        for (value, key, isDark) in [(dark, "terminalThemeDark", true), (light, "terminalThemeLight", false)] {
+            guard let value, value != (isDark ? terminalDarkTheme : terminalLightTheme) else { continue }
+            guard value.isEmpty || TerminalStyle.hasTheme(value) else {
+                settingsError = "No terminal theme named \(value)."
+                continue
+            }
+            if isDark { terminalDarkTheme = value } else { terminalLightTheme = value }
+            preferences.set(value, forKey: "native.\(key)")
+            saveSetting(key, value: value)
+        }
+    }
+
     private func saveSetting(_ key: String, value: String, debounce: Bool = false) {
         pendingSettings[key] = value
         preferences.set(pendingSettings, forKey: "native.pendingSettings")
@@ -281,6 +331,12 @@ import Observation
                     preferences.set(value.family, forKey: "native.\(familyKey)")
                     preferences.set(String(value.size), forKey: "native.\(sizeKey)")
                 }
+                if pendingSettings["terminalThicken"] == nil { terminalFontThicken = (settings["terminalThicken"] ?? nil) != "off" }
+                if pendingSettings["terminalThickenStrength"] == nil {
+                    terminalFontThickenStrength = TerminalStyle.clampThickenStrength((settings["terminalThickenStrength"] ?? nil))
+                }
+                if pendingSettings["terminalThemeDark"] == nil { terminalDarkTheme = (settings["terminalThemeDark"] ?? nil) ?? "" }
+                if pendingSettings["terminalThemeLight"] == nil { terminalLightTheme = (settings["terminalThemeLight"] ?? nil) ?? "" }
                 preferences.set(appearance.rawValue, forKey: "native.theme")
                 preferences.set(usageAgent, forKey: "native.usageAgent")
                 preferences.set(activityNotify ? "on" : "off", forKey: "native.activityNotify")
@@ -288,6 +344,10 @@ import Observation
                 preferences.set(defaultAgent.rawValue, forKey: "native.defaultCli")
                 preferences.set(gitClient, forKey: "native.gitClient")
                 preferences.set(gitClientCommand, forKey: "native.gitClientCmd")
+                preferences.set(terminalFontThicken ? "on" : "off", forKey: "native.terminalThicken")
+                preferences.set(String(terminalFontThickenStrength), forKey: "native.terminalThickenStrength")
+                preferences.set(terminalDarkTheme, forKey: "native.terminalThemeDark")
+                preferences.set(terminalLightTheme, forKey: "native.terminalThemeLight")
                 if pendingSettings.isEmpty { settingsError = nil }
             } catch { if !Task.isCancelled { settingsError = error.localizedDescription } }
         }

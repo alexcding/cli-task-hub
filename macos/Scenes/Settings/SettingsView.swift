@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-/// Four tabs, one card per group, one `SettingsRow` per setting.
+/// Five tabs, one card per group, one `SettingsRow` per setting.
 struct SettingsView: View {
     @Bindable var model: SettingsViewModel
     let shell: ShellStore
@@ -19,6 +19,7 @@ struct SettingsView: View {
             switch model.section {
             case .general: general
             case .appearance: appearance
+            case .terminal: TerminalSettingsView(fonts: model.fonts, shell: shell)
             case .clis: clis
             case .system: system
             }
@@ -115,7 +116,8 @@ struct SettingsView: View {
                     }.labelsHidden().accessibilityIdentifier("settings-theme")
                 }
             }
-            FontSettingsView(model: model.fonts, shell: shell)
+            // The terminal font lives under Terminal, beside the rest of the surface's settings.
+            FontSettingsView(model: model.fonts, shell: shell, kinds: [.diff])
         if let error = shell.settingsError {
             Section { Text(error).foregroundStyle(Theme.danger) }
         }

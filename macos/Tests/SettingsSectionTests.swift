@@ -36,11 +36,15 @@ private actor SectionFontCatalog: CodeFontCatalog {
     #expect(await fonts.reads == 0)
     #expect(await clis.probes == 0)
     #expect(runtime.activations == 1)
-    // Appearance owns the font pickers and nothing else.
+    // Appearance owns the code font picker and nothing else.
     model.section = .appearance
     while model.fonts.loading { await Task.yield() }
     #expect(await fonts.reads == 1)
     #expect(await login.reads == 1)
+    // Terminal shows a family picker too, so the installed-font catalogue is read for it as well.
+    model.section = .terminal
+    while model.fonts.loading { await Task.yield() }
+    #expect(await fonts.reads == 2)
     // System carries the inspector and the resource readout together.
     model.section = .system
     while await diagnostics.calls == 0 { await Task.yield() }

@@ -29,7 +29,7 @@ private final class LinkMetrics: @unchecked Sendable {
     _ = NSApplication.shared
     let input = InputBytes(), metrics = LinkMetrics()
     let memory = InMemoryTerminalSession(write: { input.append($0) }, resize: { metrics.set($0) })
-    let configuration = CodeFont(size: 13).terminalConfiguration
+    let configuration = TerminalStyle(font: CodeFont(size: 13)).resolve().configuration
         .custom("window-padding-x", "0").custom("window-padding-y", "0")
         .custom("click-repeat-interval", "1")
     let state = TerminalViewState(terminalConfiguration: configuration)

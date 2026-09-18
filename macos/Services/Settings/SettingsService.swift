@@ -53,10 +53,11 @@ struct APISettingsService: SettingsService {
     func sounds() async throws -> [ReviewSound] { try await api.get(Routes.SOUNDS) }
 }
 
-/// General holds startup, behaviour and browser preferences; Appearance is theme and fonts only;
-/// CLIs carries every tool connection including Jira; System is the read-only diagnostics.
+/// General holds startup, behaviour and browser preferences; Appearance is the app theme and the
+/// code font; Terminal is everything the Ghostty surface is configured from, including its own
+/// font; CLIs carries every tool connection including Jira; System is the read-only diagnostics.
 enum SettingsSection: String, CaseIterable, Identifiable {
-    case general = "General", appearance = "Appearance", clis = "CLIs", system = "System"
+    case general = "General", appearance = "Appearance", terminal = "Terminal", clis = "CLIs", system = "System"
     var id: String { rawValue }
 }
 

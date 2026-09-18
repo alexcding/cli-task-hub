@@ -2,7 +2,6 @@ import CoreText
 import Foundation
 import Observation
 import SwiftUI
-import GhosttyTerminal
 
 enum CodeFontKind: String, CaseIterable, Identifiable {
     case term, diff
@@ -28,18 +27,10 @@ struct CodeFont: Codable, Equatable, Sendable {
         value.utf8.count <= 256 && value.rangeOfCharacter(from: .controlCharacters.union(.newlines)) == nil
     }
     var json: String { String(decoding: try! JSONEncoder().encode(self), as: UTF8.self) }
-    var terminalConfiguration: TerminalConfiguration {
-        let config = TerminalConfiguration().fontSize(Float(size))
-        return family.isEmpty ? config : config.fontFamily(family)
-    }
 }
 
-private struct TerminalFontKey: EnvironmentKey { static let defaultValue = CodeFont(size: 13) }
 private struct DocumentFontKey: EnvironmentKey { static let defaultValue = CodeFont(size: 12) }
 extension EnvironmentValues {
-    var terminalFont: CodeFont {
-        get { self[TerminalFontKey.self] } set { self[TerminalFontKey.self] = newValue }
-    }
     var documentFont: CodeFont {
         get { self[DocumentFontKey.self] } set { self[DocumentFontKey.self] = newValue }
     }
@@ -81,11 +72,15 @@ actor InstalledCodeFontCatalog: CodeFontCatalog {
 /// One `Section` per font kind, so a family and its size read as one group instead of two rows
 /// that happen to sit near each other. Every row goes through `SettingsRow`/`LabeledContent`, so
 /// the Form owns the alignment.
+///
+/// The two kinds live in different tabs — the code font under Appearance, the terminal font under
+/// Terminal — so the caller says which to draw.
 struct FontSettingsView: View {
     let model: FontSettingsViewModel
     let shell: ShellStore
+    var kinds: [CodeFontKind] = CodeFontKind.allCases
     var body: some View {
-        ForEach(CodeFontKind.allCases) { kind in
+        ForEach(kinds) { kind in
             let font = shell.font(kind)
             Section(kind.rowTitle) {
                 SettingsRow(title: "Font") {
@@ -108,9 +103,9 @@ struct FontSettingsView: View {
                         SliderDefaultMarker(value: Double(kind.defaultSize),
                                             range: Double(CodeFontKind.sizeRange.lowerBound)...Double(CodeFontKind.sizeRange.upperBound))
                     }
-                    // Only the code font claims ⌘0: AppViewModel.fontTarget hard-returns .diff while
-                    // Settings → Appearance is showing, so ⌘0 cannot reach the terminal size here.
-                    .help(kind == .diff ? "Default \(kind.defaultSize) · ⌘0 resets" : "Default \(kind.defaultSize)")
+                    // AppViewModel.fontTarget hard-returns the kind belonging to whichever
+                    // Settings tab is showing, so ⌘0 always lands on the slider in view.
+                    .help("Default \(kind.defaultSize) · ⌘0 resets")
                 } label: {
                     // Keep the kind in the label: the two rows are otherwise identical to
                     // VoiceOver and to `staticTexts[…]` in TaskHubUITests.

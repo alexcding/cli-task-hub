@@ -13,6 +13,9 @@
 		728A6AA42A2A9D55ABD412B4 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 0A01EF5361B23C1FC613C721 /* Sparkle */; };
 		7AAB4F2B3EBA9D918EF3C7D0 /* GhosttyTerminal in Frameworks */ = {isa = PBXBuildFile; productRef = 904836571D4D28F3C2E7EB04 /* GhosttyTerminal */; };
 		7F05583EB11B7BDAB70F064F /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 1A5E96BC02299C04C288CFCB /* Sparkle */; };
+		A1B2C3D40000000000000011 /* GhosttyTheme in Frameworks */ = {isa = PBXBuildFile; productRef = A1B2C3D40000000000000001 /* GhosttyTheme */; };
+		A1B2C3D40000000000000012 /* GhosttyTheme in Frameworks */ = {isa = PBXBuildFile; productRef = A1B2C3D40000000000000002 /* GhosttyTheme */; };
+		A1B2C3D40000000000000013 /* GhosttyTheme in Frameworks */ = {isa = PBXBuildFile; productRef = A1B2C3D40000000000000003 /* GhosttyTheme */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -148,6 +151,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				7AAB4F2B3EBA9D918EF3C7D0 /* GhosttyTerminal in Frameworks */,
+				A1B2C3D40000000000000012 /* GhosttyTheme in Frameworks */,
 				7F05583EB11B7BDAB70F064F /* Sparkle in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -157,6 +161,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				4415510CF7AF502B0F5DD509 /* GhosttyTerminal in Frameworks */,
+				A1B2C3D40000000000000011 /* GhosttyTheme in Frameworks */,
 				728A6AA42A2A9D55ABD412B4 /* Sparkle in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -173,6 +178,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				4E7DF3CF4810B4EC38A55D12 /* GhosttyTerminal in Frameworks */,
+				A1B2C3D40000000000000013 /* GhosttyTheme in Frameworks */,
 				62D68FC07EABB6B4C6958926 /* Sparkle in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -247,6 +253,7 @@
 			name = TaskHubTerminalStress;
 			packageProductDependencies = (
 				C55F686B0B0D671AF14E3A3D /* GhosttyTerminal */,
+				A1B2C3D40000000000000003 /* GhosttyTheme */,
 				3847F04EE724731C9EFB5B91 /* Sparkle */,
 			);
 			productName = TaskHubTerminalStress;
@@ -280,6 +287,7 @@
 			name = TaskHub;
 			packageProductDependencies = (
 				8C68B63441EC81D6CFAE1507 /* GhosttyTerminal */,
+				A1B2C3D40000000000000001 /* GhosttyTheme */,
 				0A01EF5361B23C1FC613C721 /* Sparkle */,
 			);
 			productName = TaskHub;
@@ -335,6 +343,7 @@
 			name = TaskHubTests;
 			packageProductDependencies = (
 				904836571D4D28F3C2E7EB04 /* GhosttyTerminal */,
+				A1B2C3D40000000000000002 /* GhosttyTheme */,
 				1A5E96BC02299C04C288CFCB /* Sparkle */,
 			);
 			productName = TaskHubTests;
@@ -770,6 +779,21 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 0C764A1CC6D6A03E30F22A99 /* XCRemoteSwiftPackageReference "ghostty-terminal-spm" */;
 			productName = GhosttyTerminal;
+		};
+		A1B2C3D40000000000000001 /* GhosttyTheme */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 0C764A1CC6D6A03E30F22A99 /* XCRemoteSwiftPackageReference "ghostty-terminal-spm" */;
+			productName = GhosttyTheme;
+		};
+		A1B2C3D40000000000000002 /* GhosttyTheme */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 0C764A1CC6D6A03E30F22A99 /* XCRemoteSwiftPackageReference "ghostty-terminal-spm" */;
+			productName = GhosttyTheme;
+		};
+		A1B2C3D40000000000000003 /* GhosttyTheme */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 0C764A1CC6D6A03E30F22A99 /* XCRemoteSwiftPackageReference "ghostty-terminal-spm" */;
+			productName = GhosttyTheme;
 		};
 		C55F686B0B0D671AF14E3A3D /* GhosttyTerminal */ = {
 			isa = XCSwiftPackageProductDependency;
