@@ -13,7 +13,6 @@ import Observation
         enum Destination {
             case newProject(ProjectEditorViewModel)
             case newSession(NewSessionViewModel)
-            case removal(SessionRemovalViewModel)
             case build(BuildDestinationViewModel)
         }
         let id: UUID
@@ -23,7 +22,6 @@ import Observation
             switch destination {
             case .newProject(let model): model.retire()
             case .newSession(let model): model.retire()
-            case .removal(let model): model.retire()
             case .build(let model): model.retire()
             }
         }
@@ -32,7 +30,6 @@ import Observation
             switch destination {
             case .newProject(let model): !model.busy
             case .newSession(let model): !model.creating
-            case .removal(let model): !model.removing
             case .build(let model): !model.starting
             }
         }
@@ -44,8 +41,24 @@ import Observation
         let perform: () -> Void
     }
     private(set) var restartConfirmation: RestartConfirmation?
+
+    /// Removing a session is a system confirmation, not a sheet of ours: the plan loads first
+    /// (`preparing`), the dialog asks (`confirming`), and the work runs with the dialog already
+    /// gone (`removing`). A failure at either end becomes an alert.
+    struct RemovalRequest: Identifiable {
+        enum Phase { case preparing, confirming, removing }
+        let id: UUID
+        let model: SessionRemovalViewModel
+        var phase: Phase
+    }
+    struct RemovalFailure: Identifiable {
+        let id = UUID()
+        let message: String
+    }
+    private(set) var removal: RemovalRequest?
+    private(set) var removalFailure: RemovalFailure?
     var canPresent: Bool {
-        sheet == nil && restartConfirmation == nil && !browserDialogCoordinator.isPresenting && !documentCloseCoordinator.isPresenting && !fileOpenCoordinator.isPresenting && !hasDocumentPresentation() && logsCoordinator?.isPresenting != true && !projectCoordinators.values.contains { $0.isPresenting }
+        sheet == nil && restartConfirmation == nil && removal == nil && removalFailure == nil && !browserDialogCoordinator.isPresenting && !documentCloseCoordinator.isPresenting && !fileOpenCoordinator.isPresenting && !hasDocumentPresentation() && logsCoordinator?.isPresenting != true && !projectCoordinators.values.contains { $0.isPresenting }
     }
     @ObservationIgnored var hasDocumentPresentation: () -> Bool = { false }
     @ObservationIgnored private let factory: any CreationFlowFactory
@@ -214,17 +227,53 @@ import Observation
         _ = complete(id)
     }
 
+    /// Checks the worktree first, so the dialog can state exactly what goes before it asks.
     func presentRemoval(_ makeModel: () -> SessionRemovalViewModel?) {
         guard canPresent, let model = makeModel(), !model.retired, !model.completed else { return }
         cancelPageActions()
         let id = UUID()
         model.onAction = { [weak self] action in
-            guard let self, case .removed(let sessions) = action, complete(id) else { return }
+            guard let self, case .removed(let sessions) = action, removal?.id == id else { return }
             if case .session(let selected) = selection, sessions.contains(where: { $0.id == selected }) {
                 navigate(to: .overview)
             }
         }
-        sheet = Sheet(id: id, destination: .removal(model))
+        removal = RemovalRequest(id: id, model: model, phase: .preparing)
+        Task { [weak self] in
+            await model.load()
+            guard let self, let request = removal, request.id == id, request.phase == .preparing else { return }
+            guard model.plan != nil, !model.retired else { return endRemoval(id, failure: model.error) }
+            removal?.phase = .confirming
+        }
+    }
+
+    /// Cancel, or a preparation that produced nothing. Refused once removal is under way.
+    func cancelRemoval(id: UUID) {
+        guard let request = removal, request.id == id, request.phase != .removing else { return }
+        endRemoval(id, failure: nil)
+    }
+
+    func confirmRemoval(id: UUID) {
+        guard let request = removal, request.id == id, request.phase == .confirming, request.model.canRemove else { return }
+        removal?.phase = .removing
+        Task { [weak self] in
+            await request.model.remove()
+            guard let self, removal?.id == id else { return }
+            endRemoval(id, failure: request.model.completed ? nil : request.model.error)
+        }
+    }
+
+    func dismissRemovalFailure(id: UUID) {
+        guard removalFailure?.id == id else { return }
+        removalFailure = nil
+        schedulePendingDeepLink()
+    }
+
+    private func endRemoval(_ id: UUID, failure: String?) {
+        guard let request = removal, request.id == id else { return }
+        removal = nil
+        request.model.retire()
+        if let failure { removalFailure = RemovalFailure(message: failure) } else { schedulePendingDeepLink() }
     }
 
     func presentBuild(purpose: BuildDestinationViewModel.Purpose = .run, _ makeModel: () -> BuildWorkspaceViewModel?) {

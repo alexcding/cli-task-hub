@@ -12,6 +12,7 @@ import Foundation
     func newTab()
     func moveTab(_ id: String, before: String?)
     func togglePinTab(_ id: String)
+    func makeSessionRemoval(_ id: String) -> SessionRemovalViewModel?
 }
 
 extension RootCoordinating {
@@ -19,6 +20,7 @@ extension RootCoordinating {
     func newTab() {}
     func moveTab(_ id: String, before: String?) {}
     func togglePinTab(_ id: String) {}
+    func makeSessionRemoval(_ id: String) -> SessionRemovalViewModel? { nil }
 }
 
 extension AppCoordinator {
@@ -50,6 +52,7 @@ extension AppCoordinator {
         case .reconnect: Task { [weak rootRuntime] in await rootRuntime?.reconnect() }
         case .openTerminal: rootRuntime?.openTerminal()
         case .openBrowser(let url): rootRuntime?.openRootBrowser(url)
+        case .removeSession(let id): presentRemoval { rootRuntime?.makeSessionRemoval(id) }
         }
     }
 }

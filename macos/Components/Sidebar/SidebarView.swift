@@ -32,7 +32,7 @@ struct SidebarView: View {
                          pinnedIDs: model.pinnedIDs,
                          onSelect: model.select, onTogglePin: model.togglePin,
                          onNewSession: model.newSession(in:), onCloseTab: model.closeTab, onNewTab: model.newTab, onMoveTab: model.moveTab,
-                         onTogglePinTab: model.togglePinTab)
+                         onTogglePinTab: model.togglePinTab, onRemoveSession: model.removeSession)
 
             Divider()
             SidebarFooterRow(title: "Settings", icon: "settings", selected: model.selection == .settings) {

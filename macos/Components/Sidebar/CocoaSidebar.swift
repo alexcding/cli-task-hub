@@ -17,6 +17,7 @@ struct CocoaSidebar: NSViewRepresentable {
     var onNewTab: () -> Void = {}
     var onMoveTab: (String, String?) -> Void = { _, _ in }
     var onTogglePinTab: (String) -> Void = { _ in }
+    var onRemoveSession: (String) -> Void = { _ in }
     static let tabDragType = NSPasteboard.PasteboardType("com.taskhub.sidebar-tab")
 
     func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
@@ -368,12 +369,22 @@ struct CocoaSidebar: NSViewRepresentable {
                 add("Pin Tab", action: #selector(pinTab(_:)))
                 add("Close Tab", action: #selector(closeTab(_:)))
             }
+            // The session and its worktree go together (one unit); the sheet spells out what is
+            // stopped and removed, so the menu item only asks for it.
+            if case .session = destination {
+                menu.addItem(.separator())
+                add("Remove Session…", action: #selector(removeSession(_:)))
+            }
             return menu.items.isEmpty ? nil : menu
         }
 
         @objc private func togglePin(_ sender: NSMenuItem) {
             guard let node = sender.representedObject as? Node, case .session(let id) = node.entry.destination else { return }
             parent.onTogglePin(id)
+        }
+        @objc private func removeSession(_ sender: NSMenuItem) {
+            guard let node = sender.representedObject as? Node, case .session(let id) = node.entry.destination else { return }
+            parent.onRemoveSession(id)
         }
         @objc private func pinTab(_ sender: NSMenuItem) {
             guard let node = sender.representedObject as? Node, case .tab(let id) = node.entry.destination else { return }

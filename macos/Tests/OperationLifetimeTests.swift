@@ -122,6 +122,18 @@ private actor OperationBuildService: BuildServing {
     #expect(await service.saves == 1)
 }
 
+/// Waits for the coordinator's own preparation task to put the dialog up.
+@MainActor private func confirming(_ coordinator: AppCoordinator, limit: Int = 500) async {
+    for _ in 0..<limit where coordinator.removal?.phase == .preparing { await Task.yield() }
+    #expect(coordinator.removal?.phase == .confirming)
+}
+
+/// Waits for the coordinator's own removal task to finish with the dialog dismissed.
+@MainActor private func settled(_ coordinator: AppCoordinator, limit: Int = 500) async {
+    for _ in 0..<limit where coordinator.removal != nil { await Task.yield() }
+    #expect(coordinator.removal == nil)
+}
+
 private actor OperationRemovalService: SessionRemoving {
     var loads = 0, removals = 0
     let preparation: OperationGate<SessionRemovalPlan>?
@@ -134,7 +146,7 @@ private actor OperationRemovalService: SessionRemoving {
         if let preparation { return try await preparation.value() }
         return .init(record: record, sessions: [record], removesWorktree: false, holders: [])
     }
-    func remove(_ plan: SessionRemovalPlan, discardChanges: Bool) async throws {
+    func remove(_ plan: SessionRemovalPlan) async throws {
         removals += 1
         if let gate = removal { removal = nil; try await gate.value() }
     }
@@ -148,18 +160,17 @@ func operationLifetimeDismissedRemovalRejectsPendingPreparation(failing: Bool) a
         didRemove: { _ in cleaned += 1 }, finished: { finished += 1 })
     let coordinator = AppCoordinator(factory: NativeCreationFlowFactory(chooseFolder: { nil }))
     coordinator.presentRemoval { model }
-    let sheet = try #require(coordinator.sheet)
-    let loading = Task { await model.load() }
+    let request = try #require(coordinator.removal)
+    #expect(request.phase == .preparing && !coordinator.canPresent)
     await gate.waitForStart()
-    await model.load() // Coalesce duplicate initial loads.
-    coordinator.dismissSheet(id: sheet.id)
+    await model.load() // Coalesce duplicate initial loads: the coordinator already started one.
+    coordinator.cancelRemoval(id: request.id)
     await gate.finish(failing ? .failure(BackendError.operation("Obsolete preview"))
         : .success(.init(record: operationSession, sessions: [operationSession], removesWorktree: false, holders: [])))
-    await loading.value
     await model.load(); await model.remove()
     coordinator.presentRemoval { model }
     #expect(model.retired && model.plan == nil && model.error == nil && !model.canRemove && !model.loading)
-    #expect(coordinator.sheet == nil && cleaned == 0 && finished == 0)
+    #expect(coordinator.removal == nil && coordinator.removalFailure == nil && cleaned == 0 && finished == 0)
     #expect(await service.loads == 1)
     #expect(await service.removals == 0)
 }
@@ -173,18 +184,33 @@ func operationLifetimeRemovalRetriesOnceAndCoordinatorPreservesUnrelatedNavigati
     let coordinator = AppCoordinator(factory: NativeCreationFlowFactory(chooseFolder: { nil }))
     coordinator.navigate(to: selected ? .session(operationSession.id) : .settings)
     coordinator.presentRemoval { model }
-    let sheet = try #require(coordinator.sheet), oldAction = model.onAction
-    await model.load()
-    let remove = Task { await model.remove() }
+    let request = try #require(coordinator.removal), oldAction = model.onAction
+    await confirming(coordinator)
+    coordinator.confirmRemoval(id: request.id)
     await gate.waitForStart()
-    coordinator.dismissSheet(id: sheet.id)
-    await model.remove()
-    #expect(coordinator.sheet?.id == sheet.id && !sheet.canDismiss)
-    await gate.finish(.failure(BackendError.operation("Retry removal"))); await remove.value
-    #expect(model.canRemove && finished == 1 && cleaned == 0 && model.error == "Retry removal")
-    await model.remove(); await model.remove()
-    #expect(model.completed && model.retired && !model.canRemove && cleaned == 1 && finished == 2)
-    #expect(coordinator.sheet == nil && coordinator.selection == (selected ? .overview : .settings))
+    // The dialog is gone once removal starts, and cancelling can no longer take it back.
+    coordinator.cancelRemoval(id: request.id)
+    coordinator.confirmRemoval(id: request.id)
+    #expect(coordinator.removal?.phase == .removing && !coordinator.canPresent)
+    await gate.finish(.failure(BackendError.operation("Retry removal")))
+    await settled(coordinator)
+    // A failed removal reports why and retires the attempt; the row is still there to try again.
+    #expect(coordinator.removalFailure?.message == "Retry removal" && model.retired)
+    #expect(finished == 1 && cleaned == 0 && coordinator.selection == (selected ? .session(operationSession.id) : .settings))
+    coordinator.dismissRemovalFailure(id: try #require(coordinator.removalFailure).id)
+    #expect(coordinator.canPresent)
+    #expect(await service.removals == 1)
+    // A second session removes for real, and only the selected row navigates away.
+    let second = SessionRemovalViewModel(service: service, record: operationSession, projects: [operationProject],
+                                         sessions: [operationSession], didRemove: { _ in cleaned += 1 }, finished: { finished += 1 })
+    coordinator.presentRemoval { second }
+    let confirmed = try #require(coordinator.removal)
+    await confirming(coordinator)
+    coordinator.confirmRemoval(id: confirmed.id)
+    await settled(coordinator)
+    #expect(second.completed && second.retired && cleaned == 1 && finished == 2)
+    #expect(coordinator.removal == nil && coordinator.removalFailure == nil)
+    #expect(coordinator.selection == (selected ? .overview : .settings))
     #expect(await service.removals == 2)
     coordinator.presentNewProject(service: ProjectPageService(), didSave: { _ in })
     let next = try #require(coordinator.sheet)

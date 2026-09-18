@@ -1,6 +1,5 @@
 import Foundation
 import Observation
-import SwiftUI
 
 struct SessionRemovalPlan: Sendable {
     let record: WorkspaceSession
@@ -15,7 +14,7 @@ struct SessionRemovalPlan: Sendable {
 
 protocol SessionRemoving: Sendable {
     func prepare(record: WorkspaceSession, projects: [Project], sessions: [WorkspaceSession]) async throws -> SessionRemovalPlan
-    func remove(_ plan: SessionRemovalPlan, discardChanges: Bool) async throws
+    func remove(_ plan: SessionRemovalPlan) async throws
 }
 
 struct SessionRemovalService: SessionRemoving {
@@ -37,7 +36,7 @@ struct SessionRemovalService: SessionRemoving {
                      holders: holders.holders.map { "\($0.command) (PID \($0.pid))" })
     }
 
-    func remove(_ plan: SessionRemovalPlan, discardChanges: Bool) async throws {
+    func remove(_ plan: SessionRemovalPlan) async throws {
         // A new session may have attached to this checkout while confirmation was
         // open. Require a fresh preview so it is never stopped without disclosure.
         let current: [WorkspaceSession] = try await api.get(Routes.TASKS)
@@ -50,8 +49,10 @@ struct SessionRemovalService: SessionRemoving {
         try await stopTerminals(plan.pairKeys)
         if plan.removesWorktree {
             struct Payload: Encodable, Sendable { let path: String; let worktree: String; let force: Bool }
+            // Always forced, as the web app was: a dirty, locked or stale worktree must never
+            // leave the session half-removed. The sheet says so before it gets here.
             let _: OperationOK = try await api.request(Routes.WORKTREE_REMOVE, method: "POST", body:
-                Payload(path: plan.record.workspace, worktree: plan.record.worktree, force: discardChanges))
+                Payload(path: plan.record.workspace, worktree: plan.record.worktree, force: true))
         }
         for session in plan.sessions {
             let _: OperationOK = try await api.request(APIClient.query(Routes.TASKS, ["id": session.id]),
@@ -69,7 +70,6 @@ struct SessionRemovalService: SessionRemoving {
     private(set) var completed = false
     private(set) var retired = false
     private(set) var error: String?
-    var discardChanges = false
     private var service: (any SessionRemoving)?
     private var loadGeneration = UUID()
     private var preparing = false
@@ -84,6 +84,26 @@ struct SessionRemovalService: SessionRemoving {
         self.finished = finished
     }
     var canRemove: Bool { !retired && !completed && !loading && !removing && plan != nil }
+    /// The words the system confirmation shows. Plain: what stops, what is deleted, what survives.
+    var promptTitle: String { plan?.removesWorktree == true ? "Remove this session?" : "Forget this session?" }
+    var confirmLabel: String { plan?.removesWorktree == true ? "Remove Session" : "Forget Session" }
+    var promptMessage: String {
+        guard let plan else { return "" }
+        var lines = [plan.record.worktree]
+        if plan.removesWorktree {
+            lines.append("The terminal stops and this folder is deleted. Your branch and its commits stay, but anything not committed here is lost.")
+            if plan.sessions.count > 1 {
+                let names = plan.sessions.map { $0.title.isEmpty ? $0.label : $0.title }
+                lines.append("\(plan.sessions.count) sessions use this folder, so all of them go: \(names.joined(separator: ", ")).")
+            }
+            if !plan.holders.isEmpty {
+                lines.append("Still open in \(plan.holders.joined(separator: ", ")). Xcode is asked to close it.")
+            }
+        } else {
+            lines.append("No project here owns this folder. The terminal stops and TaskHub forgets the session — the folder itself stays.")
+        }
+        return lines.joined(separator: "\n\n")
+    }
     func retire() {
         retired = true; service = nil; onAction = { _ in }
         loadGeneration = UUID(); loading = false; plan = nil
@@ -106,48 +126,12 @@ struct SessionRemovalService: SessionRemoving {
         let action = onAction
         defer { removing = false; finished() }
         do {
-            try await service.remove(plan, discardChanges: discardChanges)
+            try await service.remove(plan)
             await didRemove(plan.sessions)
             completed = true
             let shouldComplete = !retired
             retire()
             if shouldComplete { action(.removed(plan.sessions)) }
         } catch { if !retired { self.error = error.localizedDescription } }
-    }
-}
-
-struct SessionRemovalView: View {
-    @Bindable var model: SessionRemovalViewModel
-    let cancel: () -> Void
-    var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text(model.plan?.removesWorktree == true ? "Remove Worktree and Sessions" : "Forget Session").font(.title2.weight(.semibold))
-            if model.loading { ProgressView("Checking worktree…") }
-            if let plan = model.plan {
-                Text(plan.record.worktree).font(.callout).textSelection(.enabled)
-                if plan.removesWorktree {
-                    Text("This stops every listed session and build terminal, then removes the worktree folder. The Git branch is kept.")
-                    ForEach(plan.sessions) { Text("• \($0.title.isEmpty ? $0.label : $0.title)") }
-                    if !plan.holders.isEmpty {
-                        Text("Open files: " + plan.holders.joined(separator: ", ")).foregroundStyle(.orange)
-                    }
-                    Toggle("Discard uncommitted changes and untracked files", isOn: $model.discardChanges)
-                    if model.discardChanges { Text("Changes in this worktree will be permanently lost. An open Xcode project in this folder will be closed without saving.").foregroundStyle(.orange) }
-                } else {
-                    Text("This is not a linked worktree of an available project. Only this session record and its terminals are removed; its folder is kept.")
-                }
-            }
-            if let error = model.error { Text(error).foregroundStyle(.orange).textSelection(.enabled) }
-            HStack {
-                Button("Cancel", role: .cancel, action: cancel).keyboardShortcut(.cancelAction)
-                Spacer()
-                if model.removing { ProgressView().controlSize(.small) }
-                Button(model.plan?.removesWorktree == true ? "Remove Worktree" : "Forget Session", role: .destructive) {
-                    Task { await model.remove() }
-                }.disabled(!model.canRemove)
-            }.disabled(model.removing)
-        }.padding(24).frame(width: 520)
-        .interactiveDismissDisabled(model.removing)
-        .task { await model.load() }
     }
 }

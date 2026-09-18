@@ -25,7 +25,7 @@ import Observation
     enum Action: Equatable {
         case select(SidebarDestination), command(ShellCommand), togglePin(String), newSession(projectID: String)
         case closeTab(String), newTab, moveTab(String, before: String?), togglePinTab(String)
-        case reconnect, openTerminal, openBrowser(URL)
+        case reconnect, openTerminal, openBrowser(URL), removeSession(String)
     }
     struct Workspace: Identifiable {
         let id: String
@@ -92,6 +92,8 @@ import Observation
     }
     func select(_ destination: SidebarDestination) { onAction(.select(destination)) }
     func togglePin(_ id: String) { onAction(.togglePin(id)) }
+    /// A session row's right-click Remove Session: the confirmation sheet is the coordinator's.
+    func removeSession(_ id: String) { onAction(.removeSession(id)) }
     func closeTab(_ id: String) { onAction(.closeTab(id)) }
     /// Moves a saved tab between the Tabs list and the pinned grid under Dashboard.
     func togglePinTab(_ id: String) { onAction(.togglePinTab(id)) }

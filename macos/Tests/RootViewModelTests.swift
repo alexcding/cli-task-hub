@@ -11,6 +11,7 @@ import Testing
     var opens: [URL] = []
     var terminals = 0
     var reconnects = 0
+    var removalRequests: [String] = []
     weak var coordinator: AppCoordinator?
     func rootState() -> RootState { state }
     func workspaceState(in context: WorkspaceContext) -> SessionWorkspaceState { SessionWorkspaceState() }
@@ -23,6 +24,19 @@ import Testing
     func closeTab(_ url: String) { closedTabs.append(url) }
     func openTerminal() { terminals += 1 }
     func openRootBrowser(_ url: URL) { opens.append(url) }
+    func makeSessionRemoval(_ id: String) -> SessionRemovalViewModel? {
+        removalRequests.append(id)
+        guard let session = state.sessions.first(where: { $0.id == id }) else { return nil }
+        return SessionRemovalViewModel(service: InertRemovalService(), record: session, projects: state.projects,
+                                       sessions: state.sessions, didRemove: { _ in }, finished: {})
+    }
+}
+
+private struct InertRemovalService: SessionRemoving {
+    func prepare(record: WorkspaceSession, projects: [Project], sessions: [WorkspaceSession]) async throws -> SessionRemovalPlan {
+        .init(record: record, sessions: [record], removesWorktree: false, holders: [])
+    }
+    func remove(_ plan: SessionRemovalPlan) async throws {}
 }
 
 @MainActor private final class RecordingRootFactory: RootFeatureFactory {
@@ -118,4 +132,33 @@ import Testing
     // A tab the sidebar does not list (its URL belongs to a session) is never the neighbour.
     #expect(AppViewModel.destination(closing: "a", among: ["a", "c"]) == .tab("c"))
     #expect(AppViewModel.destination(closing: "missing", among: tabs) == .overview)
+}
+
+
+/// A session row's right-click Remove Session asks with the same system confirmation the
+/// workspace toolbar does, without the session having to be open. An unknown id asks nothing.
+@MainActor @Test(.timeLimit(.minutes(1))) func sidebarRemoveSessionAsksForConfirmation() async throws {
+    let preferences = try #require(UserDefaults(suiteName: "TaskHubRootTests-\(UUID().uuidString)"))
+    let shell = ShellStore(preferences: preferences), viewer = ViewerStore()
+    let coordinator = AppCoordinator(factory: NativeCreationFlowFactory(chooseFolder: { nil }),
+                                     selectionStore: TransientSidebarSelectionStore(.overview))
+    let runtime = RootRuntimeFixture(); runtime.coordinator = coordinator
+    runtime.state.sessions = [WorkspaceSession(id: "s", projectId: "p", workspace: "/tmp", worktree: "/tmp/worktree",
+        title: "Title", branch: "feature", url: "", createdAt: nil, pinned: false)]
+    let model = coordinator.makeRoot(factory: RecordingRootFactory(), runtime: runtime, shell: shell, viewer: viewer)
+    model.removeSession("missing")
+    #expect(runtime.removalRequests == ["missing"] && coordinator.removal == nil)
+    model.removeSession("s")
+    let request = try #require(coordinator.removal)
+    #expect(runtime.removalRequests == ["missing", "s"])
+    // Nothing is asked until the worktree has been checked, and nothing else may present meanwhile.
+    #expect(request.phase == .preparing && !coordinator.canPresent)
+    for _ in 0..<500 where coordinator.removal?.phase == .preparing { await Task.yield() }
+    #expect(coordinator.removal?.phase == .confirming && coordinator.removal?.id == request.id)
+    #expect(coordinator.removal?.model.promptTitle == "Forget this session?")
+    // Modal: a second request while the dialog is up is refused.
+    model.removeSession("s")
+    #expect(coordinator.removal?.id == request.id && runtime.removalRequests == ["missing", "s"])
+    coordinator.cancelRemoval(id: request.id)
+    #expect(coordinator.removal == nil && coordinator.removalFailure == nil && coordinator.canPresent)
 }
