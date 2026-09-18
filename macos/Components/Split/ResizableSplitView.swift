@@ -8,6 +8,7 @@ struct ResizableSplitView<Leading: View, Trailing: View>: View {
     @Binding var trailingWidth: CGFloat
     var minTrailing: CGFloat = 320
     var minLeading: CGFloat = 360
+    var dividerGrabWidth: CGFloat = 16
     @ViewBuilder let leading: () -> Leading
     @ViewBuilder let trailing: () -> Trailing
 
@@ -21,10 +22,13 @@ struct ResizableSplitView<Leading: View, Trailing: View>: View {
             HStack(spacing: 0) {
                 leading().frame(maxWidth: .infinity, maxHeight: .infinity)
                 if showsTrailing {
-                    divider(width: width, maxTrailing: maxTrailing)
+                    divider(width: width, maxTrailing: maxTrailing).zIndex(1)
                     trailing().frame(width: width).frame(maxHeight: .infinity)
+                        .transition(.move(edge: .trailing))
                 }
             }
+            .clipped()
+            .animation(.easeInOut(duration: 0.25), value: showsTrailing)
         }
     }
 
@@ -33,8 +37,9 @@ struct ResizableSplitView<Leading: View, Trailing: View>: View {
             .fill(Color(nsColor: .separatorColor))
             .frame(width: 1)
             .overlay {
-                // A wider invisible hit area so the 1pt line is easy to grab.
-                Color.clear.frame(width: 9).contentShape(Rectangle())
+                Color.clear
+                    .frame(width: dividerGrabWidth)
+                    .contentShape(Rectangle())
                     .onHover(perform: setCursor)
                     .onDisappear { setCursor(false) }
                     .gesture(
