@@ -95,6 +95,13 @@ enum SidebarDestination: Hashable, Codable {
     case overview, terminal, activity, settings, project(String), session(String), tab(String)
 
     var tabID: String? { if case .tab(let id) = self { id } else { nil } }
+    /// True for destinations that exist only while the sidebar lists them.
+    var isSidebarBacked: Bool {
+        switch self {
+        case .project, .session, .tab: true
+        case .overview, .terminal, .activity, .settings: false
+        }
+    }
 }
 
 /// What the sidebar knows about a session's agent at render time — the

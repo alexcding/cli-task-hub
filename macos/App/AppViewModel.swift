@@ -1075,7 +1075,11 @@ public final class AppViewModel {
                     if case .project(let id) = selection, let model = projectModels[id], model.section == .prs {
                         await model.refresh()
                     }
-                    if !sidebarEntries.flatMap(\.descendants).contains(where: { $0.destination == selection }),
+                    // Only sidebar-backed destinations can go stale: a project, session or tab that
+                    // the inventory no longer lists. Settings, Activity and Terminal are reached from
+                    // the menu and have no sidebar row, so they must never be bounced to Dashboard.
+                    if selection.isSidebarBacked,
+                       !sidebarEntries.flatMap(\.descendants).contains(where: { $0.destination == selection }),
                        pageWorkflowRuns[viewer.activeContextID ?? ""]?.running != true { select(.overview) }
                     lastUpdate = Date()
                     error = nil
