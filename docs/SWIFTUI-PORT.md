@@ -216,10 +216,11 @@ Dashboard; the remaining app pages and action parity are tracked under M4.
   refreshes. Selection and collapsed groups persist across app launches.
 - Pin/unpin uses a scoped `PATCH /api/tasks/:id/pin` so other session columns cannot
   be overwritten. Task mutations publish an SSE invalidation; no CLI is called.
-  Native context menus also expose Reveal in Finder, Copy Path/Link, and browser opening.
-- Opened session terminals are cached by task identity and remain mounted when
-  switching rows. Hidden surfaces stop drawing and continue parsing; pinned and
-  original rows select the same emulator. Opening a terminal starts a shell in the
+  Native context menus also expose Reveal in Finder, Copy Link, and browser opening.
+- Opened session terminals are cached by task identity. Only the selected row's
+  workspace is built; a deselected session keeps its emulator view — grid, scrollback
+  and PTY — alive in its `TerminalSession`, so switching back reattaches the same
+  surface. Pinned and original rows select the same emulator. Opening a terminal starts a shell in the
   saved worktree, without automatically launching an agent or changing its resume ID.
 - Verified: native app build, 15 Swift tests, 32 Node contract/API tests, and one
   native UI test pass. A running sample-data app verified the Cocoa context menu,

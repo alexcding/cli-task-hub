@@ -393,11 +393,14 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
             fileOpen.cancel()
             oldValue.flatMap { contexts[$0] }?.workspaceViewModel?.setActive(false)
             active?.workspaceViewModel?.setActive(true)
+            activeContextChanged()
         }
     }
     @ObservationIgnored var prepareContext: (WorkspaceContext) -> Void = { _ in }
     /// Called after a context leaves `contexts`, so owners can drop what they hold for it.
     @ObservationIgnored var contextRemoved: (WorkspaceContext) -> Void = { _ in }
+    /// Called after `active` changes: the context a selection shows is now a different one, or none.
+    @ObservationIgnored var activeContextChanged: () -> Void = {}
     /// Called whenever a context's snapshot changes: a page navigated, a tab opened or closed.
     @ObservationIgnored var contextChanged: (WorkspaceContext) -> Void = { _ in }
     @ObservationIgnored private var api: APIClient?

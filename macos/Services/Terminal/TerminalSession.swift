@@ -8,12 +8,11 @@ final class TerminalSession: Identifiable {
     let pairKey: String
     let cwd: String
     let paired: Bool
-    var showsSurface = true { didSet { if oldValue != showsSurface { presentation?.visibilityChanged(showsSurface) } } }
     @ObservationIgnored private(set) var presentation: TerminalPaneViewModel!
     private(set) var surface = TerminalViewState()
     private(set) var surfaceGeneration = UUID() { didSet { presentation?.surfaceChanged() } }
     private(set) var status = "Connecting"
-    private(set) var error: String?
+    private(set) var error: String? { didSet { if oldValue != error { noticeDismissed = false } } }
     private(set) var shellPID: UInt32?
     private(set) var termID: String?
     let agentTurns = AgentTurnTracker()
@@ -21,8 +20,18 @@ final class TerminalSession: Identifiable {
     private(set) var ready = false
     private(set) var style = TerminalStyle()
     /// Everything in the current style that did not apply, joined for display. Never fatal.
-    private(set) var styleError: String?
+    private(set) var styleError: String? { didSet { if oldValue != styleError { noticeDismissed = false } } }
+    /// Hides the notice banner without touching `error`/`styleError` themselves — those still
+    /// drive `isConnecting` and reconnect logic. A new error or style issue (a value change,
+    /// not just an in-place re-set) un-dismisses it.
+    private(set) var noticeDismissed = false
     @ObservationIgnored private var pipe: TerminalPipe!
+    /// The NSView Ghostty draws into. The view owns the surface — grid, scrollback,
+    /// parser — so the session keeps it alive across SwiftUI mounting it and taking it
+    /// down again as the sidebar selection moves; a fresh view per mount would start an
+    /// empty terminal. One per `surfaceGeneration`, mirroring how `BrowserPage` keeps its
+    /// `WKWebView`.
+    @ObservationIgnored private var platformView: WorkspaceTerminalView?
     @ObservationIgnored private var client: PtydClient?
     @ObservationIgnored private var host: PtydHost?
     @ObservationIgnored private var hello: PtyHello?
@@ -58,6 +67,7 @@ final class TerminalSession: Identifiable {
         let wasVisible = surface.isSurfaceVisible
         surfaceGeneration = UUID()
         let generation = surfaceGeneration
+        platformView = nil
         let resolved = style.resolve()
         styleError = resolved.issues.isEmpty ? nil : resolved.issues.joined(separator: " ")
         surface = TerminalViewState(theme: resolved.theme, terminalConfiguration: resolved.configuration)
@@ -76,11 +86,13 @@ final class TerminalSession: Identifiable {
         })
         surface.configuration = .init(backend: .inMemory(pipe.memory))
         surface.makePlatformView = { [weak self] in
+            if let view = self?.platformView { return view }
             let view = WorkspaceTerminalView(frame: .zero)
             view.openLink = { [weak self] raw, directory, external in
                 guard let self, self.surfaceGeneration == generation else { return }
                 self.openLink(raw, directory ?? self.cwd, external)
             }
+            self?.platformView = view
             return view
         }
         surface.onClose = { [weak self] _ in
@@ -281,6 +293,21 @@ final class TerminalSession: Identifiable {
         }
     }
 
+    /// True while the pane should cover the surface with progress: before the first
+    /// attach and across a reconnect, but never once the shell has exited — that
+    /// surface still holds the scrollback the user wants to read. Keyed on `status`,
+    /// not `error`: `setError` always lands on "Disconnected", so dismissing the banner
+    /// cannot make a dead connection look like a retry.
+    var isConnecting: Bool { !ready && !status.hasPrefix("Exited") && status != "Disconnected" }
+
+    /// Clears the banner only. The connection keeps whatever state it was in — `error` and
+    /// `styleError` are left set — so `isConnecting` still reflects a genuine failure instead
+    /// of flipping true once the banner is dismissed. A later failure or a reconnect
+    /// (a change to either value) shows the banner again.
+    func dismissNotice() {
+        noticeDismissed = true
+    }
+
     private func setError(_ text: String, prefer: Bool = false) {
         // Closing a failed pipeline also reports a socket disconnect; preserve
         // the actionable root cause (for example truncated restoration).
@@ -299,6 +326,9 @@ final class TerminalSession: Identifiable {
         started = false
         pipe.close()
         ready = false
+        // `isConnecting` reads `status`: a stopped terminal must not look like one
+        // still attaching, or the pane's opaque progress overlay would hide its output.
+        status = "Disconnected"
     }
 
     func stopConnecting() async {

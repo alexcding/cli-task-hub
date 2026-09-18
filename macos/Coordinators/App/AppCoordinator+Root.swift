@@ -34,6 +34,10 @@ extension AppCoordinator {
             guard let self, rootBindingID == bindingID else { return }
             handle(.root(action))
         }
+        // `root` follows the viewer: a workspace selection resolves to its coordinator only
+        // once its context is active, and back to the placeholder when that context goes.
+        viewer.activeContextChanged = { [weak self] in self?.refreshRoot() }
+        viewer.contextRemoved = { [weak self] _ in self?.refreshRoot() }
         rootModel = model
         refreshRoot()
         return model

@@ -112,7 +112,7 @@ import Testing
     model.openTerminal(); model.setActive(true)
 }
 
-@MainActor @Test func workspaceOwnsTerminalPresentationAcrossSelectionReplacementAndFontChanges() throws {
+@MainActor @Test func workspaceKeepsEveryTerminalStyleCurrentAcrossReplacementAndFontChanges() throws {
     let runtime = WorkspaceFixture(), viewer = ViewerStore()
     let terminal = TerminalSession(), build = TerminalSession(), replacement = TerminalSession()
     defer { terminal.disconnect(); build.disconnect(); replacement.disconnect() }
@@ -122,19 +122,16 @@ import Testing
     viewer.prepareContext = { $0.configureWorkspace(factory: NativeWorkspaceFeatureFactory(), service: runtime) }
     let context = viewer.select(id: "task:terminals", url: "", title: "Terminals")
     let model = try #require(context.workspaceViewModel)
-    #expect(terminal.presentation.presentation.active && !build.presentation.presentation.active)
-    context.setPane(.build)
-    #expect(terminal.presentation.presentation.active && build.presentation.presentation.active)
-    viewer.deactivate()
-    #expect(!terminal.presentation.presentation.active && !build.presentation.presentation.active)
+    // Which pane is on screen is the view's `if`; the model only carries the style, and to
+    // every terminal it holds, shown or not, so a pane draws correctly the moment it appears.
     runtime.state.terminalStyle = TerminalStyle(font: CodeFont(size: 19)); model.terminalStateChanged()
-    #expect(terminal.presentation.presentation.style.font.size == 19 && build.presentation.presentation.style.font.size == 19)
+    #expect(terminal.presentation.style.font.size == 19 && build.presentation.style.font.size == 19)
+    viewer.deactivate()
+    runtime.state.terminalStyle = TerminalStyle(font: CodeFont(size: 20)); model.terminalStateChanged()
+    #expect(terminal.presentation.style.font.size == 20 && build.presentation.style.font.size == 20)
     _ = viewer.select(id: "task:terminals", url: "", title: "Terminals")
     runtime.state.terminal = replacement; model.terminalStateChanged()
-    #expect(!terminal.presentation.presentation.active && replacement.presentation.presentation.active)
-    #expect(replacement.presentation.presentation.style.font.size == 19)
-    context.setPane(.term)
-    #expect(replacement.presentation.presentation.active && !build.presentation.presentation.active)
+    #expect(replacement.presentation.style.font.size == 20)
     #expect(terminal.termID == nil && build.termID == nil && replacement.termID == nil)
     viewer.deactivate()
 }

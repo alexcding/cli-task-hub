@@ -362,7 +362,6 @@ struct CocoaSidebar: NSViewRepresentable {
             }
             if node.entry.detail.hasPrefix("/") {
                 add("Reveal in Finder", action: #selector(reveal(_:)))
-                add("Copy Path", action: #selector(copyDetail(_:)))
             } else if case .tab = destination {
                 add("Copy Link", action: #selector(copyDetail(_:)))
                 menu.addItem(.separator())

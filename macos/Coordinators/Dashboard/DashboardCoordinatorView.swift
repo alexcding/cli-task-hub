@@ -6,6 +6,8 @@ struct DashboardCoordinatorView: View {
 
     var body: some View {
         coordinator.root.view()
+            .padding(.horizontal, 28).padding(.vertical, 16)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .toolbar {
                 PageTitleToolbarItem(title: "Overview")
                 if #available(macOS 26.0, *) { ToolbarSpacer(.flexible) }

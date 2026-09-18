@@ -18,6 +18,8 @@ import Observation
     var openingExternal = false
     var canPresent = false
     var canCreateSession = false
+    /// What the toolbar calls this workspace: the session's label, the tab's title, or "Terminal".
+    var title = ""
     /// A GitHub PR or Jira ticket page whose project exists: the toolbar offers Create Session.
     var offersPageSession = false
     var editorID: String?
@@ -55,8 +57,6 @@ enum WorkspaceOperation: Equatable {
     @ObservationIgnored private var previousReviewInputs: ReviewInputs?
     @ObservationIgnored private weak var presentedDiff: DiffViewModel?
     @ObservationIgnored private weak var presentedHistory: GitHistoryViewModel?
-    @ObservationIgnored private weak var presentedTerminal: TerminalPaneViewModel?
-    @ObservationIgnored private weak var presentedBuildTerminal: TerminalPaneViewModel?
     private(set) var active = false {
         didSet { if oldValue != active { reviewStateChanged(force: true) } }
     }
@@ -69,6 +69,7 @@ enum WorkspaceOperation: Equatable {
         return service.workspaceState(in: context)
     }
     var session: WorkspaceSession? { state.session }
+    var title: String { state.title }
     var terminal: TerminalSession? { state.terminal }
     var buildTerminal: TerminalSession? { state.buildTerminal }
     var build: BuildWorkspaceViewModel? { state.build }
@@ -135,7 +136,7 @@ enum WorkspaceOperation: Equatable {
     func setActive(_ value: Bool) { active = value }
     func selectTab(_ tab: WorkspaceTab) { onAction(.selectTab(tab.id)) }
     func closeTab(_ tab: WorkspaceTab) { onAction(.closeTab(tab.id)) }
-    /// Only the workspace on screen may open tabs; hidden ones stay mounted but inert.
+    /// Only the workspace on screen may open tabs.
     var canOpenTab: Bool { active && state.canPresent }
     /// Whether the workspace on screen is visible to the user, for taking keyboard focus.
     var isActive: Bool { active }
@@ -149,14 +150,11 @@ enum WorkspaceOperation: Equatable {
         documentStateChanged()
         terminalStateChanged()
     }
+    /// Which terminal is on screen is the view's `if`; the model only keeps their style current.
     func terminalStateChanged() {
         let state = state
-        let terminal = state.terminal?.presentation, build = state.buildTerminal?.presentation
-        if presentedTerminal !== terminal { presentedTerminal?.presentation.active = false }
-        if presentedBuildTerminal !== build { presentedBuildTerminal?.presentation.active = false }
-        presentedTerminal = terminal; presentedBuildTerminal = build
-        terminal?.presentation = .init(active: active && showsTerminal, style: state.terminalStyle)
-        build?.presentation = .init(active: active && showsBuild, style: state.terminalStyle)
+        state.terminal?.presentation.style = state.terminalStyle
+        state.buildTerminal?.presentation.style = state.terminalStyle
     }
     func documentStateChanged() {
         let state = state

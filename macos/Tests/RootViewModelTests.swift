@@ -2,7 +2,7 @@ import Foundation
 import Observation
 import Testing
 
-@MainActor @Observable private final class RootRuntimeFixture: RootCoordinating, WorkspaceServing {
+@MainActor @Observable private final class RootRuntimeFixture: RootCoordinating, WorkspaceCoordinating {
     var state = RootState()
     var commands: [ShellCommand] = []
     var pins: [String] = []
@@ -15,9 +15,17 @@ import Testing
     weak var coordinator: AppCoordinator?
     func rootState() -> RootState { state }
     func workspaceState(in context: WorkspaceContext) -> SessionWorkspaceState { SessionWorkspaceState() }
+    /// Stands in for `AppViewModel.showSelectedContext`: activates the viewer context for the selection.
+    var onActivate: (SidebarDestination) -> Void = { _ in }
     func activateRootDestination() {
         if let coordinator { state.selection = coordinator.selection; selections.append(coordinator.selection) }
+        if let coordinator { onActivate(coordinator.selection) }
     }
+    func ownsWorkspace(_ context: WorkspaceContext) -> Bool { true }
+    func performWorkspaceOperation(_ operation: WorkspaceOperation, in context: WorkspaceContext) {}
+    func makeWorkspaceBuild(in context: WorkspaceContext) -> BuildWorkspaceViewModel? { nil }
+    func makeWorkspaceRemoval(in context: WorkspaceContext) -> SessionRemovalViewModel? { nil }
+    func restartWorkspaceSession(_ id: String, in context: WorkspaceContext) {}
     func performRootCommand(_ command: ShellCommand) { commands.append(command) }
     func reconnect() async { reconnects += 1 }
     func togglePin(_ id: String) { pins.append(id) }
@@ -75,22 +83,40 @@ private struct InertRemovalService: SessionRemoving {
     #expect(coordinator.selection == .activity && store.load() == .activity)
 }
 
-@MainActor @Test func rootPresentationUsesCurrentModelsAndKeepsAllPreparedWorkspacesMounted() throws {
+@MainActor @Test func rootIsTheActiveWorkspaceCoordinatorAndDeselectedContextsAreRetained() throws {
     let preferences = try #require(UserDefaults(suiteName: "TaskHubRootTests-\(UUID().uuidString)"))
-    let runtime = RootRuntimeFixture(), viewer = ViewerStore()
-    viewer.prepareContext = { [runtime] in $0.configureWorkspace(factory: NativeWorkspaceFeatureFactory(), service: runtime) }
-    let model = RootViewModel(service: runtime, shell: ShellStore(preferences: preferences), viewer: viewer)
+    let shell = ShellStore(preferences: preferences), viewer = ViewerStore(), factory = RecordingRootFactory()
+    let coordinator = AppCoordinator(factory: NativeCreationFlowFactory(chooseFolder: { nil }),
+                                     selectionStore: TransientSidebarSelectionStore(.session("first")))
+    let runtime = RootRuntimeFixture(); runtime.coordinator = coordinator
+    viewer.prepareContext = { [runtime] context in
+        context.configureWorkspace(factory: NativeWorkspaceFeatureFactory(), service: runtime)
+        if let model = context.workspaceViewModel { coordinator.bindWorkspace(model, context: context, runtime: runtime) }
+    }
+    runtime.onActivate = { destination in
+        if case .session(let id) = destination { _ = viewer.select(id: "task:\(id)", url: "", title: id) } else { viewer.deactivate() }
+    }
+    func placeholder(_ id: String) -> Bool { if case .session(id, _) = coordinator.root { true } else { false } }
+    func workspace(_ context: WorkspaceContext) -> Bool {
+        coordinator.root == coordinator.workspaceCoordinator(for: context).map(Destination.sessionWorkspaceCoordinator)
+    }
+    let model = coordinator.makeRoot(factory: factory, runtime: runtime, shell: shell, viewer: viewer)
+    // Selected before its context exists: the placeholder, until the viewer activates it.
+    #expect(placeholder("first"))
     let first = viewer.select(id: "task:first", url: "", title: "First")
     let document = try #require(first.openFile("/tmp/Retained.swift"))
-    let second = viewer.select(id: "task:second", url: "", title: "Second")
-    #expect(model.workspaces.map(\.id) == ["task:first", "task:second"])
-    #expect(model.workspaces.map(\.active) == [false, true] && model.hasWorkspace && !model.showsDestination)
-    viewer.deactivate()
-    #expect(model.workspaces.count == 2 && model.workspaces.allSatisfy { !$0.active })
-    #expect(model.showsDestination && !model.hasWorkspace)
-    _ = viewer.select(id: "task:first", url: "", title: "First")
-    #expect(model.workspaces[0].context === first && first.activeDocument === document)
-    #expect(model.workspaces[1].context === second)
+    #expect(workspace(first))
+    model.select(.session("second"))
+    let second = try #require(viewer.contexts["task:second"])
+    #expect(workspace(second) && viewer.contexts.count == 2)
+    // Away from every workspace: the selection's own destination, and nothing is dropped.
+    model.select(.overview)
+    #expect(coordinator.root == .unavailable(title: "Overview", message: "Connect to load the dashboard."))
+    #expect(viewer.contexts["task:first"] === first && first.activeDocument === document && viewer.contexts["task:second"] === second)
+    // Back: the same coordinator, not a new one.
+    let retained = coordinator.workspaceCoordinator(for: first)
+    model.select(.session("first"))
+    #expect(workspace(first) && coordinator.workspaceCoordinator(for: first) === retained)
     viewer.deactivate()
     runtime.state.projects = [Project(id: "p", name: "Native Project", repo: "", color: nil, workspace: "/tmp")]
     runtime.state.selection = .project("p")

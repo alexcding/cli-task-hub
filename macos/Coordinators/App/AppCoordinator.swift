@@ -150,35 +150,43 @@ import Observation
         guard case .destination(let destination) = route else { return .none }
         switch destination {
         case .overview:
-            return dashboardCoordinator.map(Destination.dashboardCoordinator) ?? .unavailable("Connect to load the dashboard.")
+            return dashboardCoordinator.map(Destination.dashboardCoordinator) ?? .unavailable(title: "Overview", message: "Connect to load the dashboard.")
         case .activity:
-            return logsCoordinator.map(Destination.logsCoordinator) ?? .unavailable("Connect to load activity.")
+            return logsCoordinator.map(Destination.logsCoordinator) ?? .unavailable(title: "Activity", message: "Connect to load activity.")
         case .settings:
-            return settingsCoordinator.map(Destination.settingsCoordinator) ?? .unavailable("Connect to load settings.")
-        case .terminal:
-            return rootModel.map(Destination.terminal) ?? .none
+            return settingsCoordinator.map(Destination.settingsCoordinator) ?? .unavailable(title: "Settings", message: "Connect to load settings.")
         case .project(let id):
-            return projectCoordinators[id].map(Destination.projectCoordinator) ?? .unavailable("Connect to load this project.")
+            return projectCoordinators[id].map(Destination.projectCoordinator) ?? .unavailable(title: rootModel?.title ?? "Project", message: "Connect to load this project.")
+        // A workspace selection shows its coordinator once the viewer has activated the
+        // context and a coordinator is bound to it; until then, the root placeholder.
+        case .terminal:
+            return activeWorkspaceCoordinator.map(Destination.sessionWorkspaceCoordinator)
+                ?? rootModel.map(Destination.terminal) ?? .none
         case .session(let id):
-            return rootModel.map { .session(id: id, $0) } ?? .none
+            return activeWorkspaceCoordinator.map(Destination.sessionWorkspaceCoordinator)
+                ?? rootModel.map { .session(id: id, $0) } ?? .none
         case .tab(let id):
-            return rootModel.map { .tab(id: id, $0) } ?? .none
+            return activeWorkspaceCoordinator.map(Destination.sessionWorkspaceCoordinator)
+                ?? rootModel.map { .tab(id: id, $0) } ?? .none
         }
     }
 
-    /// True when `root` is a screen without a child coordinator to own its toolbar.
-    var rootIsPlaceholder: Bool {
-        switch root {
-        case .terminal, .session, .tab, .unavailable, .none: true
-        default: false
-        }
+    private var activeWorkspaceCoordinator: SessionWorkspaceCoordinator? {
+        guard let context = rootModel?.viewer.active else { return nil }
+        return workspaceCoordinator(for: context)
     }
 
-    /// Child coordinators arrive after the selection is restored, so `root` is rebuilt
-    /// whenever the selection or the set of children changes.
+    /// The connection error the root model scopes to the current selection, and its remedy.
+    var connectionError: String? { rootModel?.error }
+    func reconnect() { handle(.root(.reconnect)) }
+
+    /// Child coordinators arrive after the selection is restored, and a workspace's
+    /// coordinator after its context is activated, so `root` is rebuilt whenever the
+    /// selection or the set of children changes.
     func refreshRoot() {
         pruneWorkspaces()
-        root = makeDestination(for: .destination(selection))
+        let next = makeDestination(for: .destination(selection))
+        if root != next { root = next }
     }
 
     func handle(_ action: Action) {

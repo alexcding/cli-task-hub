@@ -102,8 +102,8 @@ sessions, and tabs come from the existing backend snapshots and refresh via SSE.
 Pinning requires the updated backend's `PATCH /api/tasks/:id/pin` endpoint.
 
 Selecting a session shows its saved worktree and branch. **Open Terminal** opens or
-reattaches its shell; switching sidebar rows preserves the mounted emulator and
-hidden parsing. Pinned rows are additional entries for the same session. Browser
+reattaches its shell; switching sidebar rows swaps the detail view, while the session
+keeps the emulator view — and with it the grid and scrollback — alive underneath. Pinned rows are additional entries for the same session. Browser
 tabs now open embedded context pages with native controls. Sidebar implementation is authorized ahead of the remaining
 M1 terminal acceptance checks, which are still open.
 

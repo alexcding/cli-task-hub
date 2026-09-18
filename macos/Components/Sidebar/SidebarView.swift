@@ -4,7 +4,7 @@ import SwiftUI
 // The web sidebar's chrome around the outline (src/renderer/index.html <aside>, layout.css):
 // the wordmark with New Project and the activity bell, and Settings pinned in a footer.
 struct SidebarView: View {
-    let model: RootViewModel
+    let viewModel: RootViewModel
     @State private var showingActivity = false
 
     var body: some View {
@@ -13,30 +13,30 @@ struct SidebarView: View {
                 Text("TaskHub").font(.system(size: 17, weight: .bold)).kerning(-0.3)
                     .foregroundStyle(Color(nsColor: SidebarPalette.text))
                 Spacer()
-                SidebarAppButton(icon: "appPlus", label: "New Project", help: "New Project") { model.newProject() }
-                    .disabled(!model.canCreateProject)
+                SidebarAppButton(icon: "appPlus", label: "New Project", help: "New Project") { viewModel.newProject() }
+                    .disabled(!viewModel.canCreateProject)
                 SidebarAppButton(icon: "bell", label: "Today's activity", help: "Today's activity") { showingActivity.toggle() }
                     .popover(isPresented: $showingActivity, arrowEdge: .bottom) {
-                        if let today = model.todayActivity {
+                        if let today = viewModel.todayActivity {
                             TodayActivityPopover(model: today, showAllEvents: {
                                 showingActivity = false
-                                model.select(.activity)
+                                viewModel.select(.activity)
                             }, dismiss: { showingActivity = false })
                         }
                     }
-                    .onChange(of: showingActivity) { _, open in model.todayActivity?.setVisible(open) }
+                    .onChange(of: showingActivity) { _, open in viewModel.todayActivity?.setVisible(open) }
             }
             .padding(.leading, 16).padding(.trailing, 12).padding(.top, 4).padding(.bottom, 6)
 
-            CocoaSidebar(entries: model.entries, selection: model.selection,
-                         pinnedIDs: model.pinnedIDs,
-                         onSelect: model.select, onTogglePin: model.togglePin,
-                         onNewSession: model.newSession(in:), onCloseTab: model.closeTab, onNewTab: model.newTab, onMoveTab: model.moveTab,
-                         onTogglePinTab: model.togglePinTab, onRemoveSession: model.removeSession)
+            CocoaSidebar(entries: viewModel.entries, selection: viewModel.selection,
+                         pinnedIDs: viewModel.pinnedIDs,
+                         onSelect: viewModel.select, onTogglePin: viewModel.togglePin,
+                         onNewSession: viewModel.newSession(in:), onCloseTab: viewModel.closeTab, onNewTab: viewModel.newTab, onMoveTab: viewModel.moveTab,
+                         onTogglePinTab: viewModel.togglePinTab, onRemoveSession: viewModel.removeSession)
 
             Divider()
-            SidebarFooterRow(title: "Settings", icon: "settings", selected: model.selection == .settings) {
-                model.select(.settings)
+            SidebarFooterRow(title: "Settings", icon: "settings", selected: viewModel.selection == .settings) {
+                viewModel.select(.settings)
             }
             .padding(8)
         }

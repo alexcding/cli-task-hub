@@ -13,7 +13,6 @@ import Observation
     var todayActivity: TodayActivityViewModel?
     var settings: SettingsViewModel?
     var error: String?
-    var hasTerminal = false
     var canCreateProject = false
     var canCreateSession = false
     var canRefresh = false
@@ -26,12 +25,6 @@ import Observation
         case select(SidebarDestination), command(ShellCommand), togglePin(String), newSession(projectID: String)
         case closeTab(String), newTab, moveTab(String, before: String?), togglePinTab(String)
         case reconnect, openTerminal, openBrowser(URL), removeSession(String)
-    }
-    struct Workspace: Identifiable {
-        let id: String
-        let context: WorkspaceContext
-        let model: SessionWorkspaceViewModel
-        let active: Bool
     }
     let shell: ShellStore
     let viewer: ViewerStore
@@ -56,19 +49,6 @@ import Observation
     var todayActivity: TodayActivityViewModel? { state.todayActivity }
     var canCreateSession: Bool { state.canCreateSession }
     var canRefresh: Bool { state.canRefresh }
-    var hasWorkspace: Bool { viewer.active != nil }
-    var showsDestination: Bool { !state.hasTerminal && !hasWorkspace }
-    var showsDashboard: Bool {
-        if case .overview = state.selection { return true }
-        return false
-    }
-    var workspaces: [Workspace] {
-        viewer.contexts.keys.sorted().compactMap { id in
-            guard let context = viewer.contexts[id], let model = context.workspaceViewModel else { return nil }
-            return Workspace(id: id, context: context, model: model, active: viewer.activeContextID == id)
-        }
-    }
-    var activeWorkspace: Workspace? { workspaces.first(where: \.active) }
     var title: String {
         let state = self.state
         switch state.selection {
@@ -78,9 +58,7 @@ import Observation
         case .settings: return "Settings"
         case .project(let id): return state.projects.first { $0.id == id }?.name ?? "Project"
         case .session(let id): return state.sessions.first { $0.id == id }?.label ?? "Session"
-        case .tab(let id):
-            let tab = state.tabs.first { $0.id == id }
-            return tab.map { $0.title.isEmpty ? ($0.url.isEmpty ? "New Tab" : $0.url) : $0.title } ?? "Tab"
+        case .tab(let id): return state.tabs.first { $0.id == id }?.displayTitle ?? "Tab"
         }
     }
     func session(_ id: String) -> WorkspaceSession? { state.sessions.first { $0.id == id } }
@@ -109,4 +87,9 @@ import Observation
     func refresh() { if canRefresh { onAction(.command(.refresh)) } }
     func openTerminal() { onAction(.openTerminal) }
     func openBrowser(_ url: URL) { onAction(.openBrowser(url)) }
+}
+
+extension SavedTab {
+    /// The sidebar row's and toolbar's name for a tab: its title, else its address, else "New Tab".
+    var displayTitle: String { title.isEmpty ? (url.isEmpty ? "New Tab" : url) : title }
 }

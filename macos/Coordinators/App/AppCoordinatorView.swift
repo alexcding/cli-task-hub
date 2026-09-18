@@ -1,16 +1,28 @@
 import SwiftUI
 
-/// Root of the window. Lays out the sidebar and the detail column, renders the
-/// coordinator's `root` destination, keeps every workspace mounted, and hosts the
-/// app-wide presentations. Each child coordinator view owns its own toolbar.
+/// Root of the window: the sidebar, the coordinator's `root` destination in the detail
+/// column, and the app-wide presentations. Which destination that is — a workspace, a
+/// screen, a placeholder — is the coordinator's decision; each child coordinator view
+/// owns its own toolbar and insets.
 struct AppCoordinatorView: View {
     @Bindable var coordinator: AppCoordinator
 
     var body: some View {
         NavigationSplitView {
-            if let model = coordinator.rootModel { SidebarView(model: model) }
+            if let viewModel = coordinator.rootModel { SidebarView(viewModel: viewModel) }
         } detail: {
-            detailContent
+            coordinator.root.view()
+                .safeAreaInset(edge: .top, alignment: .leading, spacing: 0) {
+                    if let error = coordinator.connectionError {
+                        HStack(spacing: 12) {
+                            Label(error, systemImage: "exclamationmark.triangle")
+                                .foregroundStyle(.orange).textSelection(.enabled)
+                            Button("Reconnect", action: coordinator.reconnect)
+                        }
+                        .padding(.horizontal, 28).padding(.top, 16)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
         }
         .sheet(item: Binding(get: { coordinator.sheet }, set: { value in
             if value == nil, let sheet = coordinator.sheet { coordinator.dismissSheet(id: sheet.id) }
@@ -43,48 +55,6 @@ struct AppCoordinatorView: View {
         }), presenting: coordinator.removalFailure) { _ in
         } message: { failure in
             Text(failure.message)
-        }
-    }
-
-    /// A page-only tab in browser mode draws its own bar where the toolbar was.
-    private var activeWorkspaceFillsTitleBar: Bool {
-        guard let workspace = coordinator.rootModel?.activeWorkspace,
-              let child = coordinator.workspaceCoordinator(for: workspace.context) else { return false }
-        return child.model.fillsTitleBar
-    }
-
-    @ViewBuilder private var detailContent: some View {
-        if let model = coordinator.rootModel {
-            VStack(alignment: .leading, spacing: 18) {
-                // RootViewModel scopes connection feedback to Dashboard and project
-                // detail; it never overlays unrelated web or session content.
-                if let error = model.error {
-                    Label(error, systemImage: "exclamationmark.triangle")
-                        .foregroundStyle(.orange).textSelection(.enabled)
-                    Button("Reconnect", action: model.reconnect)
-                }
-                ZStack(alignment: .topLeading) {
-                    // Keep every opened emulator mounted. Selection changes only
-                    // visibility, never the PTY identity or parser state.
-                    ForEach(model.workspaces) { workspace in
-                        if let child = coordinator.workspaceCoordinator(for: workspace.context) {
-                            SessionWorkspaceCoordinatorView(coordinator: child, title: model.title, active: workspace.active)
-                        }
-                    }
-                    if model.showsDestination {
-                        coordinator.root.view()
-                            // Placeholders have no coordinator of their own; the root titles them.
-                            .toolbar { if coordinator.rootIsPlaceholder { PageTitleToolbarItem(title: model.title) } }
-                    }
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                // Decided once here for the active workspace: every mounted workspace emitting its
-                // own value would let a hidden sibling's `.automatic` win by order.
-                .toolbarBackground(activeWorkspaceFillsTitleBar ? .hidden : .automatic, for: .windowToolbar)
-            }
-            .padding(.horizontal, model.hasWorkspace ? 0 : 28)
-            .padding(.vertical, model.hasWorkspace ? 0 : model.showsDashboard ? 16 : 28)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
     }
 }

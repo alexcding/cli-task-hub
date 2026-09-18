@@ -3,12 +3,11 @@ import SwiftUI
 /// Toolbar for a session workspace: git client icon and title flat at the leading edge,
 /// editor and run controls in a glass container, session actions trailing.
 struct SessionWorkspaceToolbar: ToolbarContent {
-    let title: String
     let model: SessionWorkspaceViewModel
 
     var body: some ToolbarContent {
         if !model.fillsTitleBar {
-            PageTitleToolbarItem(title: title, font: .headline) {
+            PageTitleToolbarItem(title: model.title, font: .headline) {
                 if model.session != nil {
                     SessionWorkspaceGitClientButton(model: model)
                 } else if let url = model.activePageURL {

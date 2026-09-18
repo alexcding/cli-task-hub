@@ -17,13 +17,17 @@ extension AppViewModel: WorkspaceCoordinating {
         let session = sessions.first { "task:\($0.id)" == context.id }
         let project = session.flatMap { session in projects.first { $0.id == session.projectId } }
         let base = session.flatMap { session in dashboard?.projects.flatMap(\.prs).first { $0.url == session.url }?.baseRefName }
+        let title: String
+        if context.id == "scratch" { title = "Terminal" }
+        else if let session { title = session.label }
+        else { title = visibleTabs.first { "tab:\($0.id)" == context.id }?.displayTitle ?? "Tab" }
         return SessionWorkspaceState(session: session, project: project, terminal: terminals[context.id],
             buildTerminal: terminals["build:\(context.sourceURL)"], build: buildModels[context.id],
             history: historyModels[context.id], diff: diffModels[context.id], workflow: workflowModel(in: context),
             appearance: shell.appearance, documentFont: shell.font(.diff), terminalStyle: shell.terminalStyle, connected: connection == "Connected",
             changingSession: session.map { changingSessions.contains($0.id) } ?? false,
             openingExternal: workspaceLaunch.opening.contains(context.id), canPresent: coordinator.canPresent,
-            canCreateSession: canPerform(.newSession),
+            canCreateSession: canPerform(.newSession), title: title,
             offersPageSession: offersPageSession(in: context), editorID: project?.ide,
             editorLabel: workspaceLaunch.editorLabel(project), gitClientID: shell.gitClient,
             gitClientLabel: workspaceLaunch.gitClientLabel(shell.gitClient), launchError: workspaceLaunch.errors[context.id],

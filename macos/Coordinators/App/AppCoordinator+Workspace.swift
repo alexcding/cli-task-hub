@@ -12,6 +12,7 @@ extension AppCoordinator {
     @discardableResult
     func bindWorkspace(_ model: SessionWorkspaceViewModel, context: WorkspaceContext,
                        runtime: any WorkspaceCoordinating) -> SessionWorkspaceCoordinator {
+        defer { refreshRoot() }
         pruneWorkspaces()
         if let existing = workspaceCoordinator(for: context), existing.model === model { return existing }
         workspaceCoordinators.removeAll { $0.context === context }

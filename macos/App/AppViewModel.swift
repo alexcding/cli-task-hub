@@ -132,7 +132,6 @@ public final class AppViewModel {
         }, desktop: desktop, copy: copy), copy: copy)
         dashboard?.snapshotChanged = { [weak self] in self?.updateWorkspaceReviewState() }
         _ = coordinator.makeSettings(factory: settingsFactory ?? NativeSettingsFeatureFactory(desktop: desktop, copy: copy), shell: shell, runtime: self)
-        viewer.contextRemoved = { [weak self] _ in self?.coordinator.pruneWorkspaces() }
         viewer.contextChanged = { [weak self] context in
             guard let self, viewer.contexts[context.id] === context else { return }
             commitDraftTab(context)
@@ -375,7 +374,6 @@ public final class AppViewModel {
             if activeTerminalKey == nil { select(.terminal) }
             openTerminal()
             viewer.active?.present()
-            terminal?.showsSurface = true
             terminal?.surface.requestFocus()
         case .refresh: refresh()
         case .biggerFont: if let kind = fontTarget { shell.setFont(kind, size: shell.font(kind).size + 1) }
@@ -395,7 +393,7 @@ public final class AppViewModel {
             let hasTerminal = context.id == "scratch" || sessions.contains { "task:\($0.id)" == context.id }
             if context.activeDocument != nil && (!hasTerminal || context.pane == .files) { return .diff }
         }
-        return terminal?.ready == true && terminal?.showsSurface == true ? .term : nil
+        return terminal?.ready == true ? .term : nil
     }
 
     func revealWorktree(_ session: WorkspaceSession) {
