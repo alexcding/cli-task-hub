@@ -564,6 +564,71 @@ pub async fn create_worktree(Json(body): Json<Value>) -> ApiResult<Value> {
     }
 }
 
+/// Moves a checkout to another branch. A branch can only be checked out once, so the main repo
+/// sitting on a branch is what stops a session for it from getting a worktree; the app asks here
+/// to free it. Uncommitted tracked work is never carried across silently — that case reports and
+/// leaves the checkout alone. Untracked files follow a switch harmlessly and do not block it.
+pub async fn git_switch(Json(body): Json<Value>) -> ApiResult<Value> {
+    let dir = body["path"]
+        .as_str()
+        .filter(|v| !v.is_empty())
+        .ok_or_else(|| ApiError::bad_request("path and branch required"))?;
+    let branch = body["branch"]
+        .as_str()
+        .filter(|v| !v.is_empty())
+        .ok_or_else(|| ApiError::bad_request("path and branch required"))?;
+    if !valid_branch(branch) {
+        return Ok(Json(
+            json!({"error":format!("\"{branch}\" is not a valid branch name")}),
+        ));
+    }
+    // The branch is held by the MAIN worktree, which is not always the folder the app calls its
+    // workspace — a project can be configured on a linked worktree. Switching the wrong one leaves
+    // the branch just as held.
+    let trees = list_worktrees(dir).await;
+    let Some(main) = trees.iter().find(|w| w.main).map(|w| w.path.clone()) else {
+        return Ok(Json(
+            json!({"error":format!("{dir} is not a git checkout")}),
+        ));
+    };
+    // A status that could not be read is treated as dirty: `switch` carries uncommitted work onto
+    // the new branch whenever git sees no conflict, and that is not something to do on a guess.
+    let dirty = match git(
+        &main,
+        vec![
+            "status".into(),
+            "--porcelain".into(),
+            "--untracked-files=no".into(),
+        ],
+        30,
+    )
+    .await
+    {
+        Ok(out) => !out.trim().is_empty(),
+        Err(e) => {
+            return Ok(Json(
+                json!({"error":format!("Could not read the state of {main}: {}", error_line(&e.to_string()))}),
+            ))
+        }
+    };
+    if dirty {
+        return Ok(Json(
+            json!({"error":format!("{main} has uncommitted changes. Commit or stash them before moving it to \"{branch}\".")}),
+        ));
+    }
+    // A local branch only: `switch` would otherwise create a tracking branch from origin, which
+    // is a different act than the one the app asked for.
+    if !ref_exists(&main, &format!("refs/heads/{branch}")).await {
+        return Ok(Json(
+            json!({"error":format!("Branch \"{branch}\" was not found in {main}")}),
+        ));
+    }
+    match git(&main, vec!["switch".into(), branch.into()], 60).await {
+        Ok(_) => Ok(Json(json!({"ok":true}))),
+        Err(e) => Ok(Json(json!({"error": error_line(&e.to_string())}))),
+    }
+}
+
 /// The narrow set of phrases `worktree add` emits for a ref it cannot resolve — matched, as in
 /// the JS backend, so an unrelated failure is never read as "the branch does not exist yet".
 fn missing_ref(message: &str) -> bool {

@@ -119,6 +119,7 @@ pub fn build_app(state: AppState) -> Router {
         .route("/api/git/commit-avatars", get(local::commit_avatars))
         .route("/api/git/show", get(local::git_show))
         .route("/api/git/discard", post(local::git_discard))
+        .route("/api/git/switch", post(local::git_switch))
         .route("/api/xcode/schemes", get(local::xcode_schemes))
         .route("/api/xcode/simulators", get(local::xcode_simulators))
         .route(

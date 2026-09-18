@@ -152,6 +152,9 @@ private actor ScriptedSessionService: SessionCreating {
         if let resolutionError { throw resolutionError }
         return draft
     }
+    private(set) var movedMainCheckoutTo: String?
+    /// Moving the checkout frees the branch, so what failed on it resolves the next time.
+    func switchMainCheckout(to branch: String, project: Project) { movedMainCheckoutTo = branch; resolutionError = nil }
     func create(project: Project, draft: SessionDraft, requireExactBranch: Bool) -> WorkspaceSession {
         creations += 1
         return WorkspaceSession(id: "created", projectId: project.id, workspace: project.workspace, worktree: "/tmp/w",
@@ -207,6 +210,7 @@ private let scriptedProject = Project(id: "fixture", name: "Fixture", repo: "fix
 
 private final class ExistingCheckoutFixture: URLProtocol, @unchecked Sendable {
     nonisolated(unsafe) static var posts: [String] = []
+    nonisolated(unsafe) static var switched: [String] = []
     static let lock = NSLock()
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
@@ -222,6 +226,16 @@ private final class ExistingCheckoutFixture: URLProtocol, @unchecked Sendable {
             body = #"{"matched":true,"isWorktree":true,"branch":"reuse-me","path":"/tmp/fixture.worktrees/reuse-me"}"#
         case (Routes.WORKTREE, _) where branch == "main" || url.query?.contains("key=MAIN-1") == true:
             body = #"{"matched":true,"isWorktree":false,"branch":"main","path":"/tmp/fixture"}"#
+        // The main checkout is parked on this one, so it is matched but is not a worktree.
+        case (Routes.WORKTREE, _) where branch == "develop":
+            body = #"{"matched":true,"isWorktree":false,"branch":"develop","path":"/tmp/fixture"}"#
+        case (Routes.WORKTREE, _) where branch == "held":
+            body = #"{"matched":true,"isWorktree":false,"branch":"held","path":"/tmp/fixture"}"#
+        case (Routes.GIT_SWITCH, "POST"):
+            Self.lock.withLock { Self.switched.append(Self.bodyBranch(self.request)) }
+            body = #"{"ok":true}"#
+        case (Routes.GIT_REFS, _):
+            body = #"{"branches":[{"name":"main"},{"name":"develop"}],"defaultBranch":"main"}"#
         case (Routes.WORKTREE, _):
             body = #"{"matched":false,"isWorktree":false,"branch":"","path":""}"#
         default: body = #"{"ok":true}"#
@@ -230,32 +244,68 @@ private final class ExistingCheckoutFixture: URLProtocol, @unchecked Sendable {
         client?.urlProtocol(self, didLoad: Data(body.utf8)); client?.urlProtocolDidFinishLoading(self)
     }
     override func stopLoading() {}
+
+    /// URLProtocol hands a POST body back as a stream, so the recorded branch has to be read out.
+    static func bodyBranch(_ request: URLRequest) -> String {
+        var data = request.httpBody ?? Data()
+        if data.isEmpty, let stream = request.httpBodyStream {
+            stream.open(); defer { stream.close() }
+            var buffer = [UInt8](repeating: 0, count: 4096)
+            while stream.hasBytesAvailable {
+                let read = stream.read(&buffer, maxLength: buffer.count)
+                if read <= 0 { break }
+                data.append(contentsOf: buffer[..<read])
+            }
+        }
+        struct Body: Decodable { let branch: String }
+        return (try? JSONDecoder().decode(Body.self, from: data))?.branch ?? ""
+    }
 }
 
-@Test func sessionCreationReusesAnExistingCheckoutAndRefusesTheMainCheckout() async throws {
+@Test func sessionCreationReusesAnExistingCheckoutAndFreesTheMainCheckout() async throws {
     let configuration = URLSessionConfiguration.ephemeral
     configuration.protocolClasses = [ExistingCheckoutFixture.self]
     let api = try APIClient(baseURL: URL(string: "http://127.0.0.1:12345")!, session: URLSession(configuration: configuration))
     let operations = SessionOperations(api: api)
     let project = Project(id: "fixture", name: "Fixture", repo: "fixture/repo", color: nil, workspace: "/tmp/fixture")
-    func draft(_ branch: String) -> SessionDraft { var d = SessionDraft(); d.branch = branch; d.agent = .shell; return d }
+    func draft(_ branch: String, base: String = "") -> SessionDraft {
+        var d = SessionDraft(); d.branch = branch; d.base = base; d.agent = .shell; return d
+    }
+    ExistingCheckoutFixture.lock.withLock { ExistingCheckoutFixture.posts = []; ExistingCheckoutFixture.switched = [] }
 
+    // An existing WORKTREE is adopted as it stands: the session is new, the checkout is not.
     let reused = try await operations.create(project: project, draft: draft("reuse-me"), requireExactBranch: false)
     #expect(reused.worktree == "/tmp/fixture.worktrees/reuse-me")
     #expect(ExistingCheckoutFixture.lock.withLock { ExistingCheckoutFixture.posts.isEmpty })
 
-    await #expect(throws: BackendError.self) {
-        _ = try await operations.create(project: project, draft: draft("main"), requireExactBranch: false)
-    }
-    #expect(ExistingCheckoutFixture.lock.withLock { ExistingCheckoutFixture.posts.isEmpty })
+    // A branch the MAIN checkout holds is different: every task branch belongs in a worktree of its
+    // own, so the main checkout is parked on the selected base and the branch then gets one.
+    var held = draft("held", base: "develop")
+    held.createBranch = false
+    let freed = try await operations.create(project: project, draft: held, requireExactBranch: false)
+    #expect(ExistingCheckoutFixture.lock.withLock { ExistingCheckoutFixture.switched } == ["develop"])
+    // Never the main repo's own path, which is what `matched` pointed at.
+    #expect(freed.worktree == "/tmp/fixture.worktrees/fresh")
+    #expect(ExistingCheckoutFixture.lock.withLock { ExistingCheckoutFixture.posts.count } == 1)
 
-    await #expect(throws: BackendError.self) { // a PR whose head branch is the main checkout's is refused, not reused
-        _ = try await operations.resolvePage("https://jira.test/browse/MAIN-1", project: project, draft: SessionDraft())
+    // Nothing selected — the page flow creates without a sheet — falls back to the session base.
+    _ = try await operations.create(project: project, draft: draft("main"), requireExactBranch: false)
+    #expect(ExistingCheckoutFixture.lock.withLock { ExistingCheckoutFixture.switched.last } == "develop")
+
+    // Resolving is a LOOKUP. It runs on every keystroke that parses as a URL, so it must never
+    // move a checkout — it only declines to reuse the main one.
+    let before = ExistingCheckoutFixture.lock.withLock { ExistingCheckoutFixture.switched.count }
+    let resolved = try await operations.resolvePage("https://jira.test/browse/MAIN-1", project: project, draft: SessionDraft())
+    #expect(resolved.reuseWorktree == nil)
+    #expect(ExistingCheckoutFixture.lock.withLock { ExistingCheckoutFixture.switched.count } == before)
+
+    // The one case with nowhere to park it: the branch IS the base this session forks from.
+    await #expect(throws: BackendError.self) {
+        _ = try await operations.create(project: project, draft: draft("develop", base: "develop"), requireExactBranch: false)
     }
 
     let fresh = try await operations.create(project: project, draft: draft("fresh"), requireExactBranch: false)
     #expect(fresh.worktree == "/tmp/fixture.worktrees/fresh")
-    #expect(ExistingCheckoutFixture.lock.withLock { ExistingCheckoutFixture.posts.count } == 1)
 }
 
 private actor PageStartService: SessionCreating {
@@ -270,6 +320,8 @@ private actor PageStartService: SessionCreating {
     func resolvePage(_ raw: String, project: Project, draft: SessionDraft, workflow: Bool) throws -> SessionDraft {
         var result = try resolution.get(); result.agent = draft.agent; return result
     }
+    private(set) var movedMainCheckoutTo: String?
+    func switchMainCheckout(to branch: String, project: Project) { movedMainCheckoutTo = branch }
     func create(project: Project, draft: SessionDraft, requireExactBranch: Bool) -> WorkspaceSession {
         createdDraft = draft
         return WorkspaceSession(id: "page", projectId: project.id, workspace: project.workspace, worktree: draft.reuseWorktree ?? "/tmp/new",

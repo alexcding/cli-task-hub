@@ -51,6 +51,8 @@ private actor LifetimeSessionService: SessionCreating {
         if let resolution { return try await resolution.value() }
         return draft
     }
+    private(set) var movedMainCheckoutTo: String?
+    func switchMainCheckout(to branch: String, project: Project) { movedMainCheckoutTo = branch }
     func create(project: Project, draft: SessionDraft, requireExactBranch: Bool) async throws -> WorkspaceSession {
         creations += 1
         if let creation {

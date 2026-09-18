@@ -59,6 +59,8 @@ protocol SessionCreating: Sendable {
     func references(_ project: Project) async throws -> GitReferences
     func resolvePage(_ raw: String, project: Project, draft: SessionDraft, workflow: Bool) async throws -> SessionDraft
     func create(project: Project, draft: SessionDraft, requireExactBranch: Bool) async throws -> WorkspaceSession
+    /// Moves `project`'s main checkout onto `branch`, freeing the one it holds for a worktree.
+    func switchMainCheckout(to branch: String, project: Project) async throws
 }
 
 /// A session started straight from a PR or ticket page (viewer.js newSession): the page decides
@@ -113,15 +115,27 @@ struct SessionOperations: SessionServing {
             }
             worktree = .init(path: found.path)
         } else {
-            // A branch that already has a checkout here is reused — the session is new, the worktree
-            // isn't. The main checkout can't be: git refuses a second checkout of its branch.
+            // A branch that already has a WORKTREE here is reused — the session is new, the worktree
+            // isn't. The main checkout is not one: it gets parked on the base, and the branch it was
+            // holding then needs a worktree of its own like any other.
             let existing: ResolvedWorktree = try await api.get(APIClient.query(Routes.WORKTREE,
                 ["path": project.workspace, "branch": branch, "strict": "1"]))
-            if existing.matched && !existing.isWorktree {
-                throw BackendError.operation("\(branch) is checked out in the main repo — switch it away there first.")
+            let held = existing.matched && !existing.isWorktree
+            var parked: String?
+            if held { parked = try await freeMainCheckout(branch, base: draft.base, project: project) }
+            if existing.matched && !held {
+                worktree = .init(path: existing.path)
+            } else {
+                do {
+                    worktree = try await api.request(Routes.WORKTREE, method: "POST", body:
+                        WorktreeRequest(path: project.workspace, branch: branch, create: draft.createBranch, base: draft.base))
+                } catch {
+                    // The checkout has already moved and nothing undoes that, so the failure has to
+                    // say it happened — otherwise the branch is gone from the main repo silently.
+                    guard let parked else { throw error }
+                    throw BackendError.operation("The main checkout was moved to \(parked), but the worktree could not be created: \(error.localizedDescription)")
+                }
             }
-            worktree = existing.matched ? .init(path: existing.path) : try await api.request(Routes.WORKTREE, method: "POST", body:
-                WorktreeRequest(path: project.workspace, branch: branch, create: draft.createBranch, base: draft.base))
         }
         guard !worktree.path.isEmpty else { throw BackendError.operation("Git did not return a worktree.") }
         if requireExactBranch {
@@ -175,14 +189,39 @@ struct SessionOperations: SessionServing {
         let match = page.kind == "jira" ? ["key": page.key] : ["branch": result.branch]
         let found: ResolvedWorktree = try await api.get(APIClient.query(Routes.WORKTREE,
             ["path": project.workspace, "strict": "1"].merging(match) { _, new in new }))
-        if found.matched && !found.isWorktree {
-            throw BackendError.operation("\(found.branch) is checked out in the main repo — switch it away there first.")
-        }
+        // A checkout that is not a worktree is the main one. It cannot be reused, and it is NOT
+        // freed here: this runs on every keystroke that parses as a URL, so moving a branch from it
+        // would happen to someone who is still typing. `create` frees it, once Create is pressed.
+        if found.matched && !found.isWorktree { return result }
         if found.matched {
             result.reuseWorktree = found.path; result.branch = found.branch; result.createBranch = false
         }
         return result
     }
+    /// Git checks a branch out once, so the main checkout holding one leaves no room for the
+    /// session's worktree. Feature branches live in worktrees here and the main checkout belongs on
+    /// the session base, so parking it back there is what makes the room — there is nothing to ask.
+    @discardableResult
+    private func freeMainCheckout(_ branch: String, base selected: String, project: Project) async throws -> String {
+        // "Branch from" decides where the checkout is parked; the session base only stands in for
+        // the page flow, which creates without a sheet and so has nothing selected yet.
+        let chosen = selected.trimmingCharacters(in: .whitespacesAndNewlines)
+        let base = chosen.isEmpty ? try await references(project).sessionBase : chosen
+        guard base != branch else {
+            throw BackendError.operation("\(branch) is the branch this session forks from, so the main checkout cannot be moved off it. Choose a different \u{201C}Branch from\u{201D}.")
+        }
+        do { try await switchMainCheckout(to: base, project: project); return base }
+        catch {
+            throw BackendError.operation("\(branch) is checked out in the main repo, which could not be moved to \(base): \(error.localizedDescription)")
+        }
+    }
+
+    func switchMainCheckout(to branch: String, project: Project) async throws {
+        struct SwitchRequest: Encodable, Sendable { let path: String; let branch: String }
+        let _: OperationOK = try await api.request(Routes.GIT_SWITCH, method: "POST",
+            body: SwitchRequest(path: project.workspace, branch: branch))
+    }
+
     func saveAgentID(_ id: String, session: WorkspaceSession) async throws {
         struct Payload: Encodable, Sendable { let sessionId: String }
         let _: OperationOK = try await api.request(Routes.task(session.id), method: "PATCH", body: Payload(sessionId: id))
