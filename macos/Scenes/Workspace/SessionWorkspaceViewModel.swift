@@ -113,6 +113,9 @@ enum WorkspaceOperation: Equatable {
         return context.lastMode == .diff && session == nil ? .browser : context.lastMode
     }
     var showsBrowser: Bool { showsPage && !showsChanges && mode == .browser }
+    /// A page-only context (a sidebar tab) draws its compact tab bar in the title-bar zone: the
+    /// window toolbar loses its background, icon and title, and the bar takes the toolbar's row.
+    var fillsTitleBar: Bool { !showsTerminal && mode == .browser }
     var showsFiles: Bool { showsPage && !showsChanges && mode == .files }
     var showsModePicker: Bool { showsTerminal || context?.documents.isEmpty == false }
     func canSelectMode(_ mode: WorkspaceMode) -> Bool { mode != .diff || canShowChanges }
@@ -132,7 +135,11 @@ enum WorkspaceOperation: Equatable {
     func setActive(_ value: Bool) { active = value }
     func selectTab(_ tab: WorkspaceTab) { onAction(.selectTab(tab.id)) }
     func closeTab(_ tab: WorkspaceTab) { onAction(.closeTab(tab.id)) }
-    func newTab() { onAction(.newTab) }
+    /// Only the workspace on screen may open tabs; hidden ones stay mounted but inert.
+    var canOpenTab: Bool { active && state.canPresent }
+    /// Whether the workspace on screen is visible to the user, for taking keyboard focus.
+    var isActive: Bool { active }
+    func newTab() { guard canOpenTab else { return }; onAction(.newTab) }
     func reviewStateChanged(force: Bool = false) {
         let inputs = reviewInputs
         if force || previousReviewInputs != inputs {

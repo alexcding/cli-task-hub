@@ -28,6 +28,13 @@ struct AppCoordinatorView: View {
         }
     }
 
+    /// A page-only tab in browser mode draws its own bar where the toolbar was.
+    private var activeWorkspaceFillsTitleBar: Bool {
+        guard let workspace = coordinator.rootModel?.activeWorkspace,
+              let child = coordinator.workspaceCoordinator(for: workspace.context) else { return false }
+        return child.model.fillsTitleBar
+    }
+
     @ViewBuilder private var detailContent: some View {
         if let model = coordinator.rootModel {
             VStack(alignment: .leading, spacing: 18) {
@@ -53,6 +60,9 @@ struct AppCoordinatorView: View {
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                // Decided once here for the active workspace: every mounted workspace emitting its
+                // own value would let a hidden sibling's `.automatic` win by order.
+                .toolbarBackground(activeWorkspaceFillsTitleBar ? .hidden : .automatic, for: .windowToolbar)
             }
             .padding(.horizontal, model.hasWorkspace ? 0 : 28)
             .padding(.vertical, model.hasWorkspace ? 0 : model.showsDashboard ? 16 : 28)

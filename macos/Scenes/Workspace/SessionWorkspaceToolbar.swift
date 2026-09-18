@@ -7,17 +7,20 @@ struct SessionWorkspaceToolbar: ToolbarContent {
     let model: SessionWorkspaceViewModel
 
     var body: some ToolbarContent {
-        PageTitleToolbarItem(title: title) {
-            if model.session != nil {
-                SessionWorkspaceGitClientButton(model: model)
-            } else if let url = model.activePageURL {
-                FaviconImage(url: url, size: 18)
+        if !model.fillsTitleBar {
+            PageTitleToolbarItem(title: title) {
+                if model.session != nil {
+                    SessionWorkspaceGitClientButton(model: model)
+                } else if let url = model.activePageURL {
+                    FaviconImage(url: url, size: 18)
+                }
             }
         }
         if model.session != nil {
             ToolbarItem(placement: .principal) { SessionWorkspaceLeadingToolbar(model: model) }
         }
-        if model.offersPageSession {
+        // With the bar in the title-bar zone, Create Session lives in the bar instead.
+        if model.offersPageSession, !model.fillsTitleBar {
             if #available(macOS 26.0, *) { ToolbarSpacer(.flexible) }
             ToolbarItem(placement: .primaryAction) {
                 Button("Create Session", systemImage: "terminal", action: model.createSession)

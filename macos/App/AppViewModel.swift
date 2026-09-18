@@ -332,7 +332,7 @@ public final class AppViewModel {
     public func canPerform(_ command: ShellCommand) -> Bool {
         switch command {
         case .newProject: connection == "Connected" && coordinator.canPresent
-        case .newTab: coordinator.canPresent
+        case .newTab: coordinator.canPresent && viewer.active != nil
         case .newSession: canStartSession && sessionProject(for: selection) != nil
         case .back: coordinator.canPresent && viewer.active?.activePage?.controls.canGoBack == true
         case .forward: coordinator.canPresent && viewer.active?.activePage?.controls.canGoForward == true
@@ -358,7 +358,7 @@ public final class AppViewModel {
             guard canPerform(.newSession), let project = sessionProject(for: selection) else { return }
             let pageURL: String? = if case .tab(let id) = selection { tabURL(id) } else { nil }
             startSession(in: project.id, pageURL: pageURL)
-        case .newTab: if canPerform(.newTab) { newTab() }
+        case .newTab: if canPerform(.newTab) { newBrowserTab() }
         case .openPageInBrowser: if canPerform(.openPageInBrowser) { activePageControls?.openExternally() }
         case .openFile: if canPerform(.openFile), let context = viewer.active { viewer.openFile(in: context) }
         case .saveFile: if let document = viewer.active?.activeDocument { Task { await document.save() } }
@@ -403,6 +403,14 @@ public final class AppViewModel {
 
     func revealWorktree(_ session: WorkspaceSession) {
         desktop.reveal(URL(fileURLWithPath: session.worktree))
+    }
+
+    /// Cmd-T: a blank tab in the browser panel of the workspace on screen, as in Safari's window in
+    /// front. A session panel showing something else switches to Browser first. Never a sidebar tab.
+    func newBrowserTab() {
+        guard coordinator.canPresent, let context = viewer.active else { return }
+        if context.pane != .term { context.setPane(.term) }
+        context.openBlankPage()
     }
 
     /// The Tabs heading's "+": a new draft at the end of Tabs, selected, with a blank page whose

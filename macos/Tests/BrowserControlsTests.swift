@@ -42,7 +42,7 @@ import Testing
     #expect(model.address == "  https://example.test/draft  ")
     model.openExternally()
     #expect(desktop.opens.map(\.absoluteString) == [page.url])
-    for invalid in ["file:///tmp/private", "javascript:alert(1)", "https://user:password@example.test", "not a URL"] {
+    for invalid in ["file:///tmp/private", "javascript:alert(1)", "https://user:password@example.test", "mailto:a@b.c"] {
         model.address = invalid
         #expect(!model.submitAddress() && model.error == "Enter a web address, like example.com.")
         #expect(model.address == invalid && page.navigations.isEmpty)
@@ -63,6 +63,13 @@ import Testing
     #expect(!model.canOpenExternally)
     model.openExternally()
     #expect(desktop.opens.count == 3)
+    // Words that are not an address search Google instead of failing.
+    model.address = "not a URL"
+    #expect(model.submitAddress() && model.error == nil)
+    #expect(page.navigations.last == "https://www.google.com/search?q=not%20a%20URL")
+    #expect(model.address == "https://www.google.com/search?q=not%20a%20URL")
+    model.address = "C++ tutorial"
+    #expect(model.submitAddress() && page.navigations.last == "https://www.google.com/search?q=C%2B%2B%20tutorial")
 }
 
 @MainActor @Test func browserControlsForwardLoadingFindAndNavigationWithoutRetainingClosedPage() {

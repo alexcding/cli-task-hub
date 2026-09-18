@@ -240,8 +240,8 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
         documents.append(file); wire(file); insert(file.id); noteHistory(file.record)
         select(.file(file)); file.focus(line: line, column: column); return file
     }
-    private func insert(_ id: String) {
-        let index = tabOrder.firstIndex(of: activeID ?? "").map { $0 + 1 } ?? tabOrder.endIndex
+    private func insert(_ id: String, atEnd: Bool = false) {
+        let index = atEnd ? tabOrder.endIndex : tabOrder.firstIndex(of: activeID ?? "").map { $0 + 1 } ?? tabOrder.endIndex
         tabOrder.insert(id, at: index)
         pages.sort { tabOrder.firstIndex(of: $0.id)! < tabOrder.firstIndex(of: $1.id)! }
     }
@@ -296,7 +296,8 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
     @discardableResult func openBlankPage() -> BrowserPage {
         let page = pageFactory.make(.init(url: Self.blankPageURL, title: "New Tab"))
         wire(page)
-        pages.append(page); insert(page.id)
+        // At the end, as Safari's New Tab: the tabs already open keep their places.
+        pages.append(page); insert(page.id, atEnd: true)
         error = nil
         select(page)
         return page

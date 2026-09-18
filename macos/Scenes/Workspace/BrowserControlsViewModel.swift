@@ -3,6 +3,8 @@ import Observation
 
 @MainActor protocol BrowserControlling: AnyObject {
     var url: String { get }
+    /// A scripted popup whose document lives at about:blank: blank by address, not a blank tab.
+    var hasPopupDocument: Bool { get }
     var loading: Bool { get }
     var canGoBack: Bool { get }
     var canGoForward: Bool { get }
@@ -16,6 +18,8 @@ import Observation
     func zoom(_ delta: Double?)
     func find(_ text: String, backwards: Bool)
 }
+
+extension BrowserControlling { var hasPopupDocument: Bool { false } }
 
 @MainActor @Observable final class BrowserControlsViewModel {
     enum Action {
@@ -48,7 +52,7 @@ import Observation
     }
 
     /// A blank tab has no address to show.
-    var isBlank: Bool { page.map { WorkspaceContext.isBlankAddress($0.url) } == true }
+    var isBlank: Bool { page.map { WorkspaceContext.isBlankAddress($0.url) && !$0.hasPopupDocument } == true }
     private static func displayAddress(_ url: String) -> String { WorkspaceContext.isBlankAddress(url) ? "" : url }
 
     var loading: Bool { page?.loading == true }
@@ -66,7 +70,7 @@ import Observation
 
     @discardableResult func submitAddress() -> Bool {
         guard active, page != nil, onAction != nil else { return false }
-        guard let url = webAddress(address) else {
+        guard let url = webAddress(address) ?? Self.searchURL(for: address) else {
             actionError = .invalidAddress
             return false
         }
@@ -74,6 +78,20 @@ import Observation
         address = url.absoluteString
         perform(.navigate(url))
         return true
+    }
+
+    /// Text that is not an address becomes a Google search, as in Safari's field. Anything shaped
+    /// like a URL attempt (a scheme, or `://`) is not searched: it was meant as an address and failed.
+    static func searchURL(for input: String) -> URL? {
+        let text = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty, !text.contains("://") else { return nil }
+        if !text.contains(where: \.isWhitespace), let colon = text.firstIndex(of: ":"),
+           text[..<colon].allSatisfy({ $0.isLetter || $0.isNumber || "+-.".contains($0) }) { return nil }
+        // `URLQueryItem` leaves "+" bare, which Google reads as a space; encode it ourselves.
+        var allowed = CharacterSet.urlQueryAllowed
+        allowed.remove(charactersIn: "+&=#")
+        guard let query = text.addingPercentEncoding(withAllowedCharacters: allowed) else { return nil }
+        return URL(string: "https://www.google.com/search?q=" + query)
     }
 
     func back() { perform(.back) }

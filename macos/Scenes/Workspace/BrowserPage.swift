@@ -18,6 +18,11 @@ struct WebPageRecord: Codable, Identifiable, Equatable, Sendable {
     private(set) var error: String?
     private(set) var webView: WKWebView?
     private(set) var found: Bool?
+    /// Set while the start page is shown over a loaded site: Back from the first real page. The
+    /// site stays loaded behind it so Forward can return. WebKit never sees this entry.
+    @ObservationIgnored private var parkedURL: URL?
+    /// Set when the web view came from a popup configuration: its about:blank has a live document.
+    private(set) var hasPopupDocument = false
     let dialogs = BrowserDialogViewModel()
     @ObservationIgnored var isOwned: () -> Bool = { false }
     @ObservationIgnored var changed: () -> Void = {}
@@ -30,10 +35,12 @@ struct WebPageRecord: Codable, Identifiable, Equatable, Sendable {
     init(_ record: WebPageRecord) {
         id = record.id; url = record.url; title = record.title; super.init()
     }
-    var record: WebPageRecord { .init(id: id, url: url, title: title) }
+    /// The parked site is what gets saved, so a tab left on its start page is not lost as blank.
+    var record: WebPageRecord { .init(id: id, url: parkedURL?.absoluteString ?? url, title: title) }
 
     @discardableResult func materialize(configuration: WKWebViewConfiguration? = nil, load: Bool = true) -> WKWebView {
         if let webView { return webView }
+        hasPopupDocument = configuration != nil
         let configuration = configuration ?? WKWebViewConfiguration()
         configuration.websiteDataStore = .default()
         // WebKit's bare default UA has no "Version/x Safari/x" suffix, so sites such as Google
@@ -96,12 +103,38 @@ struct WebPageRecord: Codable, Identifiable, Equatable, Sendable {
 
     func navigate(_ address: String) {
         guard let destination = webAddress(address) else { error = "Enter a web address, like example.com."; return }
-        error = nil
+        error = nil; parkedURL = nil
         materialize().load(URLRequest(url: destination))
     }
 
-    func back() { webView?.goBack() }
-    func forward() { webView?.goForward() }
+    /// Any site can go back: through WebKit's history first, then to the start page. Consistent
+    /// for tabs that began blank and tabs restored straight onto a site.
+    func back() {
+        guard let webView, parkedURL == nil else { return }
+        // WebKit entries that would not visibly change the page (about:blank, or the same address
+        // left by a redirect) are skipped, so Back does not appear to do nothing.
+        if webView.canGoBack, let item = webView.backForwardList.backItem,
+           !Self.isInvisibleStep(item.url, from: webView.url) { webView.goBack(); return }
+        guard let current = webView.url, safeWebURL(current.absoluteString) != nil else { return }
+        // The site leaves the view tree while parked; nothing of it may keep running unseen.
+        webView.pauseAllMediaPlayback(); webView.closeAllMediaPresentations()
+        dialogs.cancel()
+        parkedURL = current
+        url = WorkspaceContext.blankPageURL
+        update()
+    }
+    private static func isInvisibleStep(_ target: URL, from current: URL?) -> Bool {
+        if WorkspaceContext.isBlankAddress(target.absoluteString) || safeWebURL(target.absoluteString) == nil { return true }
+        guard let current else { return false }
+        return target.host == current.host && target.path == current.path && target.query == current.query
+    }
+    func forward() {
+        if let parked = parkedURL {
+            parkedURL = nil
+            url = parked.absoluteString
+            update()
+        } else { webView?.goForward() }
+    }
     func reload() { error = nil; materialize().reload() }
     func stop() { webView?.stopLoading() }
     func zoom(_ delta: Double?) {
@@ -119,10 +152,15 @@ struct WebPageRecord: Codable, Identifiable, Equatable, Sendable {
     private func update() {
         guard let webView else { return }
         let previous = record
-        if let address = webView.url, safeWebURL(address.absoluteString) != nil { url = address.absoluteString }
+        if let address = webView.url, safeWebURL(address.absoluteString) != nil {
+            // Parked on the start page: the site behind may redirect; remember where it went.
+            if parkedURL != nil { parkedURL = address } else { url = address.absoluteString }
+        }
         if let text = webView.title, !text.isEmpty { title = text }
         loading = webView.isLoading
-        canGoBack = webView.canGoBack; canGoForward = webView.canGoForward
+        let onSite = parkedURL == nil && webView.url.map { safeWebURL($0.absoluteString) != nil } == true
+        canGoBack = onSite
+        canGoForward = parkedURL != nil || webView.canGoForward
         if record != previous { changed() }
     }
 

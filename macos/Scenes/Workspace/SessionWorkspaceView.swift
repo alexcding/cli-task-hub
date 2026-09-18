@@ -80,19 +80,12 @@ struct BrowserSurface: NSViewRepresentable {
 struct BrowserPane: View {
     let page: BrowserPage
     let context: WorkspaceContext
-    @Bindable var model: BrowserControlsViewModel
-    @FocusState private var editingAddress: Bool
+    let model: BrowserControlsViewModel
     @FocusState private var finding: Bool
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 8) {
-                Button("Back", systemImage: "chevron.left", action: model.back).disabled(!model.canGoBack)
-                Button("Forward", systemImage: "chevron.right", action: model.forward).disabled(!model.canGoForward)
-                Button(model.loading ? "Stop Loading" : "Reload Page", systemImage: model.loading ? "xmark" : "arrow.clockwise", action: model.toggleLoading)
-                TextField("Page address", text: $model.address).capsuleField().focused($editingAddress)
-                    .onSubmit { if model.submitAddress() { editingAddress = false } }
-            }.glassIconButtons().padding(8)
+            // Navigation and the address live in the compact tab bar above this pane.
             if context.findVisible {
                 HStack {
                     TextField("Find in page", text: Binding(get: { context.findText }, set: { context.findText = $0 }))
@@ -108,19 +101,16 @@ struct BrowserPane: View {
                 HStack { Text(error).font(.callout); Spacer(); Button("Retry", action: model.retry) }
                     .padding(10).foregroundStyle(.orange)
             }
-            Divider()
-            if let view = page.webView {
+            if model.isBlank {
+                // Safari's start page: a blank tab shows where this panel has been.
+                BrowserStartPage(context: context, controls: model)
+            } else if let view = page.webView {
                 BrowserSurface(webView: view)
                     .accessibilityHidden(page.dialogs.request != nil)
             }
             else { ContentUnavailableView("Page suspended", systemImage: "globe", description: Text("Select this tab to reload it.")) }
         }
-        .onAppear {
-            model.synchronizeAddress()
-            if model.isBlank { editingAddress = true }
-        }
-        .onChange(of: editingAddress) { _, value in model.setEditingAddress(value) }
-        .onDisappear { model.setEditingAddress(false) }
+        .onAppear { model.synchronizeAddress() }
         .onChange(of: context.findVisible) { _, value in if value { finding = true } }
         .onExitCommand { context.findVisible = false }
     }
@@ -156,9 +146,10 @@ struct SessionWorkspaceView: View {
             }
         } else {
             VStack(spacing: 0) {
-                Divider()
+                if !model.fillsTitleBar { Divider() }
                 SessionWorkspaceContextContent(context: context, model: model)
             }
+            .ignoresSafeArea(.container, edges: model.fillsTitleBar ? .top : [])
         }
     }
 
@@ -196,7 +187,11 @@ private struct SessionWorkspaceContextContent: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if model.showsTerminal, !model.showsChanges {
+            if model.mode == .browser, !model.showsChanges {
+                // Safari's compact layout: the tab bar is the address bar, so the browser needs no second row.
+                BrowserCompactTabBar(context: context, model: model)
+                Divider()
+            } else if model.showsTerminal, !model.showsChanges {
                 tabStrip
                 Divider()
             }
