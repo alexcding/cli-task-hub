@@ -74,7 +74,7 @@ final class TerminalSession: Identifiable {
                 self.agentTurns.invalidate("The terminal exited during the workflow step.")
             }
         })
-        surface.configuration = .init(backend: .inMemory(pipe.memory), resizeThrottleMilliseconds: 80)
+        surface.configuration = .init(backend: .inMemory(pipe.memory))
         surface.makePlatformView = { [weak self] in
             let view = WorkspaceTerminalView(frame: .zero)
             view.openLink = { [weak self] raw, directory, external in
