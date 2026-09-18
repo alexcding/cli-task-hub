@@ -601,6 +601,7 @@
 			baseConfigurationReferenceAnchor = C1E2D27BDC02FCA7A98D8C49 /* Resources */;
 			baseConfigurationReferenceRelativePath = Configs/Debug.xcconfig;
 			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				INFOPLIST_KEY_CFBundleDisplayName = "$(PRODUCT_DISPLAY_NAME)";
 				LIBRARY_SEARCH_PATHS = (
 					"$(inherited)",
@@ -619,6 +620,7 @@
 			baseConfigurationReferenceAnchor = C1E2D27BDC02FCA7A98D8C49 /* Resources */;
 			baseConfigurationReferenceRelativePath = Configs/Release.xcconfig;
 			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				INFOPLIST_KEY_CFBundleDisplayName = "$(PRODUCT_DISPLAY_NAME)";
 				LIBRARY_SEARCH_PATHS = (
 					"$(inherited)",
