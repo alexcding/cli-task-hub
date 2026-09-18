@@ -89,9 +89,6 @@ private struct SidebarPinnedTabTile: View {
         .accessibilityLabel(tab.title)
         .accessibilityAddTraits(selected ? .isSelected : [])
         .contextMenu {
-            if SidebarLinkActions.browserURL(tab.url) != nil {
-                Button("Open in Browser") { SidebarLinkActions.openInBrowser(tab.url) }
-            }
             Button("Copy Link") { SidebarLinkActions.copy(tab.url) }
             Divider()
             Button("Unpin Tab", action: unpin)

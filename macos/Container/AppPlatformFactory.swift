@@ -41,7 +41,9 @@ struct NativeTerminalRuntimeControl: TerminalRuntimeControlling {
 
     func viewer(desktop: any DesktopActions, dialogs: BrowserDialogCoordinator,
                 documents: any DocumentFeatureFactory, close: EditorCloseCoordinator) -> ViewerStore {
-        ViewerStore(cacheURL: try? configuration().directory.appendingPathComponent("page-tabs.json"),
+        let directory = try? configuration().directory
+        return ViewerStore(cacheURL: directory?.appendingPathComponent("page-tabs.json"),
+                    browserHistory: BrowserHistoryStore(fileURL: directory?.appendingPathComponent("browser-history.json")),
                     pageFactory: BrowserPageFactory(desktop: desktop, dialogs: dialogs),
                     documentFactory: documents, closeCoordinator: close)
     }

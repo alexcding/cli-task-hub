@@ -363,7 +363,6 @@ struct CocoaSidebar: NSViewRepresentable {
                 add("Reveal in Finder", action: #selector(reveal(_:)))
                 add("Copy Path", action: #selector(copyDetail(_:)))
             } else if case .tab = destination {
-                add("Open in Browser", action: #selector(openBrowser(_:)))
                 add("Copy Link", action: #selector(copyDetail(_:)))
                 menu.addItem(.separator())
                 add("Pin Tab", action: #selector(pinTab(_:)))
@@ -392,24 +391,12 @@ struct CocoaSidebar: NSViewRepresentable {
             guard let node = sender.representedObject as? Node else { return }
             SidebarLinkActions.copy(node.entry.detail)
         }
-        @objc private func openBrowser(_ sender: NSMenuItem) {
-            guard let node = sender.representedObject as? Node else { return }
-            SidebarLinkActions.openInBrowser(node.entry.detail)
-        }
     }
 }
 
-/// The link actions a tab row and a pinned tile share, so their menus cannot drift.
+/// The link actions a tab row and a pinned tile share, so their menus cannot drift. Pages
+/// open only inside TaskHub's own browser; there is no hand-off to the system browser.
 @MainActor enum SidebarLinkActions {
-    /// `text` as an address the system browser may open: http or https only.
-    static func browserURL(_ text: String) -> URL? {
-        guard let url = URL(string: text), ["http", "https"].contains(url.scheme?.lowercased() ?? "") else { return nil }
-        return url
-    }
-    static func openInBrowser(_ text: String) {
-        guard let url = browserURL(text) else { return }
-        NSWorkspace.shared.open(url)
-    }
     static func copy(_ text: String) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)

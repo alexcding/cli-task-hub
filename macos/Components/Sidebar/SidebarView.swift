@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 // The web sidebar's chrome around the outline (src/renderer/index.html <aside>, layout.css):
-// the wordmark with Open Link, New Project and the activity bell, and Settings pinned in a footer.
+// the wordmark with New Project and the activity bell, and Settings pinned in a footer.
 struct SidebarView: View {
     let model: RootViewModel
     @State private var showingActivity = false
