@@ -91,3 +91,30 @@ import Testing
     _ = try #require(second.open("https://example.com/new", title: "New"))
     #expect(restored.browserHistory.entries.map(\.url) == ["https://example.com/new", "https://example.com/restored"])
 }
+
+@MainActor @Test func clearingBrowsingHistoryEmptiesLiveContextsSavedSnapshotsAndTheSharedStore() throws {
+    let cache = FileManager.default.temporaryDirectory.appendingPathComponent("taskhub-tabs-\(UUID().uuidString).json")
+    defer { try? FileManager.default.removeItem(at: cache) }
+    struct Cache: Codable { let snapshots: [String: ContextSnapshot]; let pending: Set<String> }
+    var dormant = ContextSnapshot()
+    dormant.history = [.init(url: "https://example.com/dormant", title: "Dormant")]
+    dormant.historyOrder = dormant.history.map(\.id)
+    try JSONEncoder().encode(Cache(snapshots: ["task:two": dormant], pending: [])).write(to: cache)
+
+    let viewer = ViewerStore(cacheURL: cache)
+    let live = viewer.select(id: "task:one", url: "session:one", title: "One")
+    _ = try #require(live.open("https://example.com/live", title: "Live"))
+    #expect(!live.history.isEmpty && !viewer.browserHistory.entries.isEmpty)
+
+    viewer.clearBrowsingHistory()
+    #expect(live.history.isEmpty && live.pageVisits.isEmpty)
+    #expect(viewer.browserHistory.entries.isEmpty)
+    // The dormant context's snapshot lost its visits too, so a relaunch cannot seed them back.
+    let written = try JSONDecoder().decode(Cache.self, from: Data(contentsOf: cache))
+    #expect(written.snapshots["task:two"]?.history.isEmpty == true)
+    #expect(written.snapshots["task:two"]?.historyOrder?.isEmpty == true)
+    #expect(written.snapshots["task:one"]?.history.isEmpty == true)
+    let restored = ViewerStore(cacheURL: cache)
+    _ = restored.select(id: "task:two", url: "session:two", title: "Two")
+    #expect(restored.browserHistory.entries.isEmpty)
+}

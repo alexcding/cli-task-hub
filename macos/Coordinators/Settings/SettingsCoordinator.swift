@@ -19,6 +19,7 @@ import Observation
 @MainActor protocol SettingsCoordinating: AnyObject {
     func applySettingsSave(_ patch: [String: String]) async
     func activateSettings()
+    func clearBrowsingData(_ scope: BrowsingDataScope) async
 }
 
 @MainActor @Observable final class SettingsCoordinator: Coordinatable {
@@ -46,11 +47,20 @@ import Observation
         guard !retired, isOwned(), runtime != nil else { return }
         switch action {
         case .loginItem(let action):
-            guard model.active, model.section == .system, canPresent() else { return }
+            guard model.active, model.section == .general, canPresent() else { return }
             model.loginItem.perform(action)
         case .cli(let action):
             guard model.active, model.section == .clis, canPresent() else { return }
             model.clis.perform(action)
+        case .clearBrowsingData(let scope):
+            guard model.active, model.section == .general, canPresent() else { model.browsingDataClearCancelled(scope); return }
+            let previous = completion
+            completion = Task { [weak self] in
+                await previous?.value
+                guard let self, !Task.isCancelled, !retired, isOwned() else { return }
+                await runtime?.clearBrowsingData(scope)
+                model.browsingDataCleared(scope)
+            }
         case .saved(let patch):
             let previous = completion
             completion = Task { [weak self] in

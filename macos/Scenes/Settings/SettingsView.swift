@@ -5,6 +5,7 @@ import SwiftUI
 struct SettingsView: View {
     @Bindable var model: SettingsViewModel
     let shell: ShellStore
+    @State private var confirmingClear: BrowsingDataScope?
 
     var body: some View {
         Form {
@@ -16,9 +17,9 @@ struct SettingsView: View {
                 }.pickerStyle(.segmented).labelsHidden()
             }
             switch model.section {
+            case .general: general
             case .appearance: appearance
             case .clis: clis
-            case .jira: jira
             case .system: system
             }
             if let error = model.error {
@@ -37,21 +38,20 @@ struct SettingsView: View {
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in model.applicationActiveChanged(false) }
     }
 
-    // MARK: - Appearance
+    // MARK: - General
 
-    @ViewBuilder private var appearance: some View {
-            Section("Theme") {
-                SettingsRow(title: "Appearance", caption: "Use light, dark, or match your system") {
-                    Picker("Theme", selection: Binding(get: { shell.appearance }, set: shell.setAppearance)) {
-                        ForEach(AppAppearance.allCases) { Text($0.title).tag($0) }
-                    }.labelsHidden().accessibilityIdentifier("settings-theme")
+    @ViewBuilder private var general: some View {
+            LoginItemView(model: model.loginItem)
+            Section("Default agent") {
+                SettingsRow(title: "New session agent") {
+                    Picker("Default session agent", selection: Binding(get: { shell.defaultAgent }, set: shell.setDefaultAgent)) {
+                        ForEach(SessionAgent.allCases) { Text($0.label).tag($0) }
+                    }.labelsHidden().accessibilityIdentifier("settings-default-agent")
                 }
             }
-            FontSettingsView(model: model.fonts, shell: shell)
             NotificationPreferencesView(shell: shell, sounds: model.sounds)
             Section("Git client") {
-                SettingsRow(title: "Open in git client",
-                            caption: "Adds a button beside the worktree to open the branch in your git app") {
+                SettingsRow(title: "Open in git client") {
                     Picker("Git client", selection: Binding(get: { shell.gitClient }, set: shell.setGitClient)) {
                         Text("None").tag("")
                         ForEach(ExternalTool.gitClients) { Text($0.name).tag($0.id) }
@@ -75,6 +75,47 @@ struct SettingsView: View {
                     if let error = shell.gitClientCommandError { Text(error).foregroundStyle(Theme.danger) }
                 }
             }
+            browser
+    }
+
+    /// One row per scope; each button asks first because both clears are immediate and cannot
+    /// be undone. The notice below reports the last clear that landed.
+    @ViewBuilder private var browser: some View {
+        Section("Browser") {
+            ForEach(BrowsingDataScope.allCases) { scope in
+                SettingsRow(title: scope.title) {
+                    Button(scope.buttonTitle) { confirmingClear = scope }
+                        .disabled(model.clearingBrowsingData != nil)
+                        .accessibilityIdentifier("settings-clear-\(scope.rawValue)")
+                }
+            }
+            if model.clearingBrowsingData != nil { ProgressView().controlSize(.small) }
+            if let notice = model.browsingDataNotice {
+                Text(notice).foregroundStyle(Theme.textSecondary).accessibilityIdentifier("settings-browsing-data-notice")
+            }
+        }
+        .confirmationDialog(confirmingClear.map { "Clear \($0.title.lowercased())?" } ?? "",
+                            isPresented: Binding(get: { confirmingClear != nil }, set: { if !$0 { confirmingClear = nil } }),
+                            titleVisibility: .visible, presenting: confirmingClear) { scope in
+            Button(scope == .history ? "Clear History" : "Clear Cookies", role: .destructive) { model.clearBrowsingData(scope) }
+            Button("Cancel", role: .cancel) {}
+        } message: { scope in
+            Text(scope == .history ? "Removes every visited page from the start page and address suggestions."
+                                   : "Removes cookies, caches and site storage for the embedded browser. Open pages will be signed out.")
+        }
+    }
+
+    // MARK: - Appearance
+
+    @ViewBuilder private var appearance: some View {
+            Section("Theme") {
+                SettingsRow(title: "Appearance") {
+                    Picker("Theme", selection: Binding(get: { shell.appearance }, set: shell.setAppearance)) {
+                        ForEach(AppAppearance.allCases) { Text($0.title).tag($0) }
+                    }.labelsHidden().accessibilityIdentifier("settings-theme")
+                }
+            }
+            FontSettingsView(model: model.fonts, shell: shell)
         if let error = shell.settingsError {
             Section { Text(error).foregroundStyle(Theme.danger) }
         }
@@ -84,14 +125,6 @@ struct SettingsView: View {
 
     @ViewBuilder private var clis: some View {
             CLIIntegrationSection(model: model.clis)
-            Section("Default agent") {
-                SettingsRow(title: "New session agent",
-                            caption: "What a project's ＋ dialog starts a new session with") {
-                    Picker("Default session agent", selection: Binding(get: { shell.defaultAgent }, set: shell.setDefaultAgent)) {
-                        ForEach(SessionAgent.allCases) { Text($0.label).tag($0) }
-                    }.labelsHidden().accessibilityIdentifier("settings-default-agent")
-                }
-            }
             WorkflowHooksSection(model: model.clis)
             Section("Polling") {
                 Text("The GitHub and Jira CLIs poll on independent loops.")
@@ -104,14 +137,8 @@ struct SettingsView: View {
                     TextField("120", text: $model.draft.jiraPollInterval)
                         .accessibilityIdentifier("settings-jira-poll-interval")
                 }
-                saveRow
             }.disabled(!model.loaded || model.saving)
-    }
-
-    // MARK: - Jira
-
-    @ViewBuilder private var jira: some View {
-            Section("JIRA Tickets") {
+            Section("Jira") {
                 SettingsRow(title: "Jira site URL", caption: "Leave blank to use the site acli is signed in to.") {
                     TextField("auto-detected from acli", text: $model.draft.jiraBaseURL).accessibilityIdentifier("settings-jira-site")
                 }
@@ -129,15 +156,14 @@ struct SettingsView: View {
     // MARK: - System
 
     @ViewBuilder private var system: some View {
-            LoginItemView(model: model.loginItem)
             ResourceUsageView(model: model.resources)
             DiagnosticsView(model: model.diagnostics)
     }
 
     // MARK: - Shared save row
 
-    /// CLIs → Polling and Jira both edit one `AppConfigDraft` and share one Save, exactly as the
-    /// web tabs share `saveConfig()`: a save from either tab sends every changed key.
+    /// CLIs → Polling and Jira both edit one `AppConfigDraft` and share one Save: a save sends
+    /// every changed key from both groups.
     @ViewBuilder private var saveRow: some View {
         if let message = model.draft.validationError { Text(message).foregroundStyle(Theme.danger) }
         HStack {

@@ -29,17 +29,20 @@ private actor SectionFontCatalog: CodeFontCatalog {
     #expect(await login.reads == 0)
     #expect(await fonts.reads == 0)
     root.navigate(to: .settings)
-    // Settings opens on Appearance, which owns the font pickers and nothing else.
-    while model.fonts.loading { await Task.yield() }
-    #expect(await fonts.reads == 1)
-    #expect(await login.reads == 0)
-    #expect(await clis.probes == 0)
-    #expect(runtime.activations == 1)
-    // System carries the login item, the inspector and the resource readout together.
-    model.section = .system
+    // Settings opens on General, which owns the login item and nothing that reads the backend.
     while model.loginItem.loading { await Task.yield() }
     #expect(await login.reads == 1)
     #expect(await login.mutations == 0)
+    #expect(await fonts.reads == 0)
+    #expect(await clis.probes == 0)
+    #expect(runtime.activations == 1)
+    // Appearance owns the font pickers and nothing else.
+    model.section = .appearance
+    while model.fonts.loading { await Task.yield() }
+    #expect(await fonts.reads == 1)
+    #expect(await login.reads == 1)
+    // System carries the inspector and the resource readout together.
+    model.section = .system
     while await diagnostics.calls == 0 { await Task.yield() }
     while await resources.calls == 0 { await Task.yield() }
     #expect(model.diagnostics.loading && model.resources.loading)
@@ -77,6 +80,7 @@ private actor SectionFontCatalog: CodeFontCatalog {
     let catalog = SectionFontCatalog(), gate = ProjectPageGate()
     await catalog.hold(gate)
     let model = NativeSettingsFeatureFactory(desktop: ProjectPageActions(), copy: { _ in }, loginItem: SectionLoginService(), fontCatalog: catalog).settings()
+    model.section = .appearance
     model.setActive(true); await gate.waitForStart()
     model.section = .system
     #expect(!model.fonts.loading)

@@ -31,6 +31,8 @@ actor SettingsFixture: SettingsService {
     var patches: [[String: String]] = []
     var activations = 0
     func activateSettings() { activations += 1 }
+    var cleared: [BrowsingDataScope] = []
+    func clearBrowsingData(_ scope: BrowsingDataScope) async { cleared.append(scope) }
     var gate: ProjectPageGate?
     func applySettingsSave(_ patch: [String: String]) async {
         patches.append(patch)

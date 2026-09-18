@@ -53,9 +53,19 @@ struct APISettingsService: SettingsService {
     func sounds() async throws -> [ReviewSound] { try await api.get(Routes.SOUNDS) }
 }
 
-// The tabs the web app shows (renderer `index.html` → `#page-settings .seg-tabs`), in its order.
-// Events is deliberately absent: the native app has Activity as its own destination.
+/// General holds startup, behaviour and browser preferences; Appearance is theme and fonts only;
+/// CLIs carries every tool connection including Jira; System is the read-only diagnostics.
 enum SettingsSection: String, CaseIterable, Identifiable {
-    case appearance = "Appearance", clis = "CLIs", jira = "Jira", system = "System"
+    case general = "General", appearance = "Appearance", clis = "CLIs", system = "System"
     var id: String { rawValue }
+}
+
+/// What "Clear…" under General → Browser removes. History is the app's own visit list; website
+/// data is everything WebKit stores for the embedded browser (cookies, caches, local storage).
+enum BrowsingDataScope: String, CaseIterable, Identifiable, Sendable {
+    case history, websiteData
+    var id: String { rawValue }
+    var title: String { self == .history ? "Browsing history" : "Cookies and site data" }
+    var buttonTitle: String { self == .history ? "Clear History…" : "Clear Cookies…" }
+    var clearedNotice: String { self == .history ? "Browsing history cleared." : "Cookies and site data cleared." }
 }

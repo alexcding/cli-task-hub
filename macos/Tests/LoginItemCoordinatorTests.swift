@@ -49,13 +49,13 @@ private struct LoginActionFonts: CodeFontCatalog {
     callback(.setEnabled(true)); callback(.openSystemSettings)
     #expect(await service.writes.isEmpty)
     #expect(await service.opens == 0)
-    root.navigate(to: .settings); model.section = .system
+    root.navigate(to: .settings); model.section = .general
     while login.loading { await Task.yield() }
     #expect(login.canToggle && !login.registered && !login.canOpenSystemSettings)
     model.section = .appearance
     callback(.setEnabled(true)); callback(.openSystemSettings)
     #expect(await service.writes.isEmpty)
-    model.section = .system
+    model.section = .general
     while login.loading { await Task.yield() }
     root.presentNewProject(service: ProjectPageService(), didSave: { _ in })
     callback(.setEnabled(true))
@@ -72,7 +72,7 @@ private struct LoginActionFonts: CodeFontCatalog {
     await gate.finish(); await login.waitForMutation()
     #expect(await service.writes == [true])
     #expect(login.registered && login.needsApproval && !login.active && !login.canToggle)
-    root.navigate(to: .settings); model.section = .system
+    root.navigate(to: .settings); model.section = .general
     while login.loading { await Task.yield() }
     #expect(login.canOpenSystemSettings)
     let opening = ProjectPageGate(); await service.holdOpen(opening)
@@ -95,7 +95,7 @@ func loginItemAcceptedMutationDrainsOnStopOrRetirementWithoutAcceptingStaleCallb
     let service = LoginActionService(), model = loginSettings(service), runtime = SettingsRuntimeFixture()
     let root = AppCoordinator(factory: NativeCreationFlowFactory(chooseFolder: { nil }))
     let old = root.installSettings(model, runtime: runtime), login = model.loginItem
-    root.navigate(to: .settings); model.section = .system
+    root.navigate(to: .settings); model.section = .general
     while login.loading { await Task.yield() }
     let gate = ProjectPageGate(); await service.holdWrite(gate)
     if retire { await service.fail("Fixture approval required") }
@@ -130,7 +130,7 @@ func loginItemAcceptedMutationDrainsOnStopOrRetirementWithoutAcceptingStaleCallb
     let model = loginSettings(service), runtime = SettingsRuntimeFixture()
     let root = AppCoordinator(factory: NativeCreationFlowFactory(chooseFolder: { nil }))
     root.installSettings(model, runtime: runtime); root.navigate(to: .settings)
-    model.section = .system
+    model.section = .general
     let login = model.loginItem
     while login.loading { await Task.yield() }
     let first = ProjectPageGate(); await service.holdOpen(first)
@@ -138,7 +138,7 @@ func loginItemAcceptedMutationDrainsOnStopOrRetirementWithoutAcceptingStaleCallb
     #expect(login.openingSettings && !login.canOpenSystemSettings)
     model.section = .appearance
     #expect(!login.openingSettings && !login.active)
-    model.section = .system
+    model.section = .general
     while login.loading { await Task.yield() }
     let second = ProjectPageGate(); await service.holdOpen(second)
     login.openSystemSettings(); await second.waitForStart()

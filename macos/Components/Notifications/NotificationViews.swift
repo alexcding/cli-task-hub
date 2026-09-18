@@ -7,7 +7,7 @@ struct NotificationPreferencesView: View {
 
     var body: some View {
         Section("Notifications") {
-            SettingsRow(title: "Review sound", caption: "Plays when a PR newly needs your review") {
+            SettingsRow(title: "Review sound") {
                 HStack {
                     Picker("Review sound", selection: Binding(get: { shell.reviewSound }, set: shell.setReviewSound)) {
                         Text("Glass (default)").tag("system")
@@ -25,7 +25,6 @@ struct NotificationPreferencesView: View {
             }
             Toggle(isOn: Binding(get: { shell.activityNotify }, set: shell.setActivityNotify)) {
                 Text("Activity notifications")
-                Text("In-app toast when focused, a macOS notification otherwise")
             }.accessibilityIdentifier("settings-activity-notify")
             if shell.notifications.permission != .authorized {
                 LabeledContent {

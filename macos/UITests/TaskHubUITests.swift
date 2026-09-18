@@ -570,7 +570,7 @@ final class TaskHubUITests: XCTestCase {
         app.launch()
         XCTAssertTrue(app.outlines["workspace-sidebar"].waitForExistence(timeout: 10))
         app.typeKey(",", modifierFlags: .command)
-        app.radioButtons["Appearance"].click()
+        app.radioButtons["General"].click()
         let picker = app.popUpButtons["settings-git-client"]
         XCTAssertTrue(picker.waitForExistence(timeout: 5), app.debugDescription)
         picker.click(); app.menuItems["Custom…"].click()

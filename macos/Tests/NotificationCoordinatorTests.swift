@@ -214,7 +214,7 @@ func notificationLatePermissionReadCannotOverwriteNewDeliveryState() async {
     settings.section = .system
     model.previewSound("system")
     #expect(delivery.sounds.count == 1)
-    settings.section = .appearance
+    settings.section = .general
     root.presentNewProject(service: ProjectPageService()) { _ in }
     model.previewSound("system")
     #expect(delivery.sounds.count == 1)

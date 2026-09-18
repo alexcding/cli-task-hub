@@ -3,7 +3,16 @@ import SwiftUI
 
 struct LoginItemView: View {
     let model: LoginItemViewModel
+    /// Development builds cannot register a login item, so the group is hidden rather than shown
+    /// disabled with an explanation, unless a stale registration still needs to be removable.
+    private var hidden: Bool {
+        guard let state = model.state else { return false }
+        return state.registrationUnavailableReason != nil && !state.registered
+    }
     var body: some View {
+        if !hidden { startup }
+    }
+    private var startup: some View {
         Section("Startup") {
             Toggle("Launch at login", isOn: Binding(get: { model.registered }, set: model.setEnabled))
                 .disabled(!model.canToggle).accessibilityIdentifier("settings-launch-at-login")

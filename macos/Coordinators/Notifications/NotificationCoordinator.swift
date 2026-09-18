@@ -74,7 +74,7 @@ extension AppCoordinator {
         child.canUsePreferences = { [weak self] in
             guard let self, canPresent, canOpenExternalRoute() else { return false }
             return trayCoordinator?.model.active == true ||
-                (settingsCoordinator?.model.active == true && settingsCoordinator?.model.section == .appearance)
+                (settingsCoordinator?.model.active == true && settingsCoordinator?.model.section == .general)
         }
         child.openActivity = { [weak self] in self?.enqueue(DeepLink(.destination(.activity))) }
         notificationCoordinator = child

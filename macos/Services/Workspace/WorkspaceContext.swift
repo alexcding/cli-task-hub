@@ -26,6 +26,13 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
     var activeID: String?
     var history: [WebPageRecord] = []
     var pane = "term"
+    /// The snapshot without its page visits; file visits stay.
+    var clearingPageHistory: ContextSnapshot {
+        var copy = self
+        let pageIDs = Set(history.map(\.id))
+        copy.history = []; copy.historyOrder?.removeAll { pageIDs.contains($0) }
+        return copy
+    }
     var reviewSection: ReviewSection? = nil
     var documents: [FileDocumentRecord]? = nil
     var tabOrder: [String]? = nil
@@ -339,6 +346,15 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
         historyOrder.removeAll { id in !history.contains { $0.id == id } && !fileHistory.contains { $0.id == id } }
         historyOrder.removeAll { $0 == file.id }; historyOrder.append(file.id); trimHistory()
     }
+    /// Forgets every page visit in this context, keeping file visits. Saved so the snapshot
+    /// cannot re-seed the shared history on the next launch.
+    func clearPageHistory() {
+        guard !history.isEmpty else { return }
+        let pageIDs = Set(history.map(\.id))
+        historyOrder.removeAll { pageIDs.contains($0) }
+        history.removeAll()
+        changed()
+    }
     private func trimHistory() {
         historyOrder = Array(historyOrder.suffix(100))
         history.removeAll { !historyOrder.contains($0.id) }; fileHistory.removeAll { !historyOrder.contains($0.id) }
@@ -369,6 +385,8 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
     let fileOpen: FileOpenViewModel
     let fileOpenCoordinator: FileOpenCoordinator
     private(set) var contexts: [String: WorkspaceContext] = [:]
+    /// When the user last cleared history, so a restore already in flight cannot seed it back.
+    @ObservationIgnored private var clearedHistoryAt: Date?
     private(set) var activeContextID: String? {
         didSet {
             guard oldValue != activeContextID else { return }
@@ -455,6 +473,7 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
         contexts.values.forEach { $0.restoring = true }
         contexts.values.flatMap(\.documents).forEach(configure)
         let generation = UUID(); restoreGeneration = generation
+        let startedAt = Date()
         loading = Task {
             defer {
                 if restoreGeneration == generation {
@@ -471,10 +490,13 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
                           let snapshot = try? JSONDecoder().decode(ContextSnapshot.self, from: data) else { continue }
                     let id = String(key.dropFirst("native.context.".count))
                     guard !edited.contains(id) else { continue }
-                    saved[id] = snapshot
-                    contexts[id]?.apply(snapshot)
+                    // A restore that started before a clear carries the visits the user just
+                    // removed, so it lands without its page history and seeds nothing.
+                    let restored = clearedHistoryAt.map { $0 > startedAt } == true ? snapshot.clearingPageHistory : snapshot
+                    saved[id] = restored
+                    contexts[id]?.apply(restored)
                     contexts[id]?.documents.forEach(configure)
-                    browserHistory.seed(snapshot.history)
+                    browserHistory.seed(restored.history)
                 }
                 cache()
                 for id in dirty { if let snapshot = saved[id] { enqueue(id: id, snapshot: snapshot, api: api) } }
@@ -551,6 +573,26 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
     // budget, inherited from the web renderer where every page shared one process.
     private func activate(_ page: BrowserPage) {
         page.materialize()
+    }
+    /// Clears the shared history and every context's page visits, live or only saved, so no
+    /// snapshot can seed the cleared entries back on restore.
+    func clearBrowsingHistory() {
+        clearedHistoryAt = Date()
+        for context in contexts.values { context.clearPageHistory() }
+        for (id, snapshot) in saved where contexts[id] == nil && !snapshot.history.isEmpty {
+            let cleared = snapshot.clearingPageHistory
+            saved[id] = cleared; edited.insert(id); dirty.insert(id)
+            if let api { enqueue(id: id, snapshot: cleared, api: api) }
+        }
+        cache()
+        browserHistory.clear()
+    }
+    /// Reloads every materialized page so a cleared cookie jar takes effect on screen instead of
+    /// leaving the old authenticated session running in memory.
+    func reloadLivePages() {
+        for context in contexts.values {
+            for page in context.pages where page.webView != nil { page.reload() }
+        }
     }
     private func save(_ context: WorkspaceContext) {
         contextChanged(context)

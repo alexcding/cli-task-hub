@@ -8,11 +8,7 @@ enum CodeFontKind: String, CaseIterable, Identifiable {
     case term, diff
     var id: String { rawValue }
     var title: String { self == .term ? "Terminal" : "Code and diffs" }
-    /// Row label and sub-text as the web Appearance card words them.
     var rowTitle: String { self == .term ? "Terminal font" : "Code font" }
-    var rowCaption: String {
-        self == .term ? "⌘+ / ⌘− resize the pane in view, ⌘0 resets" : "The code editor & the Changes pane (git diff)"
-    }
     var defaultSize: Int { self == .term ? 13 : 12 }
     static let sizeRange: ClosedRange<Int> = 9...20
 }
@@ -92,7 +88,7 @@ struct FontSettingsView: View {
         ForEach(CodeFontKind.allCases) { kind in
             let font = shell.font(kind)
             Section(kind.rowTitle) {
-                SettingsRow(title: "Family", caption: kind.rowCaption) {
+                SettingsRow(title: "Font") {
                     Picker(kind.rowTitle, selection: Binding(get: { shell.font(kind).family }, set: { shell.setFont(kind, family: $0) })) {
                         Text("Default").tag("")
                         ForEach(model.families, id: \.self) { Text($0).tag($0) }
@@ -127,14 +123,6 @@ struct FontSettingsView: View {
                     .lineLimit(1).truncationMode(.tail)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .foregroundStyle(Theme.textSecondary)
-            }
-        }
-        Section {
-            LabeledContent {
-                Button("Refresh Font List", action: model.refresh).disabled(model.loading)
-            } label: {
-                Text("Installed fonts")
-                Text("Defaults use each renderer’s monospace font. Unavailable saved families are kept and fall back locally.")
             }
         }
     }
