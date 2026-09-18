@@ -2,9 +2,9 @@ import AppKit
 import SwiftUI
 
 /// The pinned-tabs grid right under Dashboard, after Arc's Favorites: one pinned tab is a
-/// full-width row with its favicon and title; two or more are equal favicon tiles, four to a
-/// row, wrapping. Titles move to tooltips once there is more than one tile. The grid is one
-/// outline row; the tiles handle their own hover, selection and menu.
+/// full-width row with its favicon and title; two to four share the row as equal favicon tiles,
+/// and from five on the grid wraps at four columns. Titles move to tooltips once there is more
+/// than one tile. The grid is one outline row; the tiles handle their own hover, selection and menu.
 struct SidebarPinnedTabsGrid: View {
     let tabs: [SidebarPinnedTab]
     let selectedID: String?
@@ -31,9 +31,9 @@ struct SidebarPinnedTabsGrid: View {
             if tabs.count == 1, let tab = tabs.first {
                 tile(tab, showsTitle: true).frame(height: Self.tileHeight)
             } else {
-                // Always four columns, so a tile keeps its size as tabs are pinned; a short last
-                // row leaves its remaining cells empty rather than stretching.
-                let columns = Array(repeating: GridItem(.flexible(), spacing: Self.gap), count: Self.columns)
+                // As Arc's Favorites: up to four tabs share the full row width, so two tiles are
+                // halves and three are thirds; from five on the grid settles at four columns.
+                let columns = Array(repeating: GridItem(.flexible(), spacing: Self.gap), count: min(tabs.count, Self.columns))
                 LazyVGrid(columns: columns, spacing: Self.gap) {
                     ForEach(tabs) { tab in tile(tab, showsTitle: false).frame(height: Self.tileHeight) }
                 }

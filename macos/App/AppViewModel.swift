@@ -141,14 +141,6 @@ public final class AppViewModel {
         viewer.prepareContext = { [weak self] context in
             guard let self else { return }
             context.configureWorkspace(factory: workspaceFactory, service: self)
-            context.openInNewTab = { [weak self] url in
-                guard let self, api != nil, safeWebURL(url.absoluteString) != nil else { return false }
-                Task {
-                    do { try await self.openPage(OpenPageRequest(url: url.absoluteString, kind: "web", title: url.host ?? "")) }
-                    catch { self.error = "Could not open \(url.absoluteString): \(error.localizedDescription)" }
-                }
-                return true
-            }
             if let model = context.workspaceViewModel { coordinator.bindWorkspace(model, context: context, runtime: self) }
         }
         root = coordinator.makeRoot(factory: rootFactory, runtime: self, shell: shell, viewer: viewer)
@@ -333,6 +325,7 @@ public final class AppViewModel {
         switch command {
         case .newProject: connection == "Connected" && coordinator.canPresent
         case .newTab: coordinator.canPresent && viewer.active != nil
+        case .newSidebarTab: coordinator.canPresent
         case .newSession: canStartSession && sessionProject(for: selection) != nil
         case .back: coordinator.canPresent && viewer.active?.activePage?.controls.canGoBack == true
         case .forward: coordinator.canPresent && viewer.active?.activePage?.controls.canGoForward == true
@@ -359,6 +352,7 @@ public final class AppViewModel {
             let pageURL: String? = if case .tab(let id) = selection { tabURL(id) } else { nil }
             startSession(in: project.id, pageURL: pageURL)
         case .newTab: if canPerform(.newTab) { newBrowserTab() }
+        case .newSidebarTab: if canPerform(.newSidebarTab) { newTab() }
         case .openPageInBrowser: if canPerform(.openPageInBrowser) { activePageControls?.openExternally() }
         case .openFile: if canPerform(.openFile), let context = viewer.active { viewer.openFile(in: context) }
         case .saveFile: if let document = viewer.active?.activeDocument { Task { await document.save() } }
@@ -413,8 +407,8 @@ public final class AppViewModel {
         context.openBlankPage()
     }
 
-    /// The Tabs heading's "+": a new draft at the end of Tabs, selected, with a blank page whose
-    /// address field takes focus. Entering an address commits it as a saved tab.
+    /// The Tabs heading's "+" and ⌥⌘T: a new draft at the end of Tabs, selected, with a blank page
+    /// whose address field takes focus. Entering an address commits it as a saved tab.
     func newTab() {
         guard coordinator.canPresent else { return }
         let draft = SavedTab(id: UUID().uuidString, kind: "web", title: "New Tab", url: "")

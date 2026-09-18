@@ -58,13 +58,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         adoptWindow()
         NotificationCenter.default.addObserver(self, selector: #selector(sheetDidEnd),
             name: NSWindow.didEndSheetNotification, object: nil)
-        // ⌘T is New Tab everywhere in the app. The terminal surface binds ⌘T itself and
-        // would consume it before the menu, so claim it ahead of the responder chain.
+        // ⌘T is New Tab and ⌥⌘T is New Sidebar Tab everywhere in the app. The terminal surface
+        // binds ⌘T itself and would consume it before the menu, so claim both ahead of the
+        // responder chain.
         NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self, window?.isKeyWindow == true, window?.attachedSheet == nil,
-                  event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
-                  event.charactersIgnoringModifiers == "t", model.canPerform(.newTab) else { return event }
-            perform(.newTab)
+                  event.charactersIgnoringModifiers?.lowercased() == "t" else { return event }
+            let command: ShellCommand
+            switch event.modifierFlags.intersection(.deviceIndependentFlagsMask) {
+            case .command: command = .newTab
+            case [.command, .option]: command = .newSidebarTab
+            default: return event
+            }
+            guard model.canPerform(command) else { return event }
+            perform(command)
             return nil
         }
         model.configureNativeNotifications(isMainWindowFocused: { [weak self] in self?.window?.isKeyWindow == true },

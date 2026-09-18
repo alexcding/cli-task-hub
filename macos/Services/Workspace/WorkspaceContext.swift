@@ -108,12 +108,11 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
     private(set) var legacyDocuments: [SavedTabContent] = []
     private(set) var legacyFileHistory: [SavedTabContent] = []
     @ObservationIgnored var changed: () -> Void = {}
+    /// The app-wide history every visit is also recorded in. Nil in a bare context (tests).
+    @ObservationIgnored var globalHistory: BrowserHistoryStore?
     @ObservationIgnored var activateDocument: (EditorDocumentViewModel) -> Void = { _ in }
     @ObservationIgnored var activatePage: (BrowserPage) -> Void = { _ in }
     @ObservationIgnored var isOwned: () -> Bool = { true }
-    /// A link that asked for a new window. Returning true means the owner opened it as a
-    /// new tab; false keeps it as a popup page inside this context.
-    @ObservationIgnored var openInNewTab: (URL) -> Bool = { _ in false }
     @ObservationIgnored private let closeCoordinator: EditorCloseCoordinator
     @ObservationIgnored private let pageFactory: BrowserPageFactory
     @ObservationIgnored private let documentFactory: any DocumentFeatureFactory
@@ -274,11 +273,14 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
         }
         changed()
     }
-    @discardableResult func open(_ url: String, title: String = "", configuration: WKWebViewConfiguration? = nil) -> BrowserPage? {
+    /// `allowDuplicate` opens another tab even when the address is already open, as a link that
+    /// asked for a new window must; otherwise the open page is selected instead.
+    @discardableResult func open(_ url: String, title: String = "", configuration: WKWebViewConfiguration? = nil,
+                                 allowDuplicate: Bool = false) -> BrowserPage? {
         guard safeWebURL(url) != nil || (configuration != nil && url == "about:blank") else {
             error = "Enter an HTTP or HTTPS address."; return nil
         }
-        if configuration == nil, let existing = pages.first(where: { $0.url == url }) { select(existing); return existing }
+        if configuration == nil, !allowDuplicate, let existing = pages.first(where: { $0.url == url }) { select(existing); return existing }
         let page = pageFactory.make(.init(url: url, title: title.isEmpty ? (URL(string: url)?.host ?? url) : title))
         wire(page)
         pages.append(page); insert(page.id)
@@ -325,6 +327,7 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
     }
     private func noteHistory(_ page: WebPageRecord) {
         guard safeWebURL(page.url) != nil else { return }
+        globalHistory?.note(page)
         history.removeAll { $0.url == page.url }
         history.append(page)
         historyOrder.removeAll { id in !history.contains { $0.id == id } && !fileHistory.contains { $0.id == id } }
@@ -354,8 +357,8 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
             guard let self else { return nil }
             // Scripted popups (window.open, OAuth and payment flows, about:blank) need the
             // child web view back so the opener handshake completes. A plain link click that
-            // asked for a new window belongs under Tabs instead.
-            if linkActivated, url.absoluteString != "about:blank", openInNewTab(url) { return nil }
+            // asked for a new window opens as another tab of this panel, never a sidebar tab.
+            if linkActivated, url.absoluteString != "about:blank" { open(url.absoluteString, allowDuplicate: true); return nil }
             return open(url.absoluteString, configuration: configuration)?.webView
         }
     }
@@ -389,13 +392,17 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
     @ObservationIgnored private var restoreGeneration = UUID()
     @ObservationIgnored private let pageFactory: BrowserPageFactory
     @ObservationIgnored private let documentFactory: any DocumentFeatureFactory
+    /// Shared by every context: pages visited anywhere, for the start page and address bar.
+    let browserHistory: BrowserHistoryStore
     private let cacheURL: URL?
     private struct Cache: Codable { let snapshots: [String: ContextSnapshot]; let pending: Set<String> }
     init(cacheURL: URL? = nil,
+         browserHistory: BrowserHistoryStore = BrowserHistoryStore(),
          pageFactory: BrowserPageFactory = BrowserPageFactory(),
          documentFactory: any DocumentFeatureFactory = NativeDocumentFeatureFactory(),
          closeCoordinator: EditorCloseCoordinator? = nil) {
         self.cacheURL = cacheURL
+        self.browserHistory = browserHistory
         self.pageFactory = pageFactory
         self.documentFactory = documentFactory
         self.closeCoordinator = closeCoordinator ?? EditorCloseCoordinator(factory: documentFactory)
@@ -467,6 +474,7 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
                     saved[id] = snapshot
                     contexts[id]?.apply(snapshot)
                     contexts[id]?.documents.forEach(configure)
+                    browserHistory.seed(snapshot.history)
                 }
                 cache()
                 for id in dirty { if let snapshot = saved[id] { enqueue(id: id, snapshot: snapshot, api: api) } }
@@ -477,6 +485,8 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
         let context = contexts[id] ?? WorkspaceContext(id: id, sourceURL: url, title: title,
                                                        snapshot: saved[id] ?? legacy.map(ContextSnapshot.importing), pageFactory: pageFactory, documentFactory: documentFactory, closeCoordinator: closeCoordinator)
         contexts[id] = context
+        context.globalHistory = browserHistory
+        browserHistory.seed(context.history)
         context.isOwned = { [weak self, weak context] in
             guard let self, let context else { return false }
             return contexts[context.id] === context

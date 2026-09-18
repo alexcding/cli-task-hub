@@ -33,9 +33,16 @@ struct BrowserCompactTabBar: View {
             Spacer(minLength: 0)
             tabPill
             Spacer(minLength: 0)
-            Button("New Tab", systemImage: "plus", action: model.newTab).help("Open a new web tab")
-                .padding(.horizontal, 6)
-                .barGlass()
+            // The 32pt square is the label, not a frame around the button, so the whole capsule
+            // takes the click rather than the 14pt glyph alone.
+            Button(action: model.newTab) {
+                Label("New Tab", systemImage: "plus")
+                    .labelStyle(SquareIconLabelStyle())
+                    .frame(width: Theme.Size.largeControl, height: Theme.Size.largeControl)
+                    .contentShape(Rectangle())
+            }
+            .help("Open a new web tab")
+            .barGlass()
         }
         .padding(.horizontal, 12)
         .frame(height: 56)
@@ -127,8 +134,8 @@ struct BrowserCompactTabBar: View {
     /// itself when its address field appears in `CompactTab`, once that field exists: a focus binding set before
     /// the bound view is mounted is silently reset.
     /// One flat list: the typed text as a search, pages this panel has visited that match the text
-    /// (newest first, web pages only), then Google's phrase completions. The full history is the
-    /// blank tab's start page; here it is only a filter.
+    /// (newest first, web pages only), pages visited in other panels that match, then Google's
+    /// phrase completions. The full history is the blank tab's start page; here it is only a filter.
     private var suggestions: [AddressSuggestion] {
         guard let controls = active?.controls else { return [] }
         let text = controls.address.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -146,6 +153,11 @@ struct BrowserCompactTabBar: View {
             let host = URL(string: record.url)?.host ?? record.url
             items.append(.init(id: record.url, title: record.title.isEmpty ? host : record.title, detail: host, url: record.url, kind: .history))
             if items.filter({ $0.kind == .history }).count >= 4 { break }
+        }
+        // Excluding this panel's whole history, not only the matches shown: a page cut off by the
+        // cap above must not reappear as if it were from another panel.
+        for entry in context.globalHistory?.matching(text, excluding: seen.union(context.history.map(\.url)), limit: 3) ?? [] {
+            items.append(.init(id: entry.url, title: entry.displayTitle, detail: entry.host, url: entry.url, kind: .history))
         }
         if searching {
             for phrase in searchSuggestions.cached(text).prefix(4) where phrase.caseInsensitiveCompare(text) != .orderedSame {
@@ -221,14 +233,18 @@ private struct HoverCircleButton: View {
     }
 
     var body: some View {
-        Button(title, systemImage: systemImage, action: action)
-            .labelStyle(.iconOnly)
+        // The circle is the button's label, so the whole 32pt disc takes the click, not just the
+        // chevron glyph inside it.
+        Button(action: action) {
+            Label(title, systemImage: systemImage)
+                .labelStyle(.iconOnly)
+                .font(.system(size: 15, weight: .medium))
+                .foregroundStyle(enabled ? Theme.textSecondary : Theme.textTertiary.opacity(0.6))
+                .frame(width: Theme.Size.largeControl, height: Theme.Size.largeControl)
+                .background(hovering && enabled ? Theme.border.opacity(0.6) : .clear, in: Circle())
+                .contentShape(Circle())
+        }
             .buttonStyle(.plain)
-            .font(.system(size: 15, weight: .medium))
-            .foregroundStyle(enabled ? Theme.textSecondary : Theme.textTertiary.opacity(0.6))
-            .frame(width: Theme.Size.largeControl, height: Theme.Size.largeControl)
-            .background(hovering && enabled ? Theme.border.opacity(0.6) : .clear, in: Circle())
-            .contentShape(Circle())
             .disabled(!enabled)
             .onHover { hovering = $0 }
             .animation(.easeOut(duration: 0.12), value: hovering)
