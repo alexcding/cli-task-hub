@@ -136,10 +136,10 @@ struct SessionWorkspaceView: View {
 
     @ViewBuilder private var primaryContent: some View {
         if model.showsTerminal {
-            ResizableSplitView(showsTrailing: model.showsPage || model.showsBuild,
-                               trailingWidth: Binding(
-                                   get: { CGFloat(contextPaneWidth) },
-                                   set: { contextPaneWidth = Double($0) })) {
+            NativeSplitView(showsTrailing: model.showsPage || model.showsBuild,
+                            trailingWidth: Binding(
+                                get: { CGFloat(contextPaneWidth) },
+                                set: { contextPaneWidth = Double($0) })) {
                 terminalContent
             } trailing: {
                 SessionWorkspaceContextPane(context: context, model: model)

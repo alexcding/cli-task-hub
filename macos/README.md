@@ -71,7 +71,7 @@ startup, the status-item popover, deep links and asynchronous quit/update cleanu
 `AppCoordinatorView` is the window root: sidebar, detail column, destinations,
 retained workspaces and coordinator-owned presentations. Each coordinator view owns
 its screen's toolbar; a session workspace splits terminal and context pane with
-`ResizableSplitView`.
+`NativeSplitView`.
 
 GhosttyTerminal (github.com/alexcding/ghostty-terminal-spm, TaskHub's fork of
 libghostty-spm with the wrapper patches committed and a prebuilt XCFramework as its
