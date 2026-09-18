@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Toolbar for a session workspace: git client icon and title flat at the leading edge,
-/// editor and run controls in a centred glass container, session actions trailing.
+/// editor and run controls in a glass container, session actions trailing.
 struct SessionWorkspaceToolbar: ToolbarContent {
     let title: String
     let model: SessionWorkspaceViewModel
@@ -16,9 +16,6 @@ struct SessionWorkspaceToolbar: ToolbarContent {
                 }
             }
         }
-        if model.session != nil {
-            ToolbarItem(placement: .principal) { SessionWorkspaceLeadingToolbar(model: model) }
-        }
         // With the bar in the title-bar zone, Create Session lives in the bar instead.
         if model.offersPageSession, !model.fillsTitleBar {
             if #available(macOS 26.0, *) { ToolbarSpacer(.flexible) }
@@ -29,8 +26,22 @@ struct SessionWorkspaceToolbar: ToolbarContent {
                     .help("Start an agent session for this page in its project")
             }
         }
+        if model.session != nil {
+            // Flat, like the title at the other end: the editor and run controls carry their own
+            // shapes, and a glass capsule around them only boxes in what is already legible.
+            if #available(macOS 26.0, *) {
+                ToolbarSpacer(.flexible)
+                ToolbarItem(placement: .primaryAction) { SessionWorkspaceLeadingToolbar(model: model) }
+                    .sharedBackgroundVisibility(.hidden)
+            } else {
+                ToolbarItem(placement: .primaryAction) { SessionWorkspaceLeadingToolbar(model: model) }
+            }
+        }
         if model.showsModePicker {
-            if #available(macOS 26.0, *) { ToolbarSpacer(.flexible) }
+            // One flexible spacer per trailing run, or two of them split the free space and
+            // leave the run controls stranded mid-bar. When there is no session to put those
+            // controls there, this is the spacer that does the pushing.
+            if #available(macOS 26.0, *) { ToolbarSpacer(model.session != nil ? .fixed : .flexible) }
             ToolbarItem(placement: .primaryAction) { SessionWorkspaceModePicker(model: model) }
         }
         if model.showsTerminal {
