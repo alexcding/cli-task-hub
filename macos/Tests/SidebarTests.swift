@@ -74,6 +74,27 @@ private func workspaceSession(_ id: String, created: String?, pinned: Bool = fal
     #expect(rows.first { $0.id == "project:p1" }?.role == .project(canCreateSession: true))
 }
 
+@Test func pinnedTabsFormOneGridRowUnderDashboardAndLeaveTheTabsList() {
+    let tabs = [SavedTab(id: "a", kind: "web", title: "Docs", url: "https://docs.example", pinned: true),
+                SavedTab(id: "b", kind: "github", title: "PR", url: "https://github.com/o/r/pull/1", login: "octocat", pinned: true),
+                SavedTab(id: "c", kind: "web", title: "", url: "https://plain.example")]
+    let entries = SidebarEntry.make(projects: [], sessions: [], tabs: tabs)
+    #expect(entries.map(\.id) == ["overview", "pinned-tabs", "label:projects", "label:tabs", "tab:c"])
+    let grid = entries.first { $0.id == "pinned-tabs" }
+    #expect(grid?.destination == nil)
+    #expect(grid?.role == .pinnedTabs([
+        .init(id: "a", title: "Docs", url: "https://docs.example", icon: .init(kind: "web", url: "https://docs.example")),
+        .init(id: "b", title: "PR", url: "https://github.com/o/r/pull/1", icon: .init(kind: "github", login: "octocat", url: "https://github.com/o/r/pull/1")),
+    ]))
+    // A pinned tab that belongs to a session stays hidden, like any task tab.
+    let owned = SidebarEntry.make(projects: [sidebarProject], sessions: [workspaceSession("s", created: nil, url: "https://docs.example")], tabs: tabs)
+    if case .pinnedTabs(let shown)? = owned.first(where: { $0.id == "pinned-tabs" })?.role { #expect(shown.map(\.id) == ["b"]) } else { Issue.record("grid missing") }
+    // One tile is a full row; more wrap four to a row.
+    #expect(SidebarPinnedTabsGrid.height(count: 1) == SidebarPinnedTabsGrid.height(count: 4))
+    #expect(SidebarPinnedTabsGrid.height(count: 4) == SidebarPinnedTabsGrid.height(count: 2))
+    #expect(SidebarPinnedTabsGrid.height(count: 5) > SidebarPinnedTabsGrid.height(count: 4))
+}
+
 private func savedTab(_ id: String) -> SavedTab { SavedTab(id: id, kind: "web", title: id, url: "https://\(id).example") }
 
 @MainActor @Test func tabReorderMovesBeforeTargetOrToEndAndKeepsDraftsAfterSavedTabs() throws {

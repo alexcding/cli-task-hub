@@ -53,13 +53,16 @@ struct SavedTab: Codable, Identifiable, Equatable, Sendable {
     var avatar: String? = nil
     var links: [SavedTabContent]? = nil
     var history: [SavedTabContent]? = nil
+    /// A pinned tab leaves the Tabs list for the favourites grid under Dashboard.
+    var pinned: Bool = false
 
     init(id: String? = nil, kind: String, title: String, url: String, category: String? = nil, cur: String? = nil,
          paneView: String? = nil, reviewView: String? = nil, pageClosed: Bool? = nil, login: String? = nil,
-         avatar: String? = nil, links: [SavedTabContent]? = nil, history: [SavedTabContent]? = nil) {
+         avatar: String? = nil, links: [SavedTabContent]? = nil, history: [SavedTabContent]? = nil, pinned: Bool = false) {
         self.id = id ?? url; self.kind = kind; self.title = title; self.url = url
         self.category = category; self.cur = cur; self.paneView = paneView; self.reviewView = reviewView
         self.pageClosed = pageClosed; self.login = login; self.avatar = avatar; self.links = links; self.history = history
+        self.pinned = pinned
     }
 
     init(from decoder: any Decoder) throws {
@@ -77,6 +80,7 @@ struct SavedTab: Codable, Identifiable, Equatable, Sendable {
         avatar = try values.decodeIfPresent(String.self, forKey: .avatar)
         links = try values.decodeIfPresent([SavedTabContent].self, forKey: .links)
         history = try values.decodeIfPresent([SavedTabContent].self, forKey: .history)
+        pinned = try values.decodeIfPresent(Bool.self, forKey: .pinned) ?? false
     }
 }
 
@@ -114,6 +118,14 @@ struct SidebarTabIcon: Equatable {
     var url: String?
 }
 
+/// One tile in the pinned-tabs grid under Dashboard: a saved tab that was pinned.
+struct SidebarPinnedTab: Equatable, Identifiable {
+    let id: String
+    let title: String
+    let url: String
+    var icon = SidebarTabIcon()
+}
+
 struct SidebarEntry: Equatable {
     var isHeading: Bool { role == .label || role == .tabsHeader }
     enum Role: Equatable {
@@ -123,6 +135,7 @@ struct SidebarEntry: Equatable {
         case project(canCreateSession: Bool)
         case session(SidebarSessionStatus, pinned: Bool)
         case tab(SidebarTabIcon)
+        case pinnedTabs([SidebarPinnedTab])       // Arc-style favourites grid right under Dashboard
     }
 
     let id: String // placement identity: a pinned mirror differs from its original
@@ -138,10 +151,10 @@ struct SidebarEntry: Equatable {
     var sessionID: String? { if case .session(let id) = destination { id } else { nil } }
     var projectID: String? { if case .project(let id) = destination { id } else { nil } }
 
-    /// Mirrors src/renderer/components/sidebar.js: Dashboard, the Pinned mirrors, the Projects
-    /// heading with each folder's sessions nested under it, sessions whose project is gone
-    /// (unlabeled), then every task-less tab under "Tabs". Headings are flat rows, not
-    /// collapsible groups — only a project folder collapses.
+    /// Mirrors src/renderer/components/sidebar.js: Dashboard, the pinned-tabs grid, the Pinned
+    /// session mirrors, the Projects heading with each folder's sessions nested under it, sessions
+    /// whose project is gone (unlabeled), then every unpinned task-less tab under "Tabs". Headings
+    /// are flat rows, not collapsible groups — only a project folder collapses.
     static func make(projects: [Project], sessions: [WorkspaceSession], tabs: [SavedTab],
                      status: [String: SidebarSessionStatus] = [:], workflowProgress: [String: String] = [:],
                      tabIcons: [String: SidebarTabIcon] = [:]) -> [Self] {
@@ -163,6 +176,17 @@ struct SidebarEntry: Equatable {
         var result: [Self] = [
             .init(id: "overview", title: "Dashboard", symbol: "dashboard", destination: .overview)
         ]
+        let taskURLs = Set(sessions.map(\.url).filter { !$0.isEmpty })
+        let unownedTabs = tabs.filter { !taskURLs.contains($0.url) }
+        func icon(_ tab: SavedTab) -> SidebarTabIcon {
+            tabIcons[tab.url] ?? SidebarTabIcon(kind: tab.kind, login: tab.login, avatar: tab.avatar, url: tab.url)
+        }
+        func tabTitle(_ tab: SavedTab) -> String { tab.title.isEmpty ? (tab.url.isEmpty ? "New Tab" : tab.url) : tab.title }
+        let pinnedTabs = unownedTabs.filter(\.pinned)
+        if !pinnedTabs.isEmpty {
+            result.append(Self(id: "pinned-tabs", title: "Pinned Tabs", symbol: "",
+                               role: .pinnedTabs(pinnedTabs.map { .init(id: $0.id, title: tabTitle($0), url: $0.url, icon: icon($0)) })))
+        }
         let pinned = ordered.filter(\.pinned)
         if !pinned.isEmpty {
             result.append(label("label:pinned", "Pinned"))
@@ -176,15 +200,9 @@ struct SidebarEntry: Equatable {
         }
         let projectIDs = Set(projects.map(\.id))
         result += ordered.filter { !projectIDs.contains($0.projectId) }.map { row($0) }
-        let taskURLs = Set(sessions.map(\.url).filter { !$0.isEmpty })
-        let unownedTabs = tabs.filter { !taskURLs.contains($0.url) }
         result.append(Self(id: "label:tabs", title: "Tabs", symbol: "", role: .tabsHeader))
-        if !unownedTabs.isEmpty {
-            result += unownedTabs.map {
-                .init(id: "tab:\($0.id)", title: $0.title.isEmpty ? ($0.url.isEmpty ? "New Tab" : $0.url) : $0.title, symbol: "", detail: $0.url,
-                      destination: .tab($0.id),
-                      role: .tab(tabIcons[$0.url] ?? SidebarTabIcon(kind: $0.kind, login: $0.login, avatar: $0.avatar, url: $0.url)))
-            }
+        result += unownedTabs.filter { !$0.pinned }.map {
+            .init(id: "tab:\($0.id)", title: tabTitle($0), symbol: "", detail: $0.url, destination: .tab($0.id), role: .tab(icon($0)))
         }
         return result
     }

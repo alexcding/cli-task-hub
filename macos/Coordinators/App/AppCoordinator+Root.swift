@@ -11,12 +11,14 @@ import Foundation
     func closeTab(_ url: String)
     func newTab()
     func moveTab(_ id: String, before: String?)
+    func togglePinTab(_ id: String)
 }
 
 extension RootCoordinating {
     func newSession(in projectID: String) {}
     func newTab() {}
     func moveTab(_ id: String, before: String?) {}
+    func togglePinTab(_ id: String) {}
 }
 
 extension AppCoordinator {
@@ -44,6 +46,7 @@ extension AppCoordinator {
         case .closeTab(let url): rootRuntime?.closeTab(url)
         case .newTab: rootRuntime?.newTab()
         case .moveTab(let id, let before): rootRuntime?.moveTab(id, before: before)
+        case .togglePinTab(let id): rootRuntime?.togglePinTab(id)
         case .reconnect: Task { [weak rootRuntime] in await rootRuntime?.reconnect() }
         case .openTerminal: rootRuntime?.openTerminal()
         case .openBrowser(let url): rootRuntime?.openRootBrowser(url)

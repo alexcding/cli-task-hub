@@ -24,7 +24,7 @@ import Observation
 @MainActor @Observable final class RootViewModel {
     enum Action: Equatable {
         case select(SidebarDestination), command(ShellCommand), togglePin(String), newSession(projectID: String)
-        case closeTab(String), newTab, moveTab(String, before: String?)
+        case closeTab(String), newTab, moveTab(String, before: String?), togglePinTab(String)
         case reconnect, openTerminal, openBrowser(URL)
     }
     struct Workspace: Identifiable {
@@ -93,6 +93,8 @@ import Observation
     func select(_ destination: SidebarDestination) { onAction(.select(destination)) }
     func togglePin(_ id: String) { onAction(.togglePin(id)) }
     func closeTab(_ id: String) { onAction(.closeTab(id)) }
+    /// Moves a saved tab between the Tabs list and the pinned grid under Dashboard.
+    func togglePinTab(_ id: String) { onAction(.togglePinTab(id)) }
     /// Drops `id` before `before` in the Tabs list, or at its end when nil.
     func moveTab(_ id: String, before: String?) { onAction(.moveTab(id, before: before)) }
     /// The Tabs heading's "+": a blank tab in the current workspace's second panel.

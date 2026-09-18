@@ -287,6 +287,14 @@ impl Database {
         self.tabs()
     }
 
+    /// Pins or unpins one tab. A pinned tab leaves the Tabs list for the favourites grid under
+    /// Dashboard, so the flag is its own narrow update like a rename.
+    pub fn pin_tab(&self, id: &str, pinned: bool) -> rusqlite::Result<Value> {
+        self.durable()
+            .execute("UPDATE tabs SET pinned=?2 WHERE id=?1", params![id, i64::from(pinned)])?;
+        self.tabs()
+    }
+
     /// Places the listed tabs first, in the given order; tabs not listed keep their relative
     /// order after them. Unknown ids are ignored.
     pub fn reorder_tabs(&self, order: &[&str]) -> rusqlite::Result<Value> {
@@ -759,6 +767,7 @@ fn initialize_durable(conn: &Connection) -> rusqlite::Result<()> {
         "ALTER TABLE projects ADD COLUMN run_scheme TEXT NOT NULL DEFAULT ''",
         "ALTER TABLE projects ADD COLUMN run_sim TEXT NOT NULL DEFAULT ''",
         "ALTER TABLE tasks ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE tabs ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0",
     ] {
         let _ = conn.execute(migration, []);
     }
@@ -785,10 +794,11 @@ fn migrate_tabs_to_ids(conn: &Connection) -> rusqlite::Result<()> {
            page_closed INTEGER NOT NULL DEFAULT 0, diff_pos INTEGER NOT NULL DEFAULT 0,
            category TEXT NOT NULL DEFAULT '', login TEXT NOT NULL DEFAULT '', avatar TEXT NOT NULL DEFAULT '',
            links TEXT NOT NULL DEFAULT '[]', cur TEXT NOT NULL DEFAULT '', history TEXT NOT NULL DEFAULT '[]',
-           position INTEGER NOT NULL DEFAULT 0, active INTEGER NOT NULL DEFAULT 0
+           position INTEGER NOT NULL DEFAULT 0, active INTEGER NOT NULL DEFAULT 0,
+           pinned INTEGER NOT NULL DEFAULT 0
          );
-         INSERT INTO tabs_with_ids(id,url,kind,title,repo,branch,pane_view,diff_open,page_closed,diff_pos,category,login,avatar,links,cur,history,position,active)
-           SELECT lower(hex(randomblob(16))),url,kind,title,repo,branch,pane_view,diff_open,page_closed,diff_pos,category,login,avatar,links,cur,history,position,active FROM tabs;
+         INSERT INTO tabs_with_ids(id,url,kind,title,repo,branch,pane_view,diff_open,page_closed,diff_pos,category,login,avatar,links,cur,history,position,active,pinned)
+           SELECT lower(hex(randomblob(16))),url,kind,title,repo,branch,pane_view,diff_open,page_closed,diff_pos,category,login,avatar,links,cur,history,position,active,pinned FROM tabs;
          DROP TABLE tabs;
          ALTER TABLE tabs_with_ids RENAME TO tabs;
          COMMIT;",
@@ -847,6 +857,7 @@ fn tab_from_row(row: &Row<'_>) -> rusqlite::Result<Value> {
         "diffIdx": row.get::<_,i64>("diff_pos")?, "history": parse_json(&text(row,"history")?,json!([])),
         "category": text(row,"category")?, "login": text(row,"login")?, "avatar": text(row,"avatar")?,
         "links": parse_json(&text(row,"links")?,json!([])), "_active": row.get::<_,i64>("active")? != 0,
+        "pinned": row.get::<_,i64>("pinned")? != 0,
     }))
 }
 
@@ -890,8 +901,8 @@ fn insert_tab(
         .cloned()
         .unwrap_or_else(|| json!([]))
         .to_string();
-    conn.execute("INSERT INTO tabs(id,url,kind,title,cur,repo,branch,pane_view,diff_open,page_closed,diff_pos,category,login,avatar,links,history,position,active) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18)",
-        params![id,url,kind,title,get("cur"),get("repo"),get("branch"),pane,bool_int(tab.get("diffOpen"),false),bool_int(tab.get("pageClosed"),false),tab.get("diffIdx").and_then(Value::as_i64).unwrap_or(0).max(0),get("category"),get("login"),get("avatar"),links,history,position,i64::from(active)])?;
+    conn.execute("INSERT INTO tabs(id,url,kind,title,cur,repo,branch,pane_view,diff_open,page_closed,diff_pos,category,login,avatar,links,history,position,active,pinned) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19)",
+        params![id,url,kind,title,get("cur"),get("repo"),get("branch"),pane,bool_int(tab.get("diffOpen"),false),bool_int(tab.get("pageClosed"),false),tab.get("diffIdx").and_then(Value::as_i64).unwrap_or(0).max(0),get("category"),get("login"),get("avatar"),links,history,position,i64::from(active),bool_int(tab.get("pinned"),false)])?;
     Ok(())
 }
 

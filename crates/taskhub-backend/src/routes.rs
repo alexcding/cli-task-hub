@@ -142,6 +142,14 @@ pub async fn rename_tab(State(state): State<AppState>, Json(body): Json<Value>) 
         .and_then(Value::as_str)
         .filter(|id| !id.is_empty())
         .ok_or_else(|| ApiError::bad_request("id required"))?;
+    if let Some(pinned) = body.get("pinned") {
+        let pinned = pinned
+            .as_bool()
+            .ok_or_else(|| ApiError::bad_request("pinned must be a boolean"))?;
+        let saved = state.db.pin_tab(id, pinned)?;
+        state.broadcast(json!({ "type": "tabs" }));
+        return Ok(Json(saved));
+    }
     let title = body
         .get("title")
         .and_then(Value::as_str)

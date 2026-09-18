@@ -16,6 +16,7 @@ struct CocoaSidebar: NSViewRepresentable {
     var onCloseTab: (String) -> Void = { _ in }
     var onNewTab: () -> Void = {}
     var onMoveTab: (String, String?) -> Void = { _, _ in }
+    var onTogglePinTab: (String) -> Void = { _ in }
     static let tabDragType = NSPasteboard.PasteboardType("com.taskhub.sidebar-tab")
 
     func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
@@ -105,10 +106,12 @@ struct CocoaSidebar: NSViewRepresentable {
                     // spinner and hover state survive and nothing reloads under the pointer.
                     func apply(_ entry: SidebarEntry) {
                         if let node = nodes[entry.id], node.entry != entry {
+                            let grewOrShrank = Self.pinnedTabsHeight(node.entry) != Self.pinnedTabsHeight(entry)
                             node.entry = entry
                             let row = outline.row(forItem: node)
-                            if row >= 0, let cell = outline.view(atColumn: 0, row: row, makeIfNecessary: false) as? SidebarCellView {
-                                configure(cell, node: node, row: row)
+                            if row >= 0 {
+                                if grewOrShrank { outline.noteHeightOfRows(withIndexesChanged: IndexSet(integer: row)) }
+                                configureCell(atRow: row, node: node)
                             }
                         }
                         entry.children.forEach(apply)
@@ -136,6 +139,11 @@ struct CocoaSidebar: NSViewRepresentable {
                 }
                 syncSpinner()
             }
+            // The grid's tiles draw their own selection, so they follow a selection change too.
+            if changedSelection, let node = nodes["pinned-tabs"] {
+                let row = outline.row(forItem: node)
+                if row >= 0 { configureCell(atRow: row, node: node) }
+            }
             let placed = selectedPlacement.flatMap { nodes[$0] }
             let selected = placed?.entry.destination == value.selection ? placed
                 : roots.flatMap(flatten).first { $0.entry.destination == value.selection }
@@ -153,6 +161,10 @@ struct CocoaSidebar: NSViewRepresentable {
                 outline.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
                 if changedSelection { outline.scrollRowToVisible(row) }
             } else { outline.deselectAll(nil) }
+        }
+
+        private static func pinnedTabsHeight(_ entry: SidebarEntry) -> CGFloat? {
+            if case .pinnedTabs(let tabs) = entry.role { SidebarPinnedTabsGrid.height(count: tabs.count) } else { nil }
         }
 
         private struct Shape: Equatable { let id: String; let children: [Shape] }
@@ -204,7 +216,9 @@ struct CocoaSidebar: NSViewRepresentable {
             return true
         }
         func outlineView(_ outlineView: NSOutlineView, heightOfRowByItem item: Any) -> CGFloat {
-            (item as? Node)?.entry.isHeading == true ? SidebarMetrics.labelHeight : SidebarMetrics.rowHeight
+            guard let entry = (item as? Node)?.entry else { return SidebarMetrics.rowHeight }
+            if let height = Self.pinnedTabsHeight(entry) { return height }
+            return entry.isHeading ? SidebarMetrics.labelHeight : SidebarMetrics.rowHeight
         }
         func outlineView(_ outlineView: NSOutlineView, rowViewForItem item: Any) -> NSTableRowView? {
             let row = SidebarRowView()
@@ -214,6 +228,15 @@ struct CocoaSidebar: NSViewRepresentable {
         }
         func outlineView(_ outlineView: NSOutlineView, viewFor tableColumn: NSTableColumn?, item: Any) -> NSView? {
             guard let node = item as? Node else { return nil }
+            if case .pinnedTabs = node.entry.role {
+                let cell = outlineView.makeView(withIdentifier: SidebarPinnedTabsCell.identifier, owner: self) as? SidebarPinnedTabsCell ?? {
+                    let cell = SidebarPinnedTabsCell()
+                    cell.identifier = SidebarPinnedTabsCell.identifier
+                    return cell
+                }()
+                configure(cell, node: node)
+                return cell
+            }
             let identifier = NSUserInterfaceItemIdentifier("sidebar-cell")
             let cell = outlineView.makeView(withIdentifier: identifier, owner: self) as? SidebarCellView ?? {
                 let cell = SidebarCellView()
@@ -222,6 +245,25 @@ struct CocoaSidebar: NSViewRepresentable {
             }()
             configure(cell, node: node, row: outlineView.row(forItem: node))
             return cell
+        }
+
+        /// Reconfigures whichever cell class the row holds.
+        private func configureCell(atRow row: Int, node: Node) {
+            guard let outline else { return }
+            switch outline.view(atColumn: 0, row: row, makeIfNecessary: false) {
+            case let cell as SidebarPinnedTabsCell: configure(cell, node: node)
+            case let cell as SidebarCellView: configure(cell, node: node, row: row)
+            default: break
+            }
+        }
+
+        private func configure(_ cell: SidebarPinnedTabsCell, node: Node) {
+            guard case .pinnedTabs(let tabs) = node.entry.role else { return }
+            cell.configure(SidebarPinnedTabsGrid(
+                tabs: tabs, selectedID: parent.selection.tabID,
+                onSelect: { [weak self] id in self?.parent.onSelect(.tab(id)) },
+                onUnpin: { [weak self] id in self?.parent.onTogglePinTab(id) },
+                onClose: { [weak self] id in self?.parent.onCloseTab(id) }))
         }
 
         private func configure(_ cell: SidebarCellView, node: Node, row: Int) {
@@ -244,9 +286,8 @@ struct CocoaSidebar: NSViewRepresentable {
         private func refreshVisibleCells() {
             guard let outline else { return }
             outline.enumerateAvailableRowViews { _, row in
-                guard let node = outline.item(atRow: row) as? Node,
-                      let cell = outline.view(atColumn: 0, row: row, makeIfNecessary: false) as? SidebarCellView else { return }
-                configure(cell, node: node, row: row)
+                guard let node = outline.item(atRow: row) as? Node else { return }
+                configureCell(atRow: row, node: node)
             }
         }
 
@@ -325,6 +366,7 @@ struct CocoaSidebar: NSViewRepresentable {
                 add("Open in Browser", action: #selector(openBrowser(_:)))
                 add("Copy Link", action: #selector(copyDetail(_:)))
                 menu.addItem(.separator())
+                add("Pin Tab", action: #selector(pinTab(_:)))
                 add("Close Tab", action: #selector(closeTab(_:)))
             }
             return menu.items.isEmpty ? nil : menu
@@ -333,6 +375,10 @@ struct CocoaSidebar: NSViewRepresentable {
         @objc private func togglePin(_ sender: NSMenuItem) {
             guard let node = sender.representedObject as? Node, case .session(let id) = node.entry.destination else { return }
             parent.onTogglePin(id)
+        }
+        @objc private func pinTab(_ sender: NSMenuItem) {
+            guard let node = sender.representedObject as? Node, case .tab(let id) = node.entry.destination else { return }
+            parent.onTogglePinTab(id)
         }
         @objc private func closeTab(_ sender: NSMenuItem) {
             guard let node = sender.representedObject as? Node, case .tab(let url) = node.entry.destination else { return }
@@ -344,14 +390,29 @@ struct CocoaSidebar: NSViewRepresentable {
         }
         @objc private func copyDetail(_ sender: NSMenuItem) {
             guard let node = sender.representedObject as? Node else { return }
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(node.entry.detail, forType: .string)
+            SidebarLinkActions.copy(node.entry.detail)
         }
         @objc private func openBrowser(_ sender: NSMenuItem) {
-            guard let node = sender.representedObject as? Node, let url = URL(string: node.entry.detail),
-                  ["http", "https"].contains(url.scheme?.lowercased() ?? "") else { return }
-            NSWorkspace.shared.open(url)
+            guard let node = sender.representedObject as? Node else { return }
+            SidebarLinkActions.openInBrowser(node.entry.detail)
         }
+    }
+}
+
+/// The link actions a tab row and a pinned tile share, so their menus cannot drift.
+@MainActor enum SidebarLinkActions {
+    /// `text` as an address the system browser may open: http or https only.
+    static func browserURL(_ text: String) -> URL? {
+        guard let url = URL(string: text), ["http", "https"].contains(url.scheme?.lowercased() ?? "") else { return nil }
+        return url
+    }
+    static func openInBrowser(_ text: String) {
+        guard let url = browserURL(text) else { return }
+        NSWorkspace.shared.open(url)
+    }
+    static func copy(_ text: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
     }
 }
 
@@ -532,6 +593,8 @@ enum SidebarGlyphs {
             accessory.image = SidebarIcons.image("close", size: 13)
             accessory.toolTip = "Close tab"
             accessory.setAccessibilityLabel("Close tab")
+        case .pinnedTabs:
+            break // Hosted by SidebarPinnedTabsCell, never this cell.
         }
         applyState()
     }
@@ -640,6 +703,8 @@ enum SidebarGlyphs {
             icon.frame = centered(left + (20 - iconSize) / 2, iconSize)
             badge.frame = NSRect(x: icon.frame.maxX - 5, y: icon.frame.maxY - 6, width: 7, height: 7)
             titleX = left + 20 + 8
+        case .pinnedTabs:
+            return
         }
         // .task-pin: a 20px slot pulled 4px into the padding; .proj-add: an 18px slot.
         let slot: CGFloat = entry.sessionID != nil ? 20 : 18

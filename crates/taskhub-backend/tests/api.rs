@@ -166,6 +166,14 @@ async fn settings_and_tabs_preserve_existing_json_shapes() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(reordered["tabs"][0]["id"], id);
     assert_eq!(reordered["tabs"][1]["id"], first);
+    // Pinning is its own one-row update; every tab reports the flag.
+    assert_eq!(reordered["tabs"][0]["pinned"], false);
+    let (status, pinned) = json_request(&app, "PATCH", "/api/tabs", json!({"id": id, "pinned": true})).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(pinned["tabs"][0]["pinned"], true);
+    assert_eq!(pinned["tabs"][1]["pinned"], false);
+    let (status, _) = json_request(&app, "PATCH", "/api/tabs", json!({"id": id, "pinned": "yes"})).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
 }
 
 #[tokio::test]

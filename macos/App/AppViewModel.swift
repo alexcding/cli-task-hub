@@ -887,6 +887,30 @@ public final class AppViewModel {
         }
     }
 
+    /// Pins a saved tab into the grid under Dashboard, or returns it to the Tabs list. A draft
+    /// has no backend row yet, so it cannot be pinned. The flag is its own one-row PATCH, so a
+    /// concurrent open or rename is never overwritten.
+    func togglePinTab(_ id: String) {
+        guard let api, !isDraftTab(id), let index = tabs.firstIndex(where: { $0.id == id }) else { return }
+        struct Payload: Encodable { let id: String; let pinned: Bool }
+        let pinned = !tabs[index].pinned
+        tabs[index].pinned = pinned
+        tabPinGeneration += 1
+        let generation = tabPinGeneration
+        Task {
+            do {
+                let saved: SavedTabs = try await api.request(Routes.TABS, method: "PATCH", body: Payload(id: id, pinned: pinned))
+                // A newer toggle owns the list now; its own response will land.
+                if generation == tabPinGeneration { tabs = saved.tabs }
+            } catch {
+                self.error = "Could not update pin: \(error.localizedDescription)"
+                refresh()
+            }
+        }
+    }
+    /// Counts pin toggles so a stale PATCH response cannot undo a newer one.
+    private var tabPinGeneration = 0
+
     /// Closes a task-less tab: moves the selection to its neighbour first when it is the tab in
     /// view, then drops the tab from the backend and releases its pages. A tab whose workflow is
     /// still preparing stays open, since the run promotes this tab's pages into its session.
