@@ -5,10 +5,14 @@ import SwiftUI
 /// optional accessory (a brand icon, say) sits before the title.
 struct PageTitleToolbarItem<Accessory: View>: ToolbarContent {
     let title: String
+    /// A session's title is a branch name or a PR subject, far longer than "Settings" or a
+    /// project name, so that screen asks for a smaller one.
+    let font: Font
     @ViewBuilder let accessory: () -> Accessory
 
-    init(title: String, @ViewBuilder accessory: @escaping () -> Accessory) {
+    init(title: String, font: Font = .title3, @ViewBuilder accessory: @escaping () -> Accessory) {
         self.title = title
+        self.font = font
         self.accessory = accessory
     }
 
@@ -23,7 +27,7 @@ struct PageTitleToolbarItem<Accessory: View>: ToolbarContent {
     private var label: some View {
         HStack(spacing: 8) {
             accessory()
-            Text(title).font(.title3).fontWeight(.regular).lineLimit(1).truncationMode(.tail)
+            Text(title).font(font).fontWeight(.regular).lineLimit(1).truncationMode(.tail)
                 .frame(maxWidth: 320, alignment: .leading)
         }
         .buttonStyle(.plain)
@@ -31,5 +35,5 @@ struct PageTitleToolbarItem<Accessory: View>: ToolbarContent {
 }
 
 extension PageTitleToolbarItem where Accessory == EmptyView {
-    init(title: String) { self.init(title: title) { EmptyView() } }
+    init(title: String, font: Font = .title3) { self.init(title: title, font: font) { EmptyView() } }
 }

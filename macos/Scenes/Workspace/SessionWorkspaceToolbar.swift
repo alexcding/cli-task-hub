@@ -8,7 +8,7 @@ struct SessionWorkspaceToolbar: ToolbarContent {
 
     var body: some ToolbarContent {
         if !model.fillsTitleBar {
-            PageTitleToolbarItem(title: title) {
+            PageTitleToolbarItem(title: title, font: .headline) {
                 if model.session != nil {
                     SessionWorkspaceGitClientButton(model: model)
                 } else if let url = model.activePageURL {
