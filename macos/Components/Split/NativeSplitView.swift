@@ -10,10 +10,11 @@ private enum SplitMetrics {
 
 /// Two panes side by side, with AppKit owning the divider. `NSSplitView` runs the drag loop,
 /// the collapse animation and the pane geometry; the hosting controllers only render into the
-/// bounds they are handed.
+/// bounds they are handed. The trailing pane is sized as a fraction of the split, as the Tauri
+/// app's `prRatio` was: both panes scale with the window, and a drag sets a new fraction.
 struct NativeSplitView<Leading: View, Trailing: View>: NSViewControllerRepresentable {
     let showsTrailing: Bool
-    @Binding var trailingWidth: CGFloat
+    @Binding var trailingFraction: CGFloat
     @ViewBuilder let leading: () -> Leading
     @ViewBuilder let trailing: () -> Trailing
 
@@ -30,10 +31,12 @@ struct NativeSplitView<Leading: View, Trailing: View>: NSViewControllerRepresent
     final class Controller: NSSplitViewController {
         let leadingHost: NSHostingController<Hosted<Leading>>
         let trailingHost: NSHostingController<Hosted<Trailing>>
-        var onWidthChange: (CGFloat) -> Void = { _ in }
+        var onFractionChange: (CGFloat) -> Void = { _ in }
 
         private var shown: Bool?
-        private var desiredWidth: CGFloat = 0
+        private var desiredFraction: CGFloat = 0.6
+        /// The fraction `show` was last handed, as opposed to the one the divider is at.
+        private var givenFraction: CGFloat?
         private var needsWidth = false
         private var suppression = 0
         /// The width we last asked for. A width that is not this one was put there by the user.
@@ -58,13 +61,13 @@ struct NativeSplitView<Leading: View, Trailing: View>: NSViewControllerRepresent
             let lead = NSSplitViewItem(viewController: leadingHost)
             lead.canCollapse = false
             lead.minimumThickness = SplitMetrics.minLeading
-            // The trailing pane holds its width when the window resizes; the leading one absorbs it.
-            lead.holdingPriority = NSLayoutConstraint.Priority(249)
+            // Equal holding priorities: a window resize is shared in proportion, so the fraction holds.
+            lead.holdingPriority = NSLayoutConstraint.Priority(250)
             addSplitViewItem(lead)
             let trail = NSSplitViewItem(viewController: trailingHost)
             trail.canCollapse = true
             trail.minimumThickness = SplitMetrics.minTrailing
-            trail.holdingPriority = NSLayoutConstraint.Priority(251)
+            trail.holdingPriority = NSLayoutConstraint.Priority(250)
             // Collapsing gives the space to the sibling instead of resizing the window.
             trail.collapseBehavior = .preferResizingSiblingsWithFixedSplitView
             addSplitViewItem(trail)
@@ -79,8 +82,14 @@ struct NativeSplitView<Leading: View, Trailing: View>: NSViewControllerRepresent
             updateCursorArea()
         }
 
-        func show(_ value: Bool, width: CGFloat) {
-            desiredWidth = width
+        func show(_ value: Bool, fraction: CGFloat) {
+            // SwiftUI calls this on every update with the *stored* fraction, which lags a drag by the
+            // write-back debounce. Only a fraction that differs from the last one handed in is news;
+            // the same one again must not overwrite, or snap the divider back over, a width the user
+            // has just dragged to.
+            let given = givenFraction.map { abs($0 - fraction) > 0.001 } ?? true
+            givenFraction = fraction
+            if given { desiredFraction = fraction }
             // The first call sets the starting state, so it must not animate: the pane is either
             // already there when the session opens or it is not.
             let animated = shown != nil
@@ -88,7 +97,7 @@ struct NativeSplitView<Leading: View, Trailing: View>: NSViewControllerRepresent
             shown = value
             guard isViewLoaded else { _ = view; return }
             guard changed else {
-                if value { applyWidth() }
+                if value, given { applyWidth() }
                 return
             }
             let item = splitViewItems[1]
@@ -128,12 +137,15 @@ struct NativeSplitView<Leading: View, Trailing: View>: NSViewControllerRepresent
             }
         }
 
+        /// What the two panes share: the split less its divider.
+        private var usableWidth: CGFloat { max(1, splitView.bounds.width - splitView.dividerThickness) }
+
         private func applyWidth() {
             guard isViewLoaded, splitViewItems.count == 2, !splitViewItems[1].isCollapsed else { return }
             let total = splitView.bounds.width
             guard total > 1 else { needsWidth = true; return }
             let room = max(SplitMetrics.minTrailing, total - splitView.dividerThickness - SplitMetrics.minLeading)
-            let target = min(max(desiredWidth, SplitMetrics.minTrailing), room)
+            let target = min(max(desiredFraction * usableWidth, SplitMetrics.minTrailing), room)
             commandedWidth = target
             guard abs(trailingHost.view.frame.width - target) > 0.5 else { return }
             suppression += 1
@@ -147,14 +159,15 @@ struct NativeSplitView<Leading: View, Trailing: View>: NSViewControllerRepresent
             let total = splitView.bounds.width
             let windowResized = total != lastTotalWidth
             lastTotalWidth = total
-            writeBack?.cancel()
             // A window resize can squeeze this pane past the width the user chose, and must not be
             // mistaken for the user choosing a new one. Neither may the frame the pane is born with,
-            // before the stored width has been applied to it.
+            // before the stored width has been applied to it. None of these may cancel a report
+            // that is already pending either: that report is the user's drag.
             guard suppression == 0, !needsWidth, !windowResized else { return }
+            writeBack?.cancel()
             // A width the user put there is the one to keep, so stop trying to restore the old one.
             let current = trailingHost.view.frame.width
-            if current > 1, abs(current - commandedWidth) > 0.5 { desiredWidth = current }
+            if current > 1, abs(current - commandedWidth) > 0.5 { desiredFraction = current / usableWidth }
             // Report the width once the drag settles. Reporting every frame would write
             // UserDefaults and invalidate the whole workspace subtree on each one. The width is
             // read when the timer fires, not now: a notification can carry a frame that layout
@@ -166,8 +179,8 @@ struct NativeSplitView<Leading: View, Trailing: View>: NSViewControllerRepresent
                     let settled = self.trailingHost.view.frame.width
                     // Our own setPosition reports back here too, so a width we asked for is not news.
                     guard settled > 1, abs(settled - self.commandedWidth) > 0.5 else { return }
-                    self.desiredWidth = settled
-                    self.onWidthChange(settled)
+                    self.desiredFraction = settled / self.usableWidth
+                    self.onFractionChange(self.desiredFraction)
                 }
             }
             writeBack = work
@@ -237,10 +250,10 @@ struct NativeSplitView<Leading: View, Trailing: View>: NSViewControllerRepresent
     }
 
     private func configure(_ controller: Controller) {
-        let width = $trailingWidth
-        controller.onWidthChange = { value in
-            if abs(width.wrappedValue - value) > 0.5 { width.wrappedValue = value }
+        let fraction = $trailingFraction
+        controller.onFractionChange = { value in
+            if abs(fraction.wrappedValue - value) > 0.001 { fraction.wrappedValue = value }
         }
-        controller.show(showsTrailing, width: trailingWidth)
+        controller.show(showsTrailing, fraction: trailingFraction)
     }
 }

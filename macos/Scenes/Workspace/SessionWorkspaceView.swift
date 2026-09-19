@@ -128,15 +128,16 @@ struct SessionWorkspaceView: View {
         }
     }
 
-    // One width shared by every session; show/hide is per session via its context pane.
-    @AppStorage("workspace.contextPaneWidth") private var contextPaneWidth: Double = 560
+    // One share of the split for every session, 60% by default as in the Tauri app; show/hide
+    // is per session via its context pane.
+    @AppStorage("workspace.contextPaneFraction") private var contextPaneFraction: Double = 0.6
 
     @ViewBuilder private var primaryContent: some View {
         if model.showsTerminal {
             NativeSplitView(showsTrailing: model.showsPage || model.showsBuild,
-                            trailingWidth: Binding(
-                                get: { CGFloat(contextPaneWidth) },
-                                set: { contextPaneWidth = Double($0) })) {
+                            trailingFraction: Binding(
+                                get: { CGFloat(contextPaneFraction) },
+                                set: { contextPaneFraction = Double($0) })) {
                 terminalContent
             } trailing: {
                 SessionWorkspaceContextPane(context: context, model: model)
@@ -233,12 +234,16 @@ private struct SessionWorkspaceContextContent: View {
 
     @ViewBuilder private var contextBody: some View {
         if model.showsChanges {
+            // The Tauri review layout: the diff fills the pane, and one footer carries the
+            // Changes/History switch and the commit action.
             VStack(spacing: 0) {
-                Picker("Review section", selection: Binding(get: { context.reviewSection }, set: context.setReviewSection)) {
-                    ForEach(ReviewSection.allCases) { Text($0.rawValue).tag($0) }
-                }.pickerStyle(.segmented).labelsHidden().padding(8)
-                if context.reviewSection == .history, let history = model.history { GitHistoryView(model: history) }
-                else if context.reviewSection == .changes, let diff = model.diff { DiffView(model: diff) }
+                Group {
+                    if context.reviewSection == .history, let history = model.history { GitHistoryView(model: history) }
+                    else if context.reviewSection == .changes, let diff = model.diff { DiffView(model: diff, showsHeader: false) }
+                    else { Color.clear }
+                }.frame(maxWidth: .infinity, maxHeight: .infinity)
+                Divider()
+                ReviewFooter(context: context, diff: model.diff)
             }
         } else if model.mode == .files, let document = context.activeDocument {
             EditorDocumentView(model: document).id(document.id)
@@ -247,6 +252,38 @@ private struct SessionWorkspaceContextContent: View {
         } else {
             BlankPane(context: context, model: model)
         }
+    }
+}
+
+private struct ReviewFooter: View {
+    let context: WorkspaceContext
+    let diff: DiffViewModel?
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Picker("Review section", selection: Binding(get: { context.reviewSection }, set: context.setReviewSection)) {
+                ForEach(ReviewSection.allCases) { Text($0.rawValue).tag($0) }
+            }.pickerStyle(.segmented).labelsHidden().fixedSize()
+            if context.reviewSection == .changes, let diff {
+                let busy = diff.loading || diff.actions?.busy == true
+                if let branch = diff.snapshot?.branch {
+                    Label(branch, systemImage: "arrow.triangle.branch").foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+                }
+                Spacer(minLength: 4)
+                if busy { ProgressView().controlSize(.small) }
+                Button("Refresh Changes", systemImage: "arrow.clockwise", action: diff.refresh)
+                    .labelStyle(.iconOnly).buttonStyle(.borderless).disabled(busy)
+                if diff.actions != nil {
+                    Button("Commit and Push…", systemImage: "arrow.up.circle", action: diff.requestActions)
+                        .disabled(diff.actions?.busy == true)
+                }
+            } else {
+                Spacer(minLength: 4)
+            }
+        }
+        .padding(.horizontal, 12)
+        .frame(height: 44)
+        .accessibilityIdentifier("workspace-review-footer")
     }
 }
 
