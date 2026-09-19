@@ -254,9 +254,39 @@ private struct StartPageTile: View {
 
     private var host: String { URL(string: record.url)?.host ?? record.url }
 
-    /// A touch icon is artwork made to fill a tile; a small favicon sits centred on the tile instead.
-    private static func fillsTile(_ image: NSImage) -> Bool {
+    /// A touch icon is artwork made for a tile; a small favicon sits centred on the tile instead.
+    private static func isTileArtwork(_ image: NSImage) -> Bool {
         (image.representations.map(\.pixelsWide).max() ?? 0) >= 96
+    }
+
+    @MainActor private static let bleeds = NSCache<NSImage, NSNumber>()
+
+    /// Whether the artwork is opaque out to every edge of a square. A circle, a wide logo or a
+    /// pre-rounded icon is not, and gets a margin instead of being cut by the tile's corners.
+    private static func bleedsToEdges(_ image: NSImage) -> Bool {
+        if let hit = bleeds.object(forKey: image) { return hit.boolValue }
+        let side = 16
+        var result = false
+        if image.size.width > 0, image.size.height > 0,
+           let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: side, pixelsHigh: side, bitsPerSample: 8,
+                                         samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                                         colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0),
+           let context = NSGraphicsContext(bitmapImageRep: bitmap) {
+            NSGraphicsContext.saveGraphicsState()
+            NSGraphicsContext.current = context
+            // Aspect-fit, as the tile draws it, so a wide logo's empty bands count as gaps.
+            let scale = CGFloat(side) / max(image.size.width, image.size.height)
+            let fitted = NSSize(width: image.size.width * scale, height: image.size.height * scale)
+            image.draw(in: NSRect(x: (CGFloat(side) - fitted.width) / 2, y: (CGFloat(side) - fitted.height) / 2,
+                                  width: fitted.width, height: fitted.height))
+            NSGraphicsContext.restoreGraphicsState()
+            let last = side - 1
+            result = (0..<side).allSatisfy { i in
+                [(i, 0), (i, last), (0, i), (last, i)].allSatisfy { (bitmap.colorAt(x: $0.0, y: $0.1)?.alphaComponent ?? 0) > 0.9 }
+            }
+        }
+        bleeds.setObject(NSNumber(value: result), forKey: image)
+        return result
     }
 
     var body: some View {
@@ -265,8 +295,9 @@ private struct StartPageTile: View {
             VStack(spacing: 8) {
                 ZStack {
                     shape.fill(Theme.surfaceHover)
-                    if let image = store.image(forURL: record.url), Self.fillsTile(image) {
+                    if let image = store.image(forURL: record.url), Self.isTileArtwork(image) {
                         Image(nsImage: image).resizable().interpolation(.high).scaledToFit()
+                            .padding(Self.bleedsToEdges(image) ? 0 : 8)
                     } else {
                         FaviconImage(url: record.url, size: 32)
                     }
