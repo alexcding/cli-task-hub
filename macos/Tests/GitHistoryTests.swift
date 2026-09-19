@@ -53,7 +53,7 @@ actor HistoryFixture: GitHistoryService {
     #expect(!model.hasMore)
     model.hide()
 }
-@MainActor @Test func historyRejectsLateScopeAndDetailRepliesAndRecoversFromFailures() async {
+@MainActor @Test func historyRejectsLateDetailRepliesAndRecoversFromFailures() async {
     let service = HistoryFixture()
     let model = GitHistoryViewModel(worktree: "/fixture", baseURL: URL(string: "http://127.0.0.1:3000")!, service: service, pageSize: 2)
     model.show(); await model.waitForList()
@@ -68,16 +68,16 @@ actor HistoryFixture: GitHistoryService {
     model.refresh(); await model.waitForList()
     #expect(model.commits.count == 2 && model.error == "History unavailable")
     await service.failList(false)
-    model.refresh(); model.scope = .currentBranch; await model.waitForList()
+    model.refresh(); await model.waitForList()
     try? await Task.sleep(for: .milliseconds(70))
-    #expect(model.commits.map(\.subject) == ["Commit d", "Commit e"])
+    #expect(model.commits.map(\.subject) == ["Commit a", "Commit b"] && model.error == nil)
     await service.failDetail(true)
-    model.select(historyCommit("e").sha); await model.waitForDetail()
+    model.select(historyCommit("b").sha); await model.waitForDetail()
     #expect(model.detailError == "Commit unavailable")
     await service.failDetail(false)
     model.retryDetail(); await model.waitForDetail()
-    #expect(model.detail?.meta.message == "Detail e")
-    model.select(historyCommit("d").sha); model.hide()
+    #expect(model.detail?.meta.message == "Detail b")
+    model.select(historyCommit("a").sha); model.hide()
     try? await Task.sleep(for: .milliseconds(50))
     #expect(model.detail == nil && model.patch == nil && !model.loadingDetail)
 }
@@ -97,8 +97,6 @@ actor HistoryFixture: GitHistoryService {
     let service = HistoryFixture()
     let model = GitHistoryViewModel(worktree: "/fixture", baseURL: URL(string: "http://127.0.0.1:3000")!, service: service, pageSize: 2)
     model.show(); await model.waitForList(); await model.waitForDetail()
-    model.scope = .branchChanges
-    await model.waitForList()
     #expect(await service.calls.count == 1)
 
     model.search = "Commit b"
@@ -110,13 +108,13 @@ actor HistoryFixture: GitHistoryService {
 
     model.hide()
     model.search = ""
-    model.scope = .currentBranch
-    #expect(model.commits.isEmpty && !model.hasMore && !model.loading)
+    #expect(!model.loading)
     #expect(await service.calls.count == 1)
     model.show(); await model.waitForList(); await model.waitForDetail()
-    #expect(model.commits.map(\.subject) == ["Commit d", "Commit e"])
+    #expect(model.commits.map(\.subject) == ["Commit a", "Commit b"])
     #expect(await service.calls.count == 2)
-    #expect(await service.calls.last?.0.aheadOnly == false)
+    // Only this branch's own commits are ever asked for.
+    #expect(await service.calls.allSatisfy { $0.0.aheadOnly })
     model.hide()
 }
 
@@ -144,4 +142,19 @@ actor HistoryFixture: GitHistoryService {
     controller.view.layoutSubtreeIfNeeded()
     try await Task.sleep(for: .milliseconds(30))
     #expect(abs(controller.leftHost.view.frame.width - width) < 5)
+}
+
+/// Selecting another commit must not tear the detail pane down: the commit on screen stays until
+/// the next one arrives, and the one diff page is reused instead of a web view per commit.
+@MainActor @Test func historyKeepsTheCommitOnScreenAndReusesItsDiffPageAcrossSelections() async throws {
+    let model = GitHistoryViewModel(worktree: "/fixture", baseURL: URL(string: "http://127.0.0.1:3000")!, service: HistoryFixture(), pageSize: 3)
+    model.show(); await model.waitForList(); await model.waitForDetail()
+    let first = try #require(model.patch)
+    #expect(model.detail?.meta.sha == historyCommit("a").sha)
+    model.select(historyCommit("b").sha)
+    #expect(model.loadingDetail && model.detail?.meta.sha == historyCommit("a").sha && model.patch === first)
+    await model.waitForDetail()
+    #expect(!model.loadingDetail && model.detail?.meta.sha == historyCommit("b").sha && model.patch === first)
+    model.hide()
+    #expect(model.patch == nil && model.detail == nil)
 }

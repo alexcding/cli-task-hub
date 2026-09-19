@@ -12,13 +12,6 @@ import Observation
         }
     }
     let worktree: String
-    var scope = GitHistoryScope.branchChanges {
-        didSet {
-            guard oldValue != scope else { return }
-            commits = []; page = nil; hasMore = false; nextOffset = 0
-            clearDetail(); refresh()
-        }
-    }
     var search = "" {
         didSet {
             guard oldValue != search else { return }
@@ -76,7 +69,7 @@ import Observation
     func updateBase(_ value: String) {
         guard value != base else { return }
         base = value
-        if active, scope == .branchChanges { refresh() }
+        if active { refresh() }
     }
     func show() { active = true; reload(preserveLoadedPages: true) }
     func refresh() { reload(preserveLoadedPages: false) }
@@ -88,7 +81,7 @@ import Observation
     private func loadPage(reset: Bool, preserveLoadedPages: Bool = false) {
         guard active else { return }
         let generation = generation
-        let query = GitHistoryQuery(aheadOnly: scope == .branchChanges, base: base)
+        let query = GitHistoryQuery(aheadOnly: true, base: base)
         let offset = reset ? 0 : nextOffset
         if reset { loading = true } else { loadingMore = true }
         error = nil
@@ -126,9 +119,11 @@ import Observation
             }
         }
     }
+    /// The commit on screen stays there until the next one has loaded, and its diff page is reused
+    /// rather than rebuilt: tearing both down per selection made the whole pane blink.
     func select(_ sha: String?) {
-        clearDetail()
-        guard let sha, commits.contains(where: { $0.sha == sha }) else { return }
+        guard let sha, commits.contains(where: { $0.sha == sha }) else { clearDetail(); return }
+        detailTask?.cancel(); detailTask = nil; detailGeneration = UUID(); detailError = nil
         selectedSHA = sha; loadingDetail = true
         let generation = detailGeneration
         detailTask = Task {
@@ -138,7 +133,8 @@ import Observation
                 try Task.checkCancellation()
                 guard detailGeneration == generation, selectedSHA == sha, active else { return }
                 detail = value
-                patch = factory.patch(worktree: worktree, baseURL: baseURL, diff: value.diff)
+                if let patch { patch.connect(baseURL: baseURL, service: HistoricalPatchService(diff: value.diff)) }
+                else { patch = factory.patch(worktree: worktree, baseURL: baseURL, diff: value.diff) }
             } catch { if detailGeneration == generation, !Task.isCancelled { detailError = error.localizedDescription } }
         }
     }

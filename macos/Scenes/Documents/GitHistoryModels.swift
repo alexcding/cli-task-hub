@@ -45,10 +45,8 @@ struct GitCommitDetail: Decodable, Sendable {
     let meta: Metadata
     let diff: String
 }
-enum GitHistoryScope: String, CaseIterable, Identifiable {
-    case branchChanges = "Branch Changes", currentBranch = "Current Branch"
-    var id: String { rawValue }
-}
+/// History lists only the commits this branch added on top of its base (`base..HEAD`), as the
+/// Tauri pane did. `aheadOnly` stays in the query because it is the backend's contract.
 struct GitHistoryQuery: Equatable, Sendable {
     var aheadOnly = true
     var base = ""
