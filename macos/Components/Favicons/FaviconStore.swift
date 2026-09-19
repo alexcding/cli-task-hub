@@ -65,9 +65,11 @@ import SwiftUI
 struct FaviconImage: View {
     let url: String
     var size: CGFloat = 16
+    /// The globe's point size when there is no favicon; nil fills the box, as a small icon should.
+    var fallbackSize: CGFloat?
     private var store = FaviconStore.shared
 
-    init(url: String, size: CGFloat = 16) { self.url = url; self.size = size }
+    init(url: String, size: CGFloat = 16, fallbackSize: CGFloat? = nil) { self.url = url; self.size = size; self.fallbackSize = fallbackSize }
 
     var body: some View {
         if let image = store.image(forURL: url) {
@@ -78,7 +80,7 @@ struct FaviconImage: View {
                 .frame(width: size, height: size)
                 .clipShape(RoundedRectangle(cornerRadius: 3))
         } else {
-            Image(systemName: "globe").font(.system(size: size - 2)).foregroundStyle(.secondary)
+            Image(systemName: "globe").font(.system(size: fallbackSize ?? size - 2)).foregroundStyle(.secondary)
                 .frame(width: size, height: size)
         }
     }

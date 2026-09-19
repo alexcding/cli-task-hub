@@ -137,34 +137,44 @@ struct BrowserCompactTabBar: View {
     /// (newest first, web pages only), pages visited in other panels that match, then Google's
     /// phrase completions. The full history is the blank tab's start page; here it is only a filter.
     private var suggestions: [AddressSuggestion] {
-        guard let controls = active?.controls else { return [] }
+        // Focusing the field selects the page's own address; offering that page back is noise.
+        guard let controls = active?.controls, controls.addressEdited else { return [] }
         let text = controls.address.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return [] }
-        var items: [AddressSuggestion] = []
         let searching = webAddress(text) == nil
-        if searching, let url = BrowserControlsViewModel.searchURL(for: text) {
-            items.append(.init(id: "search", title: text, detail: "Search Google", url: url.absoluteString, kind: .typed))
-        }
+        var history: [AddressSuggestion] = []
         var seen: Set<String> = []
         for visit in context.pageVisits.reversed() {
             guard case .page(let record) = visit, seen.insert(record.url).inserted,
                   record.url.localizedCaseInsensitiveContains(text) || record.title.localizedCaseInsensitiveContains(text)
             else { continue }
             let host = URL(string: record.url)?.host ?? record.url
-            items.append(.init(id: record.url, title: record.title.isEmpty ? host : record.title, detail: host, url: record.url, kind: .history))
-            if items.filter({ $0.kind == .history }).count >= 4 { break }
+            history.append(.init(id: record.url, title: record.title.isEmpty ? host : record.title, detail: host, url: record.url, kind: .history))
+            if history.count >= 4 { break }
         }
         // Excluding this panel's whole history, not only the matches shown: a page cut off by the
         // cap above must not reappear as if it were from another panel.
         for entry in context.globalHistory?.matching(text, excluding: seen.union(context.history.map(\.url)), limit: 3) ?? [] {
-            items.append(.init(id: entry.url, title: entry.displayTitle, detail: entry.host, url: entry.url, kind: .history))
+            history.append(.init(id: entry.url, title: entry.displayTitle, detail: entry.host, url: entry.url, kind: .history))
         }
-        if searching {
-            for phrase in searchSuggestions.cached(text).prefix(4) where phrase.caseInsensitiveCompare(text) != .orderedSame {
-                guard let url = BrowserControlsViewModel.searchURL(for: phrase) else { continue }
-                items.append(.init(id: "google:" + phrase, title: phrase, detail: "", url: url.absoluteString, kind: .google))
-            }
+        guard searching else { return history }
+        // Safari's order: one suggested site, then four searches led by the typed text, then history.
+        var items: [AddressSuggestion] = []
+        let completions = searchSuggestions.cached(text)
+        if let site = completions.first(where: \.isSite), let url = webAddress(site.text), let host = url.host {
+            let name = host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
+            items.append(.init(id: "site:" + site.text, title: site.title.isEmpty ? name : site.title,
+                               detail: site.title.isEmpty ? "" : name, url: url.absoluteString, kind: .site))
+            history.removeAll { $0.url == url.absoluteString }
         }
+        if let url = BrowserControlsViewModel.searchURL(for: text) {
+            items.append(.init(id: "search", title: text, detail: "", url: url.absoluteString, kind: .typed))
+        }
+        for phrase in completions.lazy.filter({ !$0.isSite }).map(\.text).filter({ $0.caseInsensitiveCompare(text) != .orderedSame }).prefix(3) {
+            guard let url = BrowserControlsViewModel.searchURL(for: phrase) else { continue }
+            items.append(.init(id: "google:" + phrase, title: phrase, detail: "", url: url.absoluteString, kind: .google))
+        }
+        items += history
         return items
     }
 
@@ -248,6 +258,20 @@ private struct HoverCircleButton: View {
             .disabled(!enabled)
             .onHover { hovering = $0 }
             .animation(.easeOut(duration: 0.12), value: hovering)
+    }
+}
+
+/// The suggestion list's panel: Liquid Glass on macOS 26, the window surface with a hairline before it.
+private extension View {
+    @ViewBuilder func suggestionGlass() -> some View {
+        let shape = RoundedRectangle(cornerRadius: 18, style: .continuous)
+        if #available(macOS 26.0, *) {
+            glassEffect(.regular, in: shape)
+        } else {
+            background(Color(nsColor: .windowBackgroundColor), in: shape)
+                .overlay(shape.strokeBorder(Theme.border, lineWidth: Theme.Size.hairline))
+                .shadow(color: .black.opacity(0.18), radius: 14, y: 6)
+        }
     }
 }
 
@@ -401,49 +425,72 @@ private struct CompactTab: View {
 }
 
 struct AddressSuggestion: Identifiable, Equatable {
-    enum Kind { case typed, history, google }
+    enum Kind { case typed, history, site, google }
     let id: String
     let title: String
     let detail: String
     let url: String
     let kind: Kind
-    var isSearch: Bool { kind != .history }
+    var isSearch: Bool { kind == .typed || kind == .google }
+    /// The section a row sits under; the suggested site leads the list with none.
+    var heading: String? {
+        switch kind {
+        case .site: nil
+        case .typed, .google: "Google Suggestions"
+        case .history: "History"
+        }
+    }
 }
 
-/// Safari's completion list under the address: one row per match, the highlighted one tinted.
+/// Safari's completion list under the address: the suggested site, then the searches and the
+/// history under their own headings. Headings are not rows: `highlighted` indexes `items` only.
 private struct AddressSuggestions: View {
     let items: [AddressSuggestion]
     let highlighted: Int?
     let pick: (AddressSuggestion) -> Void
+    private static let iconSide: CGFloat = 28
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                if let heading = item.heading, index == 0 || items[index - 1].heading != heading {
+                    Text(heading).font(.system(size: 12, weight: .semibold)).foregroundStyle(Theme.textTertiary)
+                        .padding(.horizontal, 10).padding(.top, index == 0 ? 4 : 8).padding(.bottom, 2)
+                }
                 Button { pick(item) } label: {
-                    HStack(spacing: 8) {
-                        if item.isSearch {
-                            Image(systemName: "magnifyingglass").frame(width: 16).foregroundStyle(Theme.textSecondary)
-                        } else {
-                            FaviconImage(url: item.url, size: 16)
+                    HStack(spacing: 10) {
+                        Group {
+                            if item.isSearch {
+                                Image(systemName: "magnifyingglass").font(.system(size: 14, weight: .medium)).foregroundStyle(Theme.textSecondary)
+                                    .frame(width: Self.iconSide, height: Self.iconSide)
+                                    .background(Theme.surfaceHover, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                            } else {
+                                FaviconImage(url: item.url, size: Self.iconSide, fallbackSize: 15)
+                            }
                         }
-                        Text(item.title).lineLimit(1)
-                        Text(item.detail).lineLimit(1).foregroundStyle(Theme.textTertiary)
+                        .frame(width: Self.iconSide, height: Self.iconSide)
+                        if item.isSearch || item.detail.isEmpty || item.detail == item.title {
+                            Text(item.title).lineLimit(1)
+                        } else {
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(item.title).lineLimit(1)
+                                Text(item.detail).font(.system(size: 12)).lineLimit(1).foregroundStyle(Theme.textTertiary)
+                            }
+                        }
                         Spacer(minLength: 0)
                     }
                     .font(BrowserCompactTabBar.tabFont)
-                    .padding(.horizontal, 10).padding(.vertical, 6)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(highlighted == index ? Theme.accentBackground : .clear, in: RoundedRectangle(cornerRadius: 6))
-                    .contentShape(RoundedRectangle(cornerRadius: 6))
+                    .padding(.horizontal, 10)
+                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                    .background(highlighted == index ? Theme.accentBackground : .clear, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                 }
                 .buttonStyle(.plain)
             }
         }
-        .padding(6)
+        .padding(8)
         .frame(width: 560)
-        .background(Color(nsColor: .windowBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
-        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Theme.border, lineWidth: Theme.Size.hairline))
-        .shadow(color: .black.opacity(0.18), radius: 14, y: 6)
+        .suggestionGlass()
         .accessibilityLabel("Address suggestions")
     }
 }

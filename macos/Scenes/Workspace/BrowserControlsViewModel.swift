@@ -62,6 +62,9 @@ extension BrowserControlling { var hasPopupDocument: Bool { false } }
     var error: String? { actionError?.message ?? page?.error }
     var canOpenExternally: Bool { active && page.flatMap { safeWebURL($0.url) } != nil }
 
+    /// Whether the field holds something the user typed, rather than the page's own address that
+    /// focusing the field merely selected.
+    var addressEdited: Bool { address != page.map { Self.displayAddress($0.url) } }
     func setEditingAddress(_ value: Bool) { editingAddress = value }
     func synchronizeAddress() {
         guard !editingAddress, let page else { return }
