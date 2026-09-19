@@ -11,11 +11,12 @@ enum ReviewSection: String, Codable, CaseIterable, Identifiable {
 enum WorkspacePane: String, Codable, CaseIterable { case off, term, diff, build, files }
 
 enum WorkspaceMode: String, CaseIterable, Identifiable {
-    case browser, diff, files
+    // Declaration order is the order of the toolbar picker: Browser, Files, Diff.
+    case browser, files, diff
     var id: String { rawValue }
     var pane: WorkspacePane { switch self { case .browser: .term; case .diff: .diff; case .files: .files } }
     var title: String { switch self { case .browser: "Browser"; case .diff: "Diff"; case .files: "Files" } }
-    var symbol: String { switch self { case .browser: "globe"; case .diff: "arrow.left.arrow.right"; case .files: "doc.text" } }
+    var symbol: String { switch self { case .browser: "globe"; case .diff: "plus.forwardslash.minus"; case .files: "doc.text" } }
     init?(pane: WorkspacePane) {
         switch pane { case .term: self = .browser; case .diff: self = .diff; case .files: self = .files; default: return nil }
     }
