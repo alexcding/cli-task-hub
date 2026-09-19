@@ -24,7 +24,6 @@ import Observation
     var offersPageSession = false
     var editorID: String?
     var editorLabel: String?
-    var gitClientID: String?
     var gitClientLabel: String?
     var launchError: String?
     var reviewBase: String?
@@ -83,7 +82,6 @@ enum WorkspaceOperation: Equatable {
     var launchError: String? { state.launchError }
     var editorID: String? { state.editorID }
     var editorLabel: String? { state.editorLabel }
-    var gitClientID: String? { state.gitClientID }
     var gitClientLabel: String? { state.gitClientLabel }
     var runScheme: String {
         if let scheme = state.build?.scheme, !scheme.isEmpty { return scheme }

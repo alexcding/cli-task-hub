@@ -3,7 +3,7 @@ import SwiftUI
 import WebKit
 
 private struct TauriToolbarIcon: View {
-    enum Kind { case folder, code, split }
+    enum Kind { case code, split, branch }
     let kind: Kind
 
     var body: some View {
@@ -12,20 +12,17 @@ private struct TauriToolbarIcon: View {
             context.scaleBy(x: scale, y: scale)
             var path = Path()
             switch kind {
-            case .folder:
-                path.move(to: .init(x: 2, y: 10)); path.addLine(to: .init(x: 22, y: 10))
-                path.move(to: .init(x: 20, y: 20)); path.addCurve(to: .init(x: 22, y: 18), control1: .init(x: 21.1, y: 20), control2: .init(x: 22, y: 19.1))
-                path.addLine(to: .init(x: 22, y: 8)); path.addCurve(to: .init(x: 20, y: 6), control1: .init(x: 22, y: 6.9), control2: .init(x: 21.1, y: 6))
-                path.addLine(to: .init(x: 12.1, y: 6)); path.addCurve(to: .init(x: 10.4, y: 5.1), control1: .init(x: 11.4, y: 6), control2: .init(x: 10.8, y: 5.7))
-                path.addLine(to: .init(x: 9.6, y: 3.9)); path.addCurve(to: .init(x: 7.93, y: 3), control1: .init(x: 9.2, y: 3.3), control2: .init(x: 8.6, y: 3))
-                path.addLine(to: .init(x: 4, y: 3)); path.addCurve(to: .init(x: 2, y: 5), control1: .init(x: 2.9, y: 3), control2: .init(x: 2, y: 3.9))
-                path.addLine(to: .init(x: 2, y: 18)); path.addCurve(to: .init(x: 4, y: 20), control1: .init(x: 2, y: 19.1), control2: .init(x: 2.9, y: 20)); path.closeSubpath()
             case .code:
                 path.move(to: .init(x: 9, y: 17)); path.addLine(to: .init(x: 4, y: 12)); path.addLine(to: .init(x: 9, y: 7))
                 path.move(to: .init(x: 15, y: 7)); path.addLine(to: .init(x: 20, y: 12)); path.addLine(to: .init(x: 15, y: 17))
             case .split:
                 path.addRoundedRect(in: .init(x: 3, y: 4.5, width: 18, height: 15), cornerSize: .init(width: 3.5, height: 3.5))
                 path.move(to: .init(x: 14, y: 4.5)); path.addLine(to: .init(x: 14, y: 19.5))
+            case .branch:
+                path.move(to: .init(x: 6, y: 3)); path.addLine(to: .init(x: 6, y: 15))
+                path.addEllipse(in: .init(x: 15, y: 3, width: 6, height: 6))
+                path.addEllipse(in: .init(x: 3, y: 15, width: 6, height: 6))
+                path.move(to: .init(x: 18, y: 9)); path.addCurve(to: .init(x: 9, y: 18), control1: .init(x: 18, y: 13.97), control2: .init(x: 13.97, y: 18))
             }
             context.stroke(path, with: .foreground, style: .init(lineWidth: 1.8, lineCap: .round, lineJoin: .round))
         }
@@ -52,7 +49,7 @@ private struct ToolbarBrandIcon: View {
     }
 
     private static func load(_ name: String) -> NSImage? {
-        let filename = name == "github" ? "github.svg" : "\(name).png"
+        let filename = "\(name).png"
         let bundled = Bundle.main.bundleURL
             .appendingPathComponent("Contents/Resources/TaskHubImages")
             .appendingPathComponent(filename)
@@ -351,7 +348,7 @@ private struct ContextTabChip: View {
     }
 }
 
-/// The git client (or Finder) button that opens the session's worktree.
+/// The branch button that opens the session's worktree in the git client (or Finder).
 struct SessionWorkspaceGitClientButton: View {
     let model: SessionWorkspaceViewModel
 
@@ -359,7 +356,7 @@ struct SessionWorkspaceGitClientButton: View {
         Button {
             if model.gitClientLabel == nil { model.reveal() } else { model.openGitClient() }
         } label: {
-            ToolbarBrandIcon(name: model.gitClientID, fallback: .folder, height: 22)
+            TauriToolbarIcon(kind: .branch)
         }
         .buttonStyle(.plain)
         .controlSize(.small)

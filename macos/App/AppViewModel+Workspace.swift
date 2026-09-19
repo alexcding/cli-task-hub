@@ -29,7 +29,7 @@ extension AppViewModel: WorkspaceCoordinating {
             openingExternal: workspaceLaunch.opening.contains(context.id), canPresent: coordinator.canPresent,
             canCreateSession: canPerform(.newSession), title: title,
             offersPageSession: offersPageSession(in: context), editorID: project?.ide,
-            editorLabel: workspaceLaunch.editorLabel(project), gitClientID: shell.gitClient,
+            editorLabel: workspaceLaunch.editorLabel(project),
             gitClientLabel: workspaceLaunch.gitClientLabel(shell.gitClient), launchError: workspaceLaunch.errors[context.id],
             reviewBase: base)
     }

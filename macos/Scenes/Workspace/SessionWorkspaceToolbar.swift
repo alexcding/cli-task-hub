@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Toolbar for a session workspace: git client icon and title flat at the leading edge,
+/// Toolbar for a session workspace: branch icon and title flat at the leading edge,
 /// editor and run controls in a glass container, session actions trailing.
 struct SessionWorkspaceToolbar: ToolbarContent {
     let model: SessionWorkspaceViewModel
