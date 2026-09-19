@@ -35,6 +35,40 @@ extension View {
     }
 }
 
+/// A two-or-more-way choice as a capsule track with the chosen option on a filled capsule that
+/// slides between them: Liquid Glass on macOS 26 and later, a bordered surface before that.
+struct CapsulePicker<Value: Hashable>: View {
+    let options: [(title: String, value: Value)]
+    @Binding var selection: Value
+    @Namespace private var thumb
+
+    var body: some View {
+        let track = HStack(spacing: 0) {
+            ForEach(options, id: \.value) { option in
+                let on = option.value == selection
+                Button { selection = option.value } label: {
+                    Text(option.title).font(.body.weight(.medium))
+                        .foregroundStyle(on ? Color.primary : Theme.textSecondary)
+                        .padding(.horizontal, 18).frame(height: Theme.Size.largeControl)
+                        .background { if on { Capsule().fill(Theme.border).matchedGeometryEffect(id: "thumb", in: thumb) } }
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(on ? .isSelected : [])
+            }
+        }
+        .padding(3)
+        .animation(.snappy(duration: 0.2), value: selection)
+        .accessibilityElement(children: .contain)
+        if #available(macOS 26.0, *) {
+            track.glassEffect(.regular, in: Capsule())
+        } else {
+            track.background(Theme.surfaceHover, in: Capsule())
+                .overlay(Capsule().strokeBorder(Theme.border, lineWidth: Theme.Size.hairline))
+        }
+    }
+}
+
 /// Just the icon, centred in a fixed square, so glyphs of different widths make equal buttons.
 /// The title stays on the label as its accessibility name, as with `.iconOnly`.
 struct SquareIconLabelStyle: LabelStyle {
