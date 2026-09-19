@@ -15,7 +15,7 @@ struct DashboardView: View {
                 if model.updated == nil {
                     Text(model.loading ? "Loading pull requests…" : "Connect to load pull requests.").foregroundStyle(.secondary)
                 } else if model.projects.isEmpty {
-                    ContentUnavailableView("No projects yet", systemImage: "folder", description: Text("Add a project to track its pull requests."))
+                    noProjects
                 } else {
                     section("GitHub · My Pull Requests", rows: model.mine, empty: "No open PRs you authored.")
                     section("Review Requested", rows: model.reviews, empty: "Nothing awaiting your review.")
@@ -25,6 +25,25 @@ struct DashboardView: View {
         .accessibilityIdentifier("native-dashboard")
         .task { await shell.watchUsage() }
         .onDisappear(perform: model.cancelActions)
+    }
+
+    private var noProjects: some View {
+        VStack(spacing: 5) {
+            if let icon = SidebarIcons.image("folder", size: 20) {
+                Image(nsImage: icon).foregroundStyle(Theme.textSecondary)
+                    .frame(width: 44, height: 44)
+                    .background(Theme.surfaceHover, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Theme.border, lineWidth: Theme.Size.hairline))
+                    .padding(.bottom, 9)
+                    .accessibilityHidden(true)
+            }
+            Text("No projects yet").font(Theme.Typography.emptyTitle).foregroundStyle(Theme.textSecondary)
+            Text("Add one with New Project in the sidebar to track its pull requests.")
+                .font(Theme.Typography.emptyHint).foregroundStyle(Theme.textTertiary).multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: 260)
+        .frame(maxWidth: .infinity)
+        .padding(.top, 72)
     }
 
     private var hero: some View {
