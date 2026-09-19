@@ -18,6 +18,7 @@ import Observation
     private(set) var saved = false
     private(set) var retired = false
     private var completedCreation = false
+    private var suggestedName = ""
     private var generation = UUID()
     private var service: (any ProjectService)?
     private let chooseFolder: () async -> String?
@@ -88,13 +89,27 @@ import Observation
         do {
             let repo = try await service.detectRepository(workspace)
             guard active, !Task.isCancelled, self.generation == generation, draft.workspace == workspace else { return }
-            if repo.isEmpty { error = "No GitHub remote found in this workspace." }
-            else { draft.repo = repo }
+            if repo.isEmpty {
+                error = "No GitHub remote found in this workspace."
+                // A new project's repo is only ever derived, so one left from another folder is stale.
+                if id == nil { draft.repo = "" }
+            } else { draft.repo = repo }
+            suggestName()
         } catch {
             if active && !Task.isCancelled && self.generation == generation && draft.workspace == workspace {
                 self.error = error.localizedDescription
             }
         }
+    }
+    /// A new project is named after its GitHub repo, or the checkout folder when there is no
+    /// remote. A name the user typed is never replaced — only an empty or still-suggested one.
+    private func suggestName() {
+        guard active, id == nil, draft.name.isEmpty || draft.name == suggestedName else { return }
+        var name = draft.repo.split(separator: "/").last.map(String.init) ?? ""
+        if name.hasSuffix(".git") { name.removeLast(4) }
+        if name.isEmpty, !draft.workspace.isEmpty { name = URL(fileURLWithPath: draft.workspace).lastPathComponent }
+        guard !name.isEmpty, name != "/" else { return }
+        draft.name = name; suggestedName = name
     }
     func save() async {
         guard active, !Task.isCancelled, !busy, let service else { return }

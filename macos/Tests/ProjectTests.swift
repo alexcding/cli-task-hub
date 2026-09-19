@@ -26,7 +26,7 @@ private actor ProjectFixture: ProjectService {
         if fails { throw BackendError.operation("Delete unavailable") }
         deleted.append(id)
     }
-    func detectRepository(_ path: String) -> String { "detected/repo" }
+    func detectRepository(_ path: String) -> String { path.hasSuffix("/bare") ? "" : "detected/repo" }
     func pullRequests(_ id: String, state: String, force: Bool) async throws -> ProjectPRSnapshot {
         if force { forcedReads += 1 }
         requestedStates.append(state)
@@ -143,6 +143,13 @@ private actor ProjectFixture: ProjectService {
     let picked = ProjectEditorViewModel(project: nil, service: ProjectFixture(), chooseFolder: { "/tmp/picked" })
     await picked.chooseWorkspace()
     #expect(picked.draft.workspace == "/tmp/picked" && picked.draft.repo == "detected/repo" && !picked.busy)
+    #expect(picked.draft.name == "repo")
+    picked.draft.workspace = "/tmp/bare"
+    await picked.detectRepository()
+    #expect(picked.draft.repo.isEmpty && picked.draft.name == "bare")
+    picked.draft.name = "Typed"
+    await picked.detectRepository()
+    #expect(picked.draft.name == "Typed")
 
     let cancelled = ProjectEditorViewModel(project: nil, service: ProjectFixture(), chooseFolder: { nil })
     cancelled.draft.workspace = "/tmp/typed"

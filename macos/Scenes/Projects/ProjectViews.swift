@@ -62,8 +62,9 @@ struct NewProjectSheet: View {
         VStack(alignment: .leading, spacing: 0) {
             SheetTitle("New Project")
             SheetField("Project Name") {
-                TextField("e.g. Record iOS", text: $model.draft.name)
+                TextField("", text: $model.draft.name)
                     .textFieldStyle(.roundedBorder).focused($nameFocused)
+                    .accessibilityLabel("Project Name")
                     .accessibilityIdentifier("project-name")
             }
             SheetField("Local Git Repo", last: true) {
@@ -81,9 +82,10 @@ struct NewProjectSheet: View {
             }
             SheetSection("Jira") {
                 SheetField("Project Key", last: true) {
-                    TextField("e.g. RECORD", text: Binding(get: { model.draft.jiraProjectKey },
+                    TextField("", text: Binding(get: { model.draft.jiraProjectKey },
                                                            set: { model.draft.jiraProjectKey = $0.uppercased() }))
                         .textFieldStyle(.roundedBorder)
+                        .accessibilityLabel("Project Key")
                     SheetHint(Text("Drives this project's **Jira** tab (Board, Tickets). Narrow both with the tab's filter clause (e.g. \(sheetCode("component = iOS")))."))
                 }
             }
