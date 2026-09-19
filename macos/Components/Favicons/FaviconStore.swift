@@ -1,9 +1,11 @@
 import AppKit
+import LinkPresentation
 import Observation
 import SwiftUI
+import UniformTypeIdentifiers
 
-/// Site icons for web tabs, keyed by host. `/favicon.ico` on the site is tried first, then
-/// DuckDuckGo's icon service for sites that declare their icon only in HTML. Images live
+/// Site icons for web tabs, keyed by host. The icon the site's page declares is tried first,
+/// then `/favicon.ico`, then DuckDuckGo's icon service for public hosts. Images live
 /// for the process; a finished fetch posts `SidebarAvatars.loaded` so AppKit rows refresh,
 /// and `images` is observable so SwiftUI toolbars update on their own.
 @MainActor @Observable final class FaviconStore {
@@ -48,6 +50,7 @@ import SwiftUI
     }
 
     private static func fetch(_ host: String, scheme: String) async -> NSImage? {
+        if let image = await declaredIcon(host, scheme: scheme) { return image }
         var candidates = ["\(scheme)://\(host)/favicon.ico"]
         if isPublicHost(host) { candidates.append("https://icons.duckduckgo.com/ip3/\(host).ico") }
         for candidate in candidates {
@@ -58,6 +61,22 @@ import SwiftUI
             return image
         }
         return nil
+    }
+
+    /// The icon the site's own page declares — its touch icon or largest `<link rel="icon">` —
+    /// chosen by LinkPresentation the way Safari chooses one for its tiles.
+    private static func declaredIcon(_ host: String, scheme: String) async -> NSImage? {
+        guard let url = URL(string: "\(scheme)://\(host)/") else { return nil }
+        let provider = LPMetadataProvider()
+        provider.timeout = 10
+        let data: Data? = await withCheckedContinuation { continuation in
+            provider.startFetchingMetadata(for: url) { metadata, _ in
+                guard let icon = metadata?.iconProvider else { return continuation.resume(returning: nil) }
+                _ = icon.loadDataRepresentation(for: .image) { data, _ in continuation.resume(returning: data) }
+            }
+        }
+        guard let data, let image = NSImage(data: data), image.size.width > 0 else { return nil }
+        return image
     }
 }
 
