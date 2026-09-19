@@ -16,6 +16,9 @@ struct TerminalStyle: Equatable, Sendable {
     /// Theme names from the compiled catalogue. Empty means the package default pair.
     var darkTheme = ""
     var lightTheme = ""
+    /// Ghostty `keybind` values, one per entry, as they would be written in a config file
+    /// (`shift+enter=text:\x1b\r`). Ghostty parses the `\x` escapes in `text:` itself.
+    var keybinds = defaultKeybinds
 
     struct Resolved {
         var configuration = TerminalConfiguration()
@@ -31,6 +34,13 @@ struct TerminalStyle: Equatable, Sendable {
         if !font.family.isEmpty { configuration = configuration.fontFamily(font.family) }
         configuration = configuration.fontThicken(thicken)
         if thicken { configuration = configuration.fontThickenStrength(thickenStrength) }
+        for binding in keybinds {
+            guard Self.keybindProblem(binding) == nil else {
+                resolved.issues.append("Ignored keybind \"\(binding)\": expected trigger=action.")
+                continue
+            }
+            configuration = configuration.custom("keybind", binding)
+        }
         resolved.configuration = configuration
 
         var theme = TerminalTheme.default
@@ -51,6 +61,47 @@ struct TerminalStyle: Equatable, Sendable {
 
     /// Whether the catalogue has this theme. A direct lookup, not a scan of `themeNames`.
     static func hasTheme(_ name: String) -> Bool { GhosttyThemeCatalog.theme(named: name) != nil }
+
+    /// The keybinds a fresh install starts with. Shift+Enter sends ESC CR (a newline in
+    /// Claude Code and other agent CLIs, not a submit); Shift+Backspace sends ^U to clear the line.
+    static let defaultKeybinds: [String] = [
+        #"shift+enter=text:\x1b\r"#,
+        #"shift+backspace=text:\x15"#,
+    ]
+
+    /// Keybinds are stored as one setting, newline-separated. `nil` (never saved) means the
+    /// defaults; an empty string means the user removed every binding.
+    static func keybinds(fromSetting value: String?) -> [String] {
+        guard let value else { return defaultKeybinds }
+        return value.split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+    }
+    static func keybindsSetting(_ keybinds: [String]) -> String { keybinds.joined(separator: "\n") }
+
+    /// Why a keybind cannot be handed to Ghostty, or nil when it is well-formed. Ghostty rejects
+    /// a malformed line and a rejected line fails the whole config, so a typo must never reach it.
+    static func keybindProblem(_ binding: String) -> String? {
+        let trimmed = binding.trimmingCharacters(in: .whitespaces)
+        guard let eq = trimmed.firstIndex(of: "=") else { return "Missing “=” between the key and its action." }
+        let trigger = trimmed[..<eq], action = trimmed[trimmed.index(after: eq)...]
+        if trigger.isEmpty { return "Missing the key to press." }
+        if trigger.contains(where: \.isWhitespace) { return "The key must not contain spaces." }
+        let parts = trigger.split(separator: "+", omittingEmptySubsequences: false).map { $0.lowercased() }
+        if parts.contains("") { return "Empty part in the key combination." }
+        for modifier in parts.dropLast() where !keybindModifiers.contains(modifier) {
+            return "Unknown modifier “\(modifier)”; use shift, ctrl, alt, super or cmd."
+        }
+        if action.isEmpty { return "Missing the action to run." }
+        return nil
+    }
+    /// Modifier names Ghostty accepts in a trigger, with the aliases it documents.
+    private static let keybindModifiers: Set<String> = [
+        "shift", "ctrl", "control", "alt", "opt", "option", "super", "cmd", "command",
+        "global", "all", "unconsumed", "performable",
+    ]
+
+    /// The same style with no keybinds. The surface falls back to this when Ghostty rejects a
+    /// binding, because a rejected line discards the whole config, font and theme included.
+    var withoutKeybinds: TerminalStyle { var copy = self; copy.keybinds = []; return copy }
 
     static let thickenStrengthRange: ClosedRange<Int> = 0...255
     static let defaultThickenStrength = 10

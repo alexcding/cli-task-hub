@@ -40,6 +40,9 @@ import Observation
     private(set) var terminalLightTheme: String {
         didSet { if oldValue != terminalLightTheme { terminalStyleChanged() } }
     }
+    private(set) var terminalKeybinds: [String] {
+        didSet { if oldValue != terminalKeybinds { terminalStyleChanged() } }
+    }
     private(set) var documentCodeFont: CodeFont {
         didSet { if oldValue != documentCodeFont { documentStyleChanged() } }
     }
@@ -82,6 +85,7 @@ import Observation
         terminalFontThickenStrength = TerminalStyle.clampThickenStrength(preferences.string(forKey: "native.terminalThickenStrength"))
         terminalDarkTheme = preferences.string(forKey: "native.terminalThemeDark") ?? ""
         terminalLightTheme = preferences.string(forKey: "native.terminalThemeLight") ?? ""
+        terminalKeybinds = TerminalStyle.keybinds(fromSetting: preferences.string(forKey: "native.terminalKeybinds"))
     }
 
     var pendingReviews: [TrayPR] { prs.filter(\.pendingReview) }
@@ -239,7 +243,25 @@ import Observation
     var terminalStyle: TerminalStyle {
         TerminalStyle(font: terminalCodeFont, thicken: terminalFontThicken,
                       thickenStrength: terminalFontThickenStrength,
-                      darkTheme: terminalDarkTheme, lightTheme: terminalLightTheme)
+                      darkTheme: terminalDarkTheme, lightTheme: terminalLightTheme,
+                      keybinds: terminalKeybinds)
+    }
+    /// Replaces the whole list. A malformed entry is refused with the reason and nothing is
+    /// stored; the caller keeps its drafts so the row can be fixed. Returns whether it applied.
+    @discardableResult
+    func setTerminalKeybinds(_ keybinds: [String]) -> Bool {
+        settingsError = nil
+        let cleaned = keybinds.map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        if let bad = cleaned.first(where: { TerminalStyle.keybindProblem($0) != nil }) {
+            settingsError = "Keybind “\(bad)”: \(TerminalStyle.keybindProblem(bad)!)"
+            return false
+        }
+        guard cleaned != terminalKeybinds else { return true }
+        terminalKeybinds = cleaned
+        let value = TerminalStyle.keybindsSetting(cleaned)
+        preferences.set(value, forKey: "native.terminalKeybinds")
+        saveSetting("terminalKeybinds", value: value)
+        return true
     }
     func setTerminalFontThicken(_ enabled: Bool) {
         guard enabled != terminalFontThicken else { return }
@@ -337,6 +359,7 @@ import Observation
                 }
                 if pendingSettings["terminalThemeDark"] == nil { terminalDarkTheme = (settings["terminalThemeDark"] ?? nil) ?? "" }
                 if pendingSettings["terminalThemeLight"] == nil { terminalLightTheme = (settings["terminalThemeLight"] ?? nil) ?? "" }
+                if pendingSettings["terminalKeybinds"] == nil { terminalKeybinds = TerminalStyle.keybinds(fromSetting: settings["terminalKeybinds"] ?? nil) }
                 preferences.set(appearance.rawValue, forKey: "native.theme")
                 preferences.set(usageAgent, forKey: "native.usageAgent")
                 preferences.set(activityNotify ? "on" : "off", forKey: "native.activityNotify")
@@ -348,6 +371,11 @@ import Observation
                 preferences.set(String(terminalFontThickenStrength), forKey: "native.terminalThickenStrength")
                 preferences.set(terminalDarkTheme, forKey: "native.terminalThemeDark")
                 preferences.set(terminalLightTheme, forKey: "native.terminalThemeLight")
+                // Written only once the key exists somewhere: an untouched install keeps
+                // following the shipped defaults instead of freezing today's pair into prefs.
+                if (settings["terminalKeybinds"] ?? nil) != nil || pendingSettings["terminalKeybinds"] != nil {
+                    preferences.set(TerminalStyle.keybindsSetting(terminalKeybinds), forKey: "native.terminalKeybinds")
+                }
                 if pendingSettings.isEmpty { settingsError = nil }
             } catch { if !Task.isCancelled { settingsError = error.localizedDescription } }
         }

@@ -74,3 +74,52 @@ import Testing
     #expect(themedState.controller.lastConfigurationIssue == nil)
     #expect(themedState.renderedConfig.contains("palette = "))
 }
+
+@Test func terminalStyleRendersKeybindsAndSkipsMalformedOnes() {
+    let defaults = TerminalStyle().resolve()
+    #expect(defaults.configuration.rendered.contains(#"keybind = shift+enter=text:\x1b\r"#))
+    #expect(defaults.configuration.rendered.contains(#"keybind = shift+backspace=text:\x15"#))
+    #expect(defaults.issues.isEmpty)
+
+    var style = TerminalStyle()
+    style.keybinds = ["super+k=text:\\x0c", "nonsense", "=clear_screen", "ctrl+a"]
+    let resolved = style.resolve()
+    #expect(resolved.configuration.rendered.contains("keybind = super+k=text:\\x0c"))
+    #expect(!resolved.configuration.rendered.contains("nonsense"))
+    #expect(resolved.issues.count == 3)
+
+    #expect(TerminalStyle.keybinds(fromSetting: nil) == TerminalStyle.defaultKeybinds)
+    #expect(TerminalStyle.keybinds(fromSetting: "") == [])
+    #expect(TerminalStyle.keybinds(fromSetting: "a=b\n\n c=d ") == ["a=b", "c=d"])
+    #expect(TerminalStyle.keybindsSetting(["a=b", "c=d"]) == "a=b\nc=d")
+    #expect(TerminalStyle.keybindProblem("shift+enter=text:x") == nil)
+    #expect(TerminalStyle.keybindProblem("shift enter=text:x") != nil)
+    #expect(TerminalStyle.keybindProblem("shft+enter=text:x") != nil)
+    #expect(TerminalStyle.keybindProblem("ctrl+shift+a=text:x") == nil)
+    #expect(TerminalStyle().withoutKeybinds.keybinds.isEmpty)
+}
+
+@MainActor @Test func shellStoreKeybindsRefuseMalformedRowsAndRoundTripAnEmptyList() throws {
+    let suite = "shell-keybinds-\(UUID().uuidString)"
+    let preferences = try #require(UserDefaults(suiteName: suite))
+    defer { preferences.removePersistentDomain(forName: suite) }
+
+    let shell = ShellStore(preferences: preferences)
+    #expect(shell.terminalKeybinds == TerminalStyle.defaultKeybinds)
+
+    // A malformed row is refused whole: nothing stored, the reason shown, the list untouched.
+    #expect(shell.setTerminalKeybinds(["a=b", "oops"]) == false)
+    #expect(shell.settingsError?.contains("oops") == true)
+    #expect(shell.terminalKeybinds == TerminalStyle.defaultKeybinds)
+    #expect(preferences.string(forKey: "native.terminalKeybinds") == nil)
+
+    // Re-submitting the stored list clears the stale refusal, even though nothing changes.
+    #expect(shell.setTerminalKeybinds(TerminalStyle.defaultKeybinds))
+    #expect(shell.settingsError?.contains("oops") != true)
+
+    // Removing every binding persists as an empty string, which reads back as none, not defaults.
+    #expect(shell.setTerminalKeybinds([]))
+    #expect(shell.terminalKeybinds.isEmpty)
+    #expect(preferences.string(forKey: "native.terminalKeybinds") == "")
+    #expect(ShellStore(preferences: preferences).terminalKeybinds.isEmpty)
+}

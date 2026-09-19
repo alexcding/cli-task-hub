@@ -68,9 +68,22 @@ final class TerminalSession: Identifiable {
         surfaceGeneration = UUID()
         let generation = surfaceGeneration
         platformView = nil
-        let resolved = style.resolve()
-        styleError = resolved.issues.isEmpty ? nil : resolved.issues.joined(separator: " ")
+        var resolved = style.resolve()
+        var issues = resolved.issues
         surface = TerminalViewState(theme: resolved.theme, terminalConfiguration: resolved.configuration)
+        // A line Ghostty rejects discards the whole config, font and theme included, and the
+        // package quietly falls back to its stock config. Keybinds are the only free-form
+        // input, so drop them and rebuild rather than lose the styling.
+        if let issue = surface.controller.lastConfigurationIssue {
+            if !style.keybinds.isEmpty {
+                resolved = style.withoutKeybinds.resolve()
+                surface = TerminalViewState(theme: resolved.theme, terminalConfiguration: resolved.configuration)
+                issues.append("Ghostty rejected the terminal keybinds, so they are off until fixed in Settings: \(issue)")
+            } else {
+                issues.append(issue)
+            }
+        }
+        styleError = issues.isEmpty ? nil : issues.joined(separator: " ")
         surface.isSurfaceVisible = wasVisible
         pipe = TerminalPipe(onError: { [weak self] text in
             Task { @MainActor in
@@ -116,7 +129,13 @@ final class TerminalSession: Identifiable {
         // theme switch, say — which is the opposite of what happened.
         if resolved.configuration != surface.terminalConfiguration,
            !surface.setTerminalConfiguration(resolved.configuration) {
-            issues.append(surface.controller.lastConfigurationIssue ?? "Could not apply the terminal font.")
+            let issue = surface.controller.lastConfigurationIssue ?? "Could not apply the terminal font."
+            // Same recovery as makeSurface: keep the font and theme, shed the keybinds.
+            if !value.keybinds.isEmpty, surface.setTerminalConfiguration(value.withoutKeybinds.resolve().configuration) {
+                issues.append("Ghostty rejected the terminal keybinds, so they are off until fixed in Settings: \(issue)")
+            } else {
+                issues.append(issue)
+            }
         }
         if resolved.theme != surface.theme, !surface.setTheme(resolved.theme) {
             issues.append(surface.controller.lastConfigurationIssue ?? "Could not apply the terminal theme.")
