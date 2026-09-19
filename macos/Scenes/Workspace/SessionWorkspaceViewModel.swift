@@ -12,6 +12,7 @@ import Observation
     var workflow: WorkflowRunViewModel?
     var appearance: AppAppearance = .system
     var documentFont = CodeFont(size: 12)
+    var editorStyle = EditorStyle()
     var terminalStyle = TerminalStyle()
     var connected = false
     var changingSession = false
@@ -31,7 +32,7 @@ import Observation
 
 enum WorkspaceOperation: Equatable {
     case reveal, openEditor, openGitClient, createSession, openFile
-    case changes, openTerminal, hookSettings, prepareChanges
+    case changes, openTerminal, hookSettings, prepareChanges, toggleEditorPreview
 }
 
 @MainActor protocol WorkspaceServing: AnyObject {
@@ -176,7 +177,7 @@ enum WorkspaceOperation: Equatable {
         }
         for document in context?.documents ?? [] {
             document.presentation = .init(active: visible && showsFiles && document === context?.activeDocument,
-                                           appearance: state.appearance, font: state.documentFont)
+                                           appearance: state.appearance, font: state.documentFont, editor: state.editorStyle)
         }
     }
     func prepareChanges() { if active && showsChanges { perform(.prepareChanges) } }
@@ -210,6 +211,8 @@ enum WorkspaceOperation: Equatable {
         guard active, state.canPresent else { return }
         onAction(.reopen(visit.id))
     }
+    /// The preview beside the code is one app-wide preference, so the button reports out.
+    func toggleEditorPreview() { perform(.toggleEditorPreview) }
     private func perform(_ operation: WorkspaceOperation) {
         guard context != nil else { return }
         onAction(.operation(operation))

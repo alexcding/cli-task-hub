@@ -24,7 +24,7 @@ extension AppViewModel: WorkspaceCoordinating {
         return SessionWorkspaceState(session: session, project: project, terminal: terminals[context.id],
             buildTerminal: terminals["build:\(context.sourceURL)"], build: buildModels[context.id],
             history: historyModels[context.id], diff: diffModels[context.id], workflow: workflowModel(in: context),
-            appearance: shell.appearance, documentFont: shell.font(.diff), terminalStyle: shell.terminalStyle, connected: connection == "Connected",
+            appearance: shell.appearance, documentFont: shell.font(.diff), editorStyle: shell.editorStyle, terminalStyle: shell.terminalStyle, connected: connection == "Connected",
             changingSession: session.map { changingSessions.contains($0.id) } ?? false,
             openingExternal: workspaceLaunch.opening.contains(context.id), canPresent: coordinator.canPresent,
             canCreateSession: canPerform(.newSession), title: title,
@@ -79,6 +79,7 @@ extension AppViewModel: WorkspaceCoordinating {
         case .openFile: viewer.openFile(in: context, directory: state.session?.worktree)
         case .changes: if let session = state.session { showChanges(for: session, context: context) }
         case .openTerminal: openTerminal()
+        case .toggleEditorPreview: shell.setEditorMinimap(!shell.editorStyle.showMinimap)
         case .hookSettings: openWorkflowHookSettings()
         case .prepareChanges: if let session = state.session { prepareChanges(for: session, context: context) }
         }

@@ -73,8 +73,8 @@ actor InstalledCodeFontCatalog: CodeFontCatalog {
 /// that happen to sit near each other. Every row goes through `SettingsRow`/`LabeledContent`, so
 /// the Form owns the alignment.
 ///
-/// The two kinds live in different tabs — the code font under Appearance, the terminal font under
-/// Terminal — so the caller says which to draw.
+/// The two kinds live in different tabs — the code font under Text Editor, the terminal font under
+/// Terminal — so the caller says which to draw. Each tab draws its own themed sample above.
 struct FontSettingsView: View {
     let model: FontSettingsViewModel
     let shell: ShellStore
@@ -111,13 +111,6 @@ struct FontSettingsView: View {
                     // VoiceOver and to `staticTexts[…]` in TaskHubUITests.
                     Text("\(kind.title) size: \(font.size)")
                 }
-                // The sample gets its own full-width row so longer strings are not clipped.
-                Text("let greeting = \"Hello, 日本語 👋\"")
-                    .font(font.family.isEmpty ? .system(size: CGFloat(font.size), design: .monospaced)
-                                              : .custom(font.family, size: CGFloat(font.size)))
-                    .lineLimit(1).truncationMode(.tail)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .foregroundStyle(Theme.textSecondary)
             }
         }
     }

@@ -211,7 +211,7 @@ private struct SessionWorkspaceContextContent: View {
                 ReviewFooter(context: context, diff: model.diff)
             }
         } else if model.mode == .files, let document = context.activeDocument {
-            EditorDocumentView(model: document).id(document.id)
+            EditorDocumentView(model: document, togglePreview: model.toggleEditorPreview).id(document.id)
         } else if model.mode == .browser, let page = context.activePage {
             BrowserPane(page: page, context: context, model: page.controls).id(page.id)
         } else {

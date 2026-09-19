@@ -46,6 +46,10 @@ import Observation
     private(set) var documentCodeFont: CodeFont {
         didSet { if oldValue != documentCodeFont { documentStyleChanged() } }
     }
+    /// The file editor's themes and preview; the code font beside them is `documentCodeFont`.
+    private(set) var editorStyle: EditorStyle {
+        didSet { if oldValue != editorStyle { documentStyleChanged() } }
+    }
     @ObservationIgnored var documentStyleChanged: () -> Void = {}
     @ObservationIgnored var terminalStyleChanged: () -> Void = {}
     private(set) var settingsError: String?
@@ -86,6 +90,14 @@ import Observation
         terminalDarkTheme = preferences.string(forKey: "native.terminalThemeDark") ?? ""
         terminalLightTheme = preferences.string(forKey: "native.terminalThemeLight") ?? ""
         terminalKeybinds = TerminalStyle.keybinds(fromSetting: preferences.string(forKey: "native.terminalKeybinds"))
+        // A saved name this build has no theme for reads as Default, as it does when synced.
+        func savedTheme(_ key: String, dark: Bool) -> String {
+            let name = preferences.string(forKey: "native.\(key)") ?? ""
+            return CodeTheme.has(name, dark: dark) ? name : ""
+        }
+        editorStyle = EditorStyle(darkTheme: savedTheme("editorThemeDark", dark: true),
+                                  lightTheme: savedTheme("editorThemeLight", dark: false),
+                                  showMinimap: preferences.string(forKey: "native.editorMinimap") != "off")
     }
 
     var pendingReviews: [TrayPR] { prs.filter(\.pendingReview) }
@@ -288,6 +300,24 @@ import Observation
             saveSetting(key, value: value)
         }
     }
+    func setEditorTheme(dark: String? = nil, light: String? = nil) {
+        for (value, key, isDark) in [(dark, "editorThemeDark", true), (light, "editorThemeLight", false)] {
+            guard let value, value != (isDark ? editorStyle.darkTheme : editorStyle.lightTheme) else { continue }
+            guard value.isEmpty || CodeTheme.has(value, dark: isDark) else {
+                settingsError = "No editor theme named \(value)."
+                continue
+            }
+            if isDark { editorStyle.darkTheme = value } else { editorStyle.lightTheme = value }
+            preferences.set(value, forKey: "native.\(key)")
+            saveSetting(key, value: value)
+        }
+    }
+    func setEditorMinimap(_ shown: Bool) {
+        guard shown != editorStyle.showMinimap else { return }
+        editorStyle.showMinimap = shown
+        preferences.set(shown ? "on" : "off", forKey: "native.editorMinimap")
+        saveSetting("editorMinimap", value: shown ? "on" : "off")
+    }
 
     private func saveSetting(_ key: String, value: String, debounce: Bool = false) {
         pendingSettings[key] = value
@@ -360,6 +390,12 @@ import Observation
                 if pendingSettings["terminalThemeDark"] == nil { terminalDarkTheme = (settings["terminalThemeDark"] ?? nil) ?? "" }
                 if pendingSettings["terminalThemeLight"] == nil { terminalLightTheme = (settings["terminalThemeLight"] ?? nil) ?? "" }
                 if pendingSettings["terminalKeybinds"] == nil { terminalKeybinds = TerminalStyle.keybinds(fromSetting: settings["terminalKeybinds"] ?? nil) }
+                // A name this build has no theme for reads as Default, so the picker always has a row for it.
+                for (key, dark) in [("editorThemeDark", true), ("editorThemeLight", false)] where pendingSettings[key] == nil {
+                    let stored = (settings[key] ?? nil) ?? "", name = CodeTheme.has(stored, dark: dark) ? stored : ""
+                    if dark { editorStyle.darkTheme = name } else { editorStyle.lightTheme = name }
+                }
+                if pendingSettings["editorMinimap"] == nil { editorStyle.showMinimap = (settings["editorMinimap"] ?? nil) != "off" }
                 preferences.set(appearance.rawValue, forKey: "native.theme")
                 preferences.set(usageAgent, forKey: "native.usageAgent")
                 preferences.set(activityNotify ? "on" : "off", forKey: "native.activityNotify")
@@ -376,6 +412,9 @@ import Observation
                 if (settings["terminalKeybinds"] ?? nil) != nil || pendingSettings["terminalKeybinds"] != nil {
                     preferences.set(TerminalStyle.keybindsSetting(terminalKeybinds), forKey: "native.terminalKeybinds")
                 }
+                preferences.set(editorStyle.darkTheme, forKey: "native.editorThemeDark")
+                preferences.set(editorStyle.lightTheme, forKey: "native.editorThemeLight")
+                preferences.set(editorStyle.showMinimap ? "on" : "off", forKey: "native.editorMinimap")
                 if pendingSettings.isEmpty { settingsError = nil }
             } catch { if !Task.isCancelled { settingsError = error.localizedDescription } }
         }

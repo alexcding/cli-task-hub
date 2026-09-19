@@ -386,7 +386,7 @@ public final class AppViewModel {
     /// Which font size ⌘+ / ⌘− / ⌘0 move. While a Settings tab that shows a size slider is up,
     /// the keys drive that slider so the change is visible where it was asked for.
     private var fontTarget: CodeFontKind? {
-        if selection == .settings && settings?.section == .appearance { return .diff }
+        if selection == .settings && settings?.section == .editor { return .diff }
         if selection == .settings && settings?.section == .terminal { return .term }
         if let context = viewer.active {
             if context.pane == .diff { return .diff }

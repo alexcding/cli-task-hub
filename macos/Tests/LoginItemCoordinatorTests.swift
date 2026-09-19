@@ -52,7 +52,7 @@ private struct LoginActionFonts: CodeFontCatalog {
     root.navigate(to: .settings); model.section = .general
     while login.loading { await Task.yield() }
     #expect(login.canToggle && !login.registered && !login.canOpenSystemSettings)
-    model.section = .appearance
+    model.section = .editor
     callback(.setEnabled(true)); callback(.openSystemSettings)
     #expect(await service.writes.isEmpty)
     model.section = .general
@@ -136,7 +136,7 @@ func loginItemAcceptedMutationDrainsOnStopOrRetirementWithoutAcceptingStaleCallb
     let first = ProjectPageGate(); await service.holdOpen(first)
     login.openSystemSettings(); login.openSystemSettings(); await first.waitForStart()
     #expect(login.openingSettings && !login.canOpenSystemSettings)
-    model.section = .appearance
+    model.section = .editor
     #expect(!login.openingSettings && !login.active)
     model.section = .general
     while login.loading { await Task.yield() }

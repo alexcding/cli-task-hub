@@ -1,4 +1,5 @@
 import AppKit
+import CodeEditSourceEditor
 import CodeEditTextView
 import Foundation
 import Testing
@@ -205,6 +206,30 @@ actor FileFixture: FileDocumentService {
     #expect(textView.isEditable)
     surface.dispose()
     #expect(surface.view == nil)
+}
+
+@Test func codeThemesFallBackToTheDefaultForUnknownOrMismatchedNames() {
+    #expect(CodeTheme.named("Dracula", dark: true).name == "Dracula")
+    // A dark theme is not offered for the light appearance, and an unknown name degrades quietly.
+    #expect(CodeTheme.named("Dracula", dark: false) == CodeTheme.standard(dark: false))
+    #expect(CodeTheme.named("Removed Theme", dark: true) == CodeTheme.standard(dark: true))
+    #expect(EditorStyle(darkTheme: "One Dark", lightTheme: "").theme(dark: true).name == "One Dark")
+    #expect(Set(CodeTheme.names(dark: true)).isDisjoint(with: CodeTheme.names(dark: false)))
+}
+
+@MainActor @Test func codeEditEditorSurfaceAppliesTheStyleItIsGivenBeforeAndAfterLoading() async throws {
+    _ = NSApplication.shared
+    let surface = CodeEditEditorSurface()
+    surface.setStyle(EditorStyle(darkTheme: "Dracula", lightTheme: "Solarized Light", showMinimap: false))
+    try await surface.load(.init(content: "let a = 1\n", readOnly: false, revision: String(repeating: "a", count: 64)),
+                           path: "/tmp/Fixture.swift")
+    let controller = try #require(surface.view?.descendantSourceTextView?.delegate as? TextViewController)
+    #expect(!controller.configuration.peripherals.showMinimap)
+    let background = controller.configuration.appearance.theme.background
+    #expect([CodeTheme.color(0x282A36), CodeTheme.color(0xFDF6E3)].contains(background))
+    surface.setStyle(EditorStyle(showMinimap: true))
+    #expect(controller.configuration.peripherals.showMinimap)
+    surface.dispose()
 }
 
 private extension NSView {

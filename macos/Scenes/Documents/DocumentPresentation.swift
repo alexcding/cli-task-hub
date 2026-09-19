@@ -6,4 +6,5 @@ struct DocumentPresentation: Equatable {
     var active = false
     var appearance = AppAppearance.system
     var font = CodeFont(size: 12)
+    var editor = EditorStyle()
 }

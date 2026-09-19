@@ -26,6 +26,7 @@ import CodeEditSourceEditor
     private var savedVersion = 1
     private var readOnly = false
     private var suppressChanges = false
+    private var style = EditorStyle()
     private var font = CodeFont(size: 12)
 
     func load(_ value: FileDocumentSnapshot, path: String) async throws {
@@ -42,13 +43,14 @@ import CodeEditSourceEditor
             string: value.content,
             language: CodeLanguage.detectLanguageFrom(url: URL(fileURLWithPath: path)),
             configuration: SourceEditorConfiguration(
-                appearance: .init(theme: Self.theme(for: NSApp.effectiveAppearance),
+                appearance: .init(theme: Self.theme(style, for: NSApp.effectiveAppearance),
                                   font: resolvedFont(),
                                   wrapLines: false),
                 behavior: .init(isEditable: !readOnly),
                 // Explicit zeros turn automatic insetting off: this editor sits under a tab bar, not
                 // the title bar the scroll view would otherwise inset itself for.
-                layout: .init(contentInsets: NSEdgeInsets(top: 0, left: 0, bottom: 0, right: 0))
+                layout: .init(contentInsets: NSEdgeInsets(top: 0, left: 0, bottom: 0, right: 0)),
+                peripherals: .init(showMinimap: style.showMinimap)
             ),
             cursorPositions: [],
             coordinators: [coordinator]
@@ -116,7 +118,7 @@ import CodeEditSourceEditor
 
     private func applyTheme() {
         guard let controller, let view else { return }
-        let theme = Self.theme(for: view.effectiveAppearance)
+        let theme = Self.theme(style, for: view.effectiveAppearance)
         guard controller.configuration.appearance.theme != theme else { return }
         controller.configuration.appearance.theme = theme
     }
@@ -152,8 +154,11 @@ import CodeEditSourceEditor
         NSApp.postEvent(event, atStart: true)
     }
 
-    func toggleMinimap() {
-        controller?.configuration.peripherals.showMinimap.toggle()
+    func setStyle(_ value: EditorStyle) {
+        style = value
+        applyTheme()
+        guard let controller, controller.configuration.peripherals.showMinimap != value.showMinimap else { return }
+        controller.configuration.peripherals.showMinimap = value.showMinimap
     }
 
     func dispose() {
@@ -170,38 +175,37 @@ import CodeEditSourceEditor
         saveRequested = {}
     }
 
-    // The package colours text once per theme, so tokens are resolved for the appearance in force
+    // The package colours text once per theme, so colours are resolved for the appearance in force
     // rather than handed over as dynamic colours.
-    private static func theme(for appearance: NSAppearance) -> EditorTheme {
+    private static func theme(_ style: EditorStyle, for appearance: NSAppearance) -> EditorTheme {
+        let dark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        let theme = style.theme(dark: dark)
         func resolve(_ color: NSColor) -> NSColor {
             var resolved = color
-            appearance.performAsCurrentDrawingAppearance {
-                resolved = color.usingColorSpace(.sRGB) ?? color
-            }
+            appearance.performAsCurrentDrawingAppearance { resolved = color.usingColorSpace(.sRGB) ?? color }
             return resolved
         }
-        func token(_ color: ThemeColor, italic: Bool = false) -> EditorTheme.Attribute {
-            .init(color: resolve(color.nsColor), italic: italic)
+        func token(_ rgb: UInt32, italic: Bool = false) -> EditorTheme.Attribute {
+            .init(color: CodeTheme.color(rgb), italic: italic)
         }
-        let palette = Theme.palette
-        let text = EditorTheme.Attribute(color: resolve(.textColor))
+        let text = token(theme.text)
         return EditorTheme(
             text: text,
-            insertionPoint: resolve(.textColor),
-            invisibles: token(palette.textTertiary),
-            background: resolve(.textBackgroundColor),
-            lineHighlight: resolve(palette.surfaceHover.nsColor),
-            selection: resolve(.selectedTextBackgroundColor),
-            keywords: token(palette.syntaxKeyword),
-            commands: token(palette.syntaxFunction),
-            types: token(palette.syntaxFunction),
-            attributes: token(palette.syntaxKeyword),
+            insertionPoint: text.color,
+            invisibles: token(theme.comment),
+            background: theme.background.map(CodeTheme.color) ?? resolve(.textBackgroundColor),
+            lineHighlight: CodeTheme.color(theme.selection).withAlphaComponent(0.35),
+            selection: CodeTheme.color(theme.selection),
+            keywords: token(theme.keyword),
+            commands: token(theme.function),
+            types: token(theme.type),
+            attributes: token(theme.keyword),
             variables: text,
-            values: token(palette.syntaxNumber),
-            numbers: token(palette.syntaxNumber),
-            strings: token(palette.syntaxString),
-            characters: token(palette.syntaxString),
-            comments: token(palette.syntaxComment, italic: true)
+            values: token(theme.number),
+            numbers: token(theme.number),
+            strings: token(theme.string),
+            characters: token(theme.string),
+            comments: token(theme.comment, italic: true)
         )
     }
 }

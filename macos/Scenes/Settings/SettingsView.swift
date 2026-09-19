@@ -18,8 +18,8 @@ struct SettingsView: View {
             }
             switch model.section {
             case .general: general
-            case .appearance: appearance
             case .terminal: TerminalSettingsView(fonts: model.fonts, shell: shell)
+            case .editor: EditorSettingsView(fonts: model.fonts, shell: shell)
             case .clis: clis
             case .system: system
             }
@@ -42,6 +42,13 @@ struct SettingsView: View {
     // MARK: - General
 
     @ViewBuilder private var general: some View {
+            Section("Appearance") {
+                SettingsRow(title: "Appearance") {
+                    Picker("Theme", selection: Binding(get: { shell.appearance }, set: shell.setAppearance)) {
+                        ForEach(AppAppearance.allCases) { Text($0.title).tag($0) }
+                    }.labelsHidden().accessibilityIdentifier("settings-theme")
+                }
+            }
             LoginItemView(model: model.loginItem)
             Section("Default agent") {
                 SettingsRow(title: "New session agent") {
@@ -77,6 +84,10 @@ struct SettingsView: View {
                 }
             }
             browser
+            // Appearance, the agent and the git client all save through the shell store.
+            if let error = shell.settingsError {
+                Section { Text(error).foregroundStyle(Theme.danger) }
+            }
     }
 
     /// One row per scope; each button asks first because both clears are immediate and cannot
@@ -103,23 +114,6 @@ struct SettingsView: View {
         } message: { scope in
             Text(scope == .history ? "Removes every visited page from the start page and address suggestions."
                                    : "Removes cookies, caches and site storage for the embedded browser. Open pages will be signed out.")
-        }
-    }
-
-    // MARK: - Appearance
-
-    @ViewBuilder private var appearance: some View {
-            Section("Theme") {
-                SettingsRow(title: "Appearance") {
-                    Picker("Theme", selection: Binding(get: { shell.appearance }, set: shell.setAppearance)) {
-                        ForEach(AppAppearance.allCases) { Text($0.title).tag($0) }
-                    }.labelsHidden().accessibilityIdentifier("settings-theme")
-                }
-            }
-            // The terminal font lives under Terminal, beside the rest of the surface's settings.
-            FontSettingsView(model: model.fonts, shell: shell, kinds: [.diff])
-        if let error = shell.settingsError {
-            Section { Text(error).foregroundStyle(Theme.danger) }
         }
     }
 

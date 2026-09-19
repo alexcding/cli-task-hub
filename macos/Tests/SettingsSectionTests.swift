@@ -36,8 +36,8 @@ private actor SectionFontCatalog: CodeFontCatalog {
     #expect(await fonts.reads == 0)
     #expect(await clis.probes == 0)
     #expect(runtime.activations == 1)
-    // Appearance owns the code font picker and nothing else.
-    model.section = .appearance
+    // Text Editor owns the code font picker.
+    model.section = .editor
     while model.fonts.loading { await Task.yield() }
     #expect(await fonts.reads == 1)
     #expect(await login.reads == 1)
@@ -51,7 +51,7 @@ private actor SectionFontCatalog: CodeFontCatalog {
     while await resources.calls == 0 { await Task.yield() }
     #expect(model.diagnostics.loading && model.resources.loading)
     // Leaving System hides both, so a late inspector response is discarded, not surfaced.
-    model.section = .appearance
+    model.section = .editor
     #expect(!model.diagnostics.loading && !model.resources.loading)
     await diagnostics.complete(1, with: .failure(BackendError.operation("Hidden response")))
     await resources.complete(.init(processes: []))
@@ -84,15 +84,15 @@ private actor SectionFontCatalog: CodeFontCatalog {
     let catalog = SectionFontCatalog(), gate = ProjectPageGate()
     await catalog.hold(gate)
     let model = NativeSettingsFeatureFactory(desktop: ProjectPageActions(), copy: { _ in }, loginItem: SectionLoginService(), fontCatalog: catalog).settings()
-    model.section = .appearance
+    model.section = .editor
     model.setActive(true); await gate.waitForStart()
     model.section = .system
     #expect(!model.fonts.loading)
-    model.section = .appearance
+    model.section = .editor
     while model.fonts.loading { await Task.yield() }
     #expect(model.fonts.families == ["Font 2"])
     await gate.finish()
-    model.section = .system; model.section = .appearance
+    model.section = .system; model.section = .editor
     while model.fonts.loading { await Task.yield() }
     #expect(model.fonts.families == ["Font 3"])
     await model.stop()

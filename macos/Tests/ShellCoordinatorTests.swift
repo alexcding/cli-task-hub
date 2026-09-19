@@ -110,6 +110,33 @@ private actor ControlledShellData: ShellDataServing {
     await shell.stop()
 }
 
+@MainActor @Test func shellEditorStyleSyncsSavesAndReadsUnknownThemesAsDefault() async throws {
+    let suite = "shell-editor-style-\(UUID().uuidString)"
+    let preferences = try #require(UserDefaults(suiteName: suite))
+    defer { preferences.removePersistentDomain(forName: suite) }
+    // A dark theme saved for the light appearance, and a name no build has.
+    preferences.set("Dracula", forKey: "native.editorThemeLight")
+    preferences.set("Removed Theme", forKey: "native.editorThemeDark")
+    let shell = ShellStore(preferences: preferences), service = ControlledShellData()
+    #expect(shell.editorStyle == EditorStyle())
+    var changes = 0
+    shell.documentStyleChanged = { changes += 1 }
+    shell.connect(service)
+    try await shellEventually { await service.reads == 1 }
+    await service.finish(["editorThemeDark": "Dracula", "editorThemeLight": "Dracula Pro", "editorMinimap": "off"])
+    try await shellEventually { shell.editorStyle.darkTheme == "Dracula" }
+    #expect(shell.editorStyle == EditorStyle(darkTheme: "Dracula", lightTheme: "", showMinimap: false))
+    #expect(preferences.string(forKey: "native.editorMinimap") == "off")
+    #expect(changes > 0)
+    shell.setEditorTheme(light: "Nord") // Dark only: refused, and said so.
+    #expect(shell.editorStyle.lightTheme == "" && shell.settingsError != nil)
+    shell.setEditorTheme(light: "One Light"); shell.setEditorMinimap(true)
+    #expect(shell.editorStyle == EditorStyle(darkTheme: "Dracula", lightTheme: "One Light", showMinimap: true))
+    #expect(preferences.string(forKey: "native.editorThemeLight") == "One Light")
+    try await shellEventually { await service.writes.map(\.0).contains("editorMinimap") }
+    await shell.stop()
+}
+
 @MainActor @Test func shellOfflineEditsSurviveFailedWritesAndOlderSnapshot() async throws {
     let suite = "shell-offline-\(UUID().uuidString)"
     let preferences = try #require(UserDefaults(suiteName: suite))

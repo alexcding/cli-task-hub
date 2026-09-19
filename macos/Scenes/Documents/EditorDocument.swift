@@ -52,13 +52,13 @@ struct EditorBuffer: Codable, Sendable {
     func setFont(_ value: CodeFont)
     func focus(line: Int, column: Int)
     func find()
-    /// Shows or hides the code preview beside the text; a surface without one ignores it.
-    func toggleMinimap()
+    /// The code theme and the preview beside the text; a surface without them ignores it.
+    func setStyle(_ value: EditorStyle)
     func dispose()
 }
 
 extension EditorSurface {
-    func toggleMinimap() {}
+    func setStyle(_ value: EditorStyle) {}
 }
 
 // Swift owns the document identity and revision; the editor owns its buffer and
@@ -69,6 +69,7 @@ extension EditorSurface {
             guard oldValue != presentation else { return }
             if oldValue.appearance != presentation.appearance { setAppearance(presentation.appearance) }
             if oldValue.font != presentation.font { setFont(presentation.font) }
+            if oldValue.editor != presentation.editor { setStyle(presentation.editor) }
             if oldValue.active != presentation.active {
                 if presentation.active { show(appearance: presentation.appearance) } else { hide() }
             }
@@ -95,6 +96,7 @@ extension EditorSurface {
     @ObservationIgnored private var generation = UUID()
     @ObservationIgnored private var appearance = AppAppearance.system
     @ObservationIgnored private var font = CodeFont(size: 12)
+    @ObservationIgnored private var style = EditorStyle()
     @ObservationIgnored private var visible = false
     @ObservationIgnored private var pendingLocation: DocumentLocation?
 
@@ -135,6 +137,7 @@ extension EditorSurface {
                 revision = value.revision; readOnly = value.readOnly; loaded = true
                 editor.setAppearance(self.appearance)
                 editor.setFont(self.font)
+                editor.setStyle(self.style)
                 if visible, let location = pendingLocation { focus(line: location.line, column: location.column) }
                 if !visible { hide() }
             } catch {
@@ -216,10 +219,7 @@ extension EditorSurface {
     func setAppearance(_ value: AppAppearance) { appearance = value; surface?.setAppearance(value) }
     func setFont(_ value: CodeFont) { font = value; surface?.setFont(value) }
     func find() { surface?.find() }
-    func toggleMinimap() {
-        guard loaded, !closing else { return }
-        surface?.toggleMinimap()
-    }
+    func setStyle(_ value: EditorStyle) { style = value; surface?.setStyle(value) }
     func focus(line: Int = 1, column: Int = 1) {
         pendingLocation = .init(path: record.path, line: line, column: column)
         if loaded, visible { surface?.focus(line: line, column: column); pendingLocation = nil }
