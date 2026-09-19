@@ -20,14 +20,13 @@ import CodeEditSourceEditor
 
     private var controller: TextViewController?
     private var coordinator: ChangeCoordinator?
-    private var keyMonitor: Any?
     private var appearanceObservation: NSKeyValueObservation?
     private var version = 1
     private var savedVersion = 1
     private var readOnly = false
     private var suppressChanges = false
-    private var style = EditorStyle()
     private var font = CodeFont(size: 12)
+    private var style = EditorStyle()
 
     func load(_ value: FileDocumentSnapshot, path: String) async throws {
         let coordinator = ChangeCoordinator()
@@ -75,17 +74,33 @@ import CodeEditSourceEditor
         installSaveShortcut()
     }
 
-    // The package handles its own shortcuts in a local monitor and has no save hook.
+    // The package handles its own shortcuts in a local monitor and has no save hook. One monitor
+    // serves every open file: it is installed with the first surface and removed with the last.
+    private static var saveMonitor: Any?
+    private static var live: [ObjectIdentifier: () -> CodeEditEditorSurface?] = [:]
+
     private func installSaveShortcut() {
-        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            guard let self, let textView = self.controller?.textView,
-                  textView.window?.isKeyWindow == true,
-                  textView.window?.firstResponder === textView,
-                  event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
-                  event.charactersIgnoringModifiers?.lowercased() == "s" else { return event }
-            self.saveRequested()
+        Self.live[ObjectIdentifier(self)] = { [weak self] in self }
+        guard Self.saveMonitor == nil else { return }
+        Self.saveMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            guard event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
+                  event.charactersIgnoringModifiers?.lowercased() == "s",
+                  let surface = Self.live.values.lazy.compactMap({ $0() }).first(where: \.isFocused) else { return event }
+            surface.saveRequested()
             return nil
         }
+    }
+
+    private func removeSaveShortcut() {
+        Self.live[ObjectIdentifier(self)] = nil
+        guard Self.live.isEmpty, let monitor = Self.saveMonitor else { return }
+        NSEvent.removeMonitor(monitor)
+        Self.saveMonitor = nil
+    }
+
+    private var isFocused: Bool {
+        guard let textView = controller?.textView, let window = textView.window else { return false }
+        return window.isKeyWindow && window.firstResponder === textView
     }
 
     func snapshot(freeze: Bool) async throws -> EditorBuffer {
@@ -162,8 +177,7 @@ import CodeEditSourceEditor
     }
 
     func dispose() {
-        if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
-        keyMonitor = nil
+        removeSaveShortcut()
         appearanceObservation = nil
         coordinator?.destroy()
         coordinator = nil
