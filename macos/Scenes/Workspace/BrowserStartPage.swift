@@ -1,126 +1,114 @@
 import SwiftUI
 
-/// What a blank tab shows in place of a web view, one section at a time: the bookmarks as icon
-/// tiles, or every page visited in any panel as a searchable list. There is one history, shared
-/// by every panel. Clicking either loads it in this tab.
+/// What a blank tab shows in place of a web view: the bookmarks as icon tiles, then the newest
+/// pages visited in any panel as a list, as many as fit without scrolling. There is one history,
+/// shared by every panel. Clicking either loads it in this tab.
 struct BrowserStartPage: View {
-    enum Section: String, CaseIterable {
-        case bookmarks = "Bookmarks", history = "History"
-    }
-
     let context: WorkspaceContext
     let controls: BrowserControlsViewModel
-    /// The section last chosen, in any tab.
-    @AppStorage("browser.startPageSection") private var storedSection = Section.bookmarks
-    /// The section this tab shows; nil until it appears and reads the stored choice.
-    @State private var section: Section?
-    @State private var query = ""
-    @State private var confirmingClear = false
+    /// The full-history screen replaces the start page in this tab until Back is pressed.
+    @State private var showingAll = false
+    /// Bookmarks fold to `bookmarkRows` rows of however many tiles the pane's width fits.
+    @State private var bookmarkColumns = 6
+    @State private var showingAllBookmarks = false
+    /// The pane's height and where the history rows start in the page, which together say
+    /// how many rows fit without scrolling.
+    @State private var viewportHeight: CGFloat = 0
+    @State private var historyTop: CGFloat = 0
 
-    private var bookmarks: [BrowserBookmark] { context.bookmarks?.bookmarks ?? [] }
+    static let bookmarkRows = 2
+    static let tileMinimum: CGFloat = 92, tileSpacing: CGFloat = 8
+    static let pagePadding: CGFloat = 24, rowSpacing: CGFloat = 2
 
-    private var entries: [BrowserHistoryEntry] {
-        guard let history = context.globalHistory else { return [] }
-        return query.trimmingCharacters(in: .whitespaces).isEmpty ? history.entries : history.matching(query, limit: Int.max)
+    /// How many pages the start page shows before deferring to the full history: as many
+    /// rows as fit below the bookmarks, and a few even when none do.
+    private var historyLimit: Int {
+        let room = viewportHeight - historyTop - Self.pagePadding + Self.rowSpacing
+        return min(max(3, Int(room / (StartPageRow.height + Self.rowSpacing))), 30)
+    }
+
+    /// One history for the whole app: the newest pages visited in any panel, without the
+    /// bookmarked ones, so nothing appears twice on the page.
+    private func recent(excluding bookmarks: [BrowserBookmark]) -> [BrowserHistoryEntry] {
+        context.globalHistory?.recent(excluding: Set(bookmarks.map(\.url)), limit: historyLimit) ?? []
     }
 
     var body: some View {
-        let section = section ?? storedSection
-        VStack(alignment: .leading, spacing: 12) {
-            CapsulePicker(options: Section.allCases.map { ($0.rawValue, $0) },
-                          selection: Binding(get: { section }, set: { self.section = $0; storedSection = $0 }))
-            .frame(maxWidth: .infinity)
-            .accessibilityIdentifier("start-page-section")
-            .overlay(alignment: .trailing) { if section == .history { historyMenu } }
-            if section == .history { searchField }
-            switch section {
-            case .bookmarks: bookmarkTiles
-            case .history: historyList
-            }
-        }
-        .padding(24)
-        .readableColumn()
-        .frame(maxHeight: .infinity, alignment: .top)
-        .background(Theme.paneBackground)
-        .onAppear {
-            // With nothing bookmarked yet the history is the useful page; the stored choice stands.
-            if self.section == nil { self.section = bookmarks.isEmpty && !entries.isEmpty ? .history : storedSection }
-        }
-    }
-
-    @ViewBuilder private var bookmarkTiles: some View {
-        if bookmarks.isEmpty {
-            placeholder("No bookmarks yet", hint: "Pages you bookmark appear here.")
-        } else {
-            ScrollView {
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 92, maximum: 112), spacing: 8, alignment: .top)], spacing: 12) {
-                    ForEach(bookmarks) { bookmark in
-                        StartPageTile(record: WebPageRecord(id: bookmark.url, url: bookmark.url, title: bookmark.title),
-                                      open: { open(bookmark.url) }, remove: { context.bookmarks?.remove(url: bookmark.url) })
-                    }
-                }
-                .accessibilityLabel("Bookmarks")
-            }
-        }
-    }
-
-    @ViewBuilder private var historyList: some View {
-        if entries.isEmpty {
-            if query.isEmpty {
-                placeholder("No history yet", hint: "Pages you visit appear here.")
+        Group {
+            if showingAll, let history = context.globalHistory {
+                BrowserHistoryScreen(history: history, back: { showingAll = false }, open: open)
             } else {
-                placeholder("No pages match \u{201C}\(query)\u{201D}", hint: nil)
+                startPage
             }
-        } else {
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 2) {
-                    ForEach(entries) { entry in
-                        StartPageRow(entry: entry, open: { open(entry.url) }, remove: { context.globalHistory?.remove(url: entry.url) })
+        }
+        .background(Theme.paneBackground)
+    }
+
+    private var startPage: some View {
+        let bookmarks = context.bookmarks?.bookmarks ?? [], recent = recent(excluding: bookmarks)
+        return ScrollView {
+            if recent.isEmpty && bookmarks.isEmpty {
+                VStack(spacing: 5) {
+                    Text("No bookmarks or history yet").font(Theme.Typography.emptyTitle).foregroundStyle(Theme.textSecondary)
+                    Text("Pages you bookmark or visit appear here.").font(Theme.Typography.emptyHint).foregroundStyle(Theme.textTertiary)
+                }
+                .frame(maxWidth: .infinity).padding(.top, 80)
+            } else {
+                VStack(alignment: .leading, spacing: 12) {
+                    if !bookmarks.isEmpty {
+                        let folded = bookmarkColumns * Self.bookmarkRows
+                        HStack {
+                            Text("Bookmarks").font(.title3.weight(.semibold)).foregroundStyle(Theme.textSecondary)
+                            Spacer()
+                            if bookmarks.count > folded {
+                                Button(showingAllBookmarks ? "Show Less" : "Show More") { showingAllBookmarks.toggle() }
+                                    .buttonStyle(.link)
+                                    .accessibilityIdentifier("toggle-all-bookmarks")
+                            }
+                        }
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: Self.tileMinimum, maximum: 112), spacing: Self.tileSpacing, alignment: .top)], spacing: 12) {
+                            ForEach(showingAllBookmarks ? bookmarks : Array(bookmarks.prefix(folded))) { bookmark in
+                                StartPageTile(record: WebPageRecord(id: bookmark.url, url: bookmark.url, title: bookmark.title),
+                                              open: { open(bookmark.url) }, remove: { context.bookmarks?.remove(url: bookmark.url) })
+                            }
+                        }
+                        .onGeometryChange(for: Int.self) { proxy in
+                            max(1, Int((proxy.size.width + Self.tileSpacing) / (Self.tileMinimum + Self.tileSpacing)))
+                        } action: { bookmarkColumns = $0 }
+                        .accessibilityLabel("Bookmarks")
+                    }
+                    if context.globalHistory?.entries.isEmpty == false {
+                        Button { showingAll = true } label: {
+                            HStack(spacing: 6) {
+                                Text("History").font(.title3.weight(.semibold))
+                                Image(systemName: "chevron.right").font(.body.weight(.semibold))
+                            }
+                            .foregroundStyle(Theme.textSecondary)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.top, bookmarks.isEmpty ? 0 : 16)
+                        .help("Show All History")
+                        .accessibilityLabel("Show All History")
+                        .accessibilityIdentifier("show-all-history")
+                        // Every visited page may be bookmarked: the heading still leads to the full history.
+                        if !recent.isEmpty {
+                            LazyVStack(alignment: .leading, spacing: Self.rowSpacing) {
+                                ForEach(recent) { entry in
+                                    StartPageRow(entry: entry) { open(entry.url) }
+                                }
+                            }
+                            .accessibilityLabel("History")
+                            .onGeometryChange(for: CGFloat.self) { $0.frame(in: .named("startPage")).minY } action: { historyTop = $0 }
+                        }
                     }
                 }
-                .accessibilityLabel("History")
+                .padding(Self.pagePadding)
+                .coordinateSpace(name: "startPage")
+                .readableColumn()
             }
         }
-    }
-
-    private var searchField: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "magnifyingglass").foregroundStyle(Theme.textTertiary)
-            TextField("Search history", text: $query).textFieldStyle(.plain)
-                .accessibilityIdentifier("history-search")
-            if !query.isEmpty {
-                Button("Clear", systemImage: "xmark.circle.fill") { query = "" }
-                    .labelStyle(.iconOnly).buttonStyle(.plain).foregroundStyle(Theme.textTertiary)
-            }
-        }
-        .padding(.horizontal, 14)
-        .frame(height: Theme.Size.largeControl + 6)
-        .background(Theme.surfaceHover, in: Capsule())
-        .overlay(Capsule().strokeBorder(Theme.border, lineWidth: Theme.Size.hairline))
-    }
-
-    /// The rarely used, destructive history actions, kept out of the way behind an ellipsis.
-    private var historyMenu: some View {
-        Menu("History Options", systemImage: "ellipsis") {
-            Button("Clear History…", role: .destructive) { confirmingClear = true }
-                .disabled(context.globalHistory?.entries.isEmpty != false)
-        }
-        .labelStyle(.iconOnly).menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
-        .foregroundStyle(Theme.textSecondary)
-        .accessibilityIdentifier("history-options")
-        .confirmationDialog("Clear all browsing history?", isPresented: $confirmingClear, titleVisibility: .visible) {
-            Button("Clear History", role: .destructive) { context.globalHistory?.clear() }
-        } message: {
-            Text("Every page visited in any panel is forgotten. Open tabs stay open.")
-        }
-    }
-
-    private func placeholder(_ title: String, hint: String?) -> some View {
-        VStack(spacing: 5) {
-            Text(title).font(Theme.Typography.emptyTitle).foregroundStyle(Theme.textSecondary)
-            if let hint { Text(hint).font(Theme.Typography.emptyHint).foregroundStyle(Theme.textTertiary) }
-        }
-        .frame(maxWidth: .infinity).padding(.top, 60)
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { viewportHeight = $0 }
     }
 
     private func open(_ url: String) {
@@ -131,13 +119,91 @@ struct BrowserStartPage: View {
     }
 }
 
+/// Every page visited in any panel, newest first, with a search field that filters by title
+/// or address. Reached from the start page's History heading.
+private struct BrowserHistoryScreen: View {
+    let history: BrowserHistoryStore
+    let back: () -> Void
+    let open: (String) -> Void
+    @State private var query = ""
+    @FocusState private var searching: Bool
+    @State private var backHovering = false
+    @State private var confirmingClear = false
+
+    private var entries: [BrowserHistoryEntry] {
+        query.trimmingCharacters(in: .whitespaces).isEmpty ? history.entries : history.matching(query, limit: Int.max)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 12) {
+                Button(action: back) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "chevron.left").font(.body.weight(.semibold))
+                        Text("History").font(.title3.weight(.semibold))
+                    }
+                    .foregroundStyle(backHovering ? Color.primary : Theme.textSecondary)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .onHover { backHovering = $0 }
+                .help("Back to the start page")
+                .accessibilityLabel("Back to start page")
+                Spacer(minLength: 8)
+                HStack(spacing: 6) {
+                    Image(systemName: "magnifyingglass").foregroundStyle(Theme.textTertiary)
+                    TextField("Search history", text: $query).textFieldStyle(.plain).focused($searching)
+                        .accessibilityIdentifier("history-search")
+                    if !query.isEmpty {
+                        Button("Clear", systemImage: "xmark.circle.fill") { query = "" }
+                            .labelStyle(.iconOnly).buttonStyle(.plain).foregroundStyle(Theme.textTertiary)
+                    }
+                }
+                .padding(.horizontal, 12)
+                .frame(maxWidth: 280).frame(height: Theme.Size.largeControl)
+                .background(Theme.surfaceHover, in: Capsule())
+                .overlay(Capsule().strokeBorder(Theme.border, lineWidth: Theme.Size.hairline))
+                Button("Clear History") { confirmingClear = true }
+                    .controlSize(.large)
+                    .disabled(history.entries.isEmpty)
+                    .accessibilityIdentifier("clear-history")
+                    .confirmationDialog("Clear all browsing history?", isPresented: $confirmingClear, titleVisibility: .visible) {
+                        Button("Clear History", role: .destructive) { history.clear() }
+                    } message: {
+                        Text("Every page visited in any panel is forgotten. Open tabs stay open.")
+                    }
+            }
+            if entries.isEmpty {
+                Text(query.isEmpty ? "No history yet" : "No pages match \u{201C}\(query)\u{201D}")
+                    .font(Theme.Typography.emptyTitle).foregroundStyle(Theme.textSecondary)
+                    .frame(maxWidth: .infinity).padding(.top, 60)
+            } else {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 2) {
+                        ForEach(entries) { entry in
+                            StartPageRow(entry: entry, open: { open(entry.url) }, remove: { history.remove(url: entry.url) })
+                        }
+                    }
+                    .accessibilityLabel("All history")
+                }
+            }
+        }
+        .padding(24)
+        .readableColumn()
+        .onAppear { searching = true }
+    }
+}
+
 /// One line of the history list: favicon, title, host and when it was last visited.
 private struct StartPageRow: View {
     let entry: BrowserHistoryEntry
     let open: () -> Void
-    /// Forgets this page, from the row's delete button or its context menu.
+    /// Forgets this page. Only the full-history screen offers it; the start page list does not.
     var remove: (() -> Void)? = nil
     @State private var hovering = false
+
+    /// A 24pt favicon inside the row's vertical padding; the start page counts rows by it.
+    static let height: CGFloat = 44
 
     private var visited: String? {
         guard entry.visited > .distantPast else { return nil }
@@ -162,7 +228,7 @@ private struct StartPageRow: View {
                         .accessibilityLabel("Remove \(entry.displayTitle) from history")
                 }
             }
-            .padding(.horizontal, 12).padding(.vertical, 10)
+            .padding(.horizontal, 12).frame(height: Self.height)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(hovering ? Theme.surfaceHover : .clear, in: RoundedRectangle(cornerRadius: 8))
             .contentShape(RoundedRectangle(cornerRadius: 8))
