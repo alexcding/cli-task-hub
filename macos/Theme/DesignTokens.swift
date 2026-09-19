@@ -48,6 +48,7 @@ struct ThemePalette: Sendable {
     let warn, warnBackground: ThemeColor
     let danger, dangerBackground: ThemeColor
     let merged, mergedBackground: ThemeColor
+    let syntaxKeyword, syntaxString, syntaxComment, syntaxNumber, syntaxFunction: ThemeColor
 }
 
 extension ThemePalette {
@@ -66,7 +67,12 @@ extension ThemePalette {
         danger: .init(light: 0xDC2626, dark: 0xF87171),
         dangerBackground: .init(light: 0xFEF2F2, dark: 0x2A1A1A),
         merged: .init(light: 0x7C3AED, dark: 0xA78BFA),
-        mergedBackground: .init(light: 0xF5F3FF, dark: 0x241D33)
+        mergedBackground: .init(light: 0xF5F3FF, dark: 0x241D33),
+        syntaxKeyword: .init(light: 0xCF222E, dark: 0xFF7B72),
+        syntaxString: .init(light: 0x0A3069, dark: 0xA5D6FF),
+        syntaxComment: .init(light: 0x6E7781, dark: 0x8B949E),
+        syntaxNumber: .init(light: 0x0550AE, dark: 0x79C0FF),
+        syntaxFunction: .init(light: 0x8250DF, dark: 0xD2A8FF)
     )
 }
 

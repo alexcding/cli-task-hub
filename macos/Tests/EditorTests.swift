@@ -1,4 +1,5 @@
 import AppKit
+import CodeEditTextView
 import Foundation
 import Testing
 
@@ -187,26 +188,29 @@ actor FileFixture: FileDocumentService {
     #expect(restored.visits.map(\.title) == context.visits.map(\.title))
 }
 
-@MainActor @Test func nativeEditorSurfaceLoadsEditsAndTracksSavedVersions() async throws {
+@MainActor @Test func codeEditEditorSurfaceLoadsEditsAndTracksSavedVersions() async throws {
     _ = NSApplication.shared
-    let surface = NativeEditorSurface()
+    let surface = CodeEditEditorSurface()
     try await surface.load(.init(content: "let title = \"Unicode 🦊\"\n", readOnly: false,
                                  revision: String(repeating: "a", count: 64)), path: "/tmp/Fixture.swift")
     let initial = try await surface.snapshot(freeze: false)
     #expect(initial.content == "let title = \"Unicode 🦊\"\n" && !initial.dirty)
-    let textView = try #require(surface.view?.descendantTextView)
-    textView.string += "// edited\n"
-    textView.didChangeText()
-    let edited = try await surface.snapshot(freeze: false)
+    let textView = try #require(surface.view?.descendantSourceTextView)
+    textView.replaceCharacters(in: NSRange(location: textView.string.utf16.count, length: 0), with: "// edited\n")
+    let edited = try await surface.snapshot(freeze: true)
     #expect(edited.dirty && edited.content.hasSuffix("// edited\n"))
+    #expect(!textView.isEditable) // Frozen while the save is in flight.
     #expect(try await surface.acknowledge(version: edited.version) == false)
+    try await surface.unfreeze()
+    #expect(textView.isEditable)
     surface.dispose()
+    #expect(surface.view == nil)
 }
 
 private extension NSView {
-    var descendantTextView: NSTextView? {
-        if let text = self as? NSTextView { return text }
-        return subviews.lazy.compactMap(\.descendantTextView).first
+    var descendantSourceTextView: TextView? {
+        if let text = self as? TextView { return text }
+        return subviews.lazy.compactMap(\.descendantSourceTextView).first
     }
 }
 

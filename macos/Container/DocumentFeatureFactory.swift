@@ -31,7 +31,7 @@ extension DocumentFeatureFactory {
     func editorService(api: APIClient) -> any FileDocumentService { APIFileDocumentService(api: api) }
     func fileSearch() -> FileSearchViewModel { FileSearchViewModel() }
     func fileSearchService(api: APIClient) -> any FileSearchService { APIFileSearchService(api: api) }
-    func editorSurface(baseURL: URL) -> any EditorSurface { NativeEditorSurface() }
+    func editorSurface(baseURL: URL) -> any EditorSurface { CodeEditEditorSurface() }
     func changes(worktree: String, service: any GitChangesService, didChange: @escaping () -> Void) -> GitChangesActions {
         GitChangesActions(worktree: worktree, service: service, didChange: didChange)
     }

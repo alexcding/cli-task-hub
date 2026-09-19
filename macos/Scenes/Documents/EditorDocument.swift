@@ -52,7 +52,13 @@ struct EditorBuffer: Codable, Sendable {
     func setFont(_ value: CodeFont)
     func focus(line: Int, column: Int)
     func find()
+    /// Shows or hides the code preview beside the text; a surface without one ignores it.
+    func toggleMinimap()
     func dispose()
+}
+
+extension EditorSurface {
+    func toggleMinimap() {}
 }
 
 // Swift owns the document identity and revision; the editor owns its buffer and
@@ -210,6 +216,10 @@ struct EditorBuffer: Codable, Sendable {
     func setAppearance(_ value: AppAppearance) { appearance = value; surface?.setAppearance(value) }
     func setFont(_ value: CodeFont) { font = value; surface?.setFont(value) }
     func find() { surface?.find() }
+    func toggleMinimap() {
+        guard loaded, !closing else { return }
+        surface?.toggleMinimap()
+    }
     func focus(line: Int = 1, column: Int = 1) {
         pendingLocation = .init(path: record.path, line: line, column: column)
         if loaded, visible { surface?.focus(line: line, column: column); pendingLocation = nil }
