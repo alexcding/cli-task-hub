@@ -44,6 +44,7 @@ struct NativeTerminalRuntimeControl: TerminalRuntimeControlling {
         let directory = try? configuration().directory
         return ViewerStore(cacheURL: directory?.appendingPathComponent("page-tabs.json"),
                     browserHistory: BrowserHistoryStore(fileURL: directory?.appendingPathComponent("browser-history.json")),
+                    browserBookmarks: BrowserBookmarkStore(fileURL: directory?.appendingPathComponent("browser-bookmarks.json")),
                     pageFactory: BrowserPageFactory(desktop: desktop, dialogs: dialogs),
                     documentFactory: documents, closeCoordinator: close)
     }

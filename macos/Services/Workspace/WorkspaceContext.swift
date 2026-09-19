@@ -117,6 +117,8 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
     @ObservationIgnored var changed: () -> Void = {}
     /// The app-wide history every visit is also recorded in. Nil in a bare context (tests).
     @ObservationIgnored var globalHistory: BrowserHistoryStore?
+    /// Shared by every context, as the history is; nil in a bare context.
+    @ObservationIgnored var bookmarks: BrowserBookmarkStore?
     @ObservationIgnored var activateDocument: (EditorDocumentViewModel) -> Void = { _ in }
     @ObservationIgnored var activatePage: (BrowserPage) -> Void = { _ in }
     @ObservationIgnored var isOwned: () -> Bool = { true }
@@ -415,15 +417,19 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
     @ObservationIgnored private let documentFactory: any DocumentFeatureFactory
     /// Shared by every context: pages visited anywhere, for the start page and address bar.
     let browserHistory: BrowserHistoryStore
+    /// Shared by every context: the pages bookmarked from any panel.
+    let browserBookmarks: BrowserBookmarkStore
     private let cacheURL: URL?
     private struct Cache: Codable { let snapshots: [String: ContextSnapshot]; let pending: Set<String> }
     init(cacheURL: URL? = nil,
          browserHistory: BrowserHistoryStore = BrowserHistoryStore(),
+         browserBookmarks: BrowserBookmarkStore = BrowserBookmarkStore(),
          pageFactory: BrowserPageFactory = BrowserPageFactory(),
          documentFactory: any DocumentFeatureFactory = NativeDocumentFeatureFactory(),
          closeCoordinator: EditorCloseCoordinator? = nil) {
         self.cacheURL = cacheURL
         self.browserHistory = browserHistory
+        self.browserBookmarks = browserBookmarks
         self.pageFactory = pageFactory
         self.documentFactory = documentFactory
         self.closeCoordinator = closeCoordinator ?? EditorCloseCoordinator(factory: documentFactory)
@@ -511,6 +517,7 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
                                                        snapshot: saved[id] ?? legacy.map(ContextSnapshot.importing), pageFactory: pageFactory, documentFactory: documentFactory, closeCoordinator: closeCoordinator)
         contexts[id] = context
         context.globalHistory = browserHistory
+        context.bookmarks = browserBookmarks
         browserHistory.seed(context.history)
         context.isOwned = { [weak self, weak context] in
             guard let self, let context else { return false }

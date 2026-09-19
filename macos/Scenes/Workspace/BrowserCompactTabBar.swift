@@ -104,7 +104,7 @@ struct BrowserCompactTabBar: View {
                 ForEach(pages) { page in
                     // One view for both states, so selecting a tab fades its parts in place instead
                     // of swapping two views and letting the title jump.
-                    CompactTab(page: page, active: page.id == context.activeID, workspaceActive: model.isActive,
+                    CompactTab(page: page, bookmarks: context.bookmarks, active: page.id == context.activeID, workspaceActive: model.isActive,
                                autoFocus: page.id != fillerTabID,
                                moveHighlight: moveHighlight, submitHighlighted: { submitHighlighted(page.controls) },
                                // A lone blank tab has nothing to close: closing it would only make another.
@@ -133,9 +133,8 @@ struct BrowserCompactTabBar: View {
     /// Leaving a tab drops any address focus so it does not carry over. A blank tab takes focus
     /// itself when its address field appears in `CompactTab`, once that field exists: a focus binding set before
     /// the bound view is mounted is silently reset.
-    /// One flat list: the typed text as a search, pages this panel has visited that match the text
-    /// (newest first, web pages only), pages visited in other panels that match, then Google's
-    /// phrase completions. The full history is the blank tab's start page; here it is only a filter.
+    /// One list: a suggested site, the typed text and Google's phrase completions as searches, then
+    /// the bookmarks and the pages visited in any panel that match the text.
     private var suggestions: [AddressSuggestion] {
         // Focusing the field selects the page's own address; offering that page back is noise.
         guard let controls = active?.controls, controls.addressEdited else { return [] }
@@ -143,18 +142,11 @@ struct BrowserCompactTabBar: View {
         guard !text.isEmpty else { return [] }
         let searching = webAddress(text) == nil
         var history: [AddressSuggestion] = []
-        var seen: Set<String> = []
-        for visit in context.pageVisits.reversed() {
-            guard case .page(let record) = visit, seen.insert(record.url).inserted,
-                  record.url.localizedCaseInsensitiveContains(text) || record.title.localizedCaseInsensitiveContains(text)
-            else { continue }
-            let host = URL(string: record.url)?.host ?? record.url
-            history.append(.init(id: record.url, title: record.title.isEmpty ? host : record.title, detail: host, url: record.url, kind: .history))
-            if history.count >= 4 { break }
-        }
-        // Excluding this panel's whole history, not only the matches shown: a page cut off by the
-        // cap above must not reappear as if it were from another panel.
-        for entry in context.globalHistory?.matching(text, excluding: seen.union(context.history.map(\.url)), limit: 3) ?? [] {
+        // Bookmarks lead the section, then the one history shared by every panel. A bookmarked page
+        // is excluded from the visits before they are capped, so it never costs a history row.
+        let marks = context.bookmarks?.matching(text, limit: 3) ?? []
+        history += marks.map { .init(id: $0.url, title: $0.displayTitle, detail: $0.host, url: $0.url, kind: .history) }
+        for entry in context.globalHistory?.matching(text, excluding: Set(marks.map(\.url)), limit: 4) ?? [] {
             history.append(.init(id: entry.url, title: entry.displayTitle, detail: entry.host, url: entry.url, kind: .history))
         }
         guard searching else { return history }
@@ -310,6 +302,7 @@ private struct ActiveTabCapsule: View {
 /// the same slots, so the label never moves; only what fills the slots crossfades.
 private struct CompactTab: View {
     let page: BrowserPage
+    let bookmarks: BrowserBookmarkStore?
     let active: Bool
     /// Hidden workspaces stay mounted; opacity does not stop a field from taking first responder.
     let workspaceActive: Bool
@@ -324,6 +317,13 @@ private struct CompactTab: View {
     @State private var hoveringClose = false
 
     private var controls: BrowserControlsViewModel { page.controls }
+    private var bookmarked: Bool { bookmarks?.contains(page.url) == true }
+    /// Reload appears only while the pointer is over the selected tab. Stop, the same button
+    /// while a page loads, stays visible: a slow load must always have a way to be stopped.
+    private var showsReload: Bool { active && !controls.isBlank && (hovering || controls.loading) }
+    /// Always on the selected tab, hovered or not and loading or not, for a page a bookmark could
+    /// come back to.
+    private var showsBookmark: Bool { active && bookmarks?.canBookmark(page.url) == true }
     private var isEditing: Bool { active && editing }
     private var showsClose: Bool { closable && (active || hovering) }
     /// Safari shows the page title on an unselected tab and the host on the selected one.
@@ -395,9 +395,22 @@ private struct CompactTab: View {
                 .font(.system(size: 15))
                 .foregroundStyle(Theme.textSecondary)
                 .frame(width: 24, height: 24)
-                .opacity(active && !controls.isBlank ? 1 : 0)
-                .allowsHitTesting(active && !controls.isBlank)
+                .opacity(showsReload ? 1 : 0)
+                .allowsHitTesting(showsReload)
+                // Hover is a pointer affordance: the button stays reachable to VoiceOver.
                 .accessibilityHidden(!(active && !controls.isBlank))
+            Button(bookmarked ? "Remove Bookmark" : "Add Bookmark", systemImage: bookmarked ? "star.fill" : "star") {
+                bookmarks?.toggle(url: page.url, title: page.title)
+            }
+            .labelStyle(.iconOnly).buttonStyle(.plain)
+            .font(.system(size: 14))
+            .foregroundStyle(bookmarked ? Theme.accent : Theme.textSecondary)
+            .frame(width: 24, height: 24)
+            .help(bookmarked ? "Remove this page from your bookmarks" : "Bookmark this page")
+            .opacity(showsBookmark ? 1 : 0)
+            .allowsHitTesting(showsBookmark)
+            .accessibilityHidden(!(active && bookmarks?.canBookmark(page.url) == true))
+            .accessibilityIdentifier("bookmark-page")
         }
         .padding(.horizontal, 6)
         .frame(height: BrowserCompactTabBar.tabHeight)
@@ -437,7 +450,7 @@ struct AddressSuggestion: Identifiable, Equatable {
         switch kind {
         case .site: nil
         case .typed, .google: "Google Suggestions"
-        case .history: "History"
+        case .history: "Bookmarks and History"
         }
     }
 }

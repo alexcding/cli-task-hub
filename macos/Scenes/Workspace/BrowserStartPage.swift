@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// What a blank tab shows in place of a web view: the pages this panel has visited, newest
-/// first, as favicon tiles, then the pages visited in every other panel as a list. Clicking
+/// What a blank tab shows in place of a web view: the bookmarks as favicon tiles, then the newest
+/// pages visited in any panel as tiles too. There is one history, shared by every panel. Clicking
 /// either loads it in this tab.
 struct BrowserStartPage: View {
     let context: WorkspaceContext
@@ -10,20 +10,13 @@ struct BrowserStartPage: View {
     @State private var showingAll = false
     @State private var query = ""
 
-    /// How many other-panel pages the start page lists before deferring to the full history.
-    static let othersLimit = 10
+    /// How many pages the start page shows before deferring to the full history.
+    static let historyLimit = 12
 
-    /// Pages seen anywhere but in this panel, so nothing appears twice on the page.
-    private func others(excluding recent: [WebPageRecord]) -> [BrowserHistoryEntry] {
-        context.globalHistory?.recent(excluding: Set(recent.map(\.url)), limit: Self.othersLimit) ?? []
-    }
-
-    private var recent: [WebPageRecord] {
-        var seen: Set<String> = []
-        return context.pageVisits.reversed().compactMap { visit -> WebPageRecord? in
-            guard case .page(let record) = visit, seen.insert(record.url).inserted else { return nil }
-            return record
-        }
+    /// One history for the whole app: the newest pages visited in any panel, without the
+    /// bookmarked ones, so nothing appears twice on the page.
+    private func recent(excluding bookmarks: [BrowserBookmark]) -> [BrowserHistoryEntry] {
+        context.globalHistory?.recent(excluding: Set(bookmarks.map(\.url)), limit: Self.historyLimit) ?? []
     }
 
     var body: some View {
@@ -38,35 +31,35 @@ struct BrowserStartPage: View {
     }
 
     private var startPage: some View {
-        // Once per pass: both scan the whole history.
-        let recent = recent, others = others(excluding: recent)
+        let bookmarks = context.bookmarks?.bookmarks ?? [], recent = recent(excluding: bookmarks)
         return ScrollView {
-            if recent.isEmpty && others.isEmpty {
+            if recent.isEmpty && bookmarks.isEmpty {
                 VStack(spacing: 5) {
-                    Text("No history yet").font(Theme.Typography.emptyTitle).foregroundStyle(Theme.textSecondary)
-                    Text("Pages you visit appear here.").font(Theme.Typography.emptyHint).foregroundStyle(Theme.textTertiary)
+                    Text("No bookmarks or history yet").font(Theme.Typography.emptyTitle).foregroundStyle(Theme.textSecondary)
+                    Text("Pages you bookmark or visit appear here.").font(Theme.Typography.emptyHint).foregroundStyle(Theme.textTertiary)
                 }
                 .frame(maxWidth: .infinity).padding(.top, 80)
             } else {
                 VStack(alignment: .leading, spacing: 12) {
+                    if !bookmarks.isEmpty {
+                        Text("Bookmarks").font(.title3.weight(.semibold)).foregroundStyle(Theme.textSecondary)
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 120, maximum: 160), spacing: 12)], spacing: 12) {
+                            ForEach(bookmarks) { bookmark in
+                                StartPageTile(record: WebPageRecord(id: bookmark.url, url: bookmark.url, title: bookmark.title),
+                                              open: { open(bookmark.url) }, remove: { context.bookmarks?.remove(url: bookmark.url) })
+                            }
+                        }
+                        .accessibilityLabel("Bookmarks")
+                    }
                     if !recent.isEmpty {
                         Text("History").font(.title3.weight(.semibold)).foregroundStyle(Theme.textSecondary)
+                            .padding(.top, bookmarks.isEmpty ? 0 : 16)
                         LazyVGrid(columns: [GridItem(.adaptive(minimum: 120, maximum: 160), spacing: 12)], spacing: 12) {
-                            ForEach(recent) { record in
-                                StartPageTile(record: record) { open(record.url) }
+                            ForEach(recent) { entry in
+                                StartPageTile(record: WebPageRecord(id: entry.url, url: entry.url, title: entry.title)) { open(entry.url) }
                             }
                         }
-                    }
-                    if !others.isEmpty {
-                        Text(recent.isEmpty ? "History" : "Other History")
-                            .font(.title3.weight(.semibold)).foregroundStyle(Theme.textSecondary)
-                            .padding(.top, recent.isEmpty ? 0 : 16)
-                        LazyVStack(alignment: .leading, spacing: 2) {
-                            ForEach(others) { entry in
-                                StartPageRow(entry: entry) { open(entry.url) }
-                            }
-                        }
-                        .accessibilityLabel("Other history")
+                        .accessibilityLabel("History")
                     }
                     if context.globalHistory?.entries.isEmpty == false {
                         Button("Show All History", systemImage: "clock.arrow.circlepath") { query = ""; showingAll = true }
@@ -212,6 +205,8 @@ private struct StartPageRow: View {
 private struct StartPageTile: View {
     let record: WebPageRecord
     let open: () -> Void
+    /// Set for a bookmark tile, which can be removed from its context menu.
+    var remove: (() -> Void)?
     @State private var hovering = false
 
     private var host: String { URL(string: record.url)?.host ?? record.url }
@@ -236,6 +231,7 @@ private struct StartPageTile: View {
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
         .help(record.url)
+        .contextMenu { if let remove { Button("Remove Bookmark", action: remove) } }
         .animation(.easeOut(duration: 0.12), value: hovering)
     }
 }

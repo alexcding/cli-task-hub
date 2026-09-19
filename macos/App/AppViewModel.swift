@@ -972,6 +972,7 @@ public final class AppViewModel {
         for terminal in terminals.values { terminal.disconnect() }
         // A page visited just before quitting would otherwise miss the debounced write.
         await viewer.browserHistory.flush()
+        await viewer.browserBookmarks.flush()
         await stop()
     }
 
