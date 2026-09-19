@@ -4,6 +4,14 @@
 > its Sprint Board, working diff, and editor are native SwiftUI/AppKit surfaces.
 > Node and bundled TaskHub JavaScript are no longer part of the native package.
 
+## File editor on CodeEditSourceEditor — 2026-09-19
+
+File tabs render with CodeEditSourceEditor 0.15.2 (SwiftPM, exact version): an AppKit text view
+with tree-sitter highlighting, behind the same `EditorSurface` contract. It replaces the plain
+`NSTextView` surface that followed Monaco's removal, so the Monaco entries below are history. The
+working-changes diff is still the only web page. Settings → Text Editor holds the code font, one
+code theme per appearance and the code preview; the app appearance moved to General.
+
 ## Rust migration closeout — 2026-09-14
 
 The backend, SQLite stores, API/SSE, GitHub/Jira polling, merge automation, hooks,

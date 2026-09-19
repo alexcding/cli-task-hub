@@ -32,6 +32,18 @@ cp "$GHOSTTY_PKG/LICENSE-ghostty" "$APP/Contents/Resources/Licenses/Ghostty-LICE
 cp "$GHOSTTY_PKG/LICENSE" "$APP/Contents/Resources/Licenses/GhosttyTerminal-LICENSE"
 cp "$GHOSTTY_PKG/Sources/GhosttyTheme/LICENSE" "$APP/Contents/Resources/Licenses/GhosttyTheme-LICENSE"
 
+# The file editor: CodeEditSourceEditor and what it links. Each is copied from the checkout SwiftPM
+# made, next to GhosttyTerminal's. CodeEditLanguages and CodeEditSymbols publish no license file at
+# their pinned versions (0.1.20, 0.2.3); they are CodeEditApp's, whose other packages are MIT, but
+# that is unconfirmed — settle it with upstream before a public release.
+PACKAGES="$(dirname "$GHOSTTY_PKG")"
+for entry in CodeEditSourceEditor:LICENSE.md CodeEditTextView:LICENSE.md TextFormation:LICENSE TextStory:LICENSE \
+             Rearrange:LICENSE SwiftTreeSitter:LICENSE tree-sitter:LICENSE swift-collections:LICENSE.txt; do
+  name="${entry%%:*}"
+  test -f "$PACKAGES/$name/${entry#*:}" || { echo "No license for $name at $PACKAGES/$name" >&2; exit 1; }
+  cp "$PACKAGES/$name/${entry#*:}" "$APP/Contents/Resources/Licenses/$name-LICENSE"
+done
+
 codesign --force --sign - "$APP/Contents/Helpers/taskhub-ptyd"
 codesign --force --sign - "$APP"
 codesign --verify --deep --strict "$APP"

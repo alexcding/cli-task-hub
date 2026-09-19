@@ -496,8 +496,10 @@ pane cancels recovery and rejects stale callbacks.
 ## Native editor documents (M5, in progress)
 
 Choose **Open File** (Command-O) from a session/page context. File tabs share the
-native page strip and History; AppKit renders the editor, while Swift owns file I/O,
-revision conflicts, and document lifecycle through injected services and factories.
+native page strip and History; CodeEditSourceEditor (an AppKit text view with tree-sitter
+highlighting) renders the editor, while Swift owns file I/O, revision conflicts, and document
+lifecycle through injected services and factories. Settings → Text Editor picks the code font,
+one colour theme per appearance, and whether the code preview shows beside the text.
 Command-S saves, Command-F finds, and Command-W closes with Save/Discard/Cancel when
 needed. Session removal and app termination check unsaved documents before stopping shells.
 Hidden clean editors unload; unsaved editors retain their buffer and undo history.
@@ -661,7 +663,10 @@ signs, notarizes and staples the disk image. A rejected notarization cannot be
 reported as a release. Release mode requires a Release build with the personal
 bundle ID. No signing identities, Apple credentials or update private keys are
 stored by the script. The native bundle includes Ghostty, wrapper and theme
-licenses alongside the Sparkle notice.
+licenses alongside the Sparkle notice, and the licenses of the file editor's packages
+(CodeEditSourceEditor and what it links). Two of those, CodeEditLanguages and
+CodeEditSymbols, publish no license file at their pinned versions; confirm their terms
+with upstream before a public release.
 
 Developer ID and notarization credentials have not been provisioned. The signed
 release path is implemented but has not been executed. Configure the real HTTPS
