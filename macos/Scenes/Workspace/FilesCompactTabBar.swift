@@ -69,7 +69,7 @@ struct FilesCompactTabBar: View {
         @Bindable var search = search
         return CompactTabShell(label: label, placeholder: placeholder, closeTitle: "Close \(label.isEmpty ? "tab" : label)", help: help,
                                active: id == context.activeID, workspaceActive: model.isActive, blank: blank, autoFocus: !fillerTab,
-                               closable: closable, iconOnly: iconOnly, text: $search.query, editing: $editing, moveHighlight: moveHighlight,
+                               closable: closable, iconOnly: iconOnly, editable: blank, text: $search.query, editing: $editing, moveHighlight: moveHighlight,
                                submit: submit, select: select, close: close) {
             if !blank { Image(systemName: "doc.text").font(.system(size: 13)).foregroundStyle(Theme.textTertiary) }
             // An icon-only tab must still be something to click.

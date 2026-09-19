@@ -281,31 +281,89 @@ struct BlankPane: View {
         case .diff, .browser: return Text("Use ＋ to open a web page.").foregroundColor(Theme.textTertiary)
         }
     }
-    /// What the old tab strip kept under Recently Closed: the way back to a file, newest first.
-    private var recentFiles: [WorkspaceVisit] { model.mode == .files ? Array(context.fileVisits.reversed().prefix(8)) : [] }
+    private var root: String? {
+        (model.session?.worktree).flatMap { $0.isEmpty ? nil : $0.hasSuffix("/") ? $0 : $0 + "/" }
+    }
+    /// Only this session's worktree: a context outlives and is shared between sessions, and another
+    /// worktree's files are not a way back to anything here. Until the session names its worktree,
+    /// nothing is listed.
+    private var recentFiles: [FileDocumentRecord] {
+        guard model.mode == .files else { return [] }
+        let root = root
+        let files = context.fileVisits.reversed().compactMap { visit -> FileDocumentRecord? in
+            guard case .file(let file) = visit, root.map(file.path.hasPrefix) ?? false else { return nil }
+            return file
+        }
+        return Array(files.prefix(12))
+    }
 
     var body: some View {
+        Group {
+            if recentFiles.isEmpty { empty } else { recent }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Theme.paneBackground)
+    }
+
+    private var empty: some View {
         VStack(spacing: 5) {
             Text(model.mode == .files ? "No file open" : "Nothing open in this panel")
                 .font(Theme.Typography.emptyTitle)
                 .foregroundStyle(Theme.textSecondary)
             hint.font(Theme.Typography.emptyHint).multilineTextAlignment(.center)
-            if !recentFiles.isEmpty {
-                VStack(alignment: .leading, spacing: 2) {
-                    ForEach(recentFiles) { visit in
-                        Button(visit.title, systemImage: "doc.text") { model.reopen(visit) }
-                            .buttonStyle(.plain).lineLimit(1).truncationMode(.middle)
-                            .foregroundStyle(Theme.textSecondary)
-                    }
-                }
-                .font(Theme.Typography.emptyHint)
-                .padding(.top, 10)
-            }
         }
         .frame(maxWidth: 260)
         .padding(24)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Theme.paneBackground)
+    }
+
+    // The browser start page's History, for files: same heading, rows and column.
+    private var recent: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Recent Files").font(.title3.weight(.semibold)).foregroundStyle(Theme.textSecondary)
+                LazyVStack(alignment: .leading, spacing: 2) {
+                    ForEach(recentFiles) { file in
+                        RecentFileRow(file: file, root: root) { model.reopen(.file(file)) }
+                    }
+                }
+                .accessibilityLabel("Recent Files")
+            }
+            .padding(24)
+            .readableColumn()
+            .frame(maxWidth: .infinity)
+        }
+    }
+}
+
+private struct RecentFileRow: View {
+    let file: FileDocumentRecord
+    let root: String?
+    let open: () -> Void
+    @State private var hovering = false
+
+    /// The folder inside the worktree; empty for a file at its top.
+    private var folder: String {
+        let relative = root.map { file.path.hasPrefix($0) ? String(file.path.dropFirst($0.count)) : file.path } ?? file.path
+        return (relative as NSString).deletingLastPathComponent
+    }
+
+    var body: some View {
+        Button(action: open) {
+            HStack(spacing: 12) {
+                Image(systemName: "doc.text").font(.system(size: 17)).foregroundStyle(Theme.textTertiary).frame(width: 24)
+                Text(file.title).font(.body).lineLimit(1)
+                Text(folder).font(.body).foregroundStyle(Theme.textTertiary).lineLimit(1).truncationMode(.head)
+                Spacer(minLength: 8)
+            }
+            .padding(.horizontal, 12).frame(height: 44)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(hovering ? Theme.surfaceHover : .clear, in: RoundedRectangle(cornerRadius: 8))
+            .contentShape(RoundedRectangle(cornerRadius: 8))
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .help(file.path)
+        .animation(.easeOut(duration: 0.12), value: hovering)
     }
 }
 

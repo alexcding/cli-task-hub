@@ -155,6 +155,8 @@ struct CompactTabShell<Icon: View, Accessories: View>: View {
     /// The row has no room for titles: an unselected tab draws as its icon, and Close takes the
     /// icon's place under the pointer.
     var iconOnly = false
+    /// False for a tab whose title is fixed once opened: selecting it never turns it into a field.
+    var editable = true
     @Binding var text: String
     @FocusState.Binding var editing: Bool
     let moveHighlight: (Int) -> Bool
@@ -224,7 +226,7 @@ struct CompactTabShell<Icon: View, Accessories: View>: View {
             }
             .frame(width: 24, height: 24)
             ZStack {
-                Button(action: { if active { editing = true } else { select() } }) {
+                Button(action: { if !active { select() } else if editable { editing = true } }) {
                     HStack(spacing: 6) {
                         icon
                         Text(label.isEmpty ? placeholder : label)
@@ -240,10 +242,10 @@ struct CompactTabShell<Icon: View, Accessories: View>: View {
                 .buttonStyle(.plain)
                 .help(help)
                 .accessibilityLabel(label.isEmpty ? placeholder : label)
-                .accessibilityHint(active ? "Edit" : "Select tab")
+                .accessibilityHint(!active ? "Select tab" : editable ? "Edit" : "")
                 .opacity(isEditing ? 0 : 1)
                 .allowsHitTesting(!isEditing)
-                if active {
+                if active && editable {
                     // Mounted for the whole time the tab is selected, never inserted on demand: a
                     // focus binding set before its field exists is silently reset. Nothing here may
                     // depend on the typed text; a modifier flipping on the first character rebuilds
