@@ -39,6 +39,7 @@ pub struct LocalQuery {
     scheme: Option<String>,
     sim: Option<String>,
     configuration: Option<String>,
+    q: Option<String>,
 }
 
 fn foreign_origin(headers: &HeaderMap) -> bool {
@@ -171,6 +172,73 @@ pub async fn get_file(headers: HeaderMap, Query(query): Query<LocalQuery>) -> Ap
     let mut value = read_file_snapshot(&resolve_path(&raw))?;
     value.as_object_mut().unwrap().remove("canonical");
     Ok(Json(value))
+}
+
+/// How well a worktree-relative path answers a typed query; lower is better, None is no match.
+/// A hit in the file name beats one in its folders, a prefix beats a substring, and a scattered
+/// subsequence ("swvm" for SessionWorkspaceViewModel) comes last.
+fn file_match_rank(rel: &str, needle: &str) -> Option<u8> {
+    let path = rel.to_lowercase();
+    let name = path.rsplit('/').next().unwrap_or_default();
+    if name.starts_with(needle) {
+        return Some(0);
+    }
+    if name.contains(needle) {
+        return Some(1);
+    }
+    if path.contains(needle) {
+        return Some(2);
+    }
+    let mut wanted = needle.chars().filter(|c| !c.is_whitespace());
+    let mut next = wanted.next();
+    for c in path.chars() {
+        if Some(c) == next {
+            next = wanted.next();
+        }
+    }
+    next.is_none().then_some(3)
+}
+
+/// The files of one worktree that match `q`, for the Files tab's search field: tracked and
+/// untracked-but-not-ignored, exactly what git would show, so build output never appears.
+pub async fn list_files(headers: HeaderMap, Query(query): Query<LocalQuery>) -> ApiResult<Value> {
+    if foreign_origin(&headers) {
+        return Err(ApiError::forbidden("forbidden"));
+    }
+    let raw = query
+        .path
+        .filter(|v| !v.is_empty())
+        .ok_or_else(|| ApiError::bad_request("path required"))?;
+    let root = resolve_path(&raw);
+    let needle = query.q.unwrap_or_default().trim().to_lowercase();
+    let limit = query.limit.unwrap_or(50).clamp(1, 200);
+    let out = git(
+        &root.to_string_lossy(),
+        vec![
+            "ls-files".into(),
+            "--cached".into(),
+            "--others".into(),
+            "--exclude-standard".into(),
+            "-z".into(),
+        ],
+        20,
+    )
+    .await
+    .map_err(|_| ApiError::bad_request("not a git worktree"))?;
+    let mut ranked: Vec<(u8, &str)> = out
+        .split('\0')
+        .filter(|rel| !rel.is_empty())
+        .filter_map(|rel| {
+            if needle.is_empty() {
+                Some((0, rel))
+            } else {
+                file_match_rank(rel, &needle).map(|rank| (rank, rel))
+            }
+        })
+        .collect();
+    ranked.sort_by(|a, b| (a.0, a.1.len(), a.1).cmp(&(b.0, b.1.len(), b.1)));
+    let files: Vec<&str> = ranked.into_iter().take(limit).map(|(_, rel)| rel).collect();
+    Ok(Json(json!({ "root": root.to_string_lossy(), "files": files })))
 }
 
 pub async fn put_file(headers: HeaderMap, Json(body): Json<Value>) -> ApiResult<Value> {
@@ -1632,4 +1700,18 @@ pub async fn xcode_build_settings(
     Ok(Json(
         json!({"appPath":Path::new(directory).join(product),"bundleId":settings["PRODUCT_BUNDLE_IDENTIFIER"],"productName":product,"target":target,"configuration":configuration}),
     ))
+}
+
+#[cfg(test)]
+mod file_match_tests {
+    use super::file_match_rank;
+
+    #[test]
+    fn ranks_name_hits_above_folder_hits_above_subsequences() {
+        assert_eq!(file_match_rank("macos/App/AppDelegate.swift", "appd"), Some(0));
+        assert_eq!(file_match_rank("macos/App/AppDelegate.swift", "delegate"), Some(1));
+        assert_eq!(file_match_rank("macos/App/AppDelegate.swift", "macos/app"), Some(2));
+        assert_eq!(file_match_rank("macos/Scenes/SessionWorkspaceViewModel.swift", "swvm"), Some(3));
+        assert_eq!(file_match_rank("README.md", "zzz"), None);
+    }
 }

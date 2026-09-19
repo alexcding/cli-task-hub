@@ -76,7 +76,7 @@ extension AppViewModel: WorkspaceCoordinating {
                 Task { await workspaceLaunch.openGitClient(session: session, id: shell.gitClient, custom: shell.gitClientCommand) }
             }
         case .createSession: perform(.newSession)
-        case .openFile: viewer.openFile(in: context)
+        case .openFile: viewer.openFile(in: context, directory: state.session?.worktree)
         case .changes: if let session = state.session { showChanges(for: session, context: context) }
         case .openTerminal: openTerminal()
         case .hookSettings: openWorkflowHookSettings()

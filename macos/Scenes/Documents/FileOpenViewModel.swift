@@ -5,14 +5,16 @@ import Observation
     struct Request: Identifiable, Equatable {
         let id = UUID()
         let contextID: String
+        /// Where the panel starts; nil leaves it wherever macOS last had it.
+        var directory: String? = nil
     }
     enum Action { case present(Request), cancel(UUID), open(Request, URL) }
     private(set) var request: Request?
     @ObservationIgnored var onAction: ((Action) -> Void)?
 
-    func begin(contextID: String) {
+    func begin(contextID: String, directory: String? = nil) {
         guard request == nil, let onAction else { return }
-        let request = Request(contextID: contextID)
+        let request = Request(contextID: contextID, directory: directory)
         self.request = request
         onAction(.present(request))
     }

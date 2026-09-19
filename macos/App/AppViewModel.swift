@@ -353,7 +353,7 @@ public final class AppViewModel {
         case .newTab: if canPerform(.newTab) { newBrowserTab() }
         case .newSidebarTab: if canPerform(.newSidebarTab) { newTab() }
         case .openPageInBrowser: if canPerform(.openPageInBrowser) { activePageControls?.openExternally() }
-        case .openFile: if canPerform(.openFile), let context = viewer.active { viewer.openFile(in: context) }
+        case .openFile: if canPerform(.openFile), let context = viewer.active { performWorkspaceOperation(.openFile, in: context) }
         case .saveFile: if let document = viewer.active?.activeDocument { Task { await document.save() } }
         case .closePage: if let context = viewer.active, let id = context.activeID, let tab = context.tab(id) { context.close(tab) }
         case .findPage:
@@ -404,6 +404,8 @@ public final class AppViewModel {
     /// front. A session panel showing something else switches to Browser first. Never a sidebar tab.
     func newBrowserTab() {
         guard coordinator.canPresent, let context = viewer.active else { return }
+        // Cmd-T follows the panel in view: a file tab from Files, a web tab from anywhere else.
+        if context.pane == .files { context.newFileTab(); return }
         if context.pane != .term { context.setPane(.term) }
         context.openBlankPage()
     }

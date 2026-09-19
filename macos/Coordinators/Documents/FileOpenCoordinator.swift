@@ -2,11 +2,11 @@ import AppKit
 import Observation
 
 @MainActor protocol FileOpenPresenting {
-    func present(in window: NSWindow?, completion: @escaping (URL?) -> Void) -> () -> Void
+    func present(in window: NSWindow?, directory: URL?, completion: @escaping (URL?) -> Void) -> () -> Void
 }
 
 @MainActor struct NativeFileOpenPresenter: FileOpenPresenting {
-    func present(in window: NSWindow?, completion: @escaping (URL?) -> Void) -> () -> Void {
+    func present(in window: NSWindow?, directory: URL?, completion: @escaping (URL?) -> Void) -> () -> Void {
         guard let window, window.isVisible, !window.isMiniaturized, window.attachedSheet == nil else {
             completion(nil); return {}
         }
@@ -14,6 +14,7 @@ import Observation
         panel.canChooseFiles = true
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = false
+        if let directory { panel.directoryURL = directory }
         panel.beginSheetModal(for: window) { response in
             completion(response == .OK ? panel.url : nil)
         }
@@ -52,7 +53,7 @@ import Observation
                 guard enabled, !isPresenting, canPresent(), let context = activeContext(),
                       context.id == request.contextID else { model.respond(to: request.id, url: nil); return }
                 requestID = request.id
-                let cancel = presenter.present(in: window()) { [weak self, weak model, weak context] url in
+                let cancel = presenter.present(in: window(), directory: request.directory.map { URL(fileURLWithPath: $0, isDirectory: true) }) { [weak self, weak model, weak context] url in
                     guard let self, let model, self.model === model, bindingID == binding,
                           requestID == request.id else { return }
                     requestID = nil; cancelPresentation = nil

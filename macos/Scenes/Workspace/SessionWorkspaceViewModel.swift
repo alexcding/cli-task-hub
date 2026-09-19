@@ -41,7 +41,7 @@ enum WorkspaceOperation: Equatable {
 @MainActor @Observable final class SessionWorkspaceViewModel {
     enum Action: Equatable {
         case operation(WorkspaceOperation), run, configureRun, remove, restart, selectTab(String), closeTab(String), reopen(String)
-        case newTab
+        case newTab, newFileTab
     }
     struct ReviewInputs: Equatable {
         let pane: WorkspacePane?
@@ -139,6 +139,10 @@ enum WorkspaceOperation: Equatable {
     /// Whether the workspace on screen is visible to the user, for taking keyboard focus.
     var isActive: Bool { active }
     func newTab() { guard canOpenTab else { return }; onAction(.newTab) }
+    /// The Files panel's ＋: an empty tab whose field searches the worktree.
+    func newFileTab() { guard canOpenTab else { return }; onAction(.newFileTab) }
+    func selectBlankFileTab() { onAction(.selectTab(WorkspaceContext.blankFileID)) }
+    func closeBlankFileTab() { onAction(.closeTab(WorkspaceContext.blankFileID)) }
     func reviewStateChanged(force: Bool = false) {
         let inputs = reviewInputs
         if force || previousReviewInputs != inputs {

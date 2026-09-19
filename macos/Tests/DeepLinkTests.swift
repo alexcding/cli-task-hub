@@ -103,7 +103,7 @@ func deepLinksWaitForActivityClearConfirmationToFinish(confirm: Bool) async thro
 
 @MainActor private final class DeepLinkFilePresenter: FileOpenPresenting {
     var completion: ((URL?) -> Void)?
-    func present(in window: NSWindow?, completion: @escaping (URL?) -> Void) -> () -> Void {
+    func present(in window: NSWindow?, directory: URL?, completion: @escaping (URL?) -> Void) -> () -> Void {
         self.completion = completion
         return { completion(nil) }
     }

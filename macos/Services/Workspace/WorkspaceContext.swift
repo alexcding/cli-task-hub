@@ -126,6 +126,14 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
     @ObservationIgnored private let closeCoordinator: EditorCloseCoordinator
     @ObservationIgnored private let pageFactory: BrowserPageFactory
     @ObservationIgnored private let documentFactory: any DocumentFeatureFactory
+    /// The Files tab bar's search; opening a result is this context's own `openFile`.
+    @ObservationIgnored private(set) lazy var fileSearch: FileSearchViewModel = {
+        let model = documentFactory.fileSearch()
+        model.onAction = { [weak self] action in
+            switch action { case .open(let path): self?.openFile(path) }
+        }
+        return model
+    }()
     private(set) var workspaceViewModel: SessionWorkspaceViewModel?
 
     func configureWorkspace(factory: any WorkspaceFeatureFactory, service: any WorkspaceServing) {
@@ -173,6 +181,21 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
     }
 
     var activeDocument: EditorDocumentViewModel? { documents.first { $0.id == activeID } }
+    /// The Files panel's empty tab: a field to search the worktree from, holding no file yet. It
+    /// trails the file tabs, is never saved, and gives its slot to the file it opens.
+    static let blankFileID = "blank-file"
+    private(set) var hasBlankFileTab = false
+    var blankFileActive: Bool { hasBlankFileTab && activeID == Self.blankFileID }
+    func newFileTab() {
+        hasBlankFileTab = true; activeID = Self.blankFileID; pane = .files; changed()
+    }
+    func closeBlankFileTab() {
+        guard hasBlankFileTab else { return }
+        hasBlankFileTab = false; fileSearch.reset()
+        guard activeID == Self.blankFileID else { return }
+        activeID = nil
+        if let file = documents.first(where: { $0.id == lastDocumentID }) ?? documents.last { select(.file(file)) } else { changed() }
+    }
     var tabs: [WorkspaceTab] { tabOrder.compactMap(tab) }
     var pageTabs: [WorkspaceTab] { tabs.filter { if case .page = $0 { true } else { false } } }
     var fileTabs: [WorkspaceTab] { tabs.filter { if case .file = $0 { true } else { false } } }
@@ -204,6 +227,7 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
             activeID = pages.first { $0.id == lastPageID }?.id ?? pageTabs.last?.id
         case .files where activeDocument == nil:
             activeID = documents.first { $0.id == lastDocumentID }?.id ?? fileTabs.last?.id
+                ?? (hasBlankFileTab ? Self.blankFileID : nil)
         default: break
         }
         pane = value; changed()
@@ -246,6 +270,9 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
         let path = (path as NSString).standardizingPath
         if let file = documents.first(where: { $0.record.path == path }) { select(.file(file)); file.focus(line: line, column: column); return file }
         let file = documentFactory.editor(record: .init(path: path))
+        // A file opened from the blank tab takes its place: the blank trails the tabs, and so does
+        // an insert with no active tab to follow.
+        if blankFileActive { hasBlankFileTab = false; fileSearch.reset() }
         documents.append(file); wire(file); insert(file.id); noteHistory(file.record)
         select(.file(file)); file.focus(line: line, column: column); return file
     }
@@ -279,6 +306,8 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
         if activeID == id {
             let remaining = siblings.filter { $0 != id }
             activeID = remaining.isEmpty ? nil : remaining[min(index, remaining.count - 1)]
+            // The blank file tab is not in `tabOrder`; with no file left it is what remains selected.
+            if activeID == nil, !page, hasBlankFileTab { activeID = Self.blankFileID }
             if let activeID, let tab = tab(activeID) { select(tab) }
         }
         changed()
@@ -446,9 +475,10 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
         guard let api else { return }
         document.connect(service: documentFactory.editorService(api: api), makeSurface: { [documentFactory] in documentFactory.editorSurface(baseURL: api.baseURL) })
     }
-    func openFile(in context: WorkspaceContext) {
+    /// `directory` is where the panel starts: the session's worktree, so a file is picked from it.
+    func openFile(in context: WorkspaceContext, directory: String? = nil) {
         guard active === context, !closeCoordinator.isPresenting else { return }
-        fileOpen.begin(contextID: context.id)
+        fileOpen.begin(contextID: context.id, directory: directory)
     }
     func closeDocuments(contextIDs: Set<String>? = nil, worktrees: [String] = []) async -> Bool {
         fileOpen.cancel()
@@ -519,6 +549,10 @@ struct ContextSnapshot: Codable, Equatable, Sendable {
         contexts[id] = context
         context.globalHistory = browserHistory
         context.bookmarks = browserBookmarks
+        context.fileSearch.service = { [weak self] in
+            guard let self, let api else { return nil }
+            return documentFactory.fileSearchService(api: api)
+        }
         browserHistory.seed(context.history)
         context.isOwned = { [weak self, weak context] in
             guard let self, let context else { return false }

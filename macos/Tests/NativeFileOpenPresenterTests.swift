@@ -11,17 +11,17 @@ final class NativeFileOpenPresenterTests: XCTestCase {
         window.isReleasedWhenClosed = false
         defer { window.close() }
         var responses: [URL?] = []
-        presenter.present(in: nil) { responses.append($0) }()
-        presenter.present(in: window) { responses.append($0) }()
+        presenter.present(in: nil, directory: nil) { responses.append($0) }()
+        presenter.present(in: window, directory: nil) { responses.append($0) }()
         XCTAssertEqual(responses.count, 2)
         XCTAssertTrue(responses.allSatisfy { $0 == nil })
         window.orderFront(nil)
-        let cancel = presenter.present(in: window) { responses.append($0) }
+        let cancel = presenter.present(in: window, directory: nil) { responses.append($0) }
         defer { cancel() }
         let panel = try XCTUnwrap(window.attachedSheet as? NSOpenPanel)
         XCTAssertTrue(panel.canChooseFiles)
         XCTAssertFalse(panel.canChooseDirectories || panel.allowsMultipleSelection)
-        presenter.present(in: window) { responses.append($0) }()
+        presenter.present(in: window, directory: nil) { responses.append($0) }()
         XCTAssertEqual(responses.count, 3, "An attached sheet prevents a second picker")
         cancel()
         for _ in 0..<100 {

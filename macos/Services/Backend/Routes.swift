@@ -23,6 +23,7 @@ public enum Routes {
         "/api/tasks/\(encodeComponent(value))/pin"
     }
     public static let FILE = "/api/file"
+    public static let FILES = "/api/files"
     public static let LAUNCH_TARGET = "/api/launch-target"
     public static let XCODE_SCHEMES = "/api/xcode/schemes"
     public static let XCODE_SIMULATORS = "/api/xcode/simulators"

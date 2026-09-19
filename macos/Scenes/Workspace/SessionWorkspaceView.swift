@@ -189,47 +189,12 @@ private struct SessionWorkspaceContextContent: View {
                 // Safari's compact layout: the tab bar is the address bar, so the browser needs no second row.
                 BrowserCompactTabBar(context: context, model: model)
                 Divider()
-            } else if model.showsTerminal, !model.showsChanges {
-                tabStrip
+            } else if model.mode == .files, !model.showsChanges {
+                FilesCompactTabBar(context: context, model: model)
                 Divider()
             }
             contextBody
         }
-    }
-
-    private var tabs: [WorkspaceTab] { model.mode == .files ? context.fileTabs : context.pageTabs }
-    private var visits: [WorkspaceVisit] { model.mode == .files ? context.fileVisits : context.pageVisits }
-
-    private var tabStrip: some View {
-        HStack(spacing: 8) {
-            // Always present, even with nothing open: it is how the pane gets its first item.
-            if model.mode == .files {
-                Button("Open File", systemImage: "plus", action: model.openFile).help("Open a file in a new tab")
-            } else {
-                Button("New Tab", systemImage: "plus", action: model.newTab).help("Open a new web tab")
-            }
-            ScrollView(.horizontal) {
-                HStack(spacing: 6) {
-                    ForEach(tabs) { tab in
-                        ContextTabChip(title: tab.title, dirty: tab.dirty, active: context.activeID == tab.id,
-                                       select: { model.selectTab(tab) }, close: { model.closeTab(tab) })
-                    }
-                }
-            }
-            Spacer(minLength: 4)
-            Menu("Recently Closed", systemImage: "clock.arrow.circlepath") {
-                if visits.isEmpty { Text(model.mode == .files ? "No closed or visited files" : "No closed or visited pages") }
-                ForEach(visits.reversed()) { record in
-                    Button(record.title) { model.reopen(record) }
-                }
-            }
-            .menuIndicator(.hidden)
-            .fixedSize()
-        }
-        .labelStyle(.iconOnly)
-        .buttonStyle(.borderless)
-        .padding(.horizontal, 12)
-        .frame(height: 52)
     }
 
     @ViewBuilder private var contextBody: some View {
@@ -311,12 +276,13 @@ struct BlankPane: View {
     let model: SessionWorkspaceViewModel
 
     private var hint: Text {
-        let lead = Text("Use ＋ to open ").foregroundColor(Theme.textTertiary)
         switch model.mode {
-        case .files: return lead + Text("a file from this worktree.").foregroundColor(Theme.textTertiary)
-        case .diff, .browser: return lead + Text("a web page.").foregroundColor(Theme.textTertiary)
+        case .files: return Text("Search this worktree from the tab above, or use the folder to browse it.").foregroundColor(Theme.textTertiary)
+        case .diff, .browser: return Text("Use ＋ to open a web page.").foregroundColor(Theme.textTertiary)
         }
     }
+    /// What the old tab strip kept under Recently Closed: the way back to a file, newest first.
+    private var recentFiles: [WorkspaceVisit] { model.mode == .files ? Array(context.fileVisits.reversed().prefix(8)) : [] }
 
     var body: some View {
         VStack(spacing: 5) {
@@ -324,64 +290,22 @@ struct BlankPane: View {
                 .font(Theme.Typography.emptyTitle)
                 .foregroundStyle(Theme.textSecondary)
             hint.font(Theme.Typography.emptyHint).multilineTextAlignment(.center)
+            if !recentFiles.isEmpty {
+                VStack(alignment: .leading, spacing: 2) {
+                    ForEach(recentFiles) { visit in
+                        Button(visit.title, systemImage: "doc.text") { model.reopen(visit) }
+                            .buttonStyle(.plain).lineLimit(1).truncationMode(.middle)
+                            .foregroundStyle(Theme.textSecondary)
+                    }
+                }
+                .font(Theme.Typography.emptyHint)
+                .padding(.top, 10)
+            }
         }
         .frame(maxWidth: 260)
         .padding(24)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Theme.paneBackground)
-    }
-}
-
-/// One page chip. The close button shows on the active chip and on whichever chip the pointer is
-/// over, at the trailing edge on top of the title; the title fades out beneath it.
-private struct ContextTabChip: View {
-    let title: String
-    let dirty: Bool
-    let active: Bool
-    let select: () -> Void
-    let close: () -> Void
-    @State private var hovering = false
-    @State private var hoveringClose = false
-
-    private var showsClose: Bool { hovering || active }
-    private var fill: Color { active ? Theme.accentBackground : Theme.surfaceHover }
-
-    var body: some View {
-        Button(action: select) {
-            Text((dirty ? "● " : "") + title)
-                .lineLimit(1)
-                // The minimum keeps a short title centred clear of the close button's fade.
-                .frame(minWidth: 52, maxWidth: 190)
-                .mask {
-                    HStack(spacing: 0) {
-                        Color.black
-                        LinearGradient(colors: [.black, .black.opacity(showsClose ? 0 : 1)], startPoint: .leading, endPoint: .trailing)
-                            .frame(width: 18)
-                    }
-                }
-                .padding(.horizontal, 16).padding(.vertical, 6)
-                .background(fill, in: RoundedRectangle(cornerRadius: 6))
-                .contentShape(RoundedRectangle(cornerRadius: 6))
-        }
-        .buttonStyle(.plain)
-        .accessibilityAddTraits(active ? .isSelected : [])
-        .accessibilityAction(named: "Close \(title)", close)
-        .overlay(alignment: .trailing) {
-            Button("Close \(title)", systemImage: "xmark", action: close)
-                .labelStyle(.iconOnly).buttonStyle(.plain)
-                .imageScale(.small)
-                .foregroundStyle(hoveringClose ? Theme.textSecondary : Theme.textTertiary)
-                .frame(width: 18, height: 18)
-                .background(hoveringClose ? Theme.border : Color.clear, in: Circle())
-                .onHover { hoveringClose = $0 }
-                .padding(.trailing, 5)
-                .opacity(showsClose ? 1 : 0)
-                .allowsHitTesting(showsClose)
-                .accessibilityHidden(!showsClose)
-                .help("Close tab")
-        }
-        .onHover { hovering = $0 }
-        .animation(.easeOut(duration: 0.12), value: showsClose)
     }
 }
 

@@ -103,6 +103,7 @@ pub fn build_app(state: AppState) -> Router {
         )
         .route("/api/detect-repo", get(routes::detect_repo))
         .route("/api/file", get(local::get_file).put(local::put_file))
+        .route("/api/files", get(local::list_files))
         .route("/api/launch-target", get(local::launch_target))
         .route(
             "/api/worktree",
