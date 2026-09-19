@@ -16,7 +16,8 @@ Two languages, no others:
 - **Rust** (`crates/`) — the API, poller, CLI integrations and SQLite stores, linked
   **into the app** as a static library and called over a C ABI.
 
-There is no JavaScript, no Node, no web renderer and no Tauri host. Data comes from the
+There is no Node, no web renderer and no Tauri host. The only JavaScript is the bundled,
+network-less working-changes diff page (`macos/Resources/DiffPage/`, see `CLAUDE.md`). Data comes from the
 `gh` and `acli` CLIs and from `git` — no API tokens of TaskHub's own.
 
 ## The one mental model that matters

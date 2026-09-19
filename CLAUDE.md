@@ -6,7 +6,13 @@ conventions). `macos/README.md` is the long-form guide to individual surfaces, a
 the **native app's architecture**, which they cover only in passing.
 
 The app is SwiftUI + AppKit over a Rust backend linked into the same process. There is no
-web layer anywhere: no renderer, no JavaScript, no embedded page of our own.
+web layer: no renderer, no Node, no page talking to the backend. **The one exception is the
+working-changes diff**, which is a bundled HTML + JS page (`macos/Resources/DiffPage/`) in a
+`WKWebView`. It is push-only: `DiffViewModel` loads the snapshot through `APIClient` and
+hands it to `window.nativeDiff.render`; the page has no network access (CSP
+`connect-src 'none'`), is served by `DiffPageAssets` on its own `taskhub-diff://` scheme,
+and reports `ready`/`open`/`discard` back through one message handler. Do not add a second
+page, and do not give this one a way to reach the backend.
 
 ## The layers, and who owns what
 

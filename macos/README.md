@@ -361,12 +361,19 @@ exit. On launch, every saved session gets a new terminal and its saved
 Claude or Codex conversation is resumed. Quit waits for PTY teardown; a failure keeps
 the app open with an error so teardown can be retried.
 
-## Native working diff
+## Working diff
 
-Select a session and choose **Show Changes**. A native SwiftUI diff displays tracked
-and untracked changes and supports file navigation, commit/push, and guarded
-single-block discard. `DiffViewModel` receives snapshots through an injected
-`DiffService`; parsing and rendering stay in Swift and no local web page is created.
+Select a session and choose **Show Changes**. The diff displays tracked and untracked
+changes and supports file navigation, commit/push, and guarded single-block discard.
+`DiffViewModel` receives snapshots through an injected `DiffService` and pushes them to
+the bundled diff page (`Resources/DiffPage/`) in a `WKWebView`. The page renders the
+rows: syntax highlighting, two-tone add/remove gutters, sticky collapsible file headers,
+status badges, a hover frame with a hover-only **Discard**, and stubs for binary and
+oversized files. It has no network access and is served by `DiffPageAssets` on the
+`taskhub-diff://` scheme; opening a file and discarding a block are messages back to
+Swift, which owns loading, the confirmation sheet and every mutation. The unit-test
+bundle carries no app resources, so `DiffTests` points `DiffPageAssets.directoryOverride`
+at the source tree and renders the real page in a real web view.
 
 The shared editor save contract now uses `/api/file` revisions. Reads return an
 opaque revision; saves must submit it and retain the returned revision for the next
